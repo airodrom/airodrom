@@ -53,6 +53,15 @@ test('background service logs lifecycle without printing its launch token or raw
   while (!fs.existsSync(path.join(data, 'ui.json')) && child.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   assert(fs.existsSync(path.join(data, 'ui.json')), 'background service started');
   const discovery = JSON.parse(fs.readFileSync(path.join(data, 'ui.json')));
+  // Discovery is published synchronously before startup finishes registering
+  // shutdown handlers. An HTTP response proves the startup callback returned.
+  await new Promise((resolve, reject) => {
+    const request = require('node:http').get({ hostname: '127.0.0.1', port: discovery.port, path: '/' }, response => {
+      response.resume(); response.once('end', resolve); response.once('error', reject);
+    });
+    request.setTimeout(5000, () => request.destroy(new Error('Fixture readiness timeout')));
+    request.once('error', reject);
+  });
   child.kill('SIGTERM');
   assert.equal(await exit, 0);
   assert(!output.includes('#token='));
