@@ -19,13 +19,14 @@ function safeText(value, max = MAX_CONTEXT) {
   if (redactValue(value) !== value || require('../personal-memory').containsSecret(value)) fail('opencode_sensitive_context');
   return value;
 }
-function contextSafetyView(value, key) {
+function contextSafetyView(value, key, parentKey) {
   // Typed host digests are correlation metadata, never runtime content. Their
   // digits can accidentally satisfy the payment-card detector. Other strings,
   // including malformed digest fields, still pass through the full text guard.
-  if (['context_hash','content_hash','source_hash'].includes(key) && typeof value === 'string' && /^(?:sha256:)?[a-f0-9]{64}$/i.test(value)) return '[digest]';
-  if (Array.isArray(value)) return value.map(item => contextSafetyView(item, key));
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([field,item]) => [field,contextSafetyView(item,field)]));
+  const digestField = ['context_hash','content_hash','source_hash'].includes(key) || key === 'hash' && parentKey === 'context_sources';
+  if (digestField && typeof value === 'string' && /^(?:sha256:)?[a-f0-9]{64}$/i.test(value)) return '[digest]';
+  if (Array.isArray(value)) return value.map(item => contextSafetyView(item, key, parentKey));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([field,item]) => [field,contextSafetyView(item,field,key)]));
   return value;
 }
 function relative(value) {
