@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose bounded behavior with evidence
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Problem and intended behavior
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Scope and privacy impact
+      description: Required or optional runtime, authority/privacy impact and affected interface
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: Objective verification and known limits; use no secrets or personal data

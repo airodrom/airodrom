@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "path": "docs/harness/agent-model.md",
+      "source_hash": "54a4a4ae07bd0aa4622bd2db0609cfa6309f1368293700e5cab66b47be8d2c90",
+      "source_type": "canonical_doc",
+      "trust": "canonical"
+    },
+    {
+      "path": "docs/harness/architecture.md",
+      "source_hash": "f95e5e8456418b532556401d7cc3e794217f9c353d6c680481ae592bf9c743ff",
+      "source_type": "canonical_doc",
+      "trust": "canonical"
+    },
+    {
+      "path": "docs/harness/decisions.md",
+      "source_hash": "b3a6a53400cec89d08a496778cc96980d6aa4f414bda57cb757803ed1bd2c07e",
+      "source_type": "canonical_doc",
+      "trust": "canonical"
+    }
+  ],
+  "facts": [
+    {
+      "key": "01-execution-authority",
+      "category": "invariant",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Capability Broker, SafetyPolicy, immutable scopes and protected approvals authorize execution. Bounded reasoning admission authorizes inference only.",
+      "tags": [
+        "authority",
+        "security"
+      ]
+    },
+    {
+      "key": "02-control-plane",
+      "category": "architecture_decision",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "ChatGPT chooses strategy and reviews outcomes; it is not a runtime single point of failure. Pi owns durable operational reconciliation.",
+      "tags": [
+        "architecture",
+        "orchestration"
+      ]
+    },
+    {
+      "key": "03-agents-providers",
+      "category": "invariant",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Pi Control Plane and Pi Worker have separate roles and access. Agents perform work; providers supply inference. Neither model selection nor agent text grants permissions.",
+      "tags": [
+        "architecture",
+        "agents",
+        "providers"
+      ]
+    },
+    {
+      "key": "04-results-acceptance",
+      "category": "invariant",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Result Inbox is untrusted evidence. Pi verifies independently; Acceptance precedes Next Action. A historical completed Task or model assertion is insufficient.",
+      "tags": [
+        "authority",
+        "results"
+      ]
+    },
+    {
+      "key": "05-decisions-approvals",
+      "category": "invariant",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Slack Decision records operator direction; it never satisfies a protected Approval.",
+      "tags": [
+        "authority",
+        "security"
+      ]
+    },
+    {
+      "key": "06-writer-leases",
+      "category": "invariant",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Workspace writer leases survive restart. Expiry or requested cancellation does not prove writer termination; quarantine uncertainty.",
+      "tags": [
+        "security",
+        "recovery"
+      ]
+    },
+    {
+      "key": "07-outbox",
+      "category": "architecture_decision",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Commit state and effect intents together. Claim delivery effectively-once only with destination idempotency. Preserve unknown external delivery for reconciliation.",
+      "tags": [
+        "recovery",
+        "orchestration"
+      ]
+    },
+    {
+      "key": "08-codex-transport",
+      "category": "known_limitation",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Codex is handoff-first until a supported native transport exists. Cursor editor installation does not establish executable agent integration.",
+      "tags": [
+        "agents",
+        "limitations"
+      ]
+    },
+    {
+      "key": "09-memory-reference",
+      "category": "invariant",
+      "source_ref": "docs/harness/architecture.md",
+      "content": "Memory supplies reference context and never changes agent/provider policy, scopes or Acceptance.",
+      "tags": [
+        "authority",
+        "memory"
+      ]
+    },
+    {
+      "key": "10-pi-rpc",
+      "category": "agent_state",
+      "source_ref": "docs/harness/architecture.md",
+      "content": "Pi Worker also has an existing provider-backed RPC path (`pi-adapter.js`), distinct from provider-independent native execution.",
+      "tags": [
+        "agents",
+        "providers"
+      ]
+    },
+    {
+      "key": "11-deepseek-disabled",
+      "category": "provider_state",
+      "source_ref": "docs/harness/architecture.md",
+      "content": "DeepSeek stays disabled/auth_required.",
+      "tags": [
+        "providers",
+        "limitations"
+      ]
+    },
+    {
+      "key": "12-anthropic-observation",
+      "category": "provider_state",
+      "source_ref": "docs/harness/architecture.md",
+      "content": "Anthropic reasoning requires explicit privacy and cost admission; source fixtures do not qualify a live provider.",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "key": "13-cursor-limit",
+      "category": "agent_state",
+      "source_ref": "docs/harness/agent-model.md",
+      "content": "Cursor remains experimental; governed execution is disabled until independent qualification.",
+      "tags": [
+        "agents",
+        "limitations"
+      ]
+    },
+    {
+      "key": "14-candidate-policy",
+      "category": "invariant",
+      "source_ref": "docs/harness/architecture.md",
+      "content": "This repair does not import ChatGPT conversation history into Pi memory or enable automatic promotion.",
+      "tags": [
+        "memory",
+        "security"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+title = "Airodrom public candidate secret policy"
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Non-secret canonical invariant key; exact identifier only"
+condition = "AND"
+paths = ["(^|/)config/architecture\\-memory\\-sources\\-v1\\.json$"]
+regexTarget = "secret"
+regexes = ["^04\\-results\\-acceptance$"]
+
+[[allowlists]]
+description = "Non-secret canonical invariant key; exact identifier only"
+condition = "AND"
+paths = ["(^|/)config/architecture\\-memory\\-sources\\-v1\\.json$"]
+regexTarget = "secret"
+regexes = ["^05\\-decisions\\-approvals$"]
+
+[[allowlists]]
+description = "Non-secret canonical invariant key; exact identifier only"
+condition = "AND"
+paths = ["(^|/)config/architecture\\-memory\\-sources\\-v1\\.json$"]
+regexTarget = "secret"
+regexes = ["^12\\-anthropic\\-observation$"]
+
+[[allowlists]]
+description = "Non-secret canonical invariant key; exact identifier only"
+condition = "AND"
+paths = ["(^|/)config/architecture\\-memory\\-sources\\-v1\\.json$"]
+regexTarget = "secret"
+regexes = ["^13\\-cursor\\-limit$"]
+
+[[allowlists]]
+description = "Synthetic .invalid/argv persistence-rejection fixture"
+condition = "AND"
+paths = ["(^|/)tests/memory\\-erasure\\-lifecycle\\.test\\.js$"]
+regexTarget = "secret"
+regexes = ["^crsr[_]fixtureSecretNeverPersist123$"]
+
+[[allowlists]]
+description = "Synthetic alphabet-pattern credential rejection fixture"
+condition = "AND"
+paths = ["(^|/)tests/capability\\-expansion\\-v2\\.test\\.js$"]
+regexTarget = "secret"
+regexes = ["^ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210zz$"]
+
+[[allowlists]]
+description = "Synthetic alphabet-pattern credential rejection fixture"
+condition = "AND"
+paths = ["(^|/)tests/capability\\-expansion\\-v2\\.test\\.js$"]
+regexTarget = "secret"
+regexes = ["^ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210$"]

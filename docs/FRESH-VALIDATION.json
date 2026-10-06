@@ -1,0 +1,192 @@
+{
+  "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+  "results": [
+    {
+      "name": "focused",
+      "argv": [
+        "npm",
+        "run",
+        "test:hardening"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:03:13.425479+00:00",
+      "completed_at": "2026-10-06T04:04:04.829989+00:00",
+      "log_sha256": "5682809f3264c8864525bc20da222031fd68360d743f82a8b3dab90b9314816c",
+      "counts": {
+        "tests": 707,
+        "pass": 707,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "full",
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:04:04.850237+00:00",
+      "completed_at": "2026-10-06T04:06:35.465761+00:00",
+      "log_sha256": "5d9cbb47c8d6926f8ec7c103e343e85c22269d0fa3bfad8af4469554640ea876",
+      "counts": {
+        "tests": 1295,
+        "pass": 1283,
+        "fail": 0,
+        "skipped": 12,
+        "cancelled": 0
+      },
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "typecheck_authority",
+      "argv": [
+        "npm",
+        "run",
+        "typecheck:authority"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:06:35.484187+00:00",
+      "completed_at": "2026-10-06T04:06:35.718697+00:00",
+      "log_sha256": "61182dac441d34167a6078838dd4db40f73de17be35261a681f419f21a4dbe76",
+      "counts": {},
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "typecheck_sdk",
+      "argv": [
+        "npm",
+        "run",
+        "typecheck:sdk"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:06:35.733799+00:00",
+      "completed_at": "2026-10-06T04:06:35.965536+00:00",
+      "log_sha256": "965c4653c32434d1b757ca736481818dcb7b6d738ff3acdae6cac004c2f40d3d",
+      "counts": {},
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "verify",
+      "argv": [
+        "npm",
+        "run",
+        "verify"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:06:35.984010+00:00",
+      "completed_at": "2026-10-06T04:06:49.683597+00:00",
+      "log_sha256": "611549806b75bd87be7e53d2fd61822ec3dd7db3869f2aa0ce3b10b444de3335",
+      "counts": {},
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "licenses",
+      "argv": [
+        "npm",
+        "run",
+        "audit:licenses"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:06:49.699414+00:00",
+      "completed_at": "2026-10-06T04:06:49.887795+00:00",
+      "log_sha256": "bb34fe703f606164ec5f12f9699979d1300cd72ef6f119f219f16e2d8604a9c5",
+      "counts": {},
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "package",
+      "argv": [
+        "npm",
+        "run",
+        "package:check"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:06:49.903536+00:00",
+      "completed_at": "2026-10-06T04:06:50.417839+00:00",
+      "log_sha256": "7ee62b19b0a6b910a6d2d12bd1e83157385e50be63fba9bcda756bd52fe7e877",
+      "counts": {},
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "secrets",
+      "argv": [
+        "python3",
+        "scripts/secret-scan.py"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:06:50.432616+00:00",
+      "completed_at": "2026-10-06T04:06:53.713866+00:00",
+      "log_sha256": "2cd7d8a1170a5252f7c9ac5705386eeffd5d4345c9eac6f76274ca9a346c7187",
+      "counts": {},
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    },
+    {
+      "name": "audit",
+      "argv": [
+        "npm",
+        "audit",
+        "--json"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-10-06T04:06:53.729525+00:00",
+      "completed_at": "2026-10-06T04:06:54.079474+00:00",
+      "log_sha256": "c364253b5485b0190d6c7f6c95e30273903f37fc3a7aabe2c7996d3b316f6408",
+      "counts": {},
+      "code_fingerprint": "ce6a33322acde5a210e53653eddd6587254e2033ff2722c86349ffe162d0b876",
+      "code_unchanged": true
+    }
+  ],
+  "qualification_date_local": "2026-10-05",
+  "runtime": "macOS arm64, Node 22.23.3 (SQLite/FTS5), npm 10.9.9",
+  "state": "private_unactivated_source_candidate",
+  "package_smoke": {
+    "package_files": 221,
+    "archive_sha256": "dd7aa6cd54fe017bf9839027847dbec75ce9571e6c4af0e98d6eee3c7e544123",
+    "install_exit": 0,
+    "commands": [
+      {
+        "argv": [
+          "node",
+          "scripts/airodrom.cjs",
+          "--help"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "node",
+          "scripts/airodrom.cjs",
+          "--version"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "node",
+          "-e",
+          "require('airodrom/sdk');require('airodrom/sdk/app-registry');require('airodrom/branding');require('airodrom');console.log('Public package imports passed')"
+        ],
+        "exit": 0
+      }
+    ],
+    "source_only_no_service_started": true
+  },
+  "full_skips": {
+    "private_installed_runtime_pin_prerequisites": 10,
+    "preexisting_live_service_and_tunnel_prerequisites": 2
+  },
+  "typecheck_scope": "Declared authority hash/JSON/declaration and SDK contracts; not all JavaScript",
+  "publication_executed": false,
+  "overlapping_suites_not_additive": true
+}

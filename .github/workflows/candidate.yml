@@ -1,0 +1,57 @@
+name: Public candidate gates
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: candidate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  candidate-validation:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-fund
+      - run: node scripts/macos/build-slack-keychain-helper.cjs
+      - run: git -c user.name=Fixture -c user.email=fixture@example.invalid -c core.hooksPath=/dev/null log -1 --format=%H
+      - run: npm run verify
+      - run: npm run test:hardening
+      - run: npm test
+      - run: npm run typecheck:authority
+      - run: npm run typecheck:sdk
+      - run: npm run package:check
+      - run: |
+          node scripts/source-archive.cjs "$RUNNER_TEMP/candidate-a.tar.gz"
+          node scripts/source-archive.cjs "$RUNNER_TEMP/candidate-b.tar.gz"
+          cmp "$RUNNER_TEMP/candidate-a.tar.gz" "$RUNNER_TEMP/candidate-b.tar.gz"
+      - run: node scripts/airodrom.cjs --help
+  secret-history:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 scripts/secret-scan.py
+  dependency-license:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-fund
+      - run: npm run audit:dependencies
+      - run: npm run audit:licenses
+      - run: npm sbom --sbom-format=cyclonedx > "$RUNNER_TEMP/sbom.cdx.json"

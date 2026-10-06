@@ -1,0 +1,35 @@
+'use strict';
+const {transaction}=require('./control-transaction');
+const {fingerprint,identifier,object,text,redactValue}=require('./control-plane-store');
+const {normalizeResult}=require('./mission-result');
+class ResultInbox {
+ constructor(bridge){this.bridge=bridge;this.store=bridge.controlStore;this.db=this.store.db;this.db.exec(`CREATE TABLE IF NOT EXISTS cp_result_inbox(run_id TEXT PRIMARY KEY,mission_id TEXT,task_id TEXT NOT NULL,agent_id TEXT NOT NULL,request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,result TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('unread','read','reviewed')),created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS cp_result_receipts(event_key TEXT PRIMARY KEY,run_id TEXT NOT NULL,created_at INTEGER NOT NULL);`);this.store.outbox.register('result_relay',row=>{this.db.prepare('INSERT OR IGNORE INTO cp_result_receipts VALUES(?,?,?)').run(row.event_key,row.correlation.run_id,this.store.now());return{local_receipt:row.event_key};},{idempotent:true});}
+ publish(input){object(input,['run_id','mission_id','task_id','agent_id','request_id','result']);for(const k of ['run_id','task_id','agent_id','request_id'])identifier(input[k]);const run=this.store.run(input.run_id);if(!run||run.task_id!==input.task_id||run.mission_id!==input.mission_id||run.agent_id!==input.agent_id)throw Error('Result correlation mismatch');if(!['completed','failed','cancelled','interrupted'].includes(run.state))throw Error('Result requires settled run');
+  const safe=redactValue(input.result);if(!safe||!['completed','failed','cancelled'].includes(safe.status))throw Error('Invalid result status');text(safe.summary,'result summary',8000);if(Buffer.byteLength(JSON.stringify(safe))>24000)throw Error('Result too large');const expected=run.state==='completed'?'completed':run.state==='cancelled'?'cancelled':'failed';
+  if(safe.status!==expected&&!(run.state==='completed'&&safe.status==='failed'))throw Error('Result status contradicts settled run');
+  for(const key of ['changed_files','tests','artifacts','limitations','questions','memory_candidates']){
+    if(safe[key]!==undefined&&!Array.isArray(safe[key]))throw Error('Invalid result collection');
+    if(Array.isArray(safe[key])&&safe[key].length>100)throw Error('Result collection too large');
+  }
+  if(safe.needs_operator!==undefined&&typeof safe.needs_operator!=='boolean')throw Error('Invalid operator requirement');
+  const hash=fingerprint(safe);
+  return transaction(this.db,()=>{const old=this.db.prepare('SELECT * FROM cp_result_inbox WHERE run_id=?').get(run.id);if(old){if(old.fingerprint!==hash)throw Error('Immutable run result conflict');return{run_id:run.id,duplicate:true};}const now=this.store.now();this.db.prepare("INSERT INTO cp_result_inbox VALUES(?,?,?,?,?,?,?,'unread',?,?)").run(run.id,run.mission_id,run.task_id,run.agent_id,input.request_id,hash,JSON.stringify({...safe,untrusted:true,accepted:false}),now,now);
+  if(this.bridge.authorityRuntime?.active)this.bridge.authorityRuntime.recordResult(run.id,safe);
+  this.store.outbox.enqueue({key:`result:${run.id}`,destination:'result_relay',ref:run.id,eventType:'result.published',correlation:{mission_id:run.mission_id,task_id:run.task_id,run_id:run.id,agent_id:run.agent_id,request_id:input.request_id},payload:{run_id:run.id,status:safe.status}});this.store.event('result.published',run.mission_id,{agent_id:run.agent_id,result_untrusted:true},{runId:run.id});return{run_id:run.id,duplicate:false};});}
+ publishHandoff(contract,envelope){
+  require('./codex-completion-relay').validateEnvelope(envelope,contract);
+  const h=this.db.prepare('SELECT contract,state FROM cp_codex_handoffs WHERE run_id=?').get(contract.run_id);
+  if(!h||h.state!=='awaiting_handoff'||fingerprint(JSON.parse(h.contract))!==fingerprint(contract))throw Error('Unknown handoff authority');
+  const run=this.store.run(contract.run_id);if(!run||run.agent_id!=='codex'||run.mission_id!==contract.mission_id||run.task_id!==contract.task_id)throw Error('Result correlation mismatch');
+  const safe=redactValue({...envelope.result,envelope,untrusted:true,accepted:false,termination_verified:false,verification_at_publication:'waiting_for_termination'}),hash=fingerprint(safe);
+  return transaction(this.db,()=>{const old=this.db.prepare('SELECT fingerprint FROM cp_result_inbox WHERE run_id=?').get(run.id);if(old){if(old.fingerprint!==hash)throw Error('Immutable run result conflict');return{run_id:run.id,duplicate:true};}
+   const now=this.store.now();this.db.prepare("INSERT INTO cp_result_inbox VALUES(?,?,?,?,?,?,?,'unread',?,?)").run(run.id,run.mission_id,run.task_id,'codex',contract.request_id,hash,JSON.stringify(safe),now,now);
+   this.store.outbox.enqueue({key:`result:${run.id}`,destination:'result_relay',ref:run.id,eventType:'result.published',correlation:{mission_id:run.mission_id,task_id:run.task_id,run_id:run.id,agent_id:'codex',request_id:contract.request_id},payload:{run_id:run.id,status:safe.status,termination_verified:false}});
+   this.store.event('result.published',run.mission_id,{agent_id:'codex',result_untrusted:true,termination_verified:false},{runId:run.id});return{run_id:run.id,duplicate:false};});
+ }
+ capture(runId,job){const run=this.store.run(runId);if(!run)return;return this.publish({run_id:runId,mission_id:run.mission_id,task_id:run.task_id,agent_id:run.agent_id,request_id:`capture:${runId}`,result:normalizeResult(job)});}
+ list({agent=null,state=null,mission=null,task=null,run=null,project=null,limit=100}={}){require('./memory-content-erasure').assertReadable(this.db);if(!Number.isInteger(limit)||limit<1||limit>200)throw Error('Invalid inbox page');for(const id of [agent,mission,task,run,project])if(id!==null)identifier(id);if(state!==null&&!['unread','read','reviewed'].includes(state))throw Error('Invalid inbox state');return this.db.prepare('SELECT * FROM cp_result_inbox WHERE (? IS NULL OR agent_id=?) AND (? IS NULL OR state=?) AND (? IS NULL OR mission_id=?) AND (? IS NULL OR task_id=?) AND (? IS NULL OR run_id=?) AND (? IS NULL OR mission_id IN (SELECT id FROM cp_missions WHERE project_id=?)) ORDER BY created_at DESC,run_id LIMIT ?').all(agent,agent,state,state,mission,mission,task,task,run,run,project,project,limit).map(r=>({...r,result:JSON.parse(r.result)}));}
+ latest(filters={}){return this.list({...filters,limit:1})[0]||null;}
+ review(runId,state){identifier(runId);if(!['read','reviewed'].includes(state))throw Error('Invalid inbox review state');transaction(this.db,()=>{const old=this.db.prepare('SELECT state FROM cp_result_inbox WHERE run_id=?').get(runId);if(!old)throw Error('Result not found');if(old.state==='reviewed'&&state==='read')throw Error('Inbox review cannot regress');this.db.prepare('UPDATE cp_result_inbox SET state=?,updated_at=? WHERE run_id=?').run(state,this.store.now(),runId);});return{run_id:runId,state,acceptance_changed:false};}
+}
+module.exports={ResultInbox};

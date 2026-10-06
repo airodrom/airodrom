@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "providers": {
+    "ollama": {
+      "enabled": true
+    },
+    "anthropic_subscription": {
+      "enabled": true
+    },
+    "codex_openai": {
+      "enabled": false
+    },
+    "openai_compatible": {
+      "enabled": false
+    },
+    "deepseek": {
+      "enabled": false
+    }
+  }
+}

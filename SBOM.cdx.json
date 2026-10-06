@@ -1,0 +1,1606 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:a15641ff-1abc-43c8-bebc-941192361161",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-10-06T04:02:17.212Z",
+    "lifecycles": [
+      {
+        "phase": "pre-build"
+      }
+    ],
+    "tools": [
+      {
+        "vendor": "npm",
+        "name": "cli",
+        "version": "10.9.0"
+      }
+    ],
+    "component": {
+      "bom-ref": "airodrom@1.0.0-rc.1",
+      "type": "library",
+      "name": "candidate",
+      "version": "1.0.0-rc.1",
+      "scope": "required",
+      "description": "Airodrom AI operating platform with mission orchestration, fail-closed approvals and Control Center",
+      "purl": "pkg:npm/airodrom@1.0.0-rc.1",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": ""
+        },
+        {
+          "name": "cdx:npm:package:private",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://airodrom.io"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "@slack/logger@5.0.0",
+      "type": "library",
+      "name": "@slack/logger",
+      "version": "5.0.0",
+      "scope": "required",
+      "purl": "pkg:npm/%40slack/logger@5.0.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@slack/logger"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@slack/logger/-/logger-5.0.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "5465e19a682c028f6c85d418878b450e775dfbb9ec829d18e61d143c3694a7c2b7e7da416ac23a61d90ca855b79823b12d092ad3daa3ee8edcaba7f70ee5dc25"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@slack/socket-mode@3.1.0",
+      "type": "library",
+      "name": "@slack/socket-mode",
+      "version": "3.1.0",
+      "scope": "required",
+      "purl": "pkg:npm/%40slack/socket-mode@3.1.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@slack/socket-mode"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@slack/socket-mode/-/socket-mode-3.1.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "17d4fe14a6edb1844a576dd7f25e965b57f1ee772ab0cb9f83e1cb0387df1dffccbd9482bcfba7170e7be9e926634434de48130080724ca0c9c6733ec27d6892"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@slack/types@3.2.0",
+      "type": "library",
+      "name": "@slack/types",
+      "version": "3.2.0",
+      "scope": "required",
+      "purl": "pkg:npm/%40slack/types@3.2.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@slack/types"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@slack/types/-/types-3.2.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "20de2076d97342df142688fed6ffaa007791e13c473b428c948b3ce354857c3400705167b2b59a1ac100138828c55b7c3bf24e00568619dac54f384d068a7f16"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@slack/web-api@8.2.0",
+      "type": "library",
+      "name": "@slack/web-api",
+      "version": "8.2.0",
+      "scope": "required",
+      "purl": "pkg:npm/%40slack/web-api@8.2.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@slack/web-api"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@slack/web-api/-/web-api-8.2.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "6c85bcffc04b0ff1cbb872c80362df03b0214a8933ba2e2cc026cc26ec28449c67fe4cc75656ba60428bbcdd670851cafc37d7ee0fb85a3ddeb2cfd94a1fed59"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@types/node@26.6.3",
+      "type": "library",
+      "name": "@types/node",
+      "version": "26.6.3",
+      "scope": "required",
+      "purl": "pkg:npm/%40types/node@26.6.3",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@types/node"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@types/node/-/node-26.6.3.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "76ca8c410a1e4cbaaef70ca70c3d34ab9ef798dceca3721d40e01f1d126a2c27260853e81a8f40d5b0e951cbfff6d9caa44ad05aff6e29e19f977ec4212d3662"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@types/retry@0.12.5",
+      "type": "library",
+      "name": "@types/retry",
+      "version": "0.12.5",
+      "scope": "required",
+      "purl": "pkg:npm/%40types/retry@0.12.5",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@types/retry"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@types/retry/-/retry-0.12.5.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "df14a34e9defd375ff95240b91ccda37d50813024ca0c080d7e35be477db244416a2075e408c95b53bf13d70d08d9e73c2cf2b1507d57d1773d370118a13c983"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-aix-ppc64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-aix-ppc64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-aix-ppc64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-aix-ppc64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-aix-ppc64/-/typescript-aix-ppc64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "31328a91607ba7fd04f718b5775b47b59e4f88b90610c22af3ca4ad82b9b6633ac2ed6132ea8602208bacdea456bef461d9ea1d3934c0a443118a88f5ccc57b5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-darwin-arm64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-darwin-arm64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-darwin-arm64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-darwin-arm64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-darwin-arm64/-/typescript-darwin-arm64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "828c336abf4cc12fda456a7a7f76b8294ab34630198ceb2618d08ce8b713817ba6f9d05f82c05530df8082f38209b82e5f289c93a2c986906ccf131e6c9f2cc8"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-darwin-x64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-darwin-x64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-darwin-x64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-darwin-x64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-darwin-x64/-/typescript-darwin-x64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "499f716489ea02936534673db345b5552b24b5848e7bd705a8d388aa63751acf129a48ca65816dd35ec6e15c0fc404889ce0ee01d6d35bbb1788551ff3ddd180"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-freebsd-arm64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-freebsd-arm64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-freebsd-arm64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-freebsd-arm64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-freebsd-arm64/-/typescript-freebsd-arm64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "5b9347e32fc9d29948212e5bdb1bd312453b245c72a9d3003a07fe225865d2f1d05ca3b9759a3177e0bf8c4b6ae7a738177c24ef5441e013114365dd23e6f061"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-freebsd-x64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-freebsd-x64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-freebsd-x64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-freebsd-x64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-freebsd-x64/-/typescript-freebsd-x64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "50c183c79b13a73370dd688f79b1fb97dd0859f26080477e7a01edfeaea9eff0a6df3aa857b5719065edfb70f13c8c3c09c9af001d23dec5557db857f8ce13a7"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-arm@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-arm",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-arm@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-arm"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-arm/-/typescript-linux-arm-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "81f7d3df13f3f6c47b8ff6091319323e7b6b2343f610ff576cec96ced876fc6b3446cb4afbdd1105c3b49dc5e85f2fdb798965d525f0f38e8d7f6cdd9c4cf441"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-arm64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-arm64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-arm64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-arm64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-arm64/-/typescript-linux-arm64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "421e1e538ff2df20e39df8e3c8f62284c8f9fce0c8966b7e073bb5ece23e7e24910d6e7b4265394a237addec4f44d24f294cdc73520d6b535776b27e32a1e351"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-loong64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-loong64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-loong64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-loong64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-loong64/-/typescript-linux-loong64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "b841dc93d8bc8680335cf8984626f53bb9a23a7cf6dd2c4879597a1782d7a31faaa2fd4adf98c77045ba5472af648fa9caf97b7d910fe0c094e4b62f22ad46b9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-mips64el@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-mips64el",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-mips64el@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-mips64el"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-mips64el/-/typescript-linux-mips64el-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4782af00c9c4e375b941ea9bd0bcb9e8ede658c588020b0ccb3dfa0c26b271de676e0ffd9339b4962c3726871f46ac8963428f9b31636ecc28cd7c96d039c860"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-ppc64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-ppc64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-ppc64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-ppc64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-ppc64/-/typescript-linux-ppc64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "0ce471e5bdec77fe12ede6b2c66e0542ff80ec2ae45081916878b023ca221d3008d5f00f5a1178274bc09640bc6e20251d2555c31310ded8d9dbf0d56e742288"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-riscv64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-riscv64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-riscv64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-riscv64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-riscv64/-/typescript-linux-riscv64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c1fd23a840ce8eb3d19cac18472c890d1a35d4a31bbcc16b53eab8cea2b20a1383073be591b84d41f2af2f14027304e974369748765356e8742680ab28250c1d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-s390x@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-s390x",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-s390x@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-s390x"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-s390x/-/typescript-linux-s390x-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "224c097372fbca1cad59dfdec23cb13437ce9acc029bd1963094ffb9efdd53869935bc1979801eb6ae365722e6b264a3be85fbcfbe17e996980adcc0af412e1b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-linux-x64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-linux-x64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-linux-x64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-linux-x64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-linux-x64/-/typescript-linux-x64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "11875fd9c360eeb8025899f109d27e177577f4ef2285bdfb78702ed4b2bca00162ce04d06cf38aef31c75db3edf2b5f6e023aa3835de237b087f47c25c6ec7fc"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-netbsd-arm64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-netbsd-arm64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-netbsd-arm64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-netbsd-arm64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-netbsd-arm64/-/typescript-netbsd-arm64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "fa9a25605e0c174e1a3e93b9153907ada9fdc94403497ab2e468920caa6c965e63cb7977fa0f502e1a5fdfd4fe78fb5e7e15cb386acb9744088e440fe959de94"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-netbsd-x64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-netbsd-x64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-netbsd-x64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-netbsd-x64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-netbsd-x64/-/typescript-netbsd-x64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "f18213d041ccff776ad7464e545fc0ee973f61232d6dc79c72de2b5ad7b1ae74821ce3dca42d8a4cb5df4c247abc3a674a2635da178d6f51a237fc2ef93fc5c8"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-openbsd-arm64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-openbsd-arm64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-openbsd-arm64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-openbsd-arm64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-openbsd-arm64/-/typescript-openbsd-arm64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "00f4fcf829589ee626d6ef7e920197a0c8f65735b37329b087680d4905724877e444318e4d592858b8c298e41268ef8fa2a439ec1d1f951a7d480fbb1a79e4cd"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-openbsd-x64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-openbsd-x64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-openbsd-x64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-openbsd-x64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-openbsd-x64/-/typescript-openbsd-x64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c97eecf90d03967d03b7db44cd9b008d75d1ffecad04cec096095aab278c3f142ccc9d4986525d67a8cb03e23395d1ed7e55fcd5e9bb9436a8d715eef9a45192"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-sunos-x64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-sunos-x64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-sunos-x64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-sunos-x64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-sunos-x64/-/typescript-sunos-x64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "74b24319a2d9d43e073d09fadaed67f26043909444c0cb00902764c1de087aac3ec774d4c93b2a634622042b44e87e8ecf38069378ae677bc55914be13cfddd6"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-win32-arm64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-win32-arm64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-win32-arm64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-win32-arm64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-win32-arm64/-/typescript-win32-arm64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "1b2975572e8eb167ac2f39aaf843f415bedbe0d89de76df602f700d9215c758ade95da4db58145a1f3e39edeb6cbd850cbb553699a7ae480898ee01045a55c21"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@typescript/typescript-win32-x64@7.0.2",
+      "type": "library",
+      "name": "@typescript/typescript-win32-x64",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/%40typescript/typescript-win32-x64@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@typescript/typescript-win32-x64"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@typescript/typescript-win32-x64/-/typescript-win32-x64-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d014371e40071e528b4a9d6a46f7f7494846a46b03ba107f8e0170ef982ecaa6f126a11a4b40b0fd514ef22da71e094953340246d30c47f20100a137113302e2"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "canonicalize@5.1.0",
+      "type": "library",
+      "name": "canonicalize",
+      "version": "5.1.0",
+      "scope": "required",
+      "purl": "pkg:npm/canonicalize@5.1.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/canonicalize"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/canonicalize/-/canonicalize-5.1.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "6da6fdf9679f6658ea43c8d3d2a4705664f2cc0514eb72bded02100f76a0ca7201adbeac6b9336780cbc1eff0ade9e15f7e38d55864ab46625e0383eff91ae9b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "eventemitter3@5.0.4",
+      "type": "library",
+      "name": "eventemitter3",
+      "version": "5.0.4",
+      "scope": "required",
+      "purl": "pkg:npm/eventemitter3@5.0.4",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/eventemitter3"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/eventemitter3/-/eventemitter3-5.0.4.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "9a5b1347219a3c18cf79d93a06fc3e6aa6ec5c3b680320339b930eec9814fb2551c8c4393bc6c3e0a71c8bb052f397fddef79e81e08f90bf11e062c29678cb17"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "p-finally@1.0.0",
+      "type": "library",
+      "name": "p-finally",
+      "version": "1.0.0",
+      "scope": "required",
+      "purl": "pkg:npm/p-finally@1.0.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/p-finally"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/p-finally/-/p-finally-1.0.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "2c809bda9f4207b152fb4791d68a969c7869d0596318b64258113d6a2c745327bd5bc2d340fc0c4d8546590588c3d45d4220e0e3e7a95d0383c08609b5225aa3"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "p-queue@6.6.2",
+      "type": "library",
+      "name": "p-queue",
+      "version": "6.6.2",
+      "scope": "required",
+      "purl": "pkg:npm/p-queue@6.6.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/p-queue"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/p-queue/-/p-queue-6.6.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4701696fbd9cfc18502c45c86792b67be02180d56621e8c695382207d3336747bddc646fa99eee4a2d1dbd117bfd72170de364adad9f3470714f23c31b24a98d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "eventemitter3@4.0.7",
+      "type": "library",
+      "name": "eventemitter3",
+      "version": "4.0.7",
+      "scope": "required",
+      "purl": "pkg:npm/eventemitter3@4.0.7",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/p-queue/node_modules/eventemitter3"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/eventemitter3/-/eventemitter3-4.0.7.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "f20b870590b02a716161d1ebdb2b2e45612b4f08683765fc5c42d196b470a667de6368e3b94378b5a40cb142ca515a352b80ef665fb4a607f2a32b07c6f9af13"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "p-retry@4.6.2",
+      "type": "library",
+      "name": "p-retry",
+      "version": "4.6.2",
+      "scope": "required",
+      "purl": "pkg:npm/p-retry@4.6.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/p-retry"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/p-retry/-/p-retry-4.6.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "df5d88777f7a11b25dbd138d967814c7437275fac843996c62ed339ca554cd5bc0af3108b74f15d6a86dc8449b1957751465fb50ab62169e6ec0a65d33cc08b9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "@types/retry@0.12.0",
+      "type": "library",
+      "name": "@types/retry",
+      "version": "0.12.0",
+      "scope": "required",
+      "purl": "pkg:npm/%40types/retry@0.12.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/p-retry/node_modules/@types/retry"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@types/retry/-/retry-0.12.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c1628e0a54d38a2cdc6615e73d8e308a4540c267581e9f2ae83982f84254cc032cc9c6fb1c1df62a1f51378fb4804c6398f9994804238144572060133de800bc"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "p-timeout@3.2.0",
+      "type": "library",
+      "name": "p-timeout",
+      "version": "3.2.0",
+      "scope": "required",
+      "purl": "pkg:npm/p-timeout@3.2.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/p-timeout"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/p-timeout/-/p-timeout-3.2.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "ae1230532720c3029c3fdc9338e14afc02ac028a638c26a456a2c778f3b7082e8c8abd59f7dc53f91eb78d9c404f994564b6b68a74b987e652d86bd1f7dfc506"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "retry@0.13.1",
+      "type": "library",
+      "name": "retry",
+      "version": "0.13.1",
+      "scope": "required",
+      "purl": "pkg:npm/retry@0.13.1",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/retry"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/retry/-/retry-0.13.1.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "5d0050dc8f16d4281ed127a1fba8238f4dcb6e64455aea2cce02bda280a9c1822b861a0ef34a5fab8714914e439249f07ce7c5b5e470959e7a3d838663215676"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "typescript@7.0.2",
+      "type": "library",
+      "name": "typescript",
+      "version": "7.0.2",
+      "scope": "optional",
+      "purl": "pkg:npm/typescript@7.0.2",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/typescript"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "f0561abbdea8dcd28e85b8ca8bfa8dbc6fd6e63873c646dd9b9b23f406d9ff94f9b16aa7de12602df1b1dbbb11299593bf2cc23fc74b4414dfe6d05349155434"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "undici@7.30.0",
+      "type": "library",
+      "name": "undici",
+      "version": "7.30.0",
+      "scope": "required",
+      "purl": "pkg:npm/undici@7.30.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/undici"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/undici/-/undici-7.30.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "764ad05de1d26a86a69c8b6561b9b31b4c0562b3346700f108883403b68a8d3cb2861f6cbd1cc234513357e566d39ff27a18c2ce30d9df52977c6123612ced0d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "undici-types@8.9.0",
+      "type": "library",
+      "name": "undici-types",
+      "version": "8.9.0",
+      "scope": "required",
+      "purl": "pkg:npm/undici-types@8.9.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/undici-types"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "2930f2453617f2c5a629702290f1c74b273adc244f11331cb728ca16ea5c0ba3812d74f7c6c3747bd685ee6fa6217bad156a545ee79db68c06ee22cece9d2442"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "airodrom@1.0.0-rc.1",
+      "dependsOn": [
+        "@slack/socket-mode@3.1.0",
+        "@slack/web-api@8.2.0",
+        "canonicalize@5.1.0",
+        "@types/node@26.6.3",
+        "typescript@7.0.2"
+      ]
+    },
+    {
+      "ref": "@slack/logger@5.0.0",
+      "dependsOn": [
+        "@types/node@26.6.3"
+      ]
+    },
+    {
+      "ref": "@slack/socket-mode@3.1.0",
+      "dependsOn": [
+        "undici@7.30.0",
+        "@slack/logger@5.0.0",
+        "@slack/web-api@8.2.0",
+        "@types/node@26.6.3",
+        "eventemitter3@5.0.4"
+      ]
+    },
+    {
+      "ref": "@slack/types@3.2.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "@slack/web-api@8.2.0",
+      "dependsOn": [
+        "@slack/logger@5.0.0",
+        "@slack/types@3.2.0",
+        "@types/node@26.6.3",
+        "@types/retry@0.12.5",
+        "eventemitter3@5.0.4",
+        "p-queue@6.6.2",
+        "p-retry@4.6.2",
+        "retry@0.13.1"
+      ]
+    },
+    {
+      "ref": "@types/node@26.6.3",
+      "dependsOn": [
+        "undici-types@8.9.0"
+      ]
+    },
+    {
+      "ref": "@types/retry@0.12.5",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-aix-ppc64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-darwin-arm64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-darwin-x64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-freebsd-arm64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-freebsd-x64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-arm@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-arm64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-loong64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-mips64el@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-ppc64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-riscv64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-s390x@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-linux-x64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-netbsd-arm64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-netbsd-x64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-openbsd-arm64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-openbsd-x64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-sunos-x64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-win32-arm64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "@typescript/typescript-win32-x64@7.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "canonicalize@5.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "eventemitter3@5.0.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "p-finally@1.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "p-queue@6.6.2",
+      "dependsOn": [
+        "eventemitter3@4.0.7",
+        "p-timeout@3.2.0"
+      ]
+    },
+    {
+      "ref": "eventemitter3@4.0.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "p-retry@4.6.2",
+      "dependsOn": [
+        "@types/retry@0.12.0",
+        "retry@0.13.1"
+      ]
+    },
+    {
+      "ref": "@types/retry@0.12.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "p-timeout@3.2.0",
+      "dependsOn": [
+        "p-finally@1.0.0"
+      ]
+    },
+    {
+      "ref": "retry@0.13.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "typescript@7.0.2",
+      "dependsOn": [
+        "@typescript/typescript-aix-ppc64@7.0.2",
+        "@typescript/typescript-darwin-arm64@7.0.2",
+        "@typescript/typescript-darwin-x64@7.0.2",
+        "@typescript/typescript-freebsd-arm64@7.0.2",
+        "@typescript/typescript-freebsd-x64@7.0.2",
+        "@typescript/typescript-linux-arm@7.0.2",
+        "@typescript/typescript-linux-arm64@7.0.2",
+        "@typescript/typescript-linux-loong64@7.0.2",
+        "@typescript/typescript-linux-mips64el@7.0.2",
+        "@typescript/typescript-linux-ppc64@7.0.2",
+        "@typescript/typescript-linux-riscv64@7.0.2",
+        "@typescript/typescript-linux-s390x@7.0.2",
+        "@typescript/typescript-linux-x64@7.0.2",
+        "@typescript/typescript-netbsd-arm64@7.0.2",
+        "@typescript/typescript-netbsd-x64@7.0.2",
+        "@typescript/typescript-openbsd-arm64@7.0.2",
+        "@typescript/typescript-openbsd-x64@7.0.2",
+        "@typescript/typescript-sunos-x64@7.0.2",
+        "@typescript/typescript-win32-arm64@7.0.2",
+        "@typescript/typescript-win32-x64@7.0.2"
+      ]
+    },
+    {
+      "ref": "undici@7.30.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "undici-types@8.9.0",
+      "dependsOn": []
+    }
+  ]
+}

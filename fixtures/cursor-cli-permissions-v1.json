@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "permissions": {
+    "allow": ["Read(**)"],
+    "deny": [
+      "Shell(*)",
+      "WebFetch(*)",
+      "Mcp(*:*)",
+      "Read(.env*)",
+      "Write(.env*)",
+      "Write(src/safety-policy.js)",
+      "Write(src/mission-authority.js)",
+      "Write(src/capability-broker.js)"
+    ]
+  }
+}

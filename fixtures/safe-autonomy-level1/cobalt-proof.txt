@@ -1,0 +1,2 @@
+proof=COBALT-503
+status=valid

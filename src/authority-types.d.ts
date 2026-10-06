@@ -1,0 +1,48 @@
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+export type Sha256 = string;
+export type HashId = `sha256:${string}`;
+export type AgentId = 'pi' | 'claude' | 'codex' | 'cursor' | 'generic_reasoner';
+export type Actor = Readonly<{ type: 'operator' | 'host' | 'agent' | 'provider'; id: string }>;
+export type Coordinates = { agentId: AgentId; runtimeId: string; providerId?: string; modelId?: string };
+export type Privacy = 'public' | 'internal' | 'restricted_security';
+export type MemoryKind = 'architecture' | 'project_operational' | 'personal_preference' | 'mission_episodic';
+export type CandidateStatus = 'candidate' | 'rejected' | 'promoted';
+export type MemoryStatus = 'active' | 'superseded' | 'forgotten' | 'expired';
+export type RuntimeState = 'available' | 'busy' | 'handoff_only' | 'auth_required' | 'quota_limited' | 'unavailable' | 'circuit_open' | 'unknown';
+export type LedgerPayloads = {
+  'mission.created': { version: 1; mission_id: string; revision: number; content_hash: Sha256 };
+  'mission.revised': { version: 1; mission_id: string; revision: number; content_hash: Sha256 };
+  'mission.state_changed': { version: 1; mission_id: string; state: string; previous: string };
+  'instruction.added': { version: 1; reference_id: string; content_hash: Sha256 };
+  'constraint.added': { version: 1; reference_id: string; content_hash: Sha256 };
+  'decision.recorded': { version: 1; reference_id: string; content_hash: Sha256 };
+  'runtime.started': { version: 1; run_id: string; agent_id: string };
+  'runtime.failed': { version: 1; run_id: string; reason: string };
+  'runtime.cancelled': { version: 1; run_id: string; reason: string };
+  'checkpoint.created': { version: 1; reference_id: string; content_hash: Sha256 };
+  'evidence.received': { version: 1; reference_id: string; content_hash: Sha256 };
+  'verification.completed': { version: 1; reference_id: string; content_hash: Sha256 };
+  'acceptance.requested': { version: 1; mission_id: string; revision: number };
+  'acceptance.recorded': { version: 1; reference_id: string; content_hash: Sha256 };
+  'memory.proposed': { version: 1; reference_id: string; content_hash: Sha256 };
+  'memory.approved': { version: 1; reference_id: string; content_hash: Sha256 };
+  'memory.superseded': { version: 1; reference_id: string; content_hash: Sha256 };
+};
+export interface AuthorityQueries {
+  getProject(id: string): JsonValue | null;
+  getMission(id: string): JsonValue | null;
+  getMissionRevision(id: string, revision: number): JsonValue | null;
+  getCurrentMissionProjection(id: string): JsonValue;
+  listMissionCriteria(id: string, revision: number): JsonValue[];
+  listRunsForMission(id: string): JsonValue[];
+  getResult(id: string): JsonValue | null;
+  listResultsForMission(id: string): JsonValue[];
+  getVerification(id: string): JsonValue | null;
+  listVerificationsForMission(id: string): JsonValue[];
+  listAcceptancesForMission(id: string): JsonValue[];
+  getCheckpoint(id: string): JsonValue | null;
+  readLedger(projectId: string, fromSequence: number, limit: number): JsonValue[];
+  getActiveArchitecture(projectId: string): JsonValue[];
+  listRuntimeCapabilities(): JsonValue[];
+  getRoutingPolicyVersion(id: string): JsonValue | null;
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "source": "src/bridge-controller.js",
+  "authority": false,
+  "phases": ["initialize", "evidence", "blocker", "context_pressure", "pre_recovery", "resume_injection", "terminal"],
+  "resume_max_chars": 6000,
+  "security_core_unchanged": true,
+  "anchors": {"create_task":"this._normalizeMission(task); task.includeSharedMemory = options.includeSharedMemory === true; this.tasks.save(task);","evidence":"onCompleted: (task, toolName, output, request) =>","blocker":"_recordPolicyDenial(task, body, decision)","context":"if (measured.continuation) task.continuationRequired = true;","fresh_session":"task.sessionId = randomUUID(); task.context = null; task.contextWarningAt = null; task.contextPressure = null; task.continuationRequired = false;","prompt":"const input = missionHeader + checkpointReference +","terminal":"task.status = task.cancelRequested ? 'cancelled' : this.policy.list(id).some(a => a.status === 'pending') ? 'approval_required' : task.lastRunBlocked ? 'blocked' : 'completed';"},
+  "evidence_rules": {"writes":"host successful write/edit only","tests":"executed focused_test only","blockers":"host NOT_EXECUTED only","resume":"historical context only"},
+  "repository_snapshot": ["repositoryId","branch","head","dirty","modifiedFiles","worktree","observedAt"]
+}

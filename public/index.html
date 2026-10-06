@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-brand="controlCenter">Airodrom Control Center</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/branding.js" defer></script><script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Task navigation">
+      <a class="brand" href="/" data-brand-label="controlCenter" aria-label="Airodrom Control Center"><span class="brand-mark">A</span><span><span data-brand="name">Airodrom</span><span class="brand-subtitle">CONTROL CENTER</span></span></a>
+      <a class="button secondary" href="/hub">Control Hub · Live activity</a>
+      <div class="sidebar-heading"><span>YOUR TASKS</span><span id="task-count" class="count">—</span></div>
+      <button id="new-task-button" class="button new-task-button" type="button"><span aria-hidden="true">＋</span> New task</button>
+      <nav id="task-list" class="task-list" aria-label="Tasks"><p class="sidebar-empty">Your tasks will appear here.</p></nav>
+      <div class="sidebar-footer">
+        <div class="connection-row"><span id="bridge-dot" class="status-dot"></span><span id="bridge-status">Connecting to Airodrom</span></div>
+        <div class="connection-detail">Local to this Mac</div>
+        <div class="chatgpt-connection"><span>ChatGPT connection</span><strong id="chatgpt-status">Checking…</strong></div>
+        <p id="chatgpt-description" class="sidebar-note">Checking the outbound ChatGPT tunnel.</p>
+      </div>
+    </aside>
+
+    <main class="main-shell">
+      <header class="topbar"><div><span class="eyebrow">YOUR LOCAL WORKSPACE</span><h1>Control Center</h1></div><div class="topbar-status"><span class="local-pill">LOCAL ONLY</span><span id="chatgpt-badge" class="muted">ChatGPT · Checking…</span><span id="updated-at" class="muted">Waiting for live status</span></div></header>
+      <div id="connection-banner" class="banner notice" role="status">Connecting to your local Airodrom runtime…</div>
+      <div id="action-banner" class="banner" role="status" hidden></div>
+
+      <section id="new-task-panel" class="card new-task-panel" hidden aria-labelledby="new-task-title">
+        <div class="section-heading"><div><span class="eyebrow">START SOMETHING</span><h2 id="new-task-title">Create a task</h2></div><button id="close-new-task" class="icon-button" type="button" aria-label="Close new task form">×</button></div>
+        <form id="new-task-form">
+          <label for="task-description">What is this task for?</label><input id="task-description" name="description" placeholder="For example, review my project notes" maxlength="500" required>
+          <details class="advanced-options"><summary>Workspace & memory options</summary><label for="task-workspace">Workspace folder <span class="optional">optional</span></label><input id="task-workspace" name="workspace" placeholder="Leave blank for a private task folder"><p class="field-hint">Choose an absolute folder path, or let Pi create one for this task.</p><label class="checkbox-label"><input id="task-shared-memory" type="checkbox"> Include memory explicitly shared across tasks</label></details>
+          <div class="form-actions"><button id="create-task-submit" class="button primary" type="submit">Create task <span aria-hidden="true">→</span></button></div>
+        </form>
+      </section>
+
+      <section id="empty-state" class="empty-state" hidden><div class="empty-mark" aria-hidden="true">A</div><span class="eyebrow">A CLEAR PLACE TO BEGIN</span><h2>Give Airodrom a task.</h2><p>Follow its progress, review each requested action, and keep useful knowledge close at hand.</p><button id="empty-new-task" class="button primary" type="button">Create your first task <span aria-hidden="true">→</span></button><div class="empty-principles"><span>Private task sessions</span><span>One-time approvals</span><span>Memory with sources</span></div></section>
+
+      <div id="workspace-layout" class="workspace-layout" hidden>
+        <div class="work-column">
+          <section class="task-heading"><div><span class="eyebrow">ACTIVE TASK</span><h2 id="task-title">—</h2></div><span id="task-status" class="badge">—</span></section>
+          <div class="metric-grid">
+            <section class="metric-card"><span class="metric-label">Task Health</span><strong id="heartbeat-value">—</strong><span id="heartbeat-detail" class="metric-detail">Waiting for a reading</span></section>
+            <section class="metric-card"><span class="metric-label">Active context</span><strong id="context-value">—</strong><progress id="context-progress" max="100" value="0" aria-label="Active context usage"></progress><span id="context-detail" class="metric-detail">No context reading yet</span></section>
+            <section class="metric-card"><span class="metric-label">Compactions</span><strong id="compactions-value">—</strong><span id="compactions-detail" class="metric-detail">Session history summaries</span></section>
+          </div>
+
+          <section id="task-alert" class="banner error" hidden role="alert"></section>
+          <section id="active-chat-operator" class="card" hidden aria-labelledby="active-chat-title"><div class="section-heading"><div><span class="eyebrow">OPERATOR AUTHORIZATION</span><h3 id="active-chat-title">Active Chat local-Qwen smoke</h3></div><span id="active-chat-state" class="badge quiet">—</span></div><p id="active-chat-description" class="section-description"></p><div class="button-row"><button id="active-chat-initialize" class="button secondary" type="button" hidden>Initialize protected authority</button><button id="active-chat-authorize" class="button primary" type="button" hidden>Authorize fixed two-turn smoke</button></div></section>
+          <section class="card response-card"><div class="section-heading"><div><span class="eyebrow">WORK IN PROGRESS</span><h3>Pi’s latest response</h3></div><span id="response-state" class="subtle-label">Ready when you are</span></div><div id="last-response" class="response-text empty-copy">Send the first message to begin this task.</div><details class="activity-details"><summary><span>Live activity</span><span id="activity-count" class="muted">No events yet</span></summary><ol id="activity-list" class="activity-list"></ol></details></section>
+
+          <section id="prompt-card" class="card prompt-card"><form id="prompt-form"><label for="prompt-message">Continue this task</label><textarea id="prompt-message" rows="4" maxlength="55000" placeholder="Describe what you want Airodrom to do next…" required></textarea><div class="prompt-footer"><span id="prompt-hint" class="field-hint">Changes and shell commands require your exact approval.</span><div class="button-row"><button id="pause-task" class="button secondary" type="button" hidden>Pause</button><button id="resume-task" class="button secondary" type="button" hidden>Resume</button><button id="resolve-stop" class="button secondary" type="button" hidden>Resolve safety stop</button><button id="cancel-task" class="button secondary danger-text" type="button" hidden>Cancel mission</button><button id="send-prompt" class="button primary" type="submit">Send to Airodrom <span aria-hidden="true">↑</span></button></div></div></form></section>
+
+          <section class="card approvals-card"><div class="section-heading"><div><span class="eyebrow">YOU STAY IN CONTROL</span><h3>Approvals</h3></div><span id="approval-count" class="badge quiet">0 waiting</span></div><p class="section-description">Review the exact action. Each approval can be used once and expires after five minutes.</p><div id="approvals-list"></div></section>
+
+          <details class="card session-details"><summary><span>Task session & storage</span><span class="muted">View details</span></summary><dl id="session-facts" class="facts"></dl></details>
+        </div>
+
+        <aside class="inspector" aria-label="Memory and web">
+          <section class="card memory-card"><div class="section-heading"><div><span class="eyebrow">KNOWLEDGE THAT STAYS</span><h3>Memory</h3></div><span id="memory-total" class="badge quiet">—</span></div><div class="memory-storage"><span id="memory-storage">— stored locally</span><span id="memory-scope">This task only</span></div><div class="tabs" role="tablist" aria-label="Memory view"><button id="saved-tab" type="button" class="tab active" role="tab" aria-selected="true" aria-controls="saved-memory-panel">Saved</button><button id="retrieved-tab" type="button" class="tab" role="tab" aria-selected="false" aria-controls="retrieved-memory-panel">Used this turn</button></div>
+            <div id="saved-memory-panel" role="tabpanel" aria-labelledby="saved-tab"><form id="memory-search-form" class="search-form"><label class="sr-only" for="memory-query">Search task memory</label><input id="memory-query" type="search" placeholder="Find something remembered…"><button class="icon-button" type="submit" aria-label="Search memory">⌕</button></form><div id="memory-list" class="memory-list"><p class="empty-copy">No saved memory yet.</p></div></div>
+            <div id="retrieved-memory-panel" role="tabpanel" aria-labelledby="retrieved-tab" hidden><p id="retrieval-budget" class="field-hint">No memory retrieved yet.</p><div id="retrieved-memory-list" class="memory-list"></div></div>
+            <details class="save-memory-details"><summary>＋ Save a memory</summary><form id="memory-save-form"><label for="memory-content">What should this task remember?</label><textarea id="memory-content" rows="4" maxlength="8000" placeholder="A useful fact, decision, or preference…" required></textarea><div class="memory-kind-row"><label for="memory-kind">Type</label><select id="memory-kind"><option value="fact">Fact</option><option value="decision">Decision</option><option value="preference">Preference</option><option value="note">Note</option></select></div><label class="checkbox-label"><input id="memory-shared" type="checkbox"> Make available to other tasks that opt in</label><p class="field-hint">Saved by you, with this task's session as the source.</p><button id="save-memory-submit" class="button secondary full-width" type="submit">Save memory</button></form></details>
+          </section>
+
+          <section class="card web-card"><div class="section-heading"><div><span class="eyebrow">CONTROLLED READING</span><h3>Web</h3></div><span id="web-status" class="badge quiet">—</span></div><p id="web-description" class="section-description">Checking web access…</p><div id="web-hosts" class="host-list"></div><form id="web-form"><label for="web-url">Page to read</label><input id="web-url" type="url" placeholder="https://example.com/page" required><button id="read-web-submit" class="button secondary full-width" type="submit">Read page <span aria-hidden="true">↗</span></button></form><p id="web-last-fetch" class="field-hint"></p><details id="web-result-details" hidden><summary>Page contents & source</summary><div id="web-result-source" class="source-line"></div><pre id="web-result" class="web-result"></pre></details></section>
+          <div class="local-footnote"><span class="status-dot teal"></span><p>Local storage. Scoped retrieval.<br>Only selected memories enter the next request.</p></div>
+        </aside>
+      </div>
+      <footer class="page-footer"><span data-brand="controlCenter">Airodrom Control Center</span><span id="storage-summary">Your work stays on this Mac.</span></footer>
+    </main>
+  </div>
+</body>
+</html>

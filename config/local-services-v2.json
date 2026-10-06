@@ -1,0 +1,4 @@
+{
+  "description": "Operator-declared local development services for service_start/stop/restart/status. Each entry: name, label, cwd (inside ~/code), argv (allowlisted dev command such as [\"npm\", \"run\", \"dev\"]), optional readyUrl (http://127.0.0.1:<port>/...). Models cannot add entries.",
+  "services": []
+}

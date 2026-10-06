@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "id": "safe-autonomy-level1-read-only-v1",
+  "enabled": false,
+  "providerMode": "codex_subscription",
+  "workspaceRelative": "fixtures/safe-autonomy-level1",
+  "missionObjective": "Read the route fixture, let the reasoning provider select the matching authorized proof task, then verify that proof and complete the mission.",
+  "acceptanceCriteria": [
+    "Task A observes exactly one authorized route value from route.txt.",
+    "The provider selects the matching Task B only after receiving Task A's result.",
+    "Task B reads only its selected proof file and returns the exact expected proof.",
+    "The provider confirms completion from the Task B result."
+  ],
+  "grant": {
+    "capabilities": ["read"],
+    "egress": "local-only",
+    "maxActions": 4,
+    "maxRuntimeMs": 120000,
+    "maxRetries": 0,
+    "maxSpendMicros": 0
+  },
+  "restrictedWorker": {
+    "enabled": false,
+    "evidenceLabel": "LEVEL1_RESTRICTED_WORKER",
+    "piWorkerEnabled": false,
+    "allowedCapability": "read",
+    "allowedOperationsPerTask": 1
+  },
+  "taskA": {
+    "id": "level1-task-a-observe-route",
+    "objective": "Read only route.txt and return exactly its route=... and proof_id=... fields as two plain-text lines; include no markdown, added text, or blank lines.",
+    "readPaths": ["route.txt"]
+  },
+  "taskBCandidates": [
+    {
+      "taskId": "level1-task-b-amber",
+      "route": "amber",
+      "objective": "Read only amber-proof.txt and report its exact proof and status values.",
+      "readPaths": ["amber-proof.txt"],
+      "expectedProof": "AMBER-204"
+    },
+    {
+      "taskId": "level1-task-b-cobalt",
+      "route": "cobalt",
+      "objective": "Read only cobalt-proof.txt and report its exact proof and status values.",
+      "readPaths": ["cobalt-proof.txt"],
+      "expectedProof": "COBALT-503"
+    }
+  ],
+  "provider": {
+    "enabled": false,
+    "endpoint": "https://api.openai.com/v1/responses",
+    "model": "gpt-6-luna",
+    "reasoningEffort": "low",
+    "maxOutputTokensPerTurn": 128,
+    "maxPromptBytesPerTurn": 4096,
+    "maxMissionSpendMicros": 1500,
+    "maxReasoningTurns": 2,
+    "store": false,
+    "background": false,
+    "tools": [],
+    "apiKeyKeychainService": "pi-chatgpt-bridge/openai-api-key",
+    "signingKeyKeychainService": "pi-chatgpt-bridge/level1-decision-ed25519"
+  },
+  "codexSubscription": {
+    "enabled": false,
+    "noAdditionalSpend": true,
+    "authenticationMode": "chatgpt",
+    "requireIncludedAllowance": true,
+    "allowApiKeyFallback": false,
+    "allowCreditPurchase": false,
+    "allowAccountSwitch": false,
+    "maxReasoningTurns": 2,
+    "commandTimeoutMs": 60000
+  },
+  "acceptance": {
+    "humanTurnsAfterAuthorization": 0,
+    "manualStatusChecks": 0,
+    "manualNextActions": 0,
+    "piTasks": 2,
+    "piCompletionEvents": 2,
+    "realReasoningTurns": 2,
+    "automaticNextTaskDispatches": 1,
+    "missionStatus": "completed"
+  }
+}

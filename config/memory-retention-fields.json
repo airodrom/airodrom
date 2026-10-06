@@ -1,0 +1,3200 @@
+{
+  "architecture_memory_versions": {
+    "fields": [
+      "project_id",
+      "subject_key",
+      "version_hash",
+      "memory_id",
+      "source_ref",
+      "source_hash",
+      "source_type",
+      "trust",
+      "category",
+      "tags",
+      "supersedes",
+      "indexed_at",
+      "origin_event_id"
+    ],
+    "source": "src/architecture-memory.js",
+    "classification": {
+      "project_id": "A",
+      "subject_key": "B",
+      "version_hash": "A",
+      "memory_id": "A",
+      "source_ref": "B",
+      "source_hash": "D",
+      "source_type": "A",
+      "trust": "B",
+      "category": "B",
+      "tags": "B",
+      "supersedes": "B",
+      "indexed_at": "A",
+      "origin_event_id": "A"
+    }
+  },
+  "architecture_memory_bootstraps": {
+    "fields": [
+      "project_id",
+      "manifest_hash",
+      "indexed_at",
+      "record_count"
+    ],
+    "source": "src/architecture-memory.js",
+    "classification": {
+      "project_id": "A",
+      "manifest_hash": "D",
+      "indexed_at": "A",
+      "record_count": "A"
+    }
+  },
+  "cp_autonomy_chains": {
+    "fields": [
+      "id",
+      "mode",
+      "plan",
+      "started_at",
+      "max_runtime_ms",
+      "max_missions",
+      "max_failures",
+      "state"
+    ],
+    "source": "src/bounded-next-action.js",
+    "classification": {
+      "id": "A",
+      "mode": "A",
+      "plan": "B",
+      "started_at": "A",
+      "max_runtime_ms": "B",
+      "max_missions": "B",
+      "max_failures": "B",
+      "state": "A"
+    }
+  },
+  "cp_autonomy_claims": {
+    "fields": [
+      "chain_id",
+      "mission_id",
+      "request_id",
+      "state"
+    ],
+    "source": "src/bounded-next-action.js",
+    "classification": {
+      "chain_id": "B",
+      "mission_id": "A",
+      "request_id": "A",
+      "state": "A"
+    }
+  },
+  "cp_result_inbox": {
+    "fields": [
+      "run_id",
+      "mission_id",
+      "task_id",
+      "agent_id",
+      "request_id",
+      "fingerprint",
+      "result",
+      "state",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/result-inbox.js",
+    "classification": {
+      "run_id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "agent_id": "A",
+      "request_id": "B",
+      "fingerprint": "D",
+      "result": "B",
+      "state": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "cp_result_receipts": {
+    "fields": [
+      "event_key",
+      "run_id",
+      "created_at"
+    ],
+    "source": "src/result-inbox.js",
+    "classification": {
+      "event_key": "B",
+      "run_id": "A",
+      "created_at": "A"
+    }
+  },
+  "cp_continuity_checks": {
+    "fields": [
+      "run_id",
+      "mission_id",
+      "status",
+      "evidence",
+      "checked_at"
+    ],
+    "source": "src/mission-service.js",
+    "classification": {
+      "run_id": "A",
+      "mission_id": "A",
+      "status": "A",
+      "evidence": "B",
+      "checked_at": "A"
+    }
+  },
+  "control_plane_meta": {
+    "fields": [
+      "version"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "version": "A"
+    }
+  },
+  "cp_missions": {
+    "fields": [
+      "id",
+      "project_id",
+      "goal_id",
+      "task_id",
+      "owner",
+      "state",
+      "revision",
+      "envelope",
+      "grant_id",
+      "created_at",
+      "updated_at",
+      "reason",
+      "acceptance_strength"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "goal_id": "A",
+      "task_id": "A",
+      "owner": "B",
+      "state": "A",
+      "revision": "A",
+      "envelope": "B",
+      "grant_id": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "reason": "B",
+      "acceptance_strength": "A"
+    }
+  },
+  "cp_grants": {
+    "fields": [
+      "id",
+      "mission_id",
+      "ceiling",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "ceiling": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_runs": {
+    "fields": [
+      "id",
+      "mission_id",
+      "task_id",
+      "agent_id",
+      "generation",
+      "state",
+      "process_state",
+      "liveness_state",
+      "termination_verified",
+      "native_session_id",
+      "native_job_id",
+      "pid",
+      "resolution",
+      "result",
+      "created_at",
+      "updated_at",
+      "ended_at",
+      "provider_id",
+      "last_heartbeat_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "agent_id": "A",
+      "generation": "A",
+      "state": "A",
+      "process_state": "B",
+      "liveness_state": "B",
+      "termination_verified": "B",
+      "native_session_id": "B",
+      "native_job_id": "B",
+      "pid": "B",
+      "resolution": "B",
+      "result": "B",
+      "created_at": "A",
+      "updated_at": "A",
+      "ended_at": "A",
+      "provider_id": "A",
+      "last_heartbeat_at": "A"
+    }
+  },
+  "cp_leases": {
+    "fields": [
+      "id",
+      "resource",
+      "run_id",
+      "mission_id",
+      "mode",
+      "state",
+      "acquired_at",
+      "expires_at",
+      "baseline"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "resource": "B",
+      "run_id": "A",
+      "mission_id": "A",
+      "mode": "A",
+      "state": "A",
+      "acquired_at": "A",
+      "expires_at": "A",
+      "baseline": "B"
+    }
+  },
+  "cp_invocations": {
+    "fields": [
+      "request_id",
+      "task_id",
+      "fingerprint",
+      "state",
+      "result",
+      "created_at",
+      "updated_at",
+      "origin_event_id"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "request_id": "B",
+      "task_id": "A",
+      "fingerprint": "D",
+      "state": "A",
+      "result": "B",
+      "created_at": "A",
+      "updated_at": "A",
+      "origin_event_id": "A"
+    }
+  },
+  "cp_requests": {
+    "fields": [
+      "owner",
+      "request_id",
+      "fingerprint",
+      "state",
+      "result",
+      "record_id"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "owner": "B",
+      "request_id": "B",
+      "fingerprint": "D",
+      "state": "A",
+      "result": "B",
+      "record_id": "A"
+    }
+  },
+  "cp_decisions": {
+    "fields": [
+      "id",
+      "mission_id",
+      "task_id",
+      "run_id",
+      "agent_id",
+      "kind",
+      "question",
+      "options",
+      "free_text",
+      "state",
+      "answer",
+      "actor",
+      "surface",
+      "nonce",
+      "created_at",
+      "expires_at",
+      "answered_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "run_id": "A",
+      "agent_id": "A",
+      "kind": "A",
+      "question": "B",
+      "options": "B",
+      "free_text": "B",
+      "state": "A",
+      "answer": "B",
+      "actor": "B",
+      "surface": "B",
+      "nonce": "B",
+      "created_at": "A",
+      "expires_at": "A",
+      "answered_at": "A"
+    }
+  },
+  "cp_continuations": {
+    "fields": [
+      "id",
+      "decision_id",
+      "mission_id",
+      "state",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "decision_id": "B",
+      "mission_id": "A",
+      "state": "A",
+      "created_at": "A"
+    }
+  },
+  "cp_verifications": {
+    "fields": [
+      "id",
+      "mission_id",
+      "run_id",
+      "revision",
+      "workspace_hash",
+      "result",
+      "evidence",
+      "checker",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "run_id": "A",
+      "revision": "A",
+      "workspace_hash": "D",
+      "result": "A",
+      "evidence": "B",
+      "checker": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_acceptances": {
+    "fields": [
+      "id",
+      "mission_id",
+      "verification_id",
+      "decision",
+      "actor",
+      "rationale",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "verification_id": "A",
+      "decision": "A",
+      "actor": "B",
+      "rationale": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_context_packs": {
+    "fields": [
+      "id",
+      "mission_id",
+      "run_id",
+      "refs",
+      "selection",
+      "content_hash",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "run_id": "A",
+      "refs": "B",
+      "selection": "B",
+      "content_hash": "D",
+      "created_at": "A"
+    }
+  },
+  "cp_candidates": {
+    "fields": [
+      "id",
+      "mission_id",
+      "task_id",
+      "run_id",
+      "record",
+      "state",
+      "memory_id",
+      "reviewer",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "run_id": "A",
+      "record": "B",
+      "state": "A",
+      "memory_id": "A",
+      "reviewer": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_agent_health": {
+    "fields": [
+      "id",
+      "kind",
+      "observation",
+      "checked_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "kind": "A",
+      "observation": "B",
+      "checked_at": "A"
+    }
+  },
+  "cp_pending_events": {
+    "fields": [
+      "id",
+      "event",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "event": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_artifacts": {
+    "fields": [
+      "id",
+      "mission_id",
+      "run_id",
+      "kind",
+      "reference",
+      "metadata",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "run_id": "A",
+      "kind": "A",
+      "reference": "B",
+      "metadata": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_approval_refs": {
+    "fields": [
+      "id",
+      "task_id",
+      "run_id",
+      "state",
+      "fingerprint",
+      "descriptor",
+      "updated_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "task_id": "A",
+      "run_id": "A",
+      "state": "A",
+      "fingerprint": "D",
+      "descriptor": "B",
+      "updated_at": "A"
+    }
+  },
+  "cp_slack_threads": {
+    "fields": [
+      "mission_id",
+      "team_id",
+      "channel_id",
+      "thread_ts"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "mission_id": "A",
+      "team_id": "B",
+      "channel_id": "B",
+      "thread_ts": "B"
+    }
+  },
+  "cp_slack_inbox": {
+    "fields": [
+      "id",
+      "receipt",
+      "state",
+      "created_at"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "receipt": "B",
+      "state": "A",
+      "created_at": "A"
+    }
+  },
+  "cp_slack_outbox": {
+    "fields": [
+      "id",
+      "mission_id",
+      "kind",
+      "body",
+      "state",
+      "attempts",
+      "next_at",
+      "created_at",
+      "remote_ts",
+      "source_key"
+    ],
+    "source": "src/control-plane-store.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "kind": "A",
+      "body": "B",
+      "state": "A",
+      "attempts": "B",
+      "next_at": "A",
+      "created_at": "A",
+      "remote_ts": "B",
+      "source_key": "B"
+    }
+  },
+  "cp_codex_relay": {
+    "fields": [
+      "run_id",
+      "state",
+      "result_hash",
+      "error_class",
+      "updated_at"
+    ],
+    "source": "src/apps/codex-adapter.js",
+    "classification": {
+      "run_id": "A",
+      "state": "A",
+      "result_hash": "D",
+      "error_class": "B",
+      "updated_at": "A"
+    }
+  },
+  "memory_erasure_meta": {
+    "fields": [
+      "id",
+      "version"
+    ],
+    "source": "src/memory-erasure.js",
+    "classification": {
+      "id": "A",
+      "version": "A"
+    }
+  },
+  "memory_erasure_markers": {
+    "fields": [
+      "generation",
+      "store",
+      "identity",
+      "scope_hash",
+      "action",
+      "erased_at",
+      "source_event_id",
+      "source_provenance"
+    ],
+    "source": "src/memory-erasure.js",
+    "classification": {
+      "generation": "A",
+      "store": "A",
+      "identity": "A",
+      "scope_hash": "D",
+      "action": "A",
+      "erased_at": "A",
+      "source_event_id": "A",
+      "source_provenance": "A"
+    }
+  },
+  "memory_erasure_progress": {
+    "fields": [
+      "store",
+      "identity",
+      "state",
+      "safe_error_class",
+      "updated_at"
+    ],
+    "source": "src/memory-erasure.js",
+    "classification": {
+      "store": "A",
+      "identity": "A",
+      "state": "A",
+      "safe_error_class": "B",
+      "updated_at": "A"
+    }
+  },
+  "task_states": {
+    "fields": [
+      "id",
+      "snapshot"
+    ],
+    "source": "src/task-session-model.js",
+    "classification": {
+      "id": "A",
+      "snapshot": "B"
+    }
+  },
+  "task_events": {
+    "fields": [
+      "seq",
+      "task_id",
+      "at",
+      "previous",
+      "state"
+    ],
+    "source": "src/task-session-model.js",
+    "classification": {
+      "seq": "A",
+      "task_id": "A",
+      "at": "B",
+      "previous": "A",
+      "state": "A"
+    }
+  },
+  "authority_meta": {
+    "fields": [
+      "id",
+      "version",
+      "migrated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "version": "A",
+      "migrated_at": "A"
+    }
+  },
+  "authority_projects": {
+    "fields": [
+      "id",
+      "slug",
+      "name",
+      "status",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "slug": "B",
+      "name": "B",
+      "status": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "authority_goals": {
+    "fields": [
+      "id",
+      "project_id",
+      "parent_goal_id",
+      "title",
+      "description",
+      "status",
+      "revision",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "parent_goal_id": "B",
+      "title": "B",
+      "description": "B",
+      "status": "A",
+      "revision": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "authority_missions": {
+    "fields": [
+      "id",
+      "project_id",
+      "goal_id",
+      "task_id",
+      "owner",
+      "current_revision",
+      "current_state",
+      "acceptance_strength",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "goal_id": "A",
+      "task_id": "A",
+      "owner": "B",
+      "current_revision": "B",
+      "current_state": "A",
+      "acceptance_strength": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "authority_mission_revisions": {
+    "fields": [
+      "mission_id",
+      "revision",
+      "objective",
+      "task_type",
+      "envelope_json",
+      "workspace_descriptor_json",
+      "context_manifest_json",
+      "routing_policy_json",
+      "requested_capabilities_json",
+      "constraints_json",
+      "policy_version",
+      "checkpoint_id",
+      "created_by_actor_type",
+      "created_by_actor_id",
+      "created_at",
+      "content_hash",
+      "binding_quality"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "mission_id": "A",
+      "revision": "A",
+      "objective": "B",
+      "task_type": "A",
+      "envelope_json": "B",
+      "workspace_descriptor_json": "B",
+      "context_manifest_json": "B",
+      "routing_policy_json": "B",
+      "requested_capabilities_json": "B",
+      "constraints_json": "B",
+      "policy_version": "A",
+      "checkpoint_id": "A",
+      "created_by_actor_type": "A",
+      "created_by_actor_id": "A",
+      "created_at": "A",
+      "content_hash": "D",
+      "binding_quality": "A"
+    }
+  },
+  "authority_acceptance_criteria": {
+    "fields": [
+      "id",
+      "mission_id",
+      "mission_revision",
+      "criterion_key",
+      "criterion_type",
+      "description",
+      "verification_method",
+      "target_hash",
+      "required",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "criterion_key": "B",
+      "criterion_type": "B",
+      "description": "B",
+      "verification_method": "B",
+      "target_hash": "D",
+      "required": "A",
+      "created_at": "A"
+    }
+  },
+  "authority_runtime_registry": {
+    "fields": [
+      "id",
+      "agent_id",
+      "adapter_type",
+      "display_name",
+      "enabled",
+      "assurance_tier",
+      "configuration_version",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "agent_id": "A",
+      "adapter_type": "B",
+      "display_name": "B",
+      "enabled": "A",
+      "assurance_tier": "B",
+      "configuration_version": "B",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "authority_model_registry": {
+    "fields": [
+      "id",
+      "provider_id",
+      "model_id",
+      "profile_json",
+      "enabled",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "provider_id": "A",
+      "model_id": "B",
+      "profile_json": "B",
+      "enabled": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "authority_runtime_instances": {
+    "fields": [
+      "id",
+      "runtime_registry_id",
+      "external_runtime_id",
+      "status",
+      "sandbox_id",
+      "started_at",
+      "last_heartbeat_at",
+      "ended_at",
+      "metadata_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "runtime_registry_id": "A",
+      "external_runtime_id": "B",
+      "status": "A",
+      "sandbox_id": "A",
+      "started_at": "A",
+      "last_heartbeat_at": "A",
+      "ended_at": "A",
+      "metadata_json": "B"
+    }
+  },
+  "authority_runtime_capability_observations": {
+    "fields": [
+      "id",
+      "runtime_registry_id",
+      "model_registry_id",
+      "capability_key",
+      "declared_level",
+      "observed_success_rate",
+      "observed_failure_rate",
+      "sample_count",
+      "p50_latency_ms",
+      "p95_latency_ms",
+      "evaluated_at",
+      "evidence_ref"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "runtime_registry_id": "A",
+      "model_registry_id": "A",
+      "capability_key": "A",
+      "declared_level": "A",
+      "observed_success_rate": "B",
+      "observed_failure_rate": "B",
+      "sample_count": "B",
+      "p50_latency_ms": "B",
+      "p95_latency_ms": "B",
+      "evaluated_at": "A",
+      "evidence_ref": "A"
+    }
+  },
+  "authority_runs": {
+    "fields": [
+      "id",
+      "mission_id",
+      "mission_revision",
+      "task_id",
+      "agent_id",
+      "runtime_instance_id",
+      "model_registry_id",
+      "provider_id",
+      "status",
+      "started_at",
+      "finished_at",
+      "checkpoint_started_from",
+      "checkpoint_finished_at",
+      "failure_kind",
+      "failure_detail_json",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "task_id": "A",
+      "agent_id": "A",
+      "runtime_instance_id": "A",
+      "model_registry_id": "A",
+      "provider_id": "A",
+      "status": "A",
+      "started_at": "A",
+      "finished_at": "A",
+      "checkpoint_started_from": "B",
+      "checkpoint_finished_at": "A",
+      "failure_kind": "B",
+      "failure_detail_json": "B",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "authority_execution_grants": {
+    "fields": [
+      "id",
+      "mission_id",
+      "mission_revision",
+      "run_id",
+      "issued_by",
+      "policy_version",
+      "issued_at",
+      "expires_at",
+      "revoked_at",
+      "signature_reference",
+      "content_hash"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "run_id": "A",
+      "issued_by": "B",
+      "policy_version": "A",
+      "issued_at": "A",
+      "expires_at": "A",
+      "revoked_at": "A",
+      "signature_reference": "D",
+      "content_hash": "D"
+    }
+  },
+  "authority_execution_grant_capabilities": {
+    "fields": [
+      "grant_id",
+      "capability",
+      "scope_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "grant_id": "A",
+      "capability": "B",
+      "scope_json": "B"
+    }
+  },
+  "authority_consumed_nonces": {
+    "fields": [
+      "grant_id",
+      "nonce",
+      "run_id",
+      "request_hash",
+      "consumed_at",
+      "expires_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "grant_id": "A",
+      "nonce": "B",
+      "run_id": "A",
+      "request_hash": "D",
+      "consumed_at": "A",
+      "expires_at": "A"
+    }
+  },
+  "authority_ledger_entries": {
+    "fields": [
+      "project_id",
+      "sequence",
+      "entry_id",
+      "mission_id",
+      "mission_revision",
+      "run_id",
+      "kind",
+      "actor_type",
+      "actor_id",
+      "payload_json",
+      "previous_hash",
+      "entry_hash",
+      "timestamp"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "project_id": "A",
+      "sequence": "A",
+      "entry_id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "run_id": "A",
+      "kind": "A",
+      "actor_type": "A",
+      "actor_id": "A",
+      "payload_json": "B",
+      "previous_hash": "D",
+      "entry_hash": "D",
+      "timestamp": "A"
+    }
+  },
+  "authority_ledger_heads": {
+    "fields": [
+      "project_id",
+      "sequence",
+      "entry_hash"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "project_id": "A",
+      "sequence": "A",
+      "entry_hash": "D"
+    }
+  },
+  "authority_grant_revocations": {
+    "fields": [
+      "grant_id",
+      "revoked_at",
+      "reason"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "grant_id": "A",
+      "revoked_at": "A",
+      "reason": "B"
+    }
+  },
+  "authority_checkpoints": {
+    "fields": [
+      "id",
+      "project_id",
+      "mission_id",
+      "mission_revision",
+      "run_id",
+      "ledger_cursor",
+      "authority_projection_hash",
+      "workspace_snapshot_hash",
+      "artifact_manifest_hash",
+      "context_pack_hash",
+      "created_at",
+      "created_by_actor_type",
+      "created_by_actor_id"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "run_id": "A",
+      "ledger_cursor": "A",
+      "authority_projection_hash": "D",
+      "workspace_snapshot_hash": "D",
+      "artifact_manifest_hash": "D",
+      "context_pack_hash": "D",
+      "created_at": "A",
+      "created_by_actor_type": "A",
+      "created_by_actor_id": "A"
+    }
+  },
+  "authority_results": {
+    "fields": [
+      "id",
+      "mission_id",
+      "mission_revision",
+      "run_id",
+      "runtime_registry_id",
+      "model_registry_id",
+      "status",
+      "summary",
+      "checkpoint_id",
+      "content_hash",
+      "runtime_signature",
+      "created_at",
+      "result_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "run_id": "A",
+      "runtime_registry_id": "A",
+      "model_registry_id": "A",
+      "status": "A",
+      "summary": "B",
+      "checkpoint_id": "A",
+      "content_hash": "D",
+      "runtime_signature": "D",
+      "created_at": "A",
+      "result_json": "B"
+    }
+  },
+  "authority_evidence_records": {
+    "fields": [
+      "id",
+      "project_id",
+      "mission_id",
+      "mission_revision",
+      "run_id",
+      "grant_id",
+      "sandbox_id",
+      "kind",
+      "claim",
+      "source_type",
+      "request_hash",
+      "execution_hash",
+      "stdout_hash",
+      "stderr_hash",
+      "artifact_hash",
+      "command_hash",
+      "metadata_json",
+      "observed_at",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "run_id": "A",
+      "grant_id": "A",
+      "sandbox_id": "A",
+      "kind": "A",
+      "claim": "B",
+      "source_type": "A",
+      "request_hash": "D",
+      "execution_hash": "D",
+      "stdout_hash": "D",
+      "stderr_hash": "D",
+      "artifact_hash": "D",
+      "command_hash": "D",
+      "metadata_json": "B",
+      "observed_at": "A",
+      "created_at": "A"
+    }
+  },
+  "authority_test_evidence": {
+    "fields": [
+      "evidence_id",
+      "suite_name",
+      "command_hash",
+      "exit_code",
+      "passed",
+      "duration_ms",
+      "raw_output_hash"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "evidence_id": "A",
+      "suite_name": "B",
+      "command_hash": "D",
+      "exit_code": "A",
+      "passed": "A",
+      "duration_ms": "A",
+      "raw_output_hash": "D"
+    }
+  },
+  "authority_artifact_evidence": {
+    "fields": [
+      "evidence_id",
+      "path",
+      "change_type",
+      "pre_hash",
+      "post_hash"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "evidence_id": "A",
+      "path": "B",
+      "change_type": "B",
+      "pre_hash": "D",
+      "post_hash": "D"
+    }
+  },
+  "authority_verification_records": {
+    "fields": [
+      "id",
+      "mission_id",
+      "mission_revision",
+      "result_id",
+      "verification_policy_version",
+      "status",
+      "verifier_type",
+      "verifier_id",
+      "started_at",
+      "completed_at",
+      "summary",
+      "evidence_manifest_hash",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "result_id": "A",
+      "verification_policy_version": "A",
+      "status": "A",
+      "verifier_type": "A",
+      "verifier_id": "A",
+      "started_at": "A",
+      "completed_at": "A",
+      "summary": "B",
+      "evidence_manifest_hash": "D",
+      "created_at": "A"
+    }
+  },
+  "authority_verification_evidence": {
+    "fields": [
+      "verification_id",
+      "evidence_id",
+      "ordinal"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "verification_id": "A",
+      "evidence_id": "A",
+      "ordinal": "A"
+    }
+  },
+  "authority_criterion_verifications": {
+    "fields": [
+      "verification_id",
+      "criterion_id",
+      "mission_id",
+      "mission_revision",
+      "status",
+      "evidence_refs_json",
+      "reason"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "verification_id": "A",
+      "criterion_id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "status": "A",
+      "evidence_refs_json": "B",
+      "reason": "B"
+    }
+  },
+  "authority_acceptance_records": {
+    "fields": [
+      "id",
+      "mission_id",
+      "mission_revision",
+      "verification_id",
+      "decision",
+      "actor_type",
+      "actor_id",
+      "reason",
+      "review_evidence_json",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "verification_id": "A",
+      "decision": "A",
+      "actor_type": "A",
+      "actor_id": "A",
+      "reason": "B",
+      "review_evidence_json": "B",
+      "created_at": "A"
+    }
+  },
+  "authority_observations": {
+    "fields": [
+      "id",
+      "operator_id",
+      "session_id",
+      "chunk_id",
+      "speaker",
+      "observed_at",
+      "claim",
+      "source_hash",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "operator_id": "A",
+      "session_id": "A",
+      "chunk_id": "A",
+      "speaker": "A",
+      "observed_at": "A",
+      "claim": "B",
+      "source_hash": "D",
+      "created_at": "A"
+    }
+  },
+  "authority_memory_candidates": {
+    "fields": [
+      "id",
+      "project_id",
+      "mission_id",
+      "run_id",
+      "observation_id",
+      "kind",
+      "operator_id",
+      "scope",
+      "subject_key",
+      "value_json",
+      "source_hash",
+      "source_refs_json",
+      "status",
+      "promoted_memory_id",
+      "proposed_by_actor_type",
+      "proposed_by_actor_id",
+      "reviewed_by_actor_type",
+      "reviewed_by_actor_id",
+      "created_at",
+      "reviewed_at",
+      "metadata_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "mission_id": "A",
+      "run_id": "A",
+      "observation_id": "A",
+      "kind": "A",
+      "operator_id": "A",
+      "scope": "A",
+      "subject_key": "B",
+      "value_json": "B",
+      "source_hash": "D",
+      "source_refs_json": "B",
+      "status": "A",
+      "promoted_memory_id": "A",
+      "proposed_by_actor_type": "A",
+      "proposed_by_actor_id": "A",
+      "reviewed_by_actor_type": "A",
+      "reviewed_by_actor_id": "A",
+      "created_at": "A",
+      "reviewed_at": "A",
+      "metadata_json": "B"
+    }
+  },
+  "authority_memories": {
+    "fields": [
+      "id",
+      "kind",
+      "project_id",
+      "operator_id",
+      "scope",
+      "subject_key",
+      "value_json",
+      "source_type",
+      "source_hash",
+      "source_refs_json",
+      "candidate_id",
+      "assurance",
+      "privacy",
+      "status",
+      "revision",
+      "effective_from",
+      "effective_until",
+      "last_verified_at",
+      "ttl_ms",
+      "expires_at",
+      "reverify_task_classes_json",
+      "domains_json",
+      "canonical_priority",
+      "supersedes_id",
+      "superseded_by_id",
+      "created_by_actor_type",
+      "created_by_actor_id",
+      "approved_by_actor_type",
+      "approved_by_actor_id",
+      "created_at",
+      "content_hash",
+      "metadata_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "kind": "A",
+      "project_id": "A",
+      "operator_id": "A",
+      "scope": "A",
+      "subject_key": "B",
+      "value_json": "B",
+      "source_type": "A",
+      "source_hash": "D",
+      "source_refs_json": "B",
+      "candidate_id": "A",
+      "assurance": "A",
+      "privacy": "A",
+      "status": "A",
+      "revision": "A",
+      "effective_from": "A",
+      "effective_until": "A",
+      "last_verified_at": "A",
+      "ttl_ms": "A",
+      "expires_at": "A",
+      "reverify_task_classes_json": "B",
+      "domains_json": "B",
+      "canonical_priority": "B",
+      "supersedes_id": "A",
+      "superseded_by_id": "A",
+      "created_by_actor_type": "A",
+      "created_by_actor_id": "A",
+      "approved_by_actor_type": "A",
+      "approved_by_actor_id": "A",
+      "created_at": "A",
+      "content_hash": "D",
+      "metadata_json": "B"
+    }
+  },
+  "authority_memory_conflicts": {
+    "fields": [
+      "id",
+      "project_id",
+      "operator_id",
+      "subject_key",
+      "memory_ids_json",
+      "candidate_ids_json",
+      "affected_domains_json",
+      "resolution_required",
+      "created_at",
+      "resolved_at",
+      "resolution_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "operator_id": "A",
+      "subject_key": "B",
+      "memory_ids_json": "B",
+      "candidate_ids_json": "B",
+      "affected_domains_json": "B",
+      "resolution_required": "A",
+      "created_at": "A",
+      "resolved_at": "A",
+      "resolution_json": "B"
+    }
+  },
+  "authority_context_pack_manifests": {
+    "fields": [
+      "id",
+      "project_id",
+      "mission_id",
+      "mission_revision",
+      "task_id",
+      "run_id",
+      "operator_id",
+      "privacy",
+      "retrieval_policy_version",
+      "context_hash",
+      "manifest_json",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "task_id": "A",
+      "run_id": "A",
+      "operator_id": "A",
+      "privacy": "A",
+      "retrieval_policy_version": "A",
+      "context_hash": "D",
+      "manifest_json": "B",
+      "created_at": "A"
+    }
+  },
+  "authority_context_pack_items": {
+    "fields": [
+      "context_pack_id",
+      "ordinal",
+      "memory_id",
+      "snapshot_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "context_pack_id": "A",
+      "ordinal": "A",
+      "memory_id": "A",
+      "snapshot_json": "B"
+    }
+  },
+  "authority_context_pack_diffs": {
+    "fields": [
+      "id",
+      "from_pack_id",
+      "to_pack_id",
+      "diff_json",
+      "content_hash",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "from_pack_id": "A",
+      "to_pack_id": "A",
+      "diff_json": "B",
+      "content_hash": "D",
+      "created_at": "A"
+    }
+  },
+  "authority_routing_policy_versions": {
+    "fields": [
+      "id",
+      "project_id",
+      "version",
+      "policy_json",
+      "content_hash",
+      "active",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "version": "A",
+      "policy_json": "B",
+      "content_hash": "D",
+      "active": "B",
+      "created_at": "A"
+    }
+  },
+  "authority_routing_decisions": {
+    "fields": [
+      "id",
+      "mission_id",
+      "mission_revision",
+      "context_pack_id",
+      "policy_id",
+      "state",
+      "selected_agent",
+      "selected_provider",
+      "selected_model",
+      "input_json",
+      "decision_json",
+      "audit_hash",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "mission_revision": "A",
+      "context_pack_id": "A",
+      "policy_id": "A",
+      "state": "A",
+      "selected_agent": "B",
+      "selected_provider": "B",
+      "selected_model": "B",
+      "input_json": "B",
+      "decision_json": "B",
+      "audit_hash": "D",
+      "created_at": "A"
+    }
+  },
+  "authority_routing_candidates": {
+    "fields": [
+      "decision_id",
+      "candidate_key",
+      "eligible",
+      "rank_json"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "decision_id": "A",
+      "candidate_key": "A",
+      "eligible": "A",
+      "rank_json": "B"
+    }
+  },
+  "authority_routing_rejections": {
+    "fields": [
+      "decision_id",
+      "candidate_key",
+      "gate",
+      "reason"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "decision_id": "A",
+      "candidate_key": "A",
+      "gate": "A",
+      "reason": "B"
+    }
+  },
+  "authority_outbox_events": {
+    "fields": [
+      "id",
+      "project_id",
+      "mission_id",
+      "event_type",
+      "payload_json",
+      "content_hash",
+      "created_at",
+      "published_at",
+      "attempt_count",
+      "last_error"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "project_id": "A",
+      "mission_id": "A",
+      "event_type": "A",
+      "payload_json": "B",
+      "content_hash": "D",
+      "created_at": "A",
+      "published_at": "A",
+      "attempt_count": "B",
+      "last_error": "B"
+    }
+  },
+  "authority_legacy_records": {
+    "fields": [
+      "source_table",
+      "source_id",
+      "source_hash",
+      "record_json",
+      "canonical_id",
+      "binding_quality"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "source_table": "A",
+      "source_id": "A",
+      "source_hash": "D",
+      "record_json": "B",
+      "canonical_id": "A",
+      "binding_quality": "A"
+    }
+  },
+  "authority_activation": {
+    "fields": [
+      "id",
+      "memory_state",
+      "router_state",
+      "source_hash",
+      "memory_receipt_id",
+      "router_receipt_id",
+      "updated_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "memory_state": "B",
+      "router_state": "B",
+      "source_hash": "D",
+      "memory_receipt_id": "B",
+      "router_receipt_id": "B",
+      "updated_at": "A"
+    }
+  },
+  "authority_qualification_receipts": {
+    "fields": [
+      "id",
+      "kind",
+      "source_hash",
+      "schema_version",
+      "policy_version",
+      "evidence_json",
+      "evidence_hash",
+      "created_at"
+    ],
+    "source": "src/authority-schema.js",
+    "classification": {
+      "id": "A",
+      "kind": "A",
+      "source_hash": "D",
+      "schema_version": "B",
+      "policy_version": "A",
+      "evidence_json": "B",
+      "evidence_hash": "D",
+      "created_at": "A"
+    }
+  },
+  "chatgpt_events": {
+    "fields": [
+      "seq",
+      "task_id",
+      "event_id",
+      "fingerprint",
+      "payload",
+      "received_at",
+      "acknowledged_at",
+      "trigger_id",
+      "delivery",
+      "attempts",
+      "next_attempt",
+      "conversation_url",
+      "lifecycle_session_id",
+      "lifecycle_request_id",
+      "lifecycle_type",
+      "record_id"
+    ],
+    "source": "src/chatgpt-events.js",
+    "classification": {
+      "seq": "A",
+      "task_id": "A",
+      "event_id": "B",
+      "fingerprint": "D",
+      "payload": "B",
+      "received_at": "A",
+      "acknowledged_at": "A",
+      "trigger_id": "B",
+      "delivery": "B",
+      "attempts": "B",
+      "next_attempt": "B",
+      "conversation_url": "B",
+      "lifecycle_session_id": "A",
+      "lifecycle_request_id": "B",
+      "lifecycle_type": "A",
+      "record_id": "A"
+    }
+  },
+  "cp_mission_tasks": {
+    "fields": [
+      "task_id",
+      "mission_id",
+      "ordinal",
+      "context_pack_id",
+      "dispatch_id",
+      "created_at"
+    ],
+    "source": "src/mission-schema.js",
+    "classification": {
+      "task_id": "A",
+      "mission_id": "A",
+      "ordinal": "A",
+      "context_pack_id": "A",
+      "dispatch_id": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_dispatches": {
+    "fields": [
+      "id",
+      "mission_id",
+      "task_id",
+      "state",
+      "decision_id",
+      "route",
+      "run_id",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/mission-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "state": "A",
+      "decision_id": "B",
+      "route": "B",
+      "run_id": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "cp_run_results": {
+    "fields": [
+      "run_id",
+      "mission_id",
+      "normalized",
+      "processed_at"
+    ],
+    "source": "src/mission-schema.js",
+    "classification": {
+      "run_id": "A",
+      "mission_id": "A",
+      "normalized": "B",
+      "processed_at": "A"
+    }
+  },
+  "cp_gateway_cursors": {
+    "fields": [
+      "name",
+      "sequence"
+    ],
+    "source": "src/mission-schema.js",
+    "classification": {
+      "name": "B",
+      "sequence": "A"
+    }
+  },
+  "cp_fixture_projects": {
+    "fields": [
+      "project_id",
+      "workspace",
+      "policy"
+    ],
+    "source": "src/fixture-acceptance.js",
+    "classification": {
+      "project_id": "A",
+      "workspace": "B",
+      "policy": "B"
+    }
+  },
+  "cp_provider_circuits": {
+    "fields": [
+      "provider_model",
+      "record"
+    ],
+    "source": "src/provider-reliability.js",
+    "classification": {
+      "provider_model": "B",
+      "record": "B"
+    }
+  },
+  "cp_mission_contracts": {
+    "fields": [
+      "mission_id",
+      "manifest",
+      "manifest_hash",
+      "seal",
+      "created_at"
+    ],
+    "source": "src/mission-program.js",
+    "classification": {
+      "mission_id": "A",
+      "manifest": "B",
+      "manifest_hash": "D",
+      "seal": "D",
+      "created_at": "A"
+    }
+  },
+  "cp_mission_budget_usage": {
+    "fields": [
+      "mission_id",
+      "kind",
+      "request_id",
+      "amount",
+      "fingerprint",
+      "record_id"
+    ],
+    "source": "src/mission-program.js",
+    "classification": {
+      "mission_id": "A",
+      "kind": "A",
+      "request_id": "B",
+      "amount": "B",
+      "fingerprint": "D",
+      "record_id": "A"
+    }
+  },
+  "cp_mission_reviews": {
+    "fields": [
+      "id",
+      "mission_id",
+      "verification_id",
+      "manifest_hash",
+      "workspace_hash",
+      "result",
+      "evidence",
+      "created_at"
+    ],
+    "source": "src/mission-program.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "verification_id": "A",
+      "manifest_hash": "D",
+      "workspace_hash": "D",
+      "result": "B",
+      "evidence": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_mission_settlements": {
+    "fields": [
+      "mission_id",
+      "review_id",
+      "state",
+      "recommendation",
+      "updated_at"
+    ],
+    "source": "src/mission-program.js",
+    "classification": {
+      "mission_id": "A",
+      "review_id": "B",
+      "state": "A",
+      "recommendation": "B",
+      "updated_at": "A"
+    }
+  },
+  "cp_mission_programs": {
+    "fields": [
+      "id",
+      "owner",
+      "graph",
+      "fingerprint",
+      "state",
+      "started_at",
+      "expires_at",
+      "request_id"
+    ],
+    "source": "src/mission-program.js",
+    "classification": {
+      "id": "A",
+      "owner": "B",
+      "graph": "B",
+      "fingerprint": "D",
+      "state": "A",
+      "started_at": "A",
+      "expires_at": "A",
+      "request_id": "B"
+    }
+  },
+  "cp_mission_program_nodes": {
+    "fields": [
+      "program_id",
+      "node_id",
+      "mission_id",
+      "input",
+      "state"
+    ],
+    "source": "src/mission-program.js",
+    "classification": {
+      "program_id": "B",
+      "node_id": "B",
+      "mission_id": "A",
+      "input": "B",
+      "state": "A"
+    }
+  },
+  "reasoning_admissions": {
+    "fields": [
+      "id",
+      "mission_id",
+      "task_id",
+      "run_id",
+      "session_id",
+      "request_id",
+      "probe",
+      "context_hash",
+      "context_bytes",
+      "provider",
+      "mode",
+      "expires_at",
+      "state"
+    ],
+    "source": "src/reasoning-admission.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "run_id": "A",
+      "session_id": "A",
+      "request_id": "B",
+      "probe": "B",
+      "context_hash": "D",
+      "context_bytes": "B",
+      "provider": "B",
+      "mode": "A",
+      "expires_at": "A",
+      "state": "A"
+    }
+  },
+  "cp_agent_dispatch_intents": {
+    "fields": [
+      "dispatch_id",
+      "run_id",
+      "mission_id",
+      "status",
+      "next_attempt_at",
+      "record",
+      "updated_at"
+    ],
+    "source": "src/agent-dispatch.js",
+    "classification": {
+      "dispatch_id": "A",
+      "run_id": "A",
+      "mission_id": "A",
+      "status": "A",
+      "next_attempt_at": "A",
+      "record": "B",
+      "updated_at": "A"
+    }
+  },
+  "cp_agent_dispatch_attempts": {
+    "fields": [
+      "attempt_id",
+      "dispatch_id",
+      "ordinal",
+      "outcome"
+    ],
+    "source": "src/agent-dispatch.js",
+    "classification": {
+      "attempt_id": "A",
+      "dispatch_id": "A",
+      "ordinal": "A",
+      "outcome": "B"
+    }
+  },
+  "cp_agent_circuits": {
+    "fields": [
+      "agent_id",
+      "state",
+      "failures",
+      "open_until",
+      "probe_dispatch_id",
+      "updated_at"
+    ],
+    "source": "src/agent-dispatch.js",
+    "classification": {
+      "agent_id": "A",
+      "state": "A",
+      "failures": "B",
+      "open_until": "B",
+      "probe_dispatch_id": "B",
+      "updated_at": "A"
+    }
+  },
+  "cp_agent_availability": {
+    "fields": [
+      "agent_id",
+      "state",
+      "observed_at"
+    ],
+    "source": "src/agent-dispatch.js",
+    "classification": {
+      "agent_id": "A",
+      "state": "A",
+      "observed_at": "A"
+    }
+  },
+  "project_memory_v2_retention": {
+    "fields": [
+      "mission_id",
+      "expires_at",
+      "policy_version"
+    ],
+    "source": "src/project-memory-v2.js",
+    "classification": {
+      "mission_id": "A",
+      "expires_at": "A",
+      "policy_version": "A"
+    }
+  },
+  "project_memory_v2_forgotten": {
+    "fields": [
+      "mission_id",
+      "forgotten_at"
+    ],
+    "source": "src/project-memory-v2.js",
+    "classification": {
+      "mission_id": "A",
+      "forgotten_at": "A"
+    }
+  },
+  "project_memory_v2_missions": {
+    "fields": [
+      "mission_id",
+      "task_id",
+      "objective",
+      "workspace",
+      "scope_json",
+      "identity_hash",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/project-memory-v2.js",
+    "classification": {
+      "mission_id": "A",
+      "task_id": "A",
+      "objective": "B",
+      "workspace": "B",
+      "scope_json": "B",
+      "identity_hash": "D",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "project_memory_v2_checkpoints": {
+    "fields": [
+      "checkpoint_id",
+      "mission_id",
+      "sequence",
+      "state_json",
+      "state_hash",
+      "created_at"
+    ],
+    "source": "src/project-memory-v2.js",
+    "classification": {
+      "checkpoint_id": "A",
+      "mission_id": "A",
+      "sequence": "A",
+      "state_json": "B",
+      "state_hash": "D",
+      "created_at": "A"
+    }
+  },
+  "memory_entries": {
+    "fields": [
+      "id",
+      "task_id",
+      "kind",
+      "content",
+      "source",
+      "provenance",
+      "shared",
+      "dedupe",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/memory-store.js",
+    "classification": {
+      "id": "A",
+      "task_id": "A",
+      "kind": "A",
+      "content": "B",
+      "source": "A",
+      "provenance": "B",
+      "shared": "A",
+      "dedupe": "D",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "cp_provider_routes": {
+    "fields": [
+      "id",
+      "run_id",
+      "request_id",
+      "record",
+      "created_at"
+    ],
+    "source": "src/provider-gateway.js",
+    "classification": {
+      "id": "A",
+      "run_id": "A",
+      "request_id": "B",
+      "record": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_provider_requests": {
+    "fields": [
+      "run_id",
+      "request_id",
+      "state",
+      "record_id"
+    ],
+    "source": "src/provider-gateway.js",
+    "classification": {
+      "run_id": "A",
+      "request_id": "B",
+      "state": "A",
+      "record_id": "A"
+    }
+  },
+  "level1_missions": {
+    "fields": [
+      "mission_id",
+      "task_a_id",
+      "workspace",
+      "expires_at",
+      "status",
+      "candidates_json",
+      "grant_id",
+      "selected_task_b_id",
+      "task_a_event_id",
+      "task_a_session_id",
+      "task_a_result",
+      "task_a_result_hash",
+      "task_b_event_id",
+      "task_b_session_id",
+      "task_b_result",
+      "task_b_result_hash",
+      "created_at",
+      "activated_at",
+      "usage_json"
+    ],
+    "source": "src/level1-mission.js",
+    "classification": {
+      "mission_id": "A",
+      "task_a_id": "B",
+      "workspace": "B",
+      "expires_at": "A",
+      "status": "A",
+      "candidates_json": "B",
+      "grant_id": "A",
+      "selected_task_b_id": "B",
+      "task_a_event_id": "B",
+      "task_a_session_id": "B",
+      "task_a_result": "B",
+      "task_a_result_hash": "D",
+      "task_b_event_id": "B",
+      "task_b_session_id": "B",
+      "task_b_result": "B",
+      "task_b_result_hash": "D",
+      "created_at": "A",
+      "activated_at": "A",
+      "usage_json": "B"
+    }
+  },
+  "level1_decisions": {
+    "fields": [
+      "decision_id",
+      "mission_id",
+      "phase",
+      "event_id",
+      "result_hash",
+      "task_b_id",
+      "response_id",
+      "nonce",
+      "expires_at",
+      "simulation",
+      "state"
+    ],
+    "source": "src/level1-mission.js",
+    "classification": {
+      "decision_id": "B",
+      "mission_id": "A",
+      "phase": "B",
+      "event_id": "A",
+      "result_hash": "D",
+      "task_b_id": "B",
+      "response_id": "B",
+      "nonce": "B",
+      "expires_at": "A",
+      "simulation": "B",
+      "state": "A"
+    }
+  },
+  "level1_dispatches": {
+    "fields": [
+      "dispatch_id",
+      "mission_id",
+      "decision_id",
+      "task_b_id",
+      "state",
+      "task_b_session_id",
+      "created_at"
+    ],
+    "source": "src/level1-mission.js",
+    "classification": {
+      "dispatch_id": "B",
+      "mission_id": "A",
+      "decision_id": "B",
+      "task_b_id": "B",
+      "state": "A",
+      "task_b_session_id": "B",
+      "created_at": "A"
+    }
+  },
+  "level1_preflight_checkpoints": {
+    "fields": [
+      "checkpoint_id",
+      "mission_id",
+      "provider_mode",
+      "code",
+      "reason",
+      "paused_at",
+      "resumed_at"
+    ],
+    "source": "src/level1-mission.js",
+    "classification": {
+      "checkpoint_id": "A",
+      "mission_id": "A",
+      "provider_mode": "B",
+      "code": "B",
+      "reason": "B",
+      "paused_at": "A",
+      "resumed_at": "A"
+    }
+  },
+  "host_reasoning_admissions": {
+    "fields": [
+      "id",
+      "task_id",
+      "mission_id",
+      "run_id",
+      "session_id",
+      "request_id",
+      "request_hash",
+      "record",
+      "expires_at",
+      "state"
+    ],
+    "source": "src/host-reasoning-admission.js",
+    "classification": {
+      "id": "A",
+      "task_id": "A",
+      "mission_id": "A",
+      "run_id": "A",
+      "session_id": "A",
+      "request_id": "B",
+      "request_hash": "D",
+      "record": "B",
+      "expires_at": "A",
+      "state": "A"
+    }
+  },
+  "level1_acceptance_missions": {
+    "fields": [
+      "mission_id",
+      "authorized_at",
+      "status"
+    ],
+    "source": "src/level1-acceptance.js",
+    "classification": {
+      "mission_id": "A",
+      "authorized_at": "A",
+      "status": "A"
+    }
+  },
+  "level1_acceptance_events": {
+    "fields": [
+      "mission_id",
+      "event_id",
+      "type",
+      "source",
+      "source_id",
+      "created_at",
+      "payload_hash",
+      "payload_json"
+    ],
+    "source": "src/level1-acceptance.js",
+    "classification": {
+      "mission_id": "A",
+      "event_id": "A",
+      "type": "A",
+      "source": "A",
+      "source_id": "A",
+      "created_at": "A",
+      "payload_hash": "D",
+      "payload_json": "B"
+    }
+  },
+  "cp_execution_qualification": {
+    "fields": [
+      "mission_id",
+      "envelope_hash",
+      "policy"
+    ],
+    "source": "src/deterministic-acceptance.js",
+    "classification": {
+      "mission_id": "A",
+      "envelope_hash": "D",
+      "policy": "B"
+    }
+  },
+  "project_orchestrator_meta": {
+    "fields": [
+      "key",
+      "value"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "key": "B",
+      "value": "B"
+    }
+  },
+  "projects": {
+    "fields": [
+      "project_id",
+      "name",
+      "description",
+      "status",
+      "priority",
+      "desired_outcomes",
+      "current_phase",
+      "next_action",
+      "preferred_agents",
+      "autonomy_level",
+      "privacy_policy",
+      "cost_policy",
+      "memory_namespace",
+      "repositories",
+      "references_json",
+      "decisions",
+      "limitations",
+      "created_at",
+      "updated_at",
+      "archived_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "project_id": "A",
+      "name": "B",
+      "description": "B",
+      "status": "A",
+      "priority": "B",
+      "desired_outcomes": "B",
+      "current_phase": "B",
+      "next_action": "B",
+      "preferred_agents": "B",
+      "autonomy_level": "B",
+      "privacy_policy": "B",
+      "cost_policy": "B",
+      "memory_namespace": "B",
+      "repositories": "B",
+      "references_json": "B",
+      "decisions": "B",
+      "limitations": "B",
+      "created_at": "A",
+      "updated_at": "A",
+      "archived_at": "A"
+    }
+  },
+  "project_goals": {
+    "fields": [
+      "goal_id",
+      "project_id",
+      "name",
+      "description",
+      "status",
+      "priority",
+      "desired_outcome",
+      "next_action",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "goal_id": "A",
+      "project_id": "A",
+      "name": "B",
+      "description": "B",
+      "status": "A",
+      "priority": "B",
+      "desired_outcome": "B",
+      "next_action": "B",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "project_missions": {
+    "fields": [
+      "mission_id",
+      "project_id",
+      "goal_id",
+      "name",
+      "description",
+      "status",
+      "acceptance_criteria",
+      "next_action",
+      "preferred_agents",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "mission_id": "A",
+      "project_id": "A",
+      "goal_id": "A",
+      "name": "B",
+      "description": "B",
+      "status": "A",
+      "acceptance_criteria": "B",
+      "next_action": "B",
+      "preferred_agents": "B",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "project_dependencies": {
+    "fields": [
+      "dependency_id",
+      "project_id",
+      "owner_type",
+      "owner_id",
+      "depends_on_type",
+      "depends_on_id",
+      "status",
+      "created_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "dependency_id": "B",
+      "project_id": "A",
+      "owner_type": "B",
+      "owner_id": "B",
+      "depends_on_type": "B",
+      "depends_on_id": "B",
+      "status": "A",
+      "created_at": "A"
+    }
+  },
+  "project_blockers": {
+    "fields": [
+      "blocker_id",
+      "project_id",
+      "owner_type",
+      "owner_id",
+      "detail",
+      "status",
+      "created_at",
+      "resolved_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "blocker_id": "B",
+      "project_id": "A",
+      "owner_type": "B",
+      "owner_id": "B",
+      "detail": "B",
+      "status": "A",
+      "created_at": "A",
+      "resolved_at": "A"
+    }
+  },
+  "project_task_links": {
+    "fields": [
+      "project_id",
+      "task_id",
+      "linked_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "project_id": "A",
+      "task_id": "A",
+      "linked_at": "A"
+    }
+  },
+  "project_run_links": {
+    "fields": [
+      "project_id",
+      "run_id",
+      "task_id",
+      "linked_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "project_id": "A",
+      "run_id": "A",
+      "task_id": "A",
+      "linked_at": "A"
+    }
+  },
+  "project_event_links": {
+    "fields": [
+      "project_id",
+      "event_id",
+      "task_id",
+      "linked_at"
+    ],
+    "source": "src/project-orchestrator.js",
+    "classification": {
+      "project_id": "A",
+      "event_id": "A",
+      "task_id": "A",
+      "linked_at": "A"
+    }
+  },
+  "cp_effect_outbox": {
+    "fields": [
+      "id",
+      "event_key",
+      "destination_type",
+      "destination_ref",
+      "event_type",
+      "correlation",
+      "payload",
+      "status",
+      "attempts",
+      "next_at",
+      "created_at",
+      "updated_at",
+      "sent_at",
+      "error_class",
+      "receipt",
+      "claim"
+    ],
+    "source": "src/transactional-outbox.js",
+    "classification": {
+      "id": "A",
+      "event_key": "B",
+      "destination_type": "B",
+      "destination_ref": "B",
+      "event_type": "A",
+      "correlation": "B",
+      "payload": "B",
+      "status": "A",
+      "attempts": "B",
+      "next_at": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "sent_at": "A",
+      "error_class": "B",
+      "receipt": "B",
+      "claim": "B"
+    }
+  },
+  "personal_memory_meta": {
+    "fields": [
+      "key",
+      "value"
+    ],
+    "source": "src/personal-memory.js",
+    "classification": {
+      "key": "B",
+      "value": "B"
+    }
+  },
+  "personal_memories": {
+    "fields": [
+      "memory_id",
+      "domain",
+      "type",
+      "subject",
+      "content",
+      "content_hash",
+      "source",
+      "source_event_id",
+      "task_id",
+      "project_id",
+      "session_id",
+      "created_at",
+      "updated_at",
+      "last_used_at",
+      "confidence",
+      "sensitivity",
+      "status",
+      "superseded_by",
+      "expires_at"
+    ],
+    "source": "src/personal-memory.js",
+    "classification": {
+      "memory_id": "A",
+      "domain": "A",
+      "type": "A",
+      "subject": "B",
+      "content": "B",
+      "content_hash": "D",
+      "source": "A",
+      "source_event_id": "B",
+      "task_id": "A",
+      "project_id": "A",
+      "session_id": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "last_used_at": "A",
+      "confidence": "A",
+      "sensitivity": "A",
+      "status": "A",
+      "superseded_by": "A",
+      "expires_at": "A"
+    }
+  },
+  "event_ledger_meta": {
+    "fields": [
+      "key",
+      "value"
+    ],
+    "source": "src/event-ledger.js",
+    "classification": {
+      "key": "B",
+      "value": "B"
+    }
+  },
+  "event_ledger_events": {
+    "fields": [
+      "seq",
+      "event_id",
+      "idempotency_key",
+      "fingerprint",
+      "event_type",
+      "timestamp",
+      "timestamp_ms",
+      "task_id",
+      "run_id",
+      "mission_id",
+      "session_id",
+      "request_id",
+      "trace_id",
+      "span_id",
+      "parent_event_id",
+      "agent",
+      "direction",
+      "workspace",
+      "repository",
+      "branch",
+      "status",
+      "duration_ms",
+      "metadata",
+      "payload",
+      "payload_sha256",
+      "payload_byte_length",
+      "payload_stored_byte_length",
+      "payload_redacted",
+      "payload_truncated",
+      "protected"
+    ],
+    "source": "src/event-ledger.js",
+    "classification": {
+      "seq": "A",
+      "event_id": "A",
+      "idempotency_key": "B",
+      "fingerprint": "D",
+      "event_type": "A",
+      "timestamp": "A",
+      "timestamp_ms": "A",
+      "task_id": "A",
+      "run_id": "A",
+      "mission_id": "A",
+      "session_id": "A",
+      "request_id": "B",
+      "trace_id": "B",
+      "span_id": "B",
+      "parent_event_id": "B",
+      "agent": "A",
+      "direction": "A",
+      "workspace": "B",
+      "repository": "B",
+      "branch": "B",
+      "status": "A",
+      "duration_ms": "A",
+      "metadata": "B",
+      "payload": "B",
+      "payload_sha256": "B",
+      "payload_byte_length": "C",
+      "payload_stored_byte_length": "C",
+      "payload_redacted": "C",
+      "payload_truncated": "A",
+      "protected": "A"
+    }
+  },
+  "autonomy_missions": {
+    "fields": [
+      "mission_id",
+      "task_a_id",
+      "task_b_id",
+      "expires_at",
+      "state",
+      "created_at",
+      "cancelled_at",
+      "latest_event_id"
+    ],
+    "source": "src/mission-coordinator.js",
+    "classification": {
+      "mission_id": "A",
+      "task_a_id": "B",
+      "task_b_id": "B",
+      "expires_at": "A",
+      "state": "A",
+      "created_at": "A",
+      "cancelled_at": "A",
+      "latest_event_id": "B"
+    }
+  },
+  "autonomy_events": {
+    "fields": [
+      "event_id",
+      "mission_id",
+      "task_id",
+      "session_id",
+      "result",
+      "result_hash",
+      "received_at"
+    ],
+    "source": "src/mission-coordinator.js",
+    "classification": {
+      "event_id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "session_id": "A",
+      "result": "B",
+      "result_hash": "D",
+      "received_at": "A"
+    }
+  },
+  "autonomy_decisions": {
+    "fields": [
+      "decision_id",
+      "mission_id",
+      "event_id",
+      "result_hash",
+      "task_b_instructions",
+      "created_at",
+      "expires_at",
+      "state",
+      "simulation"
+    ],
+    "source": "src/mission-coordinator.js",
+    "classification": {
+      "decision_id": "B",
+      "mission_id": "A",
+      "event_id": "A",
+      "result_hash": "D",
+      "task_b_instructions": "B",
+      "created_at": "A",
+      "expires_at": "A",
+      "state": "A",
+      "simulation": "B"
+    }
+  },
+  "autonomy_outbox": {
+    "fields": [
+      "action_id",
+      "mission_id",
+      "decision_id",
+      "task_b_id",
+      "instructions",
+      "state",
+      "created_at",
+      "dispatched_at"
+    ],
+    "source": "src/mission-coordinator.js",
+    "classification": {
+      "action_id": "B",
+      "mission_id": "A",
+      "decision_id": "B",
+      "task_b_id": "B",
+      "instructions": "B",
+      "state": "A",
+      "created_at": "A",
+      "dispatched_at": "A"
+    }
+  },
+  "cp_task_health_slack": {
+    "fields": [
+      "task_id",
+      "run_id",
+      "status",
+      "revision"
+    ],
+    "source": "src/apps/task-health-slack.js",
+    "classification": {
+      "task_id": "A",
+      "run_id": "A",
+      "status": "A",
+      "revision": "A"
+    }
+  },
+  "cp_slack_health_outbox": {
+    "fields": [
+      "id",
+      "mission_id",
+      "kind",
+      "body",
+      "state",
+      "attempts",
+      "next_at",
+      "created_at",
+      "remote_ts",
+      "source_key"
+    ],
+    "source": "src/apps/task-health-slack.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "kind": "A",
+      "body": "B",
+      "state": "A",
+      "attempts": "B",
+      "next_at": "A",
+      "created_at": "A",
+      "remote_ts": "B",
+      "source_key": "B"
+    }
+  },
+  "cp_slack_config": {
+    "fields": [
+      "id",
+      "config",
+      "updated_at"
+    ],
+    "source": "src/apps/slack-schema.js",
+    "classification": {
+      "id": "A",
+      "config": "B",
+      "updated_at": "A"
+    }
+  },
+  "cp_slack_pending_events": {
+    "fields": [
+      "id",
+      "mission_id",
+      "type",
+      "metadata",
+      "created_at"
+    ],
+    "source": "src/apps/slack-schema.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "type": "A",
+      "metadata": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_work_bindings": {
+    "fields": [
+      "run_id",
+      "mission_id",
+      "request_id",
+      "request_hash",
+      "policy_hash",
+      "descriptor_hash",
+      "mode",
+      "packet",
+      "deadline"
+    ],
+    "source": "src/apps/work-execution-adapter.js",
+    "classification": {
+      "run_id": "A",
+      "mission_id": "A",
+      "request_id": "B",
+      "request_hash": "D",
+      "policy_hash": "D",
+      "descriptor_hash": "D",
+      "mode": "A",
+      "packet": "B",
+      "deadline": "B"
+    }
+  },
+  "cp_work_receipts": {
+    "fields": [
+      "run_id",
+      "artifact_hash",
+      "lifecycle_ref"
+    ],
+    "source": "src/apps/work-execution-adapter.js",
+    "classification": {
+      "run_id": "A",
+      "artifact_hash": "D",
+      "lifecycle_ref": "B"
+    }
+  },
+  "cp_slack_ci_views": {
+    "fields": [
+      "view_key",
+      "root_ref",
+      "hash",
+      "revision",
+      "nonce"
+    ],
+    "source": "src/apps/slack-ci-ui.js",
+    "classification": {
+      "view_key": "B",
+      "root_ref": "B",
+      "hash": "D",
+      "revision": "A",
+      "nonce": "B"
+    }
+  },
+  "cp_slack_ci_config": {
+    "fields": [
+      "id",
+      "record"
+    ],
+    "source": "src/apps/slack-ci-flow.js",
+    "classification": {
+      "id": "A",
+      "record": "B"
+    }
+  },
+  "cp_slack_ci_errors": {
+    "fields": [
+      "repo",
+      "pr",
+      "sha",
+      "retry_at"
+    ],
+    "source": "src/apps/slack-ci-flow.js",
+    "classification": {
+      "repo": "B",
+      "pr": "B",
+      "sha": "B",
+      "retry_at": "A"
+    }
+  },
+  "cp_slack_ci_health": {
+    "fields": [
+      "id",
+      "state",
+      "revision"
+    ],
+    "source": "src/apps/slack-ci-flow.js",
+    "classification": {
+      "id": "A",
+      "state": "A",
+      "revision": "A"
+    }
+  },
+  "cp_slack_ci_flows": {
+    "fields": [
+      "repo",
+      "pr",
+      "sha",
+      "hash",
+      "revision",
+      "record",
+      "observed_at"
+    ],
+    "source": "src/apps/slack-ci-flow.js",
+    "classification": {
+      "repo": "B",
+      "pr": "B",
+      "sha": "B",
+      "hash": "D",
+      "revision": "A",
+      "record": "B",
+      "observed_at": "A"
+    }
+  },
+  "cp_codex_result_proposals": {
+    "fields": [
+      "run_id",
+      "fingerprint",
+      "proposal",
+      "created_at"
+    ],
+    "source": "src/apps/codex-adapter.js",
+    "classification": {
+      "run_id": "A",
+      "fingerprint": "D",
+      "proposal": "B",
+      "created_at": "A"
+    }
+  },
+  "cp_codex_handoffs": {
+    "fields": [
+      "run_id",
+      "request_id",
+      "contract",
+      "state",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/apps/codex-adapter.js",
+    "classification": {
+      "run_id": "A",
+      "request_id": "B",
+      "contract": "B",
+      "state": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "memory_identity_meta": {
+    "fields": [
+      "id",
+      "version",
+      "generation"
+    ],
+    "classification": {
+      "id": "A",
+      "version": "A",
+      "generation": "A"
+    }
+  },
+  "memory_identity_progress": {
+    "fields": [
+      "id",
+      "state",
+      "safe_error_class",
+      "updated_at"
+    ],
+    "classification": {
+      "id": "A",
+      "state": "A",
+      "safe_error_class": "A",
+      "updated_at": "A"
+    }
+  },
+  "memory_identity_lineage": {
+    "fields": [
+      "record_class",
+      "anchor_id",
+      "identity",
+      "project_id",
+      "operator_id",
+      "generation"
+    ],
+    "classification": {
+      "record_class": "A",
+      "anchor_id": "A",
+      "identity": "A",
+      "project_id": "A",
+      "operator_id": "A",
+      "generation": "A"
+    }
+  },
+  "memory_erasure_content_meta": {
+    "fields": [
+      "id",
+      "version"
+    ],
+    "classification": {
+      "id": "A",
+      "version": "A"
+    }
+  },
+  "memory_erasure_content_progress": {
+    "fields": [
+      "generation",
+      "store",
+      "identity",
+      "state",
+      "safe_error_class",
+      "updated_at"
+    ],
+    "classification": {
+      "generation": "A",
+      "store": "A",
+      "identity": "A",
+      "state": "A",
+      "safe_error_class": "A",
+      "updated_at": "A"
+    }
+  },
+  "memory_erasure_content_rows": {
+    "fields": [
+      "table_name",
+      "row_key",
+      "generation",
+      "scope_json"
+    ],
+    "classification": {
+      "table_name": "A",
+      "row_key": "A",
+      "generation": "A",
+      "scope_json": "A"
+    }
+  }
+}

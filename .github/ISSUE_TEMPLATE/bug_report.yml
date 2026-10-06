@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a problem using safe metadata and seeded data
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "Use synthetic data. Do not include credentials, raw argv/env/discovery, account identifiers, personal memory or database exports. For vulnerabilities read SECURITY.md instead of opening a public issue."
+  - type: input
+    id: version
+    attributes:
+      label: Version and platform
+      description: Candidate version, Node version, operating system and runtime tier
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Seeded reproduction
+      description: Minimal synthetic steps, expected behavior, actual behavior and safe error class
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Safe evidence
+      description: Test names/results and fixture versus live boundary; omit private artifacts

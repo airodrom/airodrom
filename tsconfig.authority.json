@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": false,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/authority-hash.js",
+    "src/authority-types.d.ts",
+    "src/authority-store.d.ts",
+    "src/authority-json.js",
+    "tests/types/authority-contract.ts"
+  ]
+}

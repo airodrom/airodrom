@@ -1,0 +1,7 @@
+{
+  "version":1,
+  "default":"deny",
+  "read_only":["read","grep","ls"],
+  "workspace_edit":["read","grep","ls","write","edit"],
+  "security_core_level":"L3"
+}

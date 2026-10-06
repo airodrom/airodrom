@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "worker": "cursor_acp",
+  "lease": "cursor_worktree_edit",
+  "grants_authority": false,
+  "mission_id": "mission-fixture",
+  "parent_task_id": "task-fixture",
+  "worker_id": "cursor-fixture",
+  "workspace": "/repo/.worktrees/cursor-fixture",
+  "base_sha": "0000000000000000000000000000000000000000",
+  "branch": "worker/cursor-fixture",
+  "objective": "Implement the bounded fixture task",
+  "allowed_paths": ["src/fixture.js", "tests/fixture.test.js"],
+  "denied_paths": ["src/safety-policy.js", "src/mission-authority.js", "src/capability-broker.js"],
+  "allowed_jobs": ["git_status", "git_diff", "focused_test"],
+  "max_security_level": "L2",
+  "operator_required_for": ["L3"],
+  "required_evidence": ["files_changed", "git_diff", "test_receipts", "exit_codes"]
+}

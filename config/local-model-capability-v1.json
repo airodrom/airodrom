@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-30T18:00:00.000Z",
+  "models": [
+    {
+      "schema_version": 1,
+      "model": "qwen3-coder:30b",
+      "digest": "sha256:1194192cf2a187eb02722edcc3f77b11d21f537048ce04b67ccf8ba78863006a",
+      "template_hash": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
+      "provider": "ollama",
+      "supports_native_tools": true,
+      "qualification_status": "qualified",
+      "qualification_timestamp": "2026-09-30T18:00:00.000Z",
+      "tested_transport": "http://127.0.0.1:11434/v1/chat/completions",
+      "transport_contract": "ollama-openai-completions-v1",
+      "registry_tool_schema_sha256": "b0177ca3cdb13d430afea4ea72dcb25463d50e2c65f3a343df9feab7e445017c",
+      "forced_tool_result": {
+        "passed": true,
+        "cases": 11,
+        "passed_cases": 11
+      },
+      "auto_selection_evaluation": {
+        "version": "qwen-native-tools-auto-v1",
+        "correct": 5,
+        "wrong": 0,
+        "unnecessary": 0,
+        "missing": 0,
+        "malformed": 0,
+        "total": 5
+      },
+      "notes": "Installed artifact uses RENDERER/PARSER qwen3-coder rather than a Go template with .Tools/.ToolCalls. Native tool_calls proven on OpenAI-compatible transport with the 26-tool registry after removing literal function-markup priming from the system prompt. Ambiguous 'what next' prompts may select project_list; explicit project_next_action requests are reliable. qwen2.5-coder:14b rejected: emits JSON assistant text without native tool_calls despite template support. No separate custom Modelfile profile required."
+    }
+  ]
+}

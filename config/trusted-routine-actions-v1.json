@@ -1,0 +1,62 @@
+{
+  "policyVersion": "trusted-routine-actions-v1",
+  "description": "Standing routine-action authority for Trusted Developer / local agent work. Final-clause precedence: destructive, system, security, production, merge, and credential mutations remain approval_required or deny even when an earlier automatic clause mentioned a related category.",
+  "precedence": {
+    "rule": "final_clause_overrides",
+    "note": "Keep destructive/system/security/production/merge/credential actions behind explicit approval overrides any earlier automatic listing of the same category."
+  },
+  "capabilities": {
+    "personal_memory_remember": { "action": "remember", "scope": "personal_memory", "riskClass": "routine_durable_write", "decision": "auto_allow", "reason": "Standing Personal Memory write authority" },
+    "personal_memory_update": { "action": "update", "scope": "personal_memory", "riskClass": "routine_durable_write", "decision": "auto_allow", "reason": "Standing Personal Memory update authority" },
+    "personal_memory_forget": { "action": "forget", "scope": "personal_memory", "riskClass": "routine_durable_write", "decision": "auto_allow", "reason": "Standing Personal Memory forget authority" },
+    "personal_memory_get": { "action": "get", "scope": "personal_memory", "riskClass": "read", "decision": "auto_allow", "reason": "Personal Memory read" },
+    "personal_memory_search": { "action": "search", "scope": "personal_memory", "riskClass": "read", "decision": "auto_allow", "reason": "Personal Memory search" },
+    "personal_memory_recent": { "action": "recent", "scope": "personal_memory", "riskClass": "read", "decision": "auto_allow", "reason": "Personal Memory recent read" },
+
+    "read": { "action": "read", "scope": "repository", "riskClass": "safe_read", "decision": "auto_allow", "reason": "Safe repository read" },
+    "ls": { "action": "list", "scope": "repository", "riskClass": "safe_read", "decision": "auto_allow", "reason": "Safe directory list" },
+    "find": { "action": "find", "scope": "repository", "riskClass": "safe_read", "decision": "auto_allow", "reason": "Safe find" },
+    "grep": { "action": "grep", "scope": "repository", "riskClass": "safe_read", "decision": "auto_allow", "reason": "Safe grep" },
+    "write": { "action": "write", "scope": "repository", "riskClass": "safe_write", "decision": "auto_allow", "reason": "Task-scoped safe write" },
+    "edit": { "action": "edit", "scope": "repository", "riskClass": "safe_write", "decision": "auto_allow", "reason": "Task-scoped safe edit" },
+    "test": { "action": "test", "scope": "repository", "riskClass": "safe_verify", "decision": "auto_allow", "reason": "Pinned test job" },
+    "build": { "action": "build", "scope": "repository", "riskClass": "safe_verify", "decision": "auto_allow", "reason": "Pinned build/typecheck/lint job" },
+    "trusted-development": { "action": "trusted_job", "scope": "repository", "riskClass": "safe_dev_job", "decision": "auto_allow", "reason": "Bounded trusted development job (status/diff/commit/push/PR create/update when job allows)" },
+
+    "bridge-maintenance": { "action": "bridge_maintenance", "scope": "local_maintenance", "riskClass": "allowlisted_restart", "decision": "auto_allow", "reason": "Pinned bridge_restart / bridge_restart_status only" },
+
+    "project_list": { "action": "list", "scope": "project", "riskClass": "read", "decision": "auto_allow", "reason": "Project hierarchy read" },
+    "project_get": { "action": "get", "scope": "project", "riskClass": "read", "decision": "auto_allow", "reason": "Project get" },
+    "project_summary": { "action": "summary", "scope": "project", "riskClass": "read", "decision": "auto_allow", "reason": "Project summary" },
+    "project_next_action": { "action": "next_action", "scope": "project", "riskClass": "suggestion_only", "decision": "auto_allow", "reason": "Next Action is suggestion-only; execution not_dispatched" },
+    "project_create": { "action": "create", "scope": "project", "riskClass": "durable_orchestrator_write", "decision": "approval_required", "reason": "Project create remains approval-gated in v1" },
+    "project_create_goal": { "action": "create_goal", "scope": "project", "riskClass": "durable_orchestrator_write", "decision": "approval_required", "reason": "Goal create remains approval-gated in v1" },
+    "project_create_mission": { "action": "create_mission", "scope": "project", "riskClass": "durable_orchestrator_write", "decision": "approval_required", "reason": "Mission create remains approval-gated in v1" },
+    "project_set_mission_status": { "action": "set_mission_status", "scope": "project", "riskClass": "durable_orchestrator_write", "decision": "approval_required", "reason": "Mission status mutation remains approval-gated in v1" },
+    "project_archive": { "action": "archive", "scope": "project", "riskClass": "durable_orchestrator_write", "decision": "approval_required", "reason": "Project archive remains approval-gated in v1" },
+
+    "gmail_send": { "action": "send", "scope": "messaging", "riskClass": "normal_message", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+    "gmail_reply": { "action": "reply", "scope": "messaging", "riskClass": "normal_message", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+    "whatsapp_send": { "action": "send", "scope": "messaging", "riskClass": "normal_message", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+    "whatsapp_reply": { "action": "reply", "scope": "messaging", "riskClass": "normal_message", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+    "messaging_bulk_broadcast": { "action": "bulk_broadcast", "scope": "messaging", "riskClass": "bulk_message", "decision": "approval_required", "reason": "Final-clause: bulk/broadcast messaging requires approval", "active": false },
+
+    "calendar_event_create": { "action": "create", "scope": "calendar", "riskClass": "routine_schedule", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+    "calendar_event_update": { "action": "update", "scope": "calendar", "riskClass": "routine_schedule", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+    "reminder_create": { "action": "create", "scope": "reminders", "riskClass": "routine_schedule", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+    "reminder_update": { "action": "update", "scope": "reminders", "riskClass": "routine_schedule", "decision": "auto_allow", "reason": "Policy category only; inactive until connector exists", "active": false },
+
+    "git_push_protected": { "action": "push_protected", "scope": "repository", "riskClass": "protected_branch", "decision": "approval_required", "reason": "Final-clause: protected/main production-equivalent push requires approval" },
+    "pr_merge": { "action": "merge", "scope": "repository", "riskClass": "production_merge", "decision": "approval_required", "reason": "Final-clause: PR merge requires approval; no auto-merge" },
+    "production_deploy": { "action": "deploy", "scope": "production", "riskClass": "production_mutation", "decision": "approval_required", "reason": "Final-clause: production deploys require approval" },
+    "destructive_operation": { "action": "destructive", "scope": "system", "riskClass": "destructive", "decision": "approval_required", "reason": "Final-clause: destructive operations require approval" },
+    "system_software_install": { "action": "install", "scope": "system", "riskClass": "system_mutation", "decision": "approval_required", "reason": "Final-clause overrides earlier automatic listing: system software install requires approval" },
+    "system_software_uninstall": { "action": "uninstall", "scope": "system", "riskClass": "system_mutation", "decision": "approval_required", "reason": "Final-clause overrides earlier automatic listing: system software uninstall requires approval" },
+    "sudo": { "action": "sudo", "scope": "system", "riskClass": "privileged", "decision": "deny", "reason": "Final-clause: sudo and privileged system mutations are denied without separate hardened authority" },
+    "credential_mutation": { "action": "mutate_credentials", "scope": "security", "riskClass": "credential", "decision": "approval_required", "reason": "Final-clause: password/MFA/API-key/credential mutations require approval" },
+    "financial_transaction": { "action": "transact", "scope": "finance", "riskClass": "financial", "decision": "approval_required", "reason": "Final-clause: financial transactions require approval" },
+    "delete_unique_work": { "action": "delete_unique", "scope": "repository", "riskClass": "destructive_unique", "decision": "approval_required", "reason": "Final-clause: deletion of unique/unmerged work requires approval" },
+    "destructive_git_unique": { "action": "destructive_git", "scope": "repository", "riskClass": "destructive_unique", "decision": "approval_required", "reason": "Final-clause: destructive Git involving unique/unmerged work requires approval" },
+    "destructive_disk": { "action": "destructive_disk", "scope": "system", "riskClass": "destructive", "decision": "deny", "reason": "Final-clause: destructive disk/filesystem operations are denied" }
+  }
+}
