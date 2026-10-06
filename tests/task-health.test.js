@@ -26,7 +26,7 @@ test('Recovered requires released ownership and inactive run; no polling mutatio
  assert.equal(taskHealth({...input,leaseState:'held'}).status,'Healthy');
 });
 test('controller reports durable quarantined ownership and verified recovery',()=>{
- const Controller=require('../src/bridge-controller');
+ const Controller=require('./fixtures/test-bridge.cjs');
  let run={id:'r',created_at:100000,state:'interrupted',process_state:'unknown',termination_verified:0};let rows=[{state:'quarantined',expires_at:190000}];
  const bridge={leases:new Map(),runtimes:new Map(),options:{},controlStore:{db:{prepare:sql=>({get:()=>run,all:()=>rows})}}};
  const task={id:'t'};const inspect=()=>Controller.prototype.taskHealth.call(bridge,task,200000);
@@ -40,7 +40,7 @@ test('task API includes bounded health observations',t=>{
  for(const section of ['task','tasks']){const result=controlPlaneRead(bridge,new URL(`http://localhost/api/control-v2/${section}?id=t`));assert.equal((result.items?.[0]||result).health.status,'Healthy');}
 });
 test('old runtime identity and telemetry cannot make a replacement run look healthy',()=>{
- const Controller=require('../src/bridge-controller');
+ const Controller=require('./fixtures/test-bridge.cjs');
  const run={id:'new',created_at:100000,updated_at:100000,state:'running',process_state:'unknown'};
  const bridge={leases:new Map([['t',{runId:'new',acquiredAt:100000,phase:'running'}]]),runtimes:new Map([['t',{runId:'old',rpc:{_workerStillAlive:()=>{throw Error('Must not inspect old runtime');}}}]]),options:{},controlStore:{db:{prepare:()=>({get:()=>run,all:()=>[]})}}};
  const health=Controller.prototype.taskHealth.call(bridge,{id:'t',healthRunId:'old',lastHeartbeatAt:199999,lastOutputAt:199999},200000);

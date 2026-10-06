@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
-const Bridge = require('../src/bridge-controller');
+const Bridge = require('./fixtures/test-bridge.cjs');
 const ControlServer = require('../src/control-server');
 const { TOOLS, validate } = require('../src/mcp-tools');
 const { createClient, discovery } = require('../src/mcp-client');
@@ -24,7 +24,7 @@ async function fixture(t) {
   fs.mkdirSync(profile); fs.writeFileSync(path.join(profile, 'settings.json'), '{}');
   const f = { root, dataDir };
   f.start = async () => {
-    f.bridge = await new Bridge({ defaultRuntime: 'pi', dataDir, sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true }).initialize();
+    f.bridge = await new Bridge({ defaultRuntime: 'host', dataDir, sourceProfile: profile, executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true }).initialize();
     f.ui = new ControlServer(f.bridge, { port: 0 }); await f.ui.start();
   };
   f.restart = async () => { await f.ui.close(); await f.bridge.shutdown(); await f.start(); };

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 const ControlServer = require('../src/control-server');
 const http = require('node:http');
 
@@ -14,9 +14,9 @@ async function fixture(t, { ttlMs = 60 * 60 * 1000 } = {}) {
   const profile = path.join(root, 'profile');
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({ defaultRuntime: 'pi',
+  const bridge = await new BridgeController({ defaultRuntime: 'host',
     dataDir: path.join(root, 'data'), sourceProfile: profile,
-    executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true,
+    executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true,
     approvalTtlMs: ttlMs
   }).initialize();
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });

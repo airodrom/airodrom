@@ -1,0 +1,7 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const Bridge=require('../src/bridge-controller');
+test('production host cannot start an unbounded agent worker',async()=>{const b=new Bridge();b.tasks={get:()=>({id:'fixture',executionAgent:'host',mission:{}})};await assert.rejects(b._ensureHostRuntime('fixture'),/signed deterministic/);assert.equal(b.runtimes.size,0);});
+test('runtime profiles cannot select a removed worker',()=>{assert.throws(()=>new Bridge({defaultRuntime:require('../src/removed-runtime').REMOVED_RUNTIME}),/Invalid default/);assert.throws(()=>require('../src/agent-runtime-profile').agentRuntimeProfile(require('../src/removed-runtime').REMOVED_RUNTIME),/Unknown/);});
+test('Ollama inference is a provider and has no agent adapter',()=>{const b=new Bridge();assert.throws(()=>b.agentRouter.resolve('ollama'),/unavailable/);assert.equal(b.localOllamaBroker.constructor.name,'LocalOllamaBroker');});
+test('no runtime credential/profile discovery or execution package is distributed',()=>{const config=require('../src/config');assert.equal(config.prepareWorkerProfile,undefined);const pkg=require('../package.json');assert(!Object.keys({...pkg.dependencies,...pkg.devDependencies}).some(x=>x.includes('coding-agent')));assert(!fs.existsSync(path.resolve(__dirname,'../src/rpc-supervisor.js')));});

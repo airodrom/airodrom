@@ -175,7 +175,7 @@ class ControlPlaneStore {
     this.event(`mission.${state}`,id,{previous:m.state,state});return this.getMission(id);
   }); }
   run(id){require('./memory-content-erasure').assertReadable(this.db);const r=this.db.prepare('SELECT * FROM cp_runs WHERE id=?').get(id);return r?{...r,result:r.result?JSON.parse(r.result):null}:null;}
-  startRun({id,taskId,missionId=null,agentId='pi',generation=1,nativeSessionId=null}) {return transaction(this.db,()=>{
+  startRun({id,taskId,missionId=null,agentId='host',generation=1,nativeSessionId=null}) {require('./removed-runtime').assertExecutable(agentId);return transaction(this.db,()=>{
     if(this.run(id))return this.run(id);
     const now=this.now();this.db.prepare("INSERT INTO cp_runs(id,mission_id,task_id,agent_id,generation,state,process_state,liveness_state,native_session_id,created_at,updated_at) VALUES(?,?,?,?,?,'starting','not_started','unknown',?,?,?)").run(id,missionId,taskId,agentId,generation,nativeSessionId,now,now);
     if(this.authorityRuntime?.active&&missionId){const a=this.authorityRuntime.store,m=a.getMission(missionId);a.startRun({id,task_id:taskId,mission_id:missionId,mission_revision:m.current_revision,agent_id:agentId});}
@@ -209,7 +209,7 @@ class ControlPlaneStore {
   request(owner,requestId,input,operation) {require('./memory-content-erasure').assertReadable(this.db); identifier(requestId);const hash=fingerprint(input);const row=this.db.prepare('SELECT * FROM cp_requests WHERE owner=? AND request_id=?').get(owner,requestId);if(row){if(row.fingerprint!==hash)throw new Error('Idempotency conflict');return row.state==='settled'?{...JSON.parse(row.result),duplicate:true}:{status:'unknown',request_id:requestId,duplicate:true};}return transaction(this.db,()=>{this.db.prepare("INSERT INTO cp_requests(owner,request_id,fingerprint,state,result,record_id) VALUES(?,?,?,'running',NULL,?)").run(owner,requestId,hash,randomUUID());const result=operation();if(result?.then)throw new Error('Use durable dispatch intents for asynchronous operations');this.db.prepare("UPDATE cp_requests SET state='settled',result=? WHERE owner=? AND request_id=?").run(json(result),owner,requestId);return result;});}
   decision(id){require('./memory-content-erasure').assertReadable(this.db);const r=this.db.prepare('SELECT * FROM cp_decisions WHERE id=?').get(id);return r?{...r,options:JSON.parse(r.options),answer:r.answer?JSON.parse(r.answer):null}:null;}
   decisions(missionId=null){return this.db.prepare(`SELECT id FROM cp_decisions ${missionId?'WHERE mission_id=?':''} ORDER BY created_at DESC LIMIT 200`).all(...(missionId?[missionId]:[])).map(r=>this.decision(r.id));}
-  createDecision(missionId,{question,options=[],allow_free_text=true,expires_at=null,run_id=null,agent_id='pi'}) {
+  createDecision(missionId,{question,options=[],allow_free_text=true,expires_at=null,run_id=null,agent_id='host'}) {
     text(question,'decision question');if(!Array.isArray(options)||options.length>8||typeof allow_free_text!=='boolean'||(!options.length&&!allow_free_text))throw new Error('Invalid decision options');
     const ids=new Set();for(const o of options){object(o,['id','label','description','recommended']);if(o.description!==undefined)text(o.description,'option description',1000);identifier(o.id);text(o.label,'option',240);if(ids.has(o.id))throw new Error('Duplicate option');ids.add(o.id);}
     if(expires_at!==null&&(!Number.isSafeInteger(expires_at)||expires_at<=this.now()))throw new Error('Invalid decision expiry');

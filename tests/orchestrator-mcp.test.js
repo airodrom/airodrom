@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 const { CapabilityHost } = require('../src/capability-host');
 const { HostExecutor } = require('../src/host-exec');
 const { EXECUTABLES } = require('../src/capability-mac');
@@ -81,8 +81,8 @@ if (args[0] === '-p') {
   });
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({ defaultRuntime: 'pi',
-    dataDir, sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true,
+  const bridge = await new BridgeController({ defaultRuntime: 'host',
+    dataDir, sourceProfile: profile, executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true,
     capabilityHost: host, orchestrator: syncBudgetMs ? { syncBudgetMs } : {}
   }).initialize();
   host.saveTask = item => bridge.tasks.save(item);
@@ -148,8 +148,8 @@ test('orchestrator create_task: least-privilege default, unknown scopes rejected
   assert.equal(status.mode, 'orchestrator');
   assert.deepEqual(status.capability_scopes, ['repo', 'system_readonly']);
   assert.equal(status.busy, false);
-  await assert.rejects(f.call('continue_task', { task_id: task.id, message: 'Start a model turn.', request_id: rid('cont') }), /never start a Pi session|initial MCP turn/);
-  await assert.rejects(f.bridge.prompt(task.id, 'direct prompt'), /never start a Pi session/);
+  await assert.rejects(f.call('continue_task', { task_id: task.id, message: 'Start a model turn.', request_id: rid('cont') }), /never start a worker session|initial MCP turn/);
+  await assert.rejects(f.bridge.prompt(task.id, 'direct prompt'), /never start a worker session/);
   f.spies.prompt = 0;
   assert.equal(f.bridge.runtimes.size, 0);
   assert.equal(f.spies.ensureRuntime + f.spies.inference, 0);
@@ -424,8 +424,10 @@ test('read-only introspection: capability_status, capability_inventory and agent
   assert.equal(agents.claude_code.runtime_profile.available, false);
   assert.equal(agents.claude_code.running_jobs, 1);
   assert.equal(agents.claude_code.jobs[0].job_id, sleeper.result.job_id);
-  assert.equal(agents.pi.availability, 'available');
-  assert.equal(agents.pi.local_model, 'qwen3-coder:30b');
+  assert.equal(agents.host.availability, 'available');
+  assert.equal(agents.host.kind, 'control_plane_capability');
+  assert.equal(agents.host.local_model, undefined);
+  assert.equal(agents.host.runtime_profile.execution_authority, false);
   const cancelled = await f.invoke(dev, 'claude_code_task_cancel', { jobId: sleeper.result.job_id });
   assert.equal(cancelled.result.cancelled, true);
   const everything = JSON.stringify([status, denied, all, agents]);
@@ -449,8 +451,8 @@ test('model-mediated capability calls still use the same broker and policy; work
   assert.equal(results[2].kind, 'capability_scope_denied', 'the model cannot reach a scope the task was not given');
   assert.deepEqual(f.bridge.tasks.get(task.id).capabilityScopes, ['repo', 'system_readonly']);
   const requested = f.events(f.bridge.tasks.get(task.id)).find(event => event.event_type === 'capability.requested' && event.metadata.capability === 'file_write');
-  assert.equal(requested.agent, 'pi');
-  assert.equal(requested.metadata.origin, 'pi');
+  assert.equal(requested.agent, 'host');
+  assert.equal(requested.metadata.origin, 'host');
   assert.equal(f.claudeRuns().length, 0);
 });
 

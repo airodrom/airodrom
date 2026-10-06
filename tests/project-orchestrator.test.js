@@ -20,7 +20,7 @@ function fixture(t) {
   t.after(() => { try { db.close(); } catch { /* Restart test already closed it. */ } fs.rmSync(root, { recursive: true, force: true }); });
   return { root, file, db, ledger, memory, projects, events, tick: () => ++now };
 }
-function project(overrides = {}) { return { name: 'Pi Personal Assistant', description: 'Local assistant foundation.', desiredOutcomes: ['Durable, bounded personal memory'], currentPhase: 'foundation', nextAction: 'Build Personal Memory V1', preferredAgents: ['chatgpt', 'pi', 'cursor'], autonomyLevel: 'suggest', privacyPolicy: 'Local-first', costPolicy: 'No unapproved spend', repositories: ['pi-chatgpt-bridge'], references: ['docs/MEMORY-V2.md'], decisions: ['Use SQLite'], limitations: ['No connector integration'], ...overrides }; }
+function project(overrides = {}) { return { name: 'Pi Personal Assistant', description: 'Local assistant foundation.', desiredOutcomes: ['Durable, bounded personal memory'], currentPhase: 'foundation', nextAction: 'Build Personal Memory V1', preferredAgents: ['chatgpt', 'host', 'cursor'], autonomyLevel: 'suggest', privacyPolicy: 'Local-first', costPolicy: 'No unapproved spend', repositories: ['pi-chatgpt-bridge'], references: ['docs/MEMORY-V2.md'], decisions: ['Use SQLite'], limitations: ['No connector integration'], ...overrides }; }
 
 test('fresh initialization migrates an existing database without replacing existing tables', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-project-migration-')); const file = path.join(root, 'memory.sqlite');
@@ -35,7 +35,7 @@ test('fresh initialization migrates an existing database without replacing exist
 test('creates project, goal, mission, and persists a complete hierarchy across reopen', t => {
   const f = fixture(t); const created = f.projects.createProject(project());
   const goal = f.projects.createGoal({ projectId: created.projectId, name: 'Personal Memory', desiredOutcome: 'Persistent personal preferences', nextAction: 'Add retrieval' });
-  const mission = f.projects.createMission({ goalId: goal.goalId, name: 'Memory schema', acceptanceCriteria: ['SQLite migration', 'restart persistence'], preferredAgents: ['cursor', 'pi'] });
+  const mission = f.projects.createMission({ goalId: goal.goalId, name: 'Memory schema', acceptanceCriteria: ['SQLite migration', 'restart persistence'], preferredAgents: ['cursor', 'host'] });
   assert.equal(mission.projectId, created.projectId); assert.equal(mission.goalId, goal.goalId);
   const summary = f.projects.summary(created.projectId); assert.equal(summary.goals.length, 1); assert.equal(summary.missions.length, 1);
   f.db.close(); const reopenedDb = new DatabaseSync(f.file); const reopened = new ProjectMissionOrchestrator({ db: reopenedDb });

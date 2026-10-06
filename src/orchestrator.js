@@ -4,7 +4,7 @@
 // the bridge executes it in an existing task's identity and scopes. This module
 // is only an entry point. Execution, central policy, scopes, exact one-shot
 // approvals, mission budgets and Event Ledger capability events all stay in the
-// shared CapabilityBroker path that Pi worker calls use. No model is involved.
+// shared CapabilityBroker path that worker calls use. No model is involved.
 
 const { createHash, randomUUID } = require('node:crypto');
 
@@ -76,7 +76,7 @@ class Orchestrator {
     const db = bridge.controlStore?.db || bridge.memory?.db;
     if (db) require('./memory-content-erasure').assertReadable(db);
     if (identity.hasLegacyIdentifiers({ request_id: requestId })) throw new Error('Legacy request identity requires migration');
-    const task = bridge.tasks.get(taskId);
+    const task = bridge.tasks.get(taskId); require('./removed-runtime').assertExecutable(task);
     const payload = plainInput(input);
     const fingerprint = sha256(canonical(brokerTool ? [task.id, name, payload, brokerTool] : [task.id, name, payload]));
     const durable = bridge.controlStore?.invocation(requestId);
@@ -113,7 +113,7 @@ class Orchestrator {
     }
     if (payload.wait === true) throw new Error('Direct invocations are asynchronous: omit wait and poll the capability\'s status');
     if (Object.keys(task.capabilityInvocations || {}).length >= MAX_INVOCATIONS_PER_TASK) throw new Error(`Task reached ${MAX_INVOCATIONS_PER_TASK} direct capability invocations; create a new task`);
-    // The per-task lease excludes a concurrent Pi turn on this task and makes
+    // The per-task lease excludes a concurrent worker turn on this task and makes
     // busy truthful while the capability runs.
     let lease;
     try { lease = bridge.leases.acquire(task.id, { agentId: 'bridge' }); }

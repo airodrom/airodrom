@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { readManifest, verifyExecutable, makeProfile, makeRuntimeDeny, sanitizedRuntimeEnv, SECRET_COMPONENT_PATTERN } = require('./worker-sandbox');
+const { readManifest, verifyExecutable, makeProfile, makeRuntimeDeny, sanitizedRuntimeEnv, SECRET_COMPONENT_PATTERN } = require('./sandbox-policy');
 
 const TRUSTED_DEV_JOBS = new Set([
   'git_status', 'git_diff', 'git_diff_check', 'git_log', 'git_show', 'git_branch', 'git_head', 'git_ls_files', 'git_grep',

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 const { CapabilityHost } = require('../src/capability-host');
 const { HostExecutor } = require('../src/host-exec');
 const { EXECUTABLES, APPS } = require('../src/capability-mac');
@@ -401,7 +401,7 @@ async function controller(t, env) {
   const root = fs.realpathSync(fs.mkdtempSync('/private/tmp/cap-v2b-'));
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true, capabilityHost: env.host }).initialize();
+  const bridge = await new BridgeController({ defaultRuntime: 'host', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true, capabilityHost: env.host }).initialize();
   env.host.saveTask = item => bridge.tasks.save(item);
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   return bridge;
@@ -426,7 +426,7 @@ test('broker + central policy + Event Ledger: automatic capability audited with 
   assert.equal(completed.metadata.risk_class, 'ROUTINE_WRITE');
   assert.equal(completed.metadata.result_class, 'completed');
   assert.equal(typeof completed.metadata.duration_ms, 'number');
-  assert.ok(events.some(event => event.event_type === 'capability.requested' && event.metadata.capability === 'clipboard_write' && event.agent === 'pi'));
+  assert.ok(events.some(event => event.event_type === 'capability.requested' && event.metadata.capability === 'clipboard_write' && event.agent === 'host'));
   const everything = JSON.stringify(bridge.ledger.list({ limit: 500 })) + JSON.stringify(bridge.policy.audit) + JSON.stringify(bridge.capabilityBroker.audit) + (fs.existsSync(bridge.auditFile || '') ? fs.readFileSync(bridge.auditFile, 'utf8') : '');
   assert.equal(everything.includes(secret), false, 'clipboard secret never reaches ledger or audit');
   const activity = bridge.capabilityActivity();

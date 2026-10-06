@@ -310,7 +310,7 @@ function redactRow(db,table,row,marker) {
   }
   if(table==='task_states') {
     const task=jsonValue(row.snapshot),keep=['id','sessionId','sessionDir','workspace','status','createdAt','updatedAt'];
-    if(['opencode','pi','claude_code','codex','cursor'].includes(task.executionAgent))keep.push('executionAgent');
+    if(['opencode','pi','host','claude_code','codex','cursor'].includes(task.executionAgent))keep.push('executionAgent');
     values.snapshot=JSON.stringify({...Object.fromEntries(Object.entries(task).filter(([k])=>keep.includes(k))),description:'[erased]',context:null,lastResult:null,events:[],retrievedMemory:[],content_state:'erased',erasure_generation:marker.generation});
   }
   if(!Object.keys(values).length){if(columns.some(c=>fields[table].classification[c.name]!=='A'))preventReplay(db,table,row,marker.generation,scope);return false;}

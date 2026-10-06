@@ -1,5 +1,7 @@
 # ADR 0007 — Local interactive bootstrap and reasoning Missions
 
+Historical decision: runtime references are superseded by [ADR 0008](0008-remove-worker-runtime.md). Pi is removed and historical identities cannot execute.
+
 Status: Proposed; pre-release implementation and isolated qualification only.
 
 A no-argument local CLI starts or attaches to a private per-user service, with

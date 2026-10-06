@@ -22,7 +22,7 @@
   "restrictedWorker": {
     "enabled": false,
     "evidenceLabel": "LEVEL1_RESTRICTED_WORKER",
-    "piWorkerEnabled": false,
+    "agentWorkerEnabled": false,
     "allowedCapability": "read",
     "allowedOperationsPerTask": 1
   },
@@ -77,8 +77,8 @@
     "humanTurnsAfterAuthorization": 0,
     "manualStatusChecks": 0,
     "manualNextActions": 0,
-    "piTasks": 2,
-    "piCompletionEvents": 2,
+    "hostTasks": 2,
+    "hostCompletionEvents": 2,
     "realReasoningTurns": 2,
     "automaticNextTaskDispatches": 1,
     "missionStatus": "completed"

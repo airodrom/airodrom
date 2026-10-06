@@ -83,7 +83,7 @@ class Level1DecisionVerifier {
 /**
  * Prepared synchronous OpenAI Responses API adapter. It is inert by default,
  * has no environment-variable credential fallback, makes no retries, and has
- * no inbound callback or Pi-facing network capability.
+ * no inbound callback or worker-facing network capability.
  */
 class OpenAIResponsesDecisionAdapter {
   constructor({ enabled = false, simulation = false, apiKeyProvider = null, fetchImpl = globalThis.fetch, signingPrivateKey = null, verifier = null, now = Date.now } = {}) {

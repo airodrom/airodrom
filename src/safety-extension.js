@@ -1,3 +1,3 @@
 'use strict';
-// Legacy public import now resolves to the same policy used by the loaded .ts extension.
+// Stable public policy import; all enforcement belongs to Airodrom.
 module.exports = require('./safety-policy');

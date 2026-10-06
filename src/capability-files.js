@@ -30,7 +30,7 @@ function atomicWrite(target, content, { exclusive = false } = {}) {
     if (exclusive) fail('File already exists');
     mode = regularFile(target).mode & 0o777;
   }
-  const temp = path.join(parent, `.${path.basename(target)}.pi-${randomBytes(6).toString('hex')}.tmp`);
+  const temp = path.join(parent, `.${path.basename(target)}.airodrom-${randomBytes(6).toString('hex')}.tmp`);
   fs.writeFileSync(temp, content, { flag: 'wx', mode });
   try {
     if (exclusive) { fs.linkSync(temp, target); fs.unlinkSync(temp); }

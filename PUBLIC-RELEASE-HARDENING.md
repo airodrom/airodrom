@@ -1,5 +1,7 @@
 # Airodrom public release hardening
 
+Historical qualification report for the earlier candidate. Its counts and repository observations are historical evidence. Current runtime policy supersedes its Pi requirements: OpenCode is primary, Airodrom host primitives own authority and independent verification, and Pi is removed. See [migration](docs/PI-REMOVAL.md).
+
 Prepared October 5, 2026. Candidate **1.0.0-rc.1** completes public-release hardening and remains private/unactivated. GitHub Private Vulnerability Reporting is the sole confidential channel; its activation/verification is an owner step immediately upon public visibility switch. The sole final verdict is **PUBLIC-RELEASE HARDENING COMPLETE — READY FOR OWNER PUBLICATION DECISION**, recorded in [PUBLICATION-GATE.md](PUBLICATION-GATE.md).
 
 ## Repository choice and preservation
@@ -38,7 +40,7 @@ A new packaging adversarial test demonstrated that npm directory entries can ove
 
 ## Qualification and residual limits
 
-Pi local remains required. Claude Code is optional supported. Work is optional/live-unqualified, Cursor experimental with governed execution denied, and generic Cloud unsupported. DeepSeek remains disabled/auth_required. Personal payload logical erasure and current-authority quarantine/replay safeguards have synthetic source evidence; physical media/WAL/free pages/old backup bytes, unmanaged exports and delivered provider copies have no synchronous forensic deletion proof. Unknown origins/schemas remain unavailable. The public docs make no legal compliance or universal deletion claim.
+At this historical snapshot Pi local was required; that requirement is superseded by complete removal. Claude Code is optional supported. Work is optional/live-unqualified, Cursor experimental with governed execution denied, and generic Cloud unsupported. DeepSeek remains disabled/auth_required. Personal payload logical erasure and current-authority quarantine/replay safeguards have synthetic source evidence; physical media/WAL/free pages/old backup bytes, unmanaged exports and delivered provider copies have no synchronous forensic deletion proof. Unknown origins/schemas remain unavailable. The public docs make no legal compliance or universal deletion claim.
 
 The public source candidate is distinct from the private history. Recognized secret scans and advisory databases have bounded coverage; no arbitrary-secret/vulnerability absence guarantee is implied. License evidence describes observed terms, not a legal ownership opinion. Hosted CI enforcement, real reviewer accounts and eventual owner publication authorization cannot be inferred from a local checkout. GitHub Private Vulnerability Reporting has been selected and documented, but enablement/verification is deferred to immediately after the repository becomes public. Reporters must wait if it is unavailable and keep sensitive details private. No automatic activation follows a passing suite.
 

@@ -44,7 +44,7 @@ test('background service logs lifecycle without printing its launch token or raw
   const root = temporary(t), source = path.join(root, 'source'), data = path.join(root, 'data'), logFile = path.join(root, 'service.log');
   fs.mkdirSync(source); fs.writeFileSync(path.join(source, 'settings.json'), '{}');
   const child = spawn(process.execPath, ['--experimental-sqlite', path.join(__dirname, '../src/index.js')], {
-    env: { ...process.env, PI_BRIDGE_DATA_DIR: data, PI_BRIDGE_SOURCE_PROFILE: source, PI_BRIDGE_PORT: '0', PI_BRIDGE_BACKGROUND: '1', PI_BRIDGE_LOG_FILE: logFile }, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, AIRODROM_DATA_DIR: data, AIRODROM_SOURCE_PROFILE: source, AIRODROM_PORT: '0', AIRODROM_BACKGROUND: '1', AIRODROM_LOG_FILE: logFile }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = ''; child.stdout.on('data', part => output += part); child.stderr.on('data', part => output += part);
   const exit = new Promise(resolve => child.once('exit', code => resolve(code)));
@@ -71,7 +71,7 @@ test('background service logs lifecycle without printing its launch token or raw
 
   const secretPath = path.join(root, 'PRIVATE-CONFIG-PATH');
   const bad = spawn(process.execPath, ['--experimental-sqlite', path.join(__dirname, '../src/index.js')], {
-    env: { ...process.env, PI_BRIDGE_DATA_DIR: data, PI_BRIDGE_SOURCE_PROFILE: secretPath, PI_BRIDGE_BACKGROUND: '1', PI_BRIDGE_LOG_FILE: logFile }, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, AIRODROM_DATA_DIR: data, AIRODROM_SOURCE_PROFILE: secretPath, AIRODROM_BACKGROUND: '1', AIRODROM_LOG_FILE: logFile }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let failure = ''; bad.stdout.on('data', part => failure += part); bad.stderr.on('data', part => failure += part);
   assert.equal(await new Promise(resolve => bad.once('exit', resolve)), 1);

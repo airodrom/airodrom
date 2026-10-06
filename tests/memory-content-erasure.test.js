@@ -87,7 +87,7 @@ test('event ledger payload and metadata are redacted with fixed counters and no 
 test('unreadable generation excludes stale packets for every runtime boundary',t=>{
   const f=fixture(t);f.db.exec('CREATE TABLE unsupported_cache(id TEXT PRIMARY KEY,payload TEXT)');
   assert.throws(()=>f.memory.erase(f.m.id,f.store.operator));
-  for(const runtime of ['pi','work','claude_code','cursor','cloud'])assert.equal(erasure.packetUsable(f.db,{runtime,records:[{memory_id:f.m.id,value:'forbidden'}]}),false);
+  for(const runtime of ['host','work','claude_code','cursor','cloud'])assert.equal(erasure.packetUsable(f.db,{runtime,records:[{memory_id:f.m.id,value:'forbidden'}]}),false);
 });
 test('personal primary and FTS cannot return erased content during concurrent retained read',t=>{
   const db=new DatabaseSync(':memory:');t.after(()=>db.close());const memory=new PersonalMemory({db});
@@ -190,8 +190,8 @@ test('erase during recovery invalidates the isolation barrier before any restore
   assert.throws(()=>new PersonalMemory({db:f.old,restoreFromBackup:true,erasureSourceDb:f.db}),/generation changed during recovery/);
 });
 test('Pi rejects an erased packet before issuing a runtime prompt',async t=>{
-  const f=fixture(t),{PiAdapter}=require('../src/pi-adapter');let calls=0;
-  const pi=new PiAdapter({bridge:{_ensurePiRuntime:()=>{},controlStore:{db:f.db}}});f.memory.erase(f.m.id,f.store.operator);
+  const f=fixture(t),{HostWorkerAdapter}=require('../src/host-worker-adapter');let calls=0;
+  const pi=new HostWorkerAdapter({bridge:{_ensureHostRuntime:()=>{},controlStore:{db:f.db}}});f.memory.erase(f.m.id,f.store.operator);
   assert.throws(()=>pi.contextPacket({records:[{memory_id:f.m.id,value:'forbidden'}]}),/unavailable/);
   const marker=erasure.mark(f.db,{store:'personal',identity:'pending-opaque',scope_hash:erasure.scopeHash(['pending']),action:'operator_erasure'});
   assert.ok(marker);await assert.rejects(()=>pi.dispatch({runtime:{rpc:{sendCommand:()=>{calls++;}}},message:'stale payload'}),/incomplete/);assert.equal(calls,0);

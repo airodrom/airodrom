@@ -6,7 +6,7 @@ function trace(event, fields = {}) {
   if (process.env.MCP_STDIO_TRACE !== '1') return;
   let fd;
   try {
-    const directory = process.env.PI_BRIDGE_DATA_DIR || path.join(__dirname, '../work');
+    const directory = process.env.AIRODROM_DATA_DIR || path.join(__dirname, '../work');
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const dir = fs.lstatSync(directory);
     if (!dir.isDirectory() || dir.isSymbolicLink() || dir.uid !== process.getuid()) return;

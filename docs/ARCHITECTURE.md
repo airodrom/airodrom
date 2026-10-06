@@ -1,6 +1,6 @@
 # Architecture overview
 
-Airodrom is a modular monolith with durable SQLite state machines. ChatGPT supplies strategy and outcome review; Airodrom owns operational reconciliation and typed local execution. OpenCode is the default bounded execution runtime; Pi remains an explicit compatibility/rollback runtime and supplies existing typed plans and verification. Execution agents and reasoning providers are separate. Apps implement external protocols; the Kernel owns admission, authority and lifecycle policies.
+Airodrom is a modular monolith with durable SQLite state machines. ChatGPT supplies strategy and outcome review; Airodrom owns operational reconciliation and typed local execution. OpenCode is the default bounded execution runtime; Pi is removed. Airodrom host primitives execute typed plans and verify evidence independently. Execution agents and reasoning providers are separate. Apps implement external protocols; the Kernel owns admission, authority and lifecycle policies.
 
 A Mission freezes scope, budget, runtime eligibility and verification criteria. Task/Run records capture attempts. Durable writer leases serialize workspace mutation; uncertain termination quarantines ownership. External effects use a transactional outbox with destination idempotency where supported. Unknown delivery remains pending reconciliation.
 

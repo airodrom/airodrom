@@ -73,7 +73,7 @@ test('bounded default OpenCode Mission has no tools, exact budget, signed author
   assert.equal(f.b.missions.detail(m.mission_id).program_contract.settlement.state, 'settled');
   const denied = await f.b.invokeCapability(task.id, { name: 'file_write', input: { path: path.join(task.workspace, 'escape.txt'), content: 'no' }, requestId: 'no-write' }); assert.notEqual(denied.status, 'completed');
 });
-test('canonical remember, minimum delivery, correction, erased non-delivery and Pi rollback cannot resurrect', async t => {
+test('canonical remember, minimum delivery, correction, erased non-delivery and removed runtimes cannot receive memory', async t => {
   const f = await conversationFixture(t), remember = content => local.request(f.home, '/api/interactive/remember', { content });
   const old = await remember('My test codename is Silver Falcon.'); await remember('My unrelated preference is purple.');
   const first = await f.ask(); assert.equal(first.task.lastResult, 'My test codename is Silver Falcon.');
@@ -88,8 +88,8 @@ test('canonical remember, minimum delivery, correction, erased non-delivery and 
   const third = await f.ask(); assert.equal(third.task.lastResult, 'unavailable'); assert.equal(f.b.controlContext.inspect(third.task.contextPackId).refs.length, 0);
   await assert.rejects(local.request(f.home, '/api/interactive/remember', { content: 'api_key=syntheticSensitiveToken' }), /Secret|sensitive/);
   await assert.rejects(local.request(f.home, '/api/interactive/forget', { selection: 'missing' }), /one current/);
-  const pi = f.b.missions.createConversation({ request_id: 'pi-rollback', message: 'What is my test codename?', include_memory: true, runtime: 'pi' }); f.b.missions.dispatch(pi.mission_id, { request_id: 'pi-dispatch' });
-  const blocked = await f.settle(pi.mission_id, 'blocked'); assert.equal(blocked.runs.length, 0); assert.equal(blocked.envelope.preferred_agent, 'pi'); assert.match(blocked.reason, /typed Missions/);
+  assert.throws(() => f.b.missions.createConversation({ request_id: 'removed-runtime', message: 'What is my test codename?', include_memory: true, runtime: 'pi' }), /Invalid default/);
+  assert.equal(f.b.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE agent_id = 'pi'").get().n, 0);
 });
 test('memory opt-out is enforced and browser prompt uses the same canonical Mission path', async t => {
   const f = await conversationFixture(t); await local.request(f.home, '/api/interactive/remember', { content: 'My test codename is Silver Falcon.' });
@@ -232,7 +232,7 @@ test('accepted episode audit timestamps cannot become false secret alarms or run
   const f=await conversationFixture(t),a=qualifyCanonical(f.b),{manifest}=require('./fixtures/opencode-fixture.cjs');
   let stamp=Date.now();for(let i=0;i<20&&!require('../src/personal-memory').containsSecret(JSON.stringify({accepted_at:stamp}));i++)stamp++;
   assert.equal(require('../src/personal-memory').containsSecret(JSON.stringify({accepted_at:stamp})),true);
-  const m=f.create({preferred_agent:'pi',task_type:'local_files',manifest:manifest(f.repo),capability_scopes:['repo'],dispatch_policy:{task_category:'deterministic_files',privacy:'local_only',providers:['local'],billing_classes:['local'],native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
+  const m=f.create({preferred_agent:'host',task_type:'local_files',manifest:manifest(f.repo),capability_scopes:['repo'],dispatch_policy:{task_category:'deterministic_files',privacy:'local_only',providers:['local'],billing_classes:['local'],native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
   f.b.missions.dispatch(m.id,{request_id:'episode-source'});const done=await f.settle(m.id),clock=a.store.now;
   try{a.store.now=()=>stamp;f.b.missions.accept(m.id,{request_id:'episode-acceptance',verification_id:done.verifications[0].id,decision:'accept',rationale:'Synthetic exact-file evidence passed'});}finally{a.store.now=clock;}
   fs.writeFileSync(path.join(f.repo,'fixture.txt'),'alpha\n');

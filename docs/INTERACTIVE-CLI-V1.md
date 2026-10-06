@@ -39,7 +39,7 @@ but never rewrites another installation's configuration.
 | `airodrom task mission.json` | Register and dispatch an explicit scoped Mission |
 
 Interactive commands are `/remember <text>`, `/memory [query]`, `/forget <id or
-unambiguous query>`, `/status`, `/runtime [opencode|pi]`, `/open`, `/task
+unambiguous query>`, `/status`, `/runtime [opencode]`, `/open`, `/task
 <mission.json>`, `/accept [review evidence]`, `/help` and `/quit`. Repeating “My
 test codename is …” uses its subject to correct the current fact. Arbitrary
 corrections can use the existing explicit memory-ID update API. Secret-like
@@ -50,9 +50,7 @@ Every plain input registers a fresh bounded reasoning Mission. It reads at most
 one relevant memory and gives OpenCode no file tools, shell, network tools, MCP,
 subagents or database access. An answer awaits operator review; `/accept` records
 Acceptance and Settlement. Coding requires declared scope and registered
-verification through `/task` or Control Hub. Pi remains explicit rollback for the
-existing qualified typed plans. Selecting Pi for an unrestricted conversational
-request stops with instructions to use a typed Mission or select OpenCode.
+verification through `/task` or Control Hub. OpenCode is the only interactive agent choice. Typed deterministic plans execute through Airodrom host capabilities and independent verification. Pi is removed; unavailable OpenCode waits or fails closed. Historical removed-runtime tasks cannot receive context or resume.
 
 The legacy foreground `npm start` and macOS login-service commands remain
 available for existing installations. Their private instances are not adopted

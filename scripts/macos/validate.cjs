@@ -1,5 +1,5 @@
 'use strict';
-// Live installed-service validation. Never creates/replays a Pi task.
+// Live installed-service validation. Never creates/replays a task.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');

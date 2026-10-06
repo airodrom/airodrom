@@ -98,7 +98,7 @@ function fixture(t, { rich = false, state = 'active', file = ':memory:' } = {}) 
     old.second = legacy(['memory-candidate-v1', secondInput]); replacements.set(second.id, old.second);
     old.conflict = legacy(['memory-conflict-v1', old.memory, old.second]); replacements.set(conflict.conflict_id, old.conflict);
     const mission = store.createMission({ envelope: { objective: 'Independent fixture evidence', criteria: [] } });
-    const run = store.startRun({ mission_id: mission.id, mission_revision: 1, agent_id: 'pi' });
+    const run = store.startRun({ mission_id: mission.id, mission_revision: 1, agent_id: 'host' });
     const result = store.recordResult({ mission_id: mission.id, mission_revision: 1, run_id: run.id, status: 'completed', summary: 'fixture evidence' });
     const evidence = { description: CANARY, candidate_id: candidate.id, context_pack_id: pack.id };
     const verification = store.verifyResult({ mission_id: mission.id, mission_revision: 1, result_id: result.id, status: 'passed', verifier_id: 'independent-fixture', evidence: [evidence] });
@@ -107,7 +107,7 @@ function fixture(t, { rich = false, state = 'active', file = ':memory:' } = {}) 
     store.setState(mission.id, 'awaiting_acceptance');
     store.accept({ mission_id: mission.id, mission_revision: 1, verification_id: verification.id, reason: 'Fixture Acceptance', review_evidence: [{ candidate_id: candidate.id, context_pack_id: pack.id }] });
     const router = new AuthorityRouter(store, memory); db.exec("UPDATE authority_activation SET router_state='qualifying'");
-    const route = router.plan({ context_pack_id: empty.id, task_class: 'local_files', required_capabilities: ['local_tools'], privacy: 'internal' }, [{ agent_id: 'pi', runtime_id: 'native-fixture', enabled: true, capabilities: ['local_tools'], assurance: 2, locality: 'local', isolation_verified: true, availability: 'available', observed_at: 1000, auth_state: 'observed', quota_state: 'unknown', circuit_state: 'closed', cost_class: 'local' }], store.host, { fixture: true });
+    const route = router.plan({ context_pack_id: empty.id, task_class: 'local_files', required_capabilities: ['local_tools'], privacy: 'internal' }, [{ agent_id: 'host', runtime_id: 'native-fixture', enabled: true, capabilities: ['local_tools'], assurance: 2, locality: 'local', isolation_verified: true, availability: 'available', observed_at: 1000, auth_state: 'observed', quota_state: 'unknown', circuit_state: 'closed', cost_class: 'local' }], store.host, { fixture: true });
     const routeRow = db.prepare('SELECT input_json,decision_json FROM authority_routing_decisions WHERE id=?').get(route.id);
     old.route = legacy(['routing-decision-v2', JSON.parse(routeRow.input_json), JSON.parse(routeRow.decision_json)]); replacements.set(route.id, old.route);
     for (const observation of db.prepare('SELECT id FROM authority_runtime_capability_observations WHERE evidence_ref=?').all(route.id)) {
@@ -166,7 +166,7 @@ test('nested values, arrays and JSON object keys rewrite every permitted referen
 });
 test('digest-bearing event idempotency references are rekeyed without retaining original output', t => {
   const f = fixture(t), digest = canonicalHash('event-only key payload'), oldKey = 'instruction:' + randomUUID() + ':' + digest;
-  f.db.prepare('INSERT INTO event_ledger_events(event_id,idempotency_key,fingerprint,event_type,timestamp,timestamp_ms,agent,direction,metadata) VALUES(?,?,?,?,?,?,?,?,?)').run(randomUUID(), oldKey, canonicalHash({ key: oldKey }), 'agent.instruction.sent', '1970-01-01T00:00:01.000Z', 1000, 'pi', 'outgoing', json({ context_pack_id: f.old.pack }));
+  f.db.prepare('INSERT INTO event_ledger_events(event_id,idempotency_key,fingerprint,event_type,timestamp,timestamp_ms,agent,direction,metadata) VALUES(?,?,?,?,?,?,?,?,?)').run(randomUUID(), oldKey, canonicalHash({ key: oldKey }), 'agent.instruction.sent', '1970-01-01T00:00:01.000Z', 1000, 'host', 'outgoing', json({ context_pack_id: f.old.pack }));
   migrate(f); absent(f.db, [...f.forbidden, digest, oldKey]);
   const event = f.db.prepare("SELECT idempotency_key FROM event_ledger_events WHERE event_type='agent.instruction.sent'").get(); assert.ok(event.idempotency_key === null || !event.idempotency_key.includes(digest));
 });
@@ -306,8 +306,8 @@ test('governed memory retrieval and provenance return opaque identity only', t =
   assert.equal(identity.hasLegacyIdentifiers(f.memory.provenance(id, f.store.operator)), false);
 });
 test('Pi actual packet boundary rejects legacy identity before downstream dispatch', async t => {
-  const f = fixture(t); migrate(f); const { PiAdapter } = require('../src/pi-adapter'); let prompts = 0;
-  const adapter = new PiAdapter({ bridge: { _ensurePiRuntime: () => {}, controlStore: { db: f.db } } });
+  const f = fixture(t); migrate(f); const { HostWorkerAdapter } = require('../src/host-worker-adapter'); let prompts = 0;
+  const adapter = new HostWorkerAdapter({ bridge: { _ensureHostRuntime: () => {}, controlStore: { db: f.db } } });
   assert.throws(() => adapter.contextPacket({ id: f.old.pack, records: [] }), /identity|legacy|unavailable/i);
   assert.throws(() => identity.migrate(f.db, { beforeApply: () => { throw Error('forced pending'); } }), DENIED);
   await assert.rejects(() => adapter.dispatch({ runtime: { rpc: { sendCommand: () => { prompts++; } } }, message: 'fixture' }), DENIED); assert.equal(prompts, 0);

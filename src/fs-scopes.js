@@ -44,7 +44,7 @@ class FilesystemScopes {
     this.bridgeRoot = realTarget(bridgeRoot);
     const h = (...parts) => path.join(this.home, ...parts);
     const appSupport = h('Library', 'Application Support');
-    this.piOwnedRoot = dataDir ? path.join(path.resolve(dataDir), 'pi-owned') : null;
+    this.hostOwnedRoot = dataDir ? path.join(path.resolve(dataDir), 'host-owned') : null;
     // Scope order matters only for reporting; access is the union of matching scopes.
     this.scopes = [
       { name: 'approved_project_roots', roots: [h('code')], read: true, write: true },
@@ -54,7 +54,7 @@ class FilesystemScopes {
       { name: 'developer_config', roots: [h('.config'), h('.gitconfig'), h('.claude', 'settings.json'), h('.cursor', 'extensions'), h('.vscode', 'extensions'), h('.ollama', 'models', 'manifests')], read: true, write: false },
       { name: 'application_support', roots: ['Cursor', 'Code', 'Claude', 'Ollama'].map(app => path.join(appSupport, app)).concat([h('Library', 'Logs')]), read: true, write: false },
       { name: 'system_readonly', roots: ['/Applications', '/opt/homebrew/Cellar', '/opt/homebrew/bin', '/usr/local/bin', '/usr/local/Cellar', '/Library/Developer/CommandLineTools/usr/bin'], read: true, write: false },
-      ...(this.piOwnedRoot ? [{ name: 'pi_owned', roots: [this.piOwnedRoot], read: true, write: true }] : []),
+      ...(this.hostOwnedRoot ? [{ name: 'host_owned', roots: [this.hostOwnedRoot], read: true, write: true }] : []),
       ...extraScopes
     ].map(scope => ({ ...scope, roots: scope.roots.map(root => { try { return realTarget(root); } catch { return path.resolve(root); } }) }));
     // Never readable or writable through V2 file capabilities: bridge runtime
@@ -91,13 +91,13 @@ class FilesystemScopes {
     if (sensitivePath(lexical, this.home)) throw Object.assign(new Error('Sensitive credential or private path is denied'), { sensitive: true });
     const canonical = realTarget(lexical);
     if (sensitivePath(canonical, this.home)) throw Object.assign(new Error('Sensitive credential or private path is denied'), { sensitive: true });
-    const piOwned = this.piOwnedRoot && contained(realTarget(this.piOwnedRoot), canonical) && contained(this.piOwnedRoot, lexical);
+    const hostOwned = this.hostOwnedRoot && contained(realTarget(this.hostOwnedRoot), canonical) && contained(this.hostOwnedRoot, lexical);
     // A bridge-created isolated workspace lives inside the data directory but is
     // the task's own working tree, not bridge state. Only paths that stay inside
     // it both lexically and after symlink resolution are exempt; sessions, other
     // tasks and the rest of the data directory remain private.
     const ownIsolatedWorkspace = base && this.privateRoots.some(root => contained(root, base) && path.relative(root, base) !== '') && contained(base, lexical) && contained(base, canonical);
-    if (!piOwned && !ownIsolatedWorkspace && this.privateRoots.some(root => contained(root, lexical) || contained(root, canonical))) throw Object.assign(new Error('Bridge private state is denied'), { sensitive: true });
+    if (!hostOwned && !ownIsolatedWorkspace && this.privateRoots.some(root => contained(root, lexical) || contained(root, canonical))) throw Object.assign(new Error('Bridge private state is denied'), { sensitive: true });
     const lexicalScopes = this._matching(lexical, mode, base);
     const canonicalScopes = this._matching(canonical, mode, base);
     if (!lexicalScopes.length) throw new Error(`Path is outside every ${mode} scope`);

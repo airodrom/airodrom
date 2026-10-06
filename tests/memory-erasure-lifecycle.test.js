@@ -80,7 +80,7 @@ test('governed forgetting survives pre-delete backup, replay and ContextPack reb
 });
 test('operator governed erasure removes personal snapshots while preserving immutable metadata',t=>{
  const f=fixture(t),{memory,candidate}=governedRecord(f),pack=f.governed.build({operator_id:f.store.operatorId,include_personal:true});
- assert.throws(()=>f.governed.erase(memory.id,{type:'agent',id:'pi'}));assert.throws(()=>f.governed.erase(memory.id,{type:'operator',id:'other'}));
+ assert.throws(()=>f.governed.erase(memory.id,{type:'agent',id:'host'}));assert.throws(()=>f.governed.erase(memory.id,{type:'operator',id:'other'}));
  const rawBefore=f.db.prepare('SELECT snapshot_json FROM authority_context_pack_items').get().snapshot_json;
  const receipt=f.governed.erase(memory.id,f.store.operator);assert.equal(receipt.immutableContentRetained,false);assert.equal(receipt.physicalErasure,false);
  assert.equal(f.governed.items(pack.id)[0].value,undefined);assert.equal(f.governed.provenance(memory.id,f.store.operator).observation,null);assert.equal(f.governed.candidate(candidate.id).value,undefined);

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 const TaskSessionManager = require('../src/task-session-model');
 const { MissionAuthority } = require('../src/mission-authority');
 const { McpTools } = require('../src/mcp-tools');
@@ -29,7 +29,7 @@ function sandbox(t) {
 function createBridge(t, { now = () => Date.now() } = {}) {
   const root = sandbox(t);
   const authority = new MissionAuthority({ authorityDir: path.join(root, 'authority'), now });
-  const bridge = new BridgeController({ defaultRuntime: 'pi', dataDir: path.join(root, 'runtime'), missionAuthority: authority });
+  const bridge = new BridgeController({ defaultRuntime: 'host', dataDir: path.join(root, 'runtime'), missionAuthority: authority });
   bridge.tasks = new TaskSessionManager(bridge.dataDir);
   bridge.config = { provider: 'ollama', model: 'qwen3-coder:30b', profile: path.join(root, 'profile') };
   return { root, authority, bridge };
@@ -162,15 +162,7 @@ test('SIMULATION: active grant expiry, cancellation, action exhaustion, and immu
   assert.throws(() => assertActiveChatMission(fresh), /identity changed/);
 });
 
-test('Active Chat worker source stays restricted to brokered read plus fixed local Ollama inference', () => {
-  const controller = fs.readFileSync(path.join(__dirname, '../src/bridge-controller.js'), 'utf8');
-  const sandbox = fs.readFileSync(path.join(__dirname, '../src/worker-sandbox.js'), 'utf8');
-  const extension = fs.readFileSync(path.join(__dirname, '../src/safety-extension.mjs'), 'utf8');
-  assert.match(controller, /toolAllowlist = .*activeChat.*\? 'read'/s);
-  assert.match(controller, /matching successful host-recorded broker read/);
-  assert.match(sandbox, /const restrictedReadOnly = level1ReadOnly \|\| activeChatReadOnly/);
-  assert.match(sandbox, /readRoots: restrictedReadOnly \? readRoots\.filter/);
-  assert.match(sandbox, /ACTIVE_CHAT_PREFLIGHT/);
-  assert.match(extension, /activeChatReadOnly/);
-  assert.match(extension, /restrictedReadOnly/);
+test('retired optional Active Chat smoke cannot create executable tasks in the product', () => {
+ const Bridge=require('../src/bridge-controller');const bridge=new Bridge();
+ assert.throws(()=>bridge.createActiveChatTask(),/retired/);assert.equal(bridge.runtimes.size,0);
 });

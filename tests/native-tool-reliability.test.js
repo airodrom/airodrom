@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 const { BROKER_TOOLS, classifyValidationError, validateToolInput } = require('../src/capability-broker');
 
 async function fixture(t) {
@@ -13,9 +13,9 @@ async function fixture(t) {
   const profile = path.join(root, 'profile');
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({ defaultRuntime: 'pi',
+  const bridge = await new BridgeController({ defaultRuntime: 'host',
     dataDir: path.join(root, 'data'), sourceProfile: profile,
-    executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true
+    executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true
   }).initialize();
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   return { bridge, root };
@@ -83,7 +83,7 @@ test('Project/Goal/Mission hierarchy and suggestion-only next action', async t =
   const { bridge } = await fixture(t);
   const task = bridge.tasks.get(bridge.createTask('Project hierarchy fixture').id);
   const create = await call(bridge, task.id, 'project_create', {
-    name: 'Hierarchy Fixture', nextAction: 'Create goal', preferredAgents: ['pi']
+    name: 'Hierarchy Fixture', nextAction: 'Create goal', preferredAgents: ['host']
   });
   assert.equal(create.allow, false);
   assert.equal(create.decision.kind, 'approval_required');
@@ -103,7 +103,7 @@ test('Project/Goal/Mission hierarchy and suggestion-only next action', async t =
     projectId: project.projectId, name: 'Goal One', desiredOutcome: 'Hierarchy visible', nextAction: 'Create mission'
   });
   const mission = await approveOnce('project_create_mission', {
-    goalId: goal.goalId, name: 'Mission One', acceptanceCriteria: ['Suggestion only'], nextAction: 'Inspect next action', preferredAgents: ['pi']
+    goalId: goal.goalId, name: 'Mission One', acceptanceCriteria: ['Suggestion only'], nextAction: 'Inspect next action', preferredAgents: ['host']
   });
   await approveOnce('project_set_mission_status', {
     missionId: mission.missionId, status: 'active', nextAction: 'Inspect next action'

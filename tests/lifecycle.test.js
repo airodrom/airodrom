@@ -8,19 +8,19 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const run = promisify(execFile);
 const project = path.resolve(__dirname, '..');
-const Rpc = require(path.join(project, 'src/rpc-supervisor'));
-const fixture = path.join(__dirname, 'fixtures/fake-pi.cjs');
+const Rpc = require(path.join(project, 'tests/fixtures/fixture-transport.cjs'));
+const fixture = path.join(__dirname, 'fixtures/host-worker.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const deadline = (promise, ms = 2500) => Promise.race([promise, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('review test deadline exceeded')), ms); timer.unref(); })]);
 
 async function bridge(t, env = {}) {
-  const Controller = require(path.join(project, 'src/bridge-controller'));
+  const Controller = require(path.join(project, 'tests/fixtures/test-bridge.cjs'));
   const root = fs.mkdtempSync('/private/tmp/br-review-');
   const profile = path.join(root, 'source'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const previous = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]]));
   Object.assign(process.env, env);
-  const controller = new Controller({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: fixture, allowFixtureWorker: true });
+  const controller = new Controller({ defaultRuntime: 'host', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: fixture, allowFixtureWorker: true });
   t.after(async () => {
     await deadline(controller.shutdown(), 5000);
     for (const [k, v] of Object.entries(previous)) v === undefined ? delete process.env[k] : process.env[k] = v;
@@ -40,7 +40,7 @@ test('missing executable rejects and shutdown completes without an exit event', 
 
 for (const kind of ['malformed', 'null']) test(`protocol ${kind} fails through fault without crashing the bridge host`, async () => {
   const harness = `
-    const Rpc = require(${JSON.stringify(path.join(project, 'src/rpc-supervisor'))});
+    const Rpc = require(${JSON.stringify(path.join(project, 'tests/fixtures/fixture-transport.cjs'))});
     const rpc = new Rpc({executable:process.execPath,args:[${JSON.stringify(fixture)},'--review-protocol',${JSON.stringify(kind)}], requestTimeoutMs:500,allowUnsandboxedTestFixture:true});
     let fault = false; rpc.on('fault',()=>fault=true);
     (async()=>{ try { await rpc.start(); throw new Error('accepted bad protocol'); } catch(e) { if(!fault) throw e; } await rpc.shutdown(); })().catch(e=>{console.error(e.message); process.exitCode=1;});
@@ -99,8 +99,8 @@ test('stall detection remains separate from a healthy heartbeat, and failed comp
   task.connected = true; task.lastHeartbeatAt = Date.now(); task.lastActivityAt = Date.now() - 70000;
   const lease = controller.leases.acquire(task.id);
   const stalled = controller.snapshotTask(task); assert.equal(stalled.stalled, true); assert.equal(stalled.heartbeatHealthy, true);
-  controller.onPiEvent(task, { type:'compaction_end', errorMessage:'fixture failure' }); assert.equal(task.compactions,0); assert.equal(task.lastCompaction.error,'fixture failure');
-  controller.onPiEvent(task, { type:'compaction_end', result:{tokensBefore:12000,estimatedTokensAfter:3000} }); assert.equal(task.compactions,1); assert.equal(task.lastCompaction.tokensBefore,12000);
+  controller.onWorkerEvent(task, { type:'compaction_end', errorMessage:'fixture failure' }); assert.equal(task.compactions,0); assert.equal(task.lastCompaction.error,'fixture failure');
+  controller.onWorkerEvent(task, { type:'compaction_end', result:{tokensBefore:12000,estimatedTokensAfter:3000} }); assert.equal(task.compactions,1); assert.equal(task.lastCompaction.tokensBefore,12000);
   assert.equal(controller.snapshotTask(task).stalled,false);
   const copy=controller.snapshotTask(task); copy.events.length=0; assert(task.events.length>0);
   controller.leases.releaseIfOwner(lease, { verified: true });
@@ -108,7 +108,7 @@ test('stall detection remains separate from a healthy heartbeat, and failed comp
 
 test('active data directory lock is exclusive, interrupted runs recover honestly, and cancel permits a fresh runtime',async t=>{
   const controller = await bridge(t); const created=controller.createTask('Recovery fixture');
-  const second=new (require('../src/bridge-controller'))({dataDir:controller.dataDir,sourceProfile:controller.options.sourceProfile});
+  const second=new (require('./fixtures/test-bridge.cjs'))({dataDir:controller.dataDir,sourceProfile:controller.options.sourceProfile});
   await assert.rejects(second.initialize(),/already in use/);
   await controller.prompt(created.id,'first pass'); await controller.cancel(created.id);
   assert.equal(controller.runtimes.size,0);

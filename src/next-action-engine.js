@@ -3,8 +3,8 @@
 function safeActionText(value) { return typeof value === 'string' && value.trim() ? value.trim().slice(0, 1_000) : null; }
 function route(action, preferred = []) {
   const lower = action.toLocaleLowerCase('en-US');
-  if (/\b(test|inspect|local|repository|git|shell)\b/.test(lower)) return 'pi';
-  if (/\b(code|implement|refactor|migration|schema)\b/.test(lower)) return preferred.includes('cursor') ? 'cursor' : 'pi';
+  if (/\b(test|inspect|local|repository|git|shell)\b/.test(lower)) return 'host';
+  if (/\b(code|implement|refactor|migration|schema)\b/.test(lower)) return preferred.includes('cursor') ? 'cursor' : 'host';
   if (/\b(research|market|compare|investigate)\b/.test(lower)) return 'research';
   if (/\b(architecture|decision|design|plan)\b/.test(lower)) return 'chatgpt';
   return preferred[0] || 'chatgpt';

@@ -2,7 +2,7 @@
 // V1 product scope, never execution authority or observed availability.
 const TIERS = Object.freeze(['REQUIRED','SUPPORTED','OPTIONAL','EXPERIMENTAL','UNSUPPORTED']);
 const SUPPORT = Object.freeze({
-  pi: Object.freeze({tier:'REQUIRED',reason:'canonical_local_control_and_typed_execution',agent_role:'COMPATIBILITY / ROLLBACK'}),
+  host: Object.freeze({tier:'REQUIRED',reason:'control_plane_primitives',agent_role:'HOST PRIMITIVES',agent_runtime:false}),
   claude_code: Object.freeze({tier:'SUPPORTED',reason:'qualified_optional_subscription_coding',agent_role:'OPTIONAL FALLBACK'}),
   opencode: Object.freeze({tier:'SUPPORTED',reason:'qualified_bounded_local_execution',agent_role:'DEFAULT / PRIMARY'}),
   codex: Object.freeze({tier:'OPTIONAL',reason:'external_work_platform_dependency',runtime_id:'work'}),

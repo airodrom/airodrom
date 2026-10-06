@@ -91,7 +91,7 @@ function surfaceModeCannotPromote(adapter, f, b) {
 }
 test('artifact origin, hash, type, size, duplicates, traversal, and unsupported metadata fail closed without retaining content', async t => {
   const { f, adapter, input, controls } = await setup(t); const b = adapter.prepare(input); await adapter.dispatch(b.run_id);
-  const changes = [v => v.workspace.handle = 'other', v => v.run_id = 'other', v => v.runtime_id = 'pi', v => v.context_hash = 'other', v => v.artifacts[0].sha256 = '0'.repeat(64), v => v.artifacts[0].size++, v => v.artifacts[0].type = 'application/octet-stream', v => delete v.artifacts[0].origin, v => v.artifacts[0].origin.workspace_handle = 'other', v => v.artifacts.push(v.artifacts[0]), v => v.artifacts[0].path = '../outside', v => v.accepted = true, v => v.result.changed_files = ['outside.txt']];
+  const changes = [v => v.workspace.handle = 'other', v => v.run_id = 'other', v => v.runtime_id = 'host', v => v.context_hash = 'other', v => v.artifacts[0].sha256 = '0'.repeat(64), v => v.artifacts[0].size++, v => v.artifacts[0].type = 'application/octet-stream', v => delete v.artifacts[0].origin, v => v.artifacts[0].origin.workspace_handle = 'other', v => v.artifacts.push(v.artifacts[0]), v => v.artifacts[0].path = '../outside', v => v.accepted = true, v => v.result.changed_files = ['outside.txt']];
   for (const change of changes) { const v = returned(controls.packet); change(v); controls.returnValue = seal(v); await assert.rejects(adapter.collect(b.run_id)); assert.equal(count(f, 'cp_artifacts'), 0); assert.equal(count(f, 'cp_result_inbox'), 0); }
   controls.returnValue = { ...returned(controls.packet), content_hash: 'wrong' }; await assert.rejects(adapter.collect(b.run_id), /hash/);
 });

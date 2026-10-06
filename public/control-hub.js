@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!==undefined)n.textContent=String(text);if(cls)n.className=cls;return n; };
   const fragment=new URLSearchParams(location.hash.slice(1));
-  let token=fragment.get('token')||'';try { if(token)sessionStorage.setItem('piBridgeToken',token);else token=sessionStorage.getItem('piBridgeToken')||''; } catch {}
+  let token=fragment.get('token')||'';try { if(token)sessionStorage.setItem('airodromToken',token);else token=sessionStorage.getItem('airodromToken')||''; } catch {}
   if(fragment.has('token'))history.replaceState(null,'',location.pathname+location.search);
   const sections = ['Overview','Projects','Missions','Agents','Activity','Decisions','Approvals','Memory','Architecture Memory','Memory Candidates','Context Packs','Tasks','Git & Files','Capabilities','Instruction Ledger','Runs / Leases','Result Inbox','Codex Relay','Agent Dispatch','Outbox','Providers','Reasoning Admissions','Next Action','Verification','Acceptance','Leases','System'];
   const nav=new Map(), rows=new Map(), events=new Map(), pins=new Set();

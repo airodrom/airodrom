@@ -26,9 +26,11 @@ class TaskSessionManager extends EventEmitter {
       if (task.content_state === 'erased') { if(db)require('./memory-content-erasure').assertReadable(db); this.tasks.set(id, task); continue; }
       task.status = ['waiting_for_provider','waiting_for_operator','queued','completed','idle','cancelled','error','failed','deadline','stalled','approval_expired','blocked','interrupted','awaiting_operator_grant','awaiting_mcp_continuation'].includes(task.status) ? task.status : 'interrupted';
       if (task.status === 'queued' && task.mission?.started) task.status = 'interrupted';
-      if (task.status === 'completed' && !require('./execution-evidence').satisfied(task)) { task.status = 'failed'; task.failureKind = 'native_tool_required'; task.lastRunBlocked = true; }
       // Records predating runtime identity were Pi sessions; retain their historical identity.
-      task.executionAgent ||= 'pi';
+      task.executionAgent ||= require('./removed-runtime').REMOVED_RUNTIME;
+      const historical = require('./removed-runtime').removed(task);
+      if (historical) { task.runtimeRemoved=true; task.runtimeLabel='Historical runtime removed'; }
+      else if (task.status === 'completed' && !require('./execution-evidence').satisfied(task)) { task.status = 'failed'; task.failureKind = 'native_tool_required'; task.lastRunBlocked = true; }
       task.connected = false; task.safetyLoaded = false; task.recoveredAt = Date.now();
       this.tasks.set(id, task); this.save(task);
     }

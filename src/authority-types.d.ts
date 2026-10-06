@@ -1,7 +1,7 @@
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type Sha256 = string;
 export type HashId = `sha256:${string}`;
-export type AgentId = 'pi' | 'opencode' | 'claude' | 'codex' | 'cursor' | 'generic_reasoner';
+export type AgentId = 'host' | 'opencode' | 'claude' | 'codex' | 'cursor' | 'generic_reasoner';
 export type Actor = Readonly<{ type: 'operator' | 'host' | 'agent' | 'provider'; id: string }>;
 export type Coordinates = { agentId: AgentId; runtimeId: string; providerId?: string; modelId?: string };
 export type Privacy = 'public' | 'internal' | 'restricted_security';

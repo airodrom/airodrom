@@ -8,7 +8,7 @@ const http = require('node:http');
 const { createHash, randomUUID } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { ChatGPTEvents, redact, loadRoute, prepareIdentitySchema } = require('../src/chatgpt-events');
-const Bridge = require('../src/bridge-controller');
+const Bridge = require('./fixtures/test-bridge.cjs');
 const ControlServer = require('../src/control-server');
 function task() { return { id: randomUUID(), sessionId: randomUUID(), latestMcpRequestId: randomUUID(), source: { transport: 'mcp' } }; }
 function event(t, overrides = {}) { return { session_id: t.sessionId, request_id: t.latestMcpRequestId, event: { event_id: randomUUID(), event_type: 'result', summary: 'Acceptance checks passed', ...overrides } }; }
@@ -249,7 +249,7 @@ async function until(fn) { for (let i = 0; i < 500; i++) { if (fn()) return; awa
 
 test('end-to-end Pi extension -> authenticated socket -> durable queue -> MCP inbox; revoked and cross-task attempts fail', async t => {
   const root = fs.mkdtempSync('/private/tmp/pi-event-e2e-'), profile = path.join(root, 'profile'); fs.mkdirSync(profile); fs.writeFileSync(path.join(profile, 'settings.json'), '{}');
-  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs') }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'host', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/host-worker.cjs') }).initialize();
   const ui = new ControlServer(bridge, { port: 0 }); await ui.start();
   t.after(async () => { await ui.close(); await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   const mcp = (name, args, token = ui.mcpToken) => request({ hostname: '127.0.0.1', port: ui.port, path: '/api/mcp/call', method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } }, { name, args });
@@ -257,9 +257,8 @@ test('end-to-end Pi extension -> authenticated socket -> durable queue -> MCP in
   const id = created.body.task_id; await until(() => bridge.tasks.get(id).safetyLoaded);
   const runtime = bridge.runtimes.get(id), producer = (route, body, token = runtime.token) => request({ socketPath: bridge.socketPath, path: route, method: 'POST', headers: { authorization: `Bearer ${token}` } }, body);
   const handlers = {}, registered = {};
-  const { registerChatGPTEventTool } = await import('../src/chatgpt-event-extension.mjs');
-  registerChatGPTEventTool({ on: (name, fn) => { handlers[name] = fn; }, registerTool: tool => { registered[tool.name] = tool; } }, async (route, body) => { const out = await producer(route, body); if (out.status !== 200) throw new Error('Rejected'); return out.body; });
-  await handlers.before_agent_start();
+  const correlation=(await producer('/events/context',{})).body;
+  registered.chatgpt_notify={execute:async (_id,input)=>{const out=await producer('/events',{...correlation,event:input});if(out.status!==200||out.body.allow===false)throw Error('Rejected');const details=typeof out.body.output==='string'?JSON.parse(out.body.output):out.body;return{details};}};
   const input = { event_id: randomUUID(), event_type: 'follow_up', summary: 'Fixture result is ready', follow_up: 'Review the result within existing authorization' };
   const check = await producer('/check', { toolName: 'chatgpt_notify', input }); assert.equal(check.body.allow, true);
   const receipt = await registered.chatgpt_notify.execute('call-fixture', input); assert.equal(receipt.details.accepted, true);

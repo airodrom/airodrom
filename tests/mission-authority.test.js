@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const SafetyPolicy = require('../src/safety-policy');
 const { MissionAuthority } = require('../src/mission-authority');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-mission-grant-'));
@@ -73,8 +73,8 @@ test('trusted issuer, enforcement, runtime configuration, and credentials are wo
     'src', 'scripts', 'macos', 'config',
     'src/safety-policy.js', 'src/mission-authority.js', 'src/mission-coordinator.js',
     'src/bridge-controller.js', 'src/control-server.js', 'src/config.js',
-    'src/safety-extension.mjs', 'src/rpc-supervisor.js', 'src/mission-supervisor.js',
-    'src/mcp-tools.js', 'src/chatgpt-events.js', 'src/chatgpt-event-extension.mjs',
+    'src/safety-policy.js', 'src/host-worker-adapter.js', 'src/mission-supervisor.js',
+    'src/mcp-tools.js', 'src/chatgpt-events.js', 'src/chatgpt-events.js',
     'scripts/run.cjs', 'scripts/macos/control.cjs', 'macos', 'package.json', 'package-lock.json',
     '.runtime/control-credential.json', '.runtime/settings.json', '.pi/auth.json'
   ];
@@ -127,7 +127,7 @@ test('controller latches a genuine tool denial across fresh sessions until opera
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   fs.writeFileSync(path.join(workspace, 'safe.txt'), 'safe');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const bridge = new BridgeController({ defaultRuntime: 'pi', dataDir: path.join(root, 'runtime') });
+  const bridge = new BridgeController({ defaultRuntime: 'host', dataDir: path.join(root, 'runtime') });
   bridge.ledger = { record: input => input }; // Isolated HTTP-policy fixture records classification.
   const task = { id: 'controller-stop-task', sessionId: 'controller-session-001', workspace: fs.realpathSync(workspace), status: 'thinking', safetyLoaded: true, events: [], mission: { id: 'controller-stop-mission', objective: 'Read one fixture file', objectiveSet: true, criteria: [], scope: { workspace }, budget: { maxRuntimeMs: 60_000, maxActions: 20, maxRetries: 0, maxSpendMicros: 0 }, used: { runtimeMs: 0, actions: 0, retries: 0 }, requireGrant: false } };
   bridge.tasks = { get: id => { if (id !== task.id) throw new Error('missing task'); return task; }, save() {} };

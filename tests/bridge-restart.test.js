@@ -12,7 +12,7 @@ const { CapabilityBroker, validateToolInput, BRIDGE_RESTART_JOB, BRIDGE_RESTART_
 const {
   requestRestart, executeRestart, statusRestart, readReceipt, clearLock, writeReceipt, COOLDOWN_MS
 } = require('../src/bridge-restart');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 
 function tempRuntime() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-bridge-restart-'));
@@ -225,9 +225,9 @@ test('bridge controller records restart requested/verified ledger events without
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const dataDir = path.join(root, 'data');
-  const bridge = await new BridgeController({ defaultRuntime: 'pi',
+  const bridge = await new BridgeController({ defaultRuntime: 'host',
     dataDir, sourceProfile: profile,
-    executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true
+    executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true
   }).initialize();
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
 

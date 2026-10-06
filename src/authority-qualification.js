@@ -20,7 +20,7 @@ class AuthorityQualification {
       const first=this.memory.build(packInput),second=this.memory.build(packInput);assert.equal(first.state,'ready');assert.equal(first.context_hash,second.context_hash);assert.equal(first.items.find(x=>x.memory_id===m.id).value,'forbidden');
       const project=this.store.createProject({id:'authority:qualification',name:'Authority qualification fixtures',status:'active'});
       const mission=this.store.createMission({project_id:project.id,envelope:{objective:'Deliver governed context to a deterministic in-process fixture',task_type:'local_diagnostics',criteria:[],capability_scopes:[],fixture:true}});
-      const run=this.store.startRun({mission_id:mission.id,mission_revision:1,agent_id:'pi',runtime_id:'pi:context-fixture',adapter_type:'in_process_fixture'});
+      const run=this.store.startRun({mission_id:mission.id,mission_revision:1,agent_id:'host',runtime_id:'host:context-fixture',adapter_type:'in_process_fixture'});
       const delivery=this.memory.build({...packInput,project_id:project.id,mission_id:mission.id,mission_revision:1,run_id:run.id});
       // Deliberately an in-process fixture with no tools, shell, credentials or
       // provider. It consumes the persisted pack, not a repeated preference.
@@ -48,9 +48,9 @@ class AuthorityQualification {
     actor(by,['operator']);const prior=this.runtime.state().router_receipt_id&&this.store.one('qualification_receipts',this.runtime.state().router_receipt_id);if(prior?.source_hash===this.source())return {receipt_id:prior.id,...prior.evidence};if(this.runtime.state().router_state!=='qualifying')throw new Error('Router qualification not prepared');
     const memoryReceipt=this.store.one('qualification_receipts',this.runtime.state().memory_receipt_id),original=this.store.one('context_pack_manifests',memoryReceipt.evidence.context_pack_id),pack=this.memory.build(original.manifest.input);
     if(pack.state!=='ready')throw new Error('Router fixture context is not current');
-    const candidate={agent_id:'pi',runtime_id:'pi',enabled:true,capabilities:['local_tools'],assurance:2,locality:'local',isolation_verified:true,availability:'available',observed_at:this.store.now(),auth_state:'not_required',quota_state:'unknown',circuit_state:'closed',cost_class:'local',transport:'in_process_fixture'};
+    const candidate={agent_id:'host',runtime_id:'host',enabled:true,capabilities:['local_tools'],assurance:2,locality:'local',isolation_verified:true,availability:'available',observed_at:this.store.now(),auth_state:'not_required',quota_state:'unknown',circuit_state:'closed',cost_class:'local',transport:'in_process_fixture'};
     const input={project_id:pack.project_id,mission_id:pack.mission_id,mission_revision:pack.mission_revision,context_pack_id:pack.id,task_class:'local_diagnostics',required_capabilities:['local_tools'],required_assurance:2,privacy:'internal',local_only:true,external_allowed:false,allow_handoff:false,writer_conflict:false};
-    const route=this.runtime.router.plan(input,[candidate],this.store.host,{fixture:true});assert.equal(route.selectedAgent,'pi');assert.equal(route.selectedProvider,null);
+    const route=this.runtime.router.plan(input,[candidate],this.store.host,{fixture:true});assert.equal(route.selectedAgent,'host');assert.equal(route.selectedProvider,null);
     const base={...input,memory_state:'ready',context_current:true};
     const denials={writer:evaluateRouting({...base,writer_conflict:true},[candidate],this.store.now()),stale_context:evaluateRouting({...base,context_current:false},[candidate],this.store.now()),unknown_cost:evaluateRouting({...base,maxCostUsdBoundary:0},[candidate],this.store.now()),deepseek:evaluateRouting(base,[{...candidate,provider_id:'deepseek'}],this.store.now()),quota:evaluateRouting(base,[{...candidate,availability:'quota_limited'}],this.store.now())};
     for(const r of Object.values(denials))assert.equal(r.state,'WAIT');
@@ -63,9 +63,9 @@ class AuthorityQualification {
     const routeA=this.runtime.router.plan({...costRoute,context_pack_id:packA.id},coding,this.store.host,{fixture:true});
     // The old pack deliberately becomes stale after promotion and must WAIT.
     assert.equal(routeA.state,'WAIT');
-    const routeB=this.runtime.router.plan({...costRoute,context_pack_id:packB.id},coding,this.store.host,{fixture:true});assert.equal(routeB.selectedAgent,'pi');
+    const routeB=this.runtime.router.plan({...costRoute,context_pack_id:packB.id},coding,this.store.host,{fixture:true});assert.equal(routeB.selectedAgent,'host');
     const withoutPreference=evaluateRouting({...costRoute,memory_state:'ready',context_current:true},coding,this.store.now());assert.equal(withoutPreference.selectedAgent,'claude');
-    const restricted=this.memory.build({...costInput,privacy:'restricted_security'}),security=this.runtime.router.plan({...costRoute,privacy:'restricted_security',context_pack_id:restricted.id},coding,this.store.host,{fixture:true});assert.equal(security.selectedAgent,'pi');assert(security.rejectedCandidates.some(c=>c.reason==='privacy_isolation'));
+    const restricted=this.memory.build({...costInput,privacy:'restricted_security'}),security=this.runtime.router.plan({...costRoute,privacy:'restricted_security',context_pack_id:restricted.id},coding,this.store.host,{fixture:true});assert.equal(security.selectedAgent,'host');assert(security.rejectedCandidates.some(c=>c.reason==='privacy_isolation'));
     const evidence={context_diff_id:diff.id,cost_route_before:withoutPreference.selectedAgent,cost_route_after:routeB.selectedAgent,stale_route_id:routeA.id,cost_route_id:routeB.id,security_route_id:security.id,routing_decision_id:route.id,selected_agent:route.selectedAgent,selected_provider:route.selectedProvider,selected_model:route.selectedModel,context_pack_id:pack.id,negative_cases:Object.keys(denials),fixture:true,integrity:this.store.integrity()};
     const id=this.receipt('router',evidence);this.db.prepare('UPDATE authority_activation SET router_receipt_id=?,updated_at=? WHERE id=1').run(id,this.store.now());return {receipt_id:id,...evidence};
   }

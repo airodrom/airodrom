@@ -5,14 +5,14 @@
   const fragment = new URLSearchParams(window.location.hash.slice(1));
   let token = fragment.get('token') || '';
   try {
-    if (token) sessionStorage.setItem('piBridgeToken', token);
-    else token = sessionStorage.getItem('piBridgeToken') || '';
+    if (token) sessionStorage.setItem('airodromToken', token);
+    else token = sessionStorage.getItem('airodromToken') || '';
   } catch { /* This tab can still use the launch token without persistent storage. */ }
   if (fragment.has('token')) history.replaceState(null, '', window.location.pathname + window.location.search);
 
   let state = null;
   let selectedId = null;
-  try { selectedId = sessionStorage.getItem('piBridgeTask'); } catch { /* Selection is optional. */ }
+  try { selectedId = sessionStorage.getItem('airodromTask'); } catch { /* Selection is optional. */ }
   let polling = false;
   let online = false;
   let memoryRequest = 0;
@@ -117,21 +117,19 @@
     const paused = current?.status === 'paused';
     const stopped = current?.safetyStop?.latched === true;
     const available = online && Boolean(token);
-    const activeChat = current?.mission?.capabilityProfile === 'active-chat-local-ollama-smoke-v1';
+    const executable = !current?.runtimeRemoved;
     $('create-task-submit').disabled = !available || pending.has('create');
-    $('send-prompt').disabled = !available || !current || busy || stopped || paused || current?.status === 'cancelled' || pending.has('prompt');
+    $('send-prompt').disabled = !available || !executable || !current || busy || stopped || paused || current?.status === 'cancelled' || pending.has('prompt');
     $('send-prompt').textContent = pending.has('prompt') ? 'Sending…' : stopped ? 'Review safety stop' : busy ? 'The runtime is working…' : 'Send to runtime ↑';
     $('pause-task').hidden = !busy;
     $('pause-task').disabled = !available || pending.has('pause');
-    $('resume-task').hidden = !paused || stopped;
+    $('resume-task').hidden = !paused || stopped || !executable;
     $('resume-task').disabled = !available || pending.has('resume');
     $('resolve-stop').hidden = !stopped;
     $('resolve-stop').disabled = !available || busy || pending.has('resolve-stop');
-    $('cancel-task').hidden = !busy && !paused && !activeChat;
+    $('cancel-task').hidden = !busy && !paused;
     $('cancel-task').disabled = !available || pending.has('cancel');
-    $('active-chat-initialize').disabled = !available || pending.has('active-authority');
-    $('active-chat-authorize').disabled = !available || busy || pending.has('active-authorize');
-    $('prompt-card').hidden = activeChat;
+    $('prompt-card').hidden = false;
     $('save-memory-submit').disabled = !available || !current || pending.has('save-memory');
     $('read-web-submit').disabled = !available || !current || !state?.web?.enabled || Boolean(state?.web?.active) || pending.has('web');
     $('read-web-submit').textContent = pending.has('web') ? 'Reading…' : 'Read page ↗';
@@ -143,7 +141,7 @@
   function selectTask(id) {
     if (selectedId === id) return;
     selectedId = id;
-    try { sessionStorage.setItem('piBridgeTask', id); } catch { /* Selection is optional. */ }
+    try { sessionStorage.setItem('airodromTask', id); } catch { /* Selection is optional. */ }
     $('memory-query').value = '';
     $('prompt-message').value = '';
     $('web-result-details').hidden = true;
@@ -193,16 +191,6 @@
     const alert = $('task-alert');
     alert.hidden = !current.error && !current.stalled && !current.lastRunBlocked && !current.safetyStop?.latched;
     alert.textContent = current.safetyStop?.latched ? `SAFETY STOP LATCHED: ${current.safetyStop.reason} An authenticated operator must review and explicitly resolve this stop. No new session or tool can continue the mission.` : current.error || (current.lastRunBlocked ? 'An action was blocked before execution. Review its approval status below; the model response is not proof that the action ran.' : current.stalled ? 'No recent task activity. The runtime may still be working; check the heartbeat or stop the task.' : '');
-    const activeChat = current.mission?.capabilityProfile === 'active-chat-local-ollama-smoke-v1';
-    $('active-chat-operator').hidden = !activeChat;
-    if (activeChat) {
-      const authority = current.missionAuthorization?.authority || {};
-      const awaiting = current.status === 'awaiting_operator_grant';
-      text('active-chat-state', awaiting ? authority.keyInitialized ? 'Ready for fixed grant' : 'Authority not initialized' : current.status === 'awaiting_mcp_continuation' ? 'Awaiting MCP continuation' : statusNames[current.status] || current.status);
-      text('active-chat-description', awaiting ? authority.keyInitialized ? 'Review the fixed local-only scope in the task facts, then explicitly authorize its two turns. No task text or model output can issue this grant.' : 'Initialize the private local signing authority only after reviewing this task. This creates no grant and does not start Pi.' : 'This task can be continued only by its authenticated MCP connection after Task A settles. The Control Center cannot send a free-form turn.');
-      $('active-chat-initialize').hidden = !awaiting || authority.keyInitialized === true;
-      $('active-chat-authorize').hidden = !awaiting || authority.keyInitialized !== true;
-    }
     const response = responseFor(current);
     text('last-response', response.text);
     $('last-response').className = `response-text${response.empty ? ' empty-copy' : ''}`;
@@ -215,7 +203,7 @@
       row.append(node('span', '', `${title}${event.toolName ? ` · ${event.toolName}` : ''}${event.isError ? ' · needs attention' : ''}`), node('time', '', time(event.at)));
       return row;
     }));
-    text('prompt-hint', current.safetyStop?.latched ? 'Safety stop is latched. Resolve it as the local operator before continuing.' : current.status === 'paused' ? 'Mission is paused. Resume creates a fresh worker turn with the preserved objective and budgets.' : current.busy ? 'This task is running. Pause or cancel it before sending another message.' : 'Changes and shell commands require their exact authorization.');
+    text('prompt-hint', current.runtimeRemoved ? 'Historical runtime removed. Create a fresh bounded OpenCode Mission.' : current.safetyStop?.latched ? 'Safety stop is latched. Resolve it as the local operator before continuing.' : current.status === 'paused' ? 'Mission is paused. Resume creates a fresh worker turn with the preserved objective and budgets.' : current.busy ? 'This task is running. Pause or cancel it before sending another message.' : 'Changes and shell commands require their exact authorization.');
     const facts = $('session-facts');
     facts.replaceChildren();
     addFact(facts, 'Task ID', current.id);
@@ -234,10 +222,11 @@
       addFact(facts, 'Filesystem authority', `Read: ${current.missionAuthority.filesystem.read.join(', ') || 'None'} · Write: ${current.missionAuthority.filesystem.write.join(', ') || 'None'}`);
     }
     addFact(facts, 'Grant state', current.missionAuthorization?.status || 'inactive');
+    if(current.runtimeRemoved)addFact(facts,'Runtime','Historical runtime removed');
     addFact(facts, 'Grant scope', current.missionAuthorization?.enabled ? `${(current.missionAuthorization.capabilities || []).join(', ')} · ${current.missionAuthorization.egress}` : current.executionAgent === 'opencode' ? 'Registered when an operator submits a bounded prompt' : 'Exact authority required');
     addFact(facts, 'Cumulative budget', current.mission?.budget ? `${Math.round((current.mission.used?.runtimeMs || 0) / 1000)}s / ${Math.round(current.mission.budget.maxRuntimeMs / 1000)}s · ${current.mission.used?.actions || 0} / ${current.mission.budget.maxActions} actions · ${current.mission.used?.retries || 0} / ${current.mission.budget.maxRetries} retries` : '—');
     if (current.previousSessionId) addFact(facts, 'Recovery lineage', `${current.previousSessionId} → ${current.sessionId}`);
-    addFact(facts, 'Live autonomy', current.missionAuthorization?.liveEnabled ? 'Bounded local Mission · registered by operator' : current.executionAgent === 'opencode' ? 'Send a prompt to register a bounded Mission' : 'Compatibility mode · exact authority required');
+    addFact(facts, 'Live autonomy', current.missionAuthorization?.liveEnabled ? 'Bounded local Mission · registered by operator' : current.executionAgent === 'opencode' ? 'Send a prompt to register a bounded Mission' : 'Host capability · exact authority required');
     addFact(facts, 'Session file', current.sessionFile || 'Created when the runtime starts');
     addFact(facts, 'Session storage', bytes(current.sessionBytes));
     addFact(facts, 'Last activity', time(current.lastActivityAt));
@@ -262,7 +251,7 @@
         approve.type = 'button';
         // A pending approval belongs to the approval, not to model activity.
         // The server queues its exact retry after the active turn settles.
-        approve.disabled = pending.has(approval.id) || !online;
+        approve.disabled = current.runtimeRemoved || pending.has(approval.id) || !online;
         approve.addEventListener('click', () => action(approval.id, async () => {
           approve.disabled = true;
           await api(`/api/approvals/${encodeURIComponent(approval.id)}/approve`, { method: 'POST', body: {} });
@@ -422,22 +411,6 @@
     });
   });
 
-  $('active-chat-initialize').addEventListener('click', () => {
-    void action('active-authority', async () => {
-      if (!window.confirm('Initialize the protected local authority key? This does not issue a grant or start Pi.')) return;
-      await api('/api/active-chat/authority/initialize', { method: 'POST', body: {} });
-      tell('Protected authority initialized. Review the fixed scope before authorizing a grant.'); await poll();
-    });
-  });
-  $('active-chat-authorize').addEventListener('click', () => {
-    const id = selectedId; if (!id) return;
-    void action('active-authorize', async () => {
-      if (!window.confirm('Authorize exactly this fixed two-turn, read-only local-Qwen smoke? This starts Task A and cannot expand its scope.')) return;
-      await api(`/api/tasks/${encodeURIComponent(id)}/active-chat/authorize`, { method: 'POST', body: {} });
-      tell('Fixed grant issued. Task A has been dispatched through the brokered local model path.'); await poll();
-    });
-  });
-
   $('cancel-task').addEventListener('click', () => {
     const id = selectedId;
     if (!id) return;
@@ -515,7 +488,7 @@
     const next = new URLSearchParams(window.location.hash.slice(1)).get('token');
     if (!next || !/^[a-f0-9]{64}$/.test(next)) return;
     token = next;
-    try { sessionStorage.setItem('piBridgeToken', token); } catch { /* Keep it only in this tab. */ }
+    try { sessionStorage.setItem('airodromToken', token); } catch { /* Keep it only in this tab. */ }
     history.replaceState(null, '', window.location.pathname + window.location.search);
     void poll();
   });

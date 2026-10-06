@@ -5,8 +5,8 @@ const EXPECTED = Object.freeze({
   humanTurnsAfterAuthorization: 0,
   manualStatusChecks: 0,
   manualNextActions: 0,
-  piTasks: 2,
-  piCompletionEvents: 2,
+  hostTasks: 2,
+  hostCompletionEvents: 2,
   realReasoningTurns: 2,
   automaticNextTaskDispatches: 1,
   missionStatus: 'completed'
@@ -22,7 +22,7 @@ function evaluateAcceptance(actual) {
   return { accepted: differences.length === 0, expected: { ...EXPECTED }, actual: Object.fromEntries(fields.map(key => [key, actual?.[key] ?? null])), differences };
 }
 
-/** Host-side append-only acceptance evidence. This module is not exposed as a Pi capability. */
+/** Host-side append-only acceptance evidence. This module is not exposed as a Airodrom host capability. */
 class Level1AcceptanceRecorder {
   constructor(db, { now = Date.now, verifier = null } = {}) {
     if (!db || typeof db.exec !== 'function') throw new Error('Level 1 acceptance journal database required');
@@ -61,16 +61,16 @@ class Level1AcceptanceRecorder {
   recordManualStatusCheck(missionId, eventId, sourceId, at = this.now()) { this._record(missionId, { eventId, type: 'manual_status_check', source: 'operator', sourceId, at }); }
   recordManualNextAction(missionId, eventId, sourceId, at = this.now()) { this._record(missionId, { eventId, type: 'manual_next_action', source: 'operator', sourceId, at }); }
 
-  recordPiTaskStarted(missionId, { taskId, sessionId, at = this.now() }) {
-    if (!OPAQUE.test(taskId) || !UUID.test(sessionId)) throw new Error('Invalid Pi task start evidence');
-    this._record(missionId, { eventId: cryptoId(), type: 'pi_task_started', source: 'bridge', sourceId: taskId, payload: { sessionId }, at });
+  recordWorkerTaskStarted(missionId, { taskId, sessionId, at = this.now() }) {
+    if (!OPAQUE.test(taskId) || !UUID.test(sessionId)) throw new Error('Invalid Airodrom host task start evidence');
+    this._record(missionId, { eventId: cryptoId(), type: 'host_task_started', source: 'bridge', sourceId: taskId, payload: { sessionId }, at });
   }
 
-  recordPiCompletion(missionId, { taskId, sessionId, completionEventId, resultHash, at = this.now() }) {
-    if (!OPAQUE.test(taskId) || !UUID.test(sessionId) || !UUID.test(completionEventId) || !/^[a-f0-9]{64}$/.test(resultHash)) throw new Error('Invalid Pi completion evidence');
-    const started = this.db.prepare("SELECT payload_json FROM level1_acceptance_events WHERE mission_id=? AND type='pi_task_started' AND source_id=?").get(missionId, taskId);
-    if (!started || JSON.parse(started.payload_json).sessionId !== sessionId) throw new Error('Pi completion does not match a recorded task/session start');
-    this._record(missionId, { eventId: completionEventId, type: 'pi_completion', source: 'bridge', sourceId: taskId, payload: { sessionId, resultHash }, at });
+  recordWorkerCompletion(missionId, { taskId, sessionId, completionEventId, resultHash, at = this.now() }) {
+    if (!OPAQUE.test(taskId) || !UUID.test(sessionId) || !UUID.test(completionEventId) || !/^[a-f0-9]{64}$/.test(resultHash)) throw new Error('Invalid Airodrom host completion evidence');
+    const started = this.db.prepare("SELECT payload_json FROM level1_acceptance_events WHERE mission_id=? AND type='host_task_started' AND source_id=?").get(missionId, taskId);
+    if (!started || JSON.parse(started.payload_json).sessionId !== sessionId) throw new Error('Airodrom host completion does not match a recorded task/session start');
+    this._record(missionId, { eventId: completionEventId, type: 'host_completion', source: 'bridge', sourceId: taskId, payload: { sessionId, resultHash }, at });
   }
 
   recordReasoningTurn(missionId, decision, { source = 'level1_provider_adapter', at = this.now() } = {}) {
@@ -89,7 +89,7 @@ class Level1AcceptanceRecorder {
   completeMission(missionId, decision, at = this.now()) {
     if (!this.verifier?.isVerified?.(decision) || decision.simulation === true || decision.phase !== 'complete_mission' || decision.decision !== 'complete' || !OPAQUE.test(decision.decisionId || '') || !OPAQUE.test(decision.responseId || '')) throw new Error('Mission completion requires a verifier-authenticated live provider completion decision');
     const current = this.snapshot(missionId);
-    if (current.piTasks !== 2 || current.realReasoningTurns !== 2 || current.piCompletionEvents !== 2 || current.automaticNextTaskDispatches !== 1 || current.humanTurnsAfterAuthorization || current.manualStatusChecks || current.manualNextActions) throw new Error('Level 1 acceptance evidence is incomplete or contains manual activity');
+    if (current.hostTasks !== 2 || current.realReasoningTurns !== 2 || current.hostCompletionEvents !== 2 || current.automaticNextTaskDispatches !== 1 || current.humanTurnsAfterAuthorization || current.manualStatusChecks || current.manualNextActions) throw new Error('Level 1 acceptance evidence is incomplete or contains manual activity');
     if (!this.db.prepare("SELECT 1 FROM level1_acceptance_events WHERE mission_id=? AND type='real_reasoning_turn' AND source_id=?").get(missionId, decision.responseId)) throw new Error('Mission completion response was not recorded as a real reasoning turn');
     this._record(missionId, { eventId: cryptoId(), type: 'mission_status', source: 'level1_coordinator', sourceId: decision.decisionId, payload: { status: 'completed', providerCompletionResponseId: decision.responseId }, at });
     this.db.prepare("UPDATE level1_acceptance_missions SET status='completed' WHERE mission_id=? AND status='active'").run(missionId);
@@ -111,8 +111,8 @@ class Level1AcceptanceRecorder {
       humanTurnsAfterAuthorization: count('human_turn'),
       manualStatusChecks: count('manual_status_check'),
       manualNextActions: count('manual_next_action'),
-      piTasks: taskCount('pi_task_started'),
-      piCompletionEvents: count('pi_completion'),
+      hostTasks: taskCount('host_task_started'),
+      hostCompletionEvents: count('host_completion'),
       realReasoningTurns: count('real_reasoning_turn'),
       automaticNextTaskDispatches: count('automatic_next_task_dispatch'),
       missionStatus: mission.status

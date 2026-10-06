@@ -6,12 +6,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { generateKeyPairSync, randomUUID } = require('node:crypto');
-const Controller = require('../src/bridge-controller');
+const Controller = require('./fixtures/test-bridge.cjs');
 const { MissionAuthority } = require('../src/mission-authority');
 const TaskSessionManager = require('../src/task-session-model');
 const MemoryStore = require('../src/memory-store');
 const MissionSupervisor = require('../src/mission-supervisor');
-const { prepareProfile } = require('../src/config');
+const { prepareControlProfile } = require('../src/config');
 const { Level1MissionFlow } = require('../src/level1-mission');
 const { Level1RestrictedWorker, EVIDENCE_LABEL } = require('../src/level1-restricted-worker');
 const { OpenAIResponsesDecisionAdapter, Level1DecisionVerifier, MODEL } = require('../src/level1-provider');
@@ -108,7 +108,7 @@ test('SIMULATION: LEVEL1_RESTRICTED_WORKER uses the normal Level 1 task/event/pr
     }
   });
   const authority = new MissionAuthority({ fixtureOnly: true });
-  const bridge = new Controller({ defaultRuntime: 'pi',
+  const bridge = new Controller({ defaultRuntime: 'host',
     dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(root, 'must-not-run-pi'),
     missionAuthority: authority, level1ActivationEnabled: true, level1RestrictedWorkerEnabled: true,
     level1ProviderAdapter: adapter, level1DecisionVerifier: verifier
@@ -119,7 +119,7 @@ test('SIMULATION: LEVEL1_RESTRICTED_WORKER uses the normal Level 1 task/event/pr
   // socket; this worker calls the broker directly and never starts Pi.
   bridge.memory = new MemoryStore(path.join(root, 'data', 'memory.sqlite'));
   bridge.ledger=new (require('../src/event-ledger').EventLedger)(bridge.memory.db);
-  bridge.config = prepareProfile(path.join(root, 'data'), profile);
+  bridge.config = prepareControlProfile(path.join(root, 'data'), profile);
   bridge.tasks = new TaskSessionManager(path.join(root, 'data'), bridge.memory.db);
   bridge.level1Flow = new Level1MissionFlow(bridge.memory.db, {
     verifier,
@@ -131,7 +131,8 @@ test('SIMULATION: LEVEL1_RESTRICTED_WORKER uses the normal Level 1 task/event/pr
     dispatchTaskB: action => bridge._dispatchLevel1TaskB(action)
   });
   bridge.supervisor = new MissionSupervisor(bridge);
-  bridge.workerSandbox.prepare = () => { throw new Error('Pi worker must remain disabled for Level 1'); };
+  bridge._ensureHostRuntime = () => { throw new Error('Agent adapter must remain unused for deterministic Level 1'); };
+  assert.equal(bridge.workerSandbox,undefined);
   let level1Failure = null;
   bridge.on('level1_failure', (_missionId, message) => { level1Failure = message; });
 
@@ -161,7 +162,7 @@ test('SIMULATION: LEVEL1_RESTRICTED_WORKER uses the normal Level 1 task/event/pr
   const tasks = bridge.tasks.list();
   assert.equal(tasks.length, 2);
   assert(tasks.every(task => task.executionWorker === EVIDENCE_LABEL));
-  assert(tasks.every(task => task.executionEvidence?.label === EVIDENCE_LABEL && task.executionEvidence.pi === false));
+  assert(tasks.every(task => task.executionEvidence?.label === EVIDENCE_LABEL && task.executionEvidence.agent_runtime === false));
   assert(tasks.every(task => task.events.every(event => event.executionWorker === EVIDENCE_LABEL)));
   assert.equal(tasks.some(task => task.events.some(event => event.type === 'message_end')), true);
   assert.equal(tasks.some(task => task.events.some(event => event.type === 'agent_settled')), true);

@@ -12,5 +12,7 @@ Status vocabulary: Proposed, Accepted, Rejected, Deprecated, Superseded. Archite
 See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governance](../../GOVERNANCE.md).
 
 - [0005 OpenCode execution boundary](0005-opencode-execution-boundary.md): Accepted adapter contract.
-- [0006 default execution runtime](0006-default-runtime-cutover.md): Proposed; preserves required Pi typed/control dependencies.
+- [0006 default execution runtime](0006-default-runtime-cutover.md): Historical runtime cutover; superseded by ADR 0008 for complete removal.
 - [0007 local interactive Missions](0007-local-interactive-missions.md): Proposed; private bootstrap and signed bounded reasoning admission.
+
+- [0008 complete runtime removal](0008-remove-worker-runtime.md): Accepted owner decision; host primitives retain authority and OpenCode remains primary.

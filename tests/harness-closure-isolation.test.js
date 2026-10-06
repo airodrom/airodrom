@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { makeWorkerProfile } = require('../src/worker-sandbox');
+const { makeWorkerProfile } = require('../src/sandbox-policy');
 const { HELPER } = require('../src/slack-credentials');
 const { HostExecutor } = require('../src/host-exec');
 test('ordinary and trusted workers deny helper before exec through every process API and alias', { skip: process.platform !== 'darwin' }, t => {
@@ -12,7 +12,7 @@ test('ordinary and trusted workers deny helper before exec through every process
   const link = path.join(root, 'linked'), copy = path.join(root, 'renamed'), hard = path.join(root, 'hardlink');
   fs.symlinkSync(HELPER, link); fs.copyFileSync(HELPER, copy); fs.chmodSync(copy, 0o700); fs.linkSync(HELPER, hard);
   const attempts = [
-    ['absolute', HELPER], ['basename/PATH', 'pi-slack-keychain'], ['cwd-relative', './pi-slack-keychain'],
+    ['absolute', HELPER], ['basename/PATH', 'airodrom-slack-keychain'], ['cwd-relative', './airodrom-slack-keychain'],
     ['symlink', link], ['renamed', copy], ['hardlink', hard], ['env override', HELPER],
     ['missing domain', HELPER], ['spoofed domain', HELPER], ['dev fallback', HELPER]
   ];
@@ -22,7 +22,7 @@ test('ordinary and trusted workers deny helper before exec through every process
     const file = path.join(root, `worker-${trustedDeveloperMode}.sb`); fs.writeFileSync(file, profile);
     for (const [label, target] of attempts) for (const api of ['spawnSync', 'execFileSync', 'execSync']) {
       const code = `const cp=require('child_process');try { const f=${JSON.stringify(target)}; let r; if(${JSON.stringify(api)}==='spawnSync'){r=cp.spawnSync(f,['probe','invalid-account'],{stdio:'ignore'});process.exit(r.status===64?64:r.error?0:2);} else if(${JSON.stringify(api)}==='execFileSync')cp.execFileSync(f,['probe','invalid-account'],{stdio:'ignore'});else cp.execSync("'"+f+"' probe invalid-account",{stdio:'ignore'});process.exit(2);}catch(e){process.exit(e.status===64?64:0)}`;
-      const child = spawnSync('/usr/bin/sandbox-exec', ['-f', file, process.execPath, '-e', code], { cwd: path.dirname(HELPER), env: { PATH: `${path.dirname(HELPER)}:/usr/bin:/bin`, PI_SLACK_KEYCHAIN_HELPER: HELPER, BRIDGE_EXECUTION_DOMAIN: 'control_plane_internal', PI_TRUSTED_DEV_MODE: '1' }, encoding: 'utf8' });
+      const child = spawnSync('/usr/bin/sandbox-exec', ['-f', file, process.execPath, '-e', code], { cwd: path.dirname(HELPER), env: { PATH: `${path.dirname(HELPER)}:/usr/bin:/bin`, PI_SLACK_KEYCHAIN_HELPER: HELPER, BRIDGE_EXECUTION_DOMAIN: 'control_plane_internal', AIRODROM_TRUSTED_DEV_MODE: '1' }, encoding: 'utf8' });
       assert.equal(child.status, 0, `${label}/${api}/trusted=${trustedDeveloperMode}: ${child.stderr}`);
     }
     const shell = spawnSync('/usr/bin/sandbox-exec', ['-f', file, '/bin/sh', '-c', '"$PI_SLACK_KEYCHAIN_HELPER" probe invalid-account'], { env: { PI_SLACK_KEYCHAIN_HELPER: HELPER }, encoding: 'utf8' });

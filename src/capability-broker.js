@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
+const { removed } = require('./removed-runtime');
 const { LEVEL1_PROFILE_ID, WORKSPACE, assertReadOnlyMission } = require('./level1-profile');
 const { ACTIVE_CHAT_PROFILE_ID, READ_ONLY_PATHS: ACTIVE_CHAT_READ_ONLY_PATHS, assertActiveChatMission } = require('./active-chat-mission');
 const { containsSecret, MAX_CONTENT_BYTES } = require('./personal-memory');
@@ -45,7 +46,7 @@ function exactKeys(value, required, optional = []) {
 
 function hash(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 
-// Pi nested-call IDs are runtime correlation metadata, never an authority grant.
+// Worker nested-call IDs are runtime correlation metadata, never an authority grant.
 function toolCallEvidence(value) {
   const id = typeof value === 'string' && value.length <= 200 && /^[A-Za-z0-9_.:-]+(?:\/[1-9][0-9]{0,5})*$/.test(value) && !containsSecret(value) ? value : null;
   const split = id?.lastIndexOf('/') ?? -1;
@@ -403,6 +404,7 @@ class CapabilityBroker extends EventEmitter {
     }
     const task = this.getTask(taskId);
     if (!task || !this.policy.tasks.has(taskId)) return this._deny(taskId, request, 'Unknown or revoked task', 'unknown_task');
+    if (removed(task)) return this._deny(taskId, request, 'Historical runtime removed; capabilities and context delivery are denied', 'runtime_removed');
     if (task.reasoningMode === 'reasoning_only') return this._deny(taskId, request, 'Reasoning admission grants no execution authority', 'reasoning_execution_denied');
     if (task.mission?.level === 1 || task.mission?.capabilityProfile === LEVEL1_PROFILE_ID) {
       if (!assertReadOnlyMission(task.mission) || task.workspace !== WORKSPACE || request.toolName !== 'read' || !exactKeys(input, ['path'])) return this._deny(taskId, request, 'Level 1 exposes only one exact brokered fixture read path', 'mission_grant_denied');

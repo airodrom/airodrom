@@ -53,9 +53,9 @@ private struct Configuration {
     let dataDirectory: String
     init() throws {
         let info = Bundle.main.infoDictionary ?? [:]
-        guard let node = info["PiBridgeNode"] as? String,
-              let control = info["PiBridgeControl"] as? String,
-              let directory = info["PiBridgeDataDir"] as? String,
+        guard let node = info["AirodromNode"] as? String,
+              let control = info["AirodromControl"] as? String,
+              let directory = info["AirodromDataDir"] as? String,
               [node, control, directory].allSatisfy({ $0.hasPrefix("/") }),
               FileManager.default.isExecutableFile(atPath: node),
               FileManager.default.isReadableFile(atPath: control) else { throw HelperError.configuration }
@@ -311,7 +311,7 @@ private func main() -> Int32 {
     if arguments.count == 2 && arguments[1] == "--open-control-center" { return openControlCenter(configuration.dataDirectory) }
     if arguments.count > 1 {
         guard arguments.count == 3, arguments[1] == "--action", let action = ControlAction(rawValue: arguments[2]) else {
-            fputs("Usage: PiBridgeMenu [--action status|start|stop|restart|open]\n", stderr); return 2
+            fputs("Usage: AirodromMenu [--action status|start|stop|restart|open]\n", stderr); return 2
         }
         let done = DispatchSemaphore(value: 0)
         var exitCode: Int32 = 1

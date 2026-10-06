@@ -156,7 +156,7 @@ function assessQualification(record, live) {
     return { allow: false, status: STALE, reason: 'template_hash_changed', record };
   }
   // Tool schema fingerprints are retained for audit of the qualification run.
-  // Live Pi descriptions are not byte-identical to the probe registry, so they
+  // Worker descriptions are not byte-identical to the probe registry, so they
   // must not invalidate a still-valid installed model artifact on their own.
   if (live?.strictToolSchema === true && live?.toolSchemaSha256 && record.registry_tool_schema_sha256 &&
       record.registry_tool_schema_sha256 !== live.toolSchemaSha256) {

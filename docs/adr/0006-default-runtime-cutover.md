@@ -1,5 +1,7 @@
 # ADR 0006 — OpenCode default execution runtime
 
+Historical decision: runtime references are superseded by [ADR 0008](0008-remove-worker-runtime.md). Pi is removed and historical identities cannot execute.
+
 - Status: Proposed
 - Date: 2026-10-06
 - Review: Pending maintainer review of the cutover PR

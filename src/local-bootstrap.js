@@ -6,7 +6,7 @@ const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const { randomUUID, createHash } = require('node:crypto');
 const { readPrivateJSON } = require('./private-json');
-const { verifyExecutable } = require('./worker-sandbox');
+const { verifyExecutable } = require('./sandbox-policy');
 const ROOT = path.resolve(__dirname, '..');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const digest = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');

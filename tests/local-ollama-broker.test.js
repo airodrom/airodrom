@@ -6,7 +6,7 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
 const { LocalOllamaBroker, LocalOllamaToolProtocolVerifier, LOCAL_OLLAMA } = require('../src/local-ollama-broker');
-const { authorizeLocalOllamaInference } = require('../src/bridge-controller');
+const { authorizeLocalOllamaInference } = require('./fixtures/test-bridge.cjs');
 
 class Response extends EventEmitter {
   constructor() { super(); this.headers = null; this.statusCode = null; this.chunks = []; this.writableEnded = false; this.destroyed = false; }
@@ -67,7 +67,7 @@ function trustedAuthorizationFixture() {
     trustedDeveloperMode: true,
     tasks: { get: id => id === task.id ? currentTask : undefined },
     runtimes: new Map([[task.id, runtime]]), inFlight: new Set([task.id]), leases: { get: id => id === task.id ? { runId: task.activeRunId } : null },
-    workerSandbox: { repoRoot: workspace }, config: { provider: 'ollama', model: 'qwen3-coder:30b' },
+    hostRepoRoot: workspace, config: { provider: 'ollama', model: 'qwen3-coder:30b' },
     missionAuthority: { verify: () => { grantChecks++; return { allow: false, reason: 'No active trusted mission grant' }; } }
   };
   return { bridge, task, runtime, setCurrent: value => { currentTask = value; }, grantChecks: () => grantChecks };

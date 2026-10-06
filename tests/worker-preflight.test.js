@@ -7,9 +7,9 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { verifyProviderRuntime, verifyWorkerPackage, verifyBuiltinThemeAssets, verifyWorkerRuntimeClosure, verifyRuntimeLibrary, verifyOpenSslConfig, sanitizedRuntimeEnv, FORBIDDEN_RUNTIME_SELECTION_ENV, TRUSTED_DEV_MODE_ENV, isTrustedDeveloperModeEnabled, isApprovedTrustedDeveloperWorkspace, sha256Tree, compareProviderRuntimeNames, inspectProbe, createPreflightCanaries, verifyPreflightCanaries, createWritableSessionCanary, assertCanaryCoverage, makeProfile, makeWorkerProfile, makeRuntimeDeny, runtimeDenyMatches, readManifest, PREFLIGHT, LEVEL1_PREFLIGHT, ACTIVE_CHAT_PREFLIGHT } = require('../src/worker-sandbox');
-const { LOCAL_OLLAMA, prepareWorkerProfile } = require('../src/config');
-const { failureReport, preflightTask, removePreflightRoot } = require('../scripts/worker-preflight.cjs');
+const { verifyModuleClosure, verifyRuntimeLibrary, verifyOpenSslConfig, sanitizedRuntimeEnv, FORBIDDEN_RUNTIME_SELECTION_ENV, TRUSTED_DEV_MODE_ENV, isTrustedDeveloperModeEnabled, isApprovedTrustedDeveloperWorkspace, sha256Tree, comparePathNames, inspectProbe, createPreflightCanaries, verifyPreflightCanaries, createWritableSessionCanary, assertCanaryCoverage, makeProfile, makeWorkerProfile, makeRuntimeDeny, runtimeDenyMatches, readManifest, PREFLIGHT, LEVEL1_PREFLIGHT, ACTIVE_CHAT_PREFLIGHT } = require('../src/sandbox-policy');
+const { LOCAL_OLLAMA } = require('../src/config');
+
 const { ACTIVE_CHAT_PROFILE_ID, TASK_A_REQUEST } = require('../src/active-chat-mission');
 const { createMissionFields } = require('../src/level1-profile');
 
@@ -21,7 +21,7 @@ const DYLD_PROFILE = '/System/Library/Sandbox/Profiles/dyld-support.sb';
 
 
 test('trusted developer mode is explicit, scoped to a selected ~/code descendant, and keeps external network denied', t => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pi-trusted-developer-root-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'host-trusted-developer-root-')));
   const workspace = path.join(root, 'project'); const sessionDir = path.join(root, 'session'); const protectedDir = path.join(root, 'protected');
   fs.mkdirSync(workspace); fs.mkdirSync(sessionDir); fs.mkdirSync(protectedDir);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -37,7 +37,7 @@ test('trusted developer mode is explicit, scoped to a selected ~/code descendant
     if (previousTrustedMode === undefined) delete process.env[TRUSTED_DEV_MODE_ENV];
     else process.env[TRUSTED_DEV_MODE_ENV] = previousTrustedMode;
   }
-  assert.equal(TRUSTED_DEV_MODE_ENV, 'PI_TRUSTED_DEV_MODE');
+  assert.equal(TRUSTED_DEV_MODE_ENV, 'AIRODROM_TRUSTED_DEV_MODE');
   assert.equal(isApprovedTrustedDeveloperWorkspace(workspace, root), true);
   assert.equal(isApprovedTrustedDeveloperWorkspace(root, root), false);
   assert.equal(isApprovedTrustedDeveloperWorkspace(sessionDir, path.join(root, 'other-root')), false);
@@ -64,79 +64,17 @@ test('trusted developer mode is explicit, scoped to a selected ~/code descendant
   assert.doesNotMatch(level1, /localhost:\*/, 'restricted Level 1 profile cannot inherit trusted-developer loopback access');
 });
 
-test('pinned startup closure includes bridge extension imports, the full Pi bundle, provider closure, and bundled startup assets', hostQualification, () => {
-  const repository = path.resolve(__dirname, '..');
-  const manifest = readManifest(path.join(repository, 'config/safe-autonomy-manifest.json'));
-  const extension = fs.readFileSync(path.join(repository, 'src/safety-extension.mjs'), 'utf8');
-  const eventExtension = fs.readFileSync(path.join(repository, 'src/chatgpt-event-extension.mjs'), 'utf8');
-  assert.match(extension, /from '\.\/chatgpt-event-extension\.mjs'/);
-  assert.match(extension, /await import\(moduleUrl\)/);
-  assert.match(eventExtension, /from '\.\/chatgpt-events\.js'/);
-  const pinnedPi = verifyWorkerPackage(manifest.worker);
-  assert.equal(JSON.parse(fs.readFileSync(pinnedPi.packageMetadata, 'utf8')).version, '1.0.2');
-  assert.ok(manifest.worker.files.length > 50, 'the full Pi bundle inventory is pinned');
-  assert.equal(verifyWorkerRuntimeClosure(manifest.worker).roots.length, 9);
-  assert.equal(verifyProviderRuntime(manifest.providerRuntime).roots.length, 3);
-  assert.deepEqual(verifyBuiltinThemeAssets(manifest.worker, pinnedPi).paths.map(file => path.basename(file)).sort(), ['dark.json', 'light.json']);
-});
 
-test('preflight harness describes the required pinned-node, WorkerSandbox.prepare-only operation without executing it', hostQualification, () => {
-  const manifest = readManifest(path.resolve(__dirname, '../config/safe-autonomy-manifest.json'));
-  const node = manifest.executables.find(entry => entry.id === 'node');
-  const result = spawnSync(node.path, ['scripts/worker-preflight.cjs', '--describe'], { cwd: path.resolve(__dirname, '..'), encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  const description = JSON.parse(result.stdout);
-  assert.equal(description.kind, 'WORKER_SANDBOX_PREFLIGHT_ONLY');
-  assert.equal(description.executionContext, 'operator-terminal');
-  assert.equal(description.mandatoryPreparation, 'WorkerSandbox.prepare()');
-  assert.deepEqual(description.probes, ['canonical-seatbelt-probes', 'exact-unix-policy-socket-connectivity', 'direct-tcp-127.0.0.1:11434-denied']);
-  assert.match(description.prohibitedEffects.join(' '), /Pi inference/);
-});
 
-test('active-chat preflight description and task select the restricted profile with a sealed undisclosed fixture', hostQualification, t => {
-  const repository = path.resolve(__dirname, '..');
-  const manifest = readManifest(path.join(repository, 'config/safe-autonomy-manifest.json'));
-  const node = manifest.executables.find(entry => entry.id === 'node');
-  const result = spawnSync(node.path, ['scripts/worker-preflight.cjs', '--describe', '--active-chat'], { cwd: repository, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  const description = JSON.parse(result.stdout);
-  assert.equal(description.profile, ACTIVE_CHAT_PROFILE_ID);
-  assert.deepEqual(description.command.slice(-1), ['--active-chat']);
-  assert.ok(description.probes.includes('active-chat-seatbelt-probes'));
-  assert.match(description.fixture, /sealed disposable fixture/);
 
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-active-preflight-'));
-  t.after(() => removePreflightRoot(root));
-  const workspace = path.join(root, 'workspace'); const sessionDir = path.join(root, 'session'); const workerProfile = path.join(sessionDir, 'profile');
-  fs.mkdirSync(workspace, { mode: 0o700 }); fs.mkdirSync(workerProfile, { recursive: true, mode: 0o700 });
-  const task = preflightTask({ activeChat: true, workspace, sessionDir, workerProfile });
-  const taskA = fs.readFileSync(path.join(workspace, 'evidence/task-a.txt'), 'utf8');
-  assert.equal(task.mission.capabilityProfile, ACTIVE_CHAT_PROFILE_ID);
-  assert.equal(task.localOllamaTransport, true);
-  assert.equal(task.activeChat.phase, 'task_a_running');
-  assert.equal(fs.statSync(path.join(workspace, 'evidence')).mode & 0o777, 0o500);
-  assert.equal(fs.statSync(path.join(workspace, 'evidence/task-a.txt')).mode & 0o777, 0o400);
-  assert.equal(TASK_A_REQUEST.includes(taskA.trim()), false);
-  assert.match(ACTIVE_CHAT_PREFLIGHT, /direct Active Chat fixture read/);
-});
 
-test('provider runtime tree pins reject modified or unpinned imported code before worker launch', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-provider-runtime-'));
-  const entrypoint = path.join(root, 'api.mjs'); fs.writeFileSync(entrypoint, 'export const streamSimple = () => {}\n');
-  const manifest = { entrypoint, entrypointSha256: digest(entrypoint), roots: [{ path: root, sha256: sha256Tree(root).sha256 }] };
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  assert.equal(verifyProviderRuntime(manifest).entrypoint, fs.realpathSync(entrypoint));
-  fs.writeFileSync(entrypoint, 'export const streamSimple = () => { throw new Error("modified") }\n');
-  assert.throws(() => verifyProviderRuntime(manifest), /provider runtime hash mismatch/);
-});
-
-test('worker runtime dependency closure pins the Pi agent graph, rejects tampering, and remains read-only', t => {
+test('worker runtime dependency closure pins the synthetic module graph, rejects tampering, and remains read-only', t => {
   const fixture = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pi-worker-runtime-closure-')));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
-  const core = path.join(fixture, 'pi-agent-core');
+  const core = path.join(fixture, 'module-core');
   const chord = path.join(fixture, 'chord');
   for (const directory of [path.join(core, 'dist'), path.join(chord, 'dist/context')]) fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(core, 'package.json'), JSON.stringify({ name: '@fixture/pi-agent-core', version: '1.0.0', type: 'module', exports: { '.': { import: './dist/index.js' } } }));
+  fs.writeFileSync(path.join(core, 'package.json'), JSON.stringify({ name: '@fixture/module-core', version: '1.0.0', type: 'module', exports: { '.': { import: './dist/index.js' } } }));
   fs.writeFileSync(path.join(chord, 'package.json'), JSON.stringify({ name: '@fixture/chord', version: '1.0.0', type: 'module', exports: { './context': { import: './dist/context/index.js' } } }));
   const coreEntry = path.join(core, 'dist/index.js');
   const chordContext = path.join(chord, 'dist/context/index.js');
@@ -144,14 +82,14 @@ test('worker runtime dependency closure pins the Pi agent graph, rejects tamperi
   fs.writeFileSync(chordContext, 'export const context = "reviewed";\n');
   const makeClosure = () => ({
     roots: [
-      { package: '@fixture/pi-agent-core', version: '1.0.0', path: core, sha256: sha256Tree(core, 'worker runtime').sha256 },
+      { package: '@fixture/module-core', version: '1.0.0', path: core, sha256: sha256Tree(core, 'worker runtime').sha256 },
       { package: '@fixture/chord', version: '1.0.0', path: chord, sha256: sha256Tree(chord, 'worker runtime').sha256 }
     ],
-    entrypoints: [{ package: '@fixture/pi-agent-core', path: 'dist/index.js' }]
+    entrypoints: [{ package: '@fixture/module-core', path: 'dist/index.js' }]
   });
 
   const closure = makeClosure();
-  const verified = verifyWorkerRuntimeClosure({ runtimeClosure: closure });
+  const verified = verifyModuleClosure({ runtimeClosure: closure });
   assert.deepEqual(verified.roots, [fs.realpathSync(core), fs.realpathSync(chord)]);
   assert.ok(verified.files.includes(fs.realpathSync(chordContext)), 'the Chord context export resolves within the declared closure');
   const profile = makeProfile({ readRoots: verified.roots, writeRoots: [], protectedRead: [], protectedWrite: [] });
@@ -161,63 +99,19 @@ test('worker runtime dependency closure pins the Pi agent graph, rejects tamperi
   }
 
   fs.writeFileSync(coreEntry, 'export const changed = true;\n');
-  assert.throws(() => verifyWorkerRuntimeClosure({ runtimeClosure: closure }), /Pinned worker runtime hash mismatch/);
+  assert.throws(() => verifyModuleClosure({ runtimeClosure: closure }), /Pinned worker runtime hash mismatch/);
   fs.writeFileSync(coreEntry, 'const { context } = require("@fixture/chord/context"); export { context };\n');
   fs.writeFileSync(chordContext, 'export const context = "tampered";\n');
-  assert.throws(() => verifyWorkerRuntimeClosure({ runtimeClosure: closure }), /Pinned worker runtime hash mismatch/);
+  assert.throws(() => verifyModuleClosure({ runtimeClosure: closure }), /Pinned worker runtime hash mismatch/);
   fs.writeFileSync(chordContext, 'export const context = "reviewed";\n');
 
   fs.writeFileSync(coreEntry, 'import "untrusted-sibling"; export const reviewed = true;\n');
   const untrustedClosure = makeClosure();
-  assert.throws(() => verifyWorkerRuntimeClosure({ runtimeClosure: untrustedClosure }), /Undeclared worker runtime package: untrusted-sibling/);
+  assert.throws(() => verifyModuleClosure({ runtimeClosure: untrustedClosure }), /Undeclared worker runtime package: untrusted-sibling/);
 });
 
-test('current worker runtime closure pins the proven Pi agent core and Chord dependencies', hostQualification, () => {
-  const worker = readManifest(path.resolve(__dirname, '../config/safe-autonomy-manifest.json')).worker;
-  const verified = verifyWorkerRuntimeClosure(worker);
-  const roots = new Map(worker.runtimeClosure.roots.map(item => [item.package, item]));
-  assert.ok(roots.has('@earendil-works/pi-agent-core'));
-  assert.ok(roots.has('@earendil-works/chord'));
-  assert.ok(verified.files.some(file => file.endsWith('/@earendil-works/chord/dist/context/index.js')));
-});
 
-test('Pi startup grants only the two pinned built-in themes required before RPC', hostQualification, () => {
-  const manifest = readManifest(path.resolve(__dirname, '../config/safe-autonomy-manifest.json'));
-  const pinnedPi = verifyWorkerPackage(manifest.worker);
-  const themes = verifyBuiltinThemeAssets(manifest.worker, pinnedPi).paths;
-  const packageJson = JSON.parse(fs.readFileSync(pinnedPi.packageMetadata, 'utf8'));
-  const themeRoot = path.join(path.dirname(path.dirname(pinnedPi.bundleRoot)), 'dist', 'modes', 'interactive', 'theme');
-  assert.equal(packageJson.version, '1.0.2');
-  assert.deepEqual(themes, ['dark.json', 'light.json'].map(name => path.join(themeRoot, name)).sort());
-  const profile = makeProfile({ readRoots: [], exactReadFiles: themes, writeRoots: [], protectedRead: [], protectedWrite: [] });
-  for (const theme of themes) assert.ok(profile.includes(`(allow file-read* file-test-existence (literal "${theme}"))`));
-  assert.doesNotMatch(profile, /\(allow [^\n]*file-write/);
-  assert.equal(profile.includes(`(subpath "${themeRoot}")`), false);
-  const themeLoader = fs.readFileSync(path.join(pinnedPi.bundleRoot, 'chunks', 'chunk-6FX7UEPL.js'), 'utf8');
-  assert.match(themeLoader, /function getBuiltinThemes\(\).*?darkPath=.*?"dark\.json".*?lightPath=.*?"light\.json"/s);
-  assert.match(themeLoader, /function initTheme\(.*?loadTheme\(/s);
-});
 
-test('Pi built-in theme verification rejects missing, modified, aliased, and substituted assets before launch', t => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pi-builtin-themes-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const bundleRoot = path.join(root, 'dist', 'bundle');
-  const themeRoot = path.join(root, 'dist', 'modes', 'interactive', 'theme');
-  fs.mkdirSync(bundleRoot, { recursive: true }); fs.mkdirSync(themeRoot, { recursive: true });
-  const dark = path.join(themeRoot, 'dark.json'), light = path.join(themeRoot, 'light.json');
-  fs.writeFileSync(dark, '{"name":"dark"}\n'); fs.writeFileSync(light, '{"name":"light"}\n');
-  const worker = { builtinThemeAssets: [{ path: dark, sha256: digest(dark) }, { path: light, sha256: digest(light) }] };
-  assert.deepEqual(verifyBuiltinThemeAssets(worker, { bundleRoot }).paths, [dark, light]);
-  fs.appendFileSync(dark, 'modified');
-  assert.throws(() => verifyBuiltinThemeAssets(worker, { bundleRoot }), /verification failed/);
-  fs.writeFileSync(dark, '{"name":"dark"}\n');
-  fs.unlinkSync(light);
-  assert.throws(() => verifyBuiltinThemeAssets(worker(), { bundleRoot }));
-  fs.writeFileSync(light, '{"name":"light"}\n');
-  const custom = path.join(root, 'custom.json'); fs.writeFileSync(custom, '{}');
-  assert.throws(() => verifyBuiltinThemeAssets({ builtinThemeAssets: [{ path: custom, sha256: digest(custom) }, { path: light, sha256: digest(light) }] }, { bundleRoot }), /not an approved bundled theme/);
-  assert.throws(() => verifyBuiltinThemeAssets({ builtinThemeAssets: [{ path: dark, sha256: digest(dark), aliases: [light] }, { path: light, sha256: digest(light) }] }, { bundleRoot }), /cannot use aliases/);
-});
 
 test('provider runtime tree pins use a locale-independent path order', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-provider-order-'));
@@ -228,7 +122,7 @@ test('provider runtime tree pins use a locale-independent path order', t => {
     .update(`F\0Z.js\0${digest(path.join(root, 'Z.js'))}\0`)
     .update(`F\0a.js\0${digest(path.join(root, 'a.js'))}\0`)
     .digest('hex');
-  assert.equal(compareProviderRuntimeNames('Z.js', 'a.js'), -1);
+  assert.equal(comparePathNames('Z.js', 'a.js'), -1);
   assert.equal(sha256Tree(root).sha256, expected);
 });
 
@@ -325,25 +219,6 @@ test('OpenSSL runtime configuration pins reviewed includes and rejects content, 
   assert.throws(() => sanitizedRuntimeEnv({ ...cleanEnv, NODE_OPTIONS: `--openssl-config=${configFile}` }), /Unapproved runtime configuration selector/);
 });
 
-test('local Ollama worker profile retains only the exact configured provider and model without auth material', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-local-profile-'));
-  const source = path.join(root, 'source'); const destination = path.join(root, 'worker');
-  fs.mkdirSync(source, { recursive: true });
-  fs.writeFileSync(path.join(source, 'settings.json'), JSON.stringify({ defaultProvider: 'ollama', defaultModel: 'qwen3-coder:30b', apiKey: 'must-not-be-copied' }));
-  fs.writeFileSync(path.join(source, 'models.json'), JSON.stringify({ providers: { cloud: { baseUrl: 'https://example.invalid', models: [{ id: 'other' }] } } }));
-  fs.writeFileSync(path.join(source, 'auth.json'), 'private fixture that must not be copied');
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  prepareWorkerProfile(source, destination, { localOllamaOnly: true });
-  const settings = JSON.parse(fs.readFileSync(path.join(destination, 'settings.json'), 'utf8'));
-  const models = JSON.parse(fs.readFileSync(path.join(destination, 'models.json'), 'utf8'));
-  assert.deepEqual(settings, { defaultProvider: LOCAL_OLLAMA.provider, defaultModel: LOCAL_OLLAMA.model, defaultThinkingLevel: 'off', enableTelemetry: false, packages: [], retry: { enabled: false } });
-  assert.deepEqual(Object.keys(models.providers), ['ollama']);
-  assert.equal(models.providers.ollama.baseUrl, LOCAL_OLLAMA.baseUrl);
-  assert.equal(models.providers.ollama.models[0].id, LOCAL_OLLAMA.model);
-  assert.equal(fs.existsSync(path.join(destination, 'auth.json')), false);
-  fs.writeFileSync(path.join(source, 'settings.json'), JSON.stringify({ defaultProvider: 'cloud', defaultModel: 'other' }));
-  assert.throws(() => prepareWorkerProfile(source, path.join(root, 'wrong'), { localOllamaOnly: true }), /requires the configured ollama/);
-});
 
 test('probe diagnostics preserve useful output and fail closed for empty, signalled, spawn, timeout, and marker failures', () => {
   const marker = 'expected-marker';
@@ -373,15 +248,11 @@ test('probe diagnostics preserve useful output and fail closed for empty, signal
   assert.match(redactedAndBounded.stdout, /api_key=<redacted>/);
   assert.match(redactedAndBounded.stdout, /\[truncated\]$/);
 
-  const report = failureReport(Object.assign(new Error('fixture failure'), { probeDiagnostics: { canonical: timeout } }));
-  assert.equal(report.status, 'failed');
-  assert.equal(report.error, 'fixture failure');
-  for (const key of ['stage', 'childStatus', 'signal', 'errorCode', 'nodeReachedJavaScript', 'stdout', 'stderr', 'markerPresent']) assert.ok(Object.hasOwn(report.probes.canonical, key));
-  assert.deepEqual(report.probes.canonical, timeout);
+
 });
 
 test('preflight active denial probes contain only parent-created disposable canaries covered by explicit deny rules', t => {
-  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-canary-parent-'));
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'host-canary-parent-'));
   const canaries = createPreflightCanaries(parent);
   const session = path.join(parent, 'session'); fs.mkdirSync(session);
   const writableCanary = createWritableSessionCanary(session);

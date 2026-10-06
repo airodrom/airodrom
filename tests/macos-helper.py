@@ -5,15 +5,15 @@ root=pathlib.Path(tempfile.mkdtemp(prefix='pi-helper-'))
 atexit.register(shutil.rmtree,root,ignore_errors=True)
 app=root/'Fixture.app'
 contents=app/'Contents'
-exe=contents/'MacOS'/'PiBridgeMenu'
+exe=contents/'MacOS'/'AirodromMenu'
 exe.parent.mkdir(parents=True,exist_ok=True)
-shutil.copy2(project/'work/macos/Pi Bridge.app/Contents/MacOS/PiBridgeMenu',exe)
+shutil.copy2(project/'work/macos/Pi Bridge.app/Contents/MacOS/AirodromMenu',exe)
 runtime=root/'fixture-runtime'
 runtime.mkdir(exist_ok=True,mode=0o700)
 runtime.chmod(0o700)
 control=root/'fixture-control.cjs'
 node=shutil.which('node')
-info={'CFBundleExecutable':'PiBridgeMenu','CFBundleIdentifier':'local.pi.bridge.fixture','CFBundlePackageType':'APPL','LSUIElement':True,'PiBridgeNode':node,'PiBridgeControl':str(control),'PiBridgeDataDir':str(runtime)}
+info={'CFBundleExecutable':'AirodromMenu','CFBundleIdentifier':'local.pi.bridge.fixture','CFBundlePackageType':'APPL','LSUIElement':True,'PiBridgeNode':node,'PiBridgeControl':str(control),'PiBridgeDataDir':str(runtime)}
 with (contents/'Info.plist').open('wb') as f: plistlib.dump(info,f)
 status={'state':'Connected','pid':12345,'endpoint':'http://127.0.0.1:43117','mcp':{'ready':True,'lastCallAt':None},'tasks':{'active':0,'connected':0,'total':2,'counts':{'completed':2}},'lastActivityAt':None,'lastHeartbeatAt':None,'now':1700000000000,'managed':True}
 control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')

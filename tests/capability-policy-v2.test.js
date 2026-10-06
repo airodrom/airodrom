@@ -108,12 +108,10 @@ test('MCP create_task accepts optional least-privilege capability scopes and rej
   assert.throws(() => new CapabilityPolicy().normalizeTaskScopes('repo,everything'), /Unknown capability scope/);
 });
 
-test('extension forcing aliases are exactly the active automatic READ_ONLY capabilities', async () => {
-  const { READ_ONLY_CAPABILITY_ALIASES } = await import('../src/safety-extension.mjs');
-  const policy = new CapabilityPolicy();
-  const expected = policy.names().filter(name => { const entry = policy.entry(name); return entry.riskClass === 'READ_ONLY' && entry.active !== false && entry.decision === 'auto_allow'; }).sort();
-  assert.deepEqual([...READ_ONLY_CAPABILITY_ALIASES].sort(), expected);
-  for (const mutating of ['git_push', 'file_delete_permanent', 'process_stop', 'service_restart', 'claude_code_run_task']) assert.equal(READ_ONLY_CAPABILITY_ALIASES.has(mutating), false);
+test('automatic read capabilities cannot authorize mutating capabilities', () => {
+ const policy=new CapabilityPolicy();const reads=policy.names().filter(name=>{const e=policy.entry(name);return e.riskClass==='READ_ONLY'&&e.active!==false&&e.decision==='auto_allow';});
+ assert.ok(reads.includes('file_read'));assert.ok(reads.includes('agent_list'));
+ for(const name of ['git_push','file_delete_permanent','process_stop','service_restart','claude_code_run_task'])assert.equal(reads.includes(name),false);
 });
 
 test('command classifier: bounded reads and dev execution are automatic; destructive, privileged, pipelines-to-shell and substitutions are not', () => {
@@ -174,6 +172,6 @@ test('filesystem scopes: traversal and symlink escapes are rejected; protected a
   assert.equal(scopes.resolve('~/code/protected-worktree', { mode: 'read' }).scope, 'approved_project_roots');
   assert.throws(() => scopes.resolve('~/.config/git/config', { mode: 'write' }), /outside every write scope/);
   fs.mkdirSync(path.join(root, 'data'), { recursive: true });
-  assert.throws(() => scopes.resolve(path.join(root, 'data/pi-owned/../ledger.db')), /private state|outside/);
-  assert.equal(scopes.resolve(path.join(root, 'data/pi-owned/out.txt'), { mode: 'write', mustExist: false }).scope, 'pi_owned');
+  assert.throws(() => scopes.resolve(path.join(root, 'data/host-owned/../ledger.db')), /private state|outside/);
+  assert.equal(scopes.resolve(path.join(root, 'data/host-owned/out.txt'), { mode: 'write', mustExist: false }).scope, 'host_owned');
 });

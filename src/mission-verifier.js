@@ -65,9 +65,9 @@ class MissionVerifier {
   persist(mission,run,result){return transaction(this.store.db,()=>{
     const id=randomUUID();this.store.state(mission.id,['passed','operator_review'].includes(result.status)?'awaiting_acceptance':'needs_rework',`Verification ${result.status}`);
     const current=this.store.getMission(mission.id);
-    this.store.db.prepare('INSERT INTO cp_verifications VALUES(?,?,?,?,?,?,?,?,?)').run(id,mission.id,run.id,current.revision,result.workspace_hash,result.status,JSON.stringify(result.checks),'pi:typed-capabilities',Date.now());
+    this.store.db.prepare('INSERT INTO cp_verifications VALUES(?,?,?,?,?,?,?,?,?)').run(id,mission.id,run.id,current.revision,result.workspace_hash,result.status,JSON.stringify(result.checks),'airodrom:host-verifier',Date.now());
     if(this.bridge.authorityRuntime?.active)this.bridge.authorityRuntime.recordVerification(id,current,run,result);
-    this.store.event(result.status==='failed'?'verification.failed':'verification.completed',mission.id,{verification_id:id,status:result.status,verifier:'pi'},{runId:run.id});
+    this.store.event(result.status==='failed'?'verification.failed':'verification.completed',mission.id,{verification_id:id,status:result.status,verifier:'host'},{runId:run.id});
     this.store.event('acceptance.started',mission.id,{verification_id:id});
     this.store.event(result.status==='passed'?'acceptance.passed':result.status==='operator_review'?'acceptance.operator_review':'acceptance.failed',mission.id,{verification_id:id,evaluation_only:true,requires_acceptance:true});
     this.bridge.missions?.program.review(current,run,result,id);

@@ -5,7 +5,7 @@ const path = require('node:path');
 const { keys, text, integer, bool, list, oneOf, pattern, fail } = require('../capability-util');
 
 // Accounts are routed by alias; credentials live only in the connector's own
-// secure store and are never passed through Pi or Personal Memory.
+// secure store and are never passed through Airodrom or Personal Memory.
 const CONNECTORS = Object.freeze({
   gmail: { label: 'Gmail', accounts: ['gmail.personal', 'gmail.arecibo'], humanGate: 'google_oauth_login' },
   whatsapp: { label: 'WhatsApp', accounts: ['whatsapp.personal'], humanGate: 'touch_id_webauthn' },
@@ -139,7 +139,7 @@ function databaseCapabilities() {
 
 const AGENTS = Object.freeze({
   opencode: {label:'OpenCode (default / primary)',capabilities:['coding','bounded_file_work'],cost_class:'local',privacy_class:'local_only',preferred_task_types:['large_multi_file_coding','ide_diagnostics']},
-  pi: { label: 'Pi (local bridge)', capabilities: ['local_diagnostics', 'files', 'tests', 'git', 'mac_capabilities', 'developer_tools'], cost_class: 'local', privacy_class: 'local_only', preferred_task_types: ['local_diagnostics', 'local_files', 'tests', 'git'] },
+  host: { label: 'Airodrom host primitives', capabilities: ['local_diagnostics', 'files', 'tests', 'git', 'mac_capabilities', 'developer_tools'], cost_class: 'local', privacy_class: 'local_only', preferred_task_types: ['local_diagnostics', 'local_files', 'tests', 'git'] },
   chatgpt: { label: 'ChatGPT', capabilities: ['architecture', 'review', 'orchestration', 'planning'], cost_class: 'subscription', privacy_class: 'cloud', preferred_task_types: ['architecture', 'review', 'orchestration'] },
   codex: { label: 'Codex', capabilities: ['multi_file_coding','repository_tasks','durable_handoff'], cost_class:'subscription',privacy_class:'cloud',preferred_task_types:['large_multi_file_coding'] },
   cursor: { label: 'Cursor', capabilities: ['ide', 'multi_file_coding', 'ide_diagnostics'], cost_class: 'subscription', privacy_class: 'cloud', preferred_task_types: ['ide_diagnostics', 'large_multi_file_coding'] },
@@ -155,7 +155,7 @@ function agentCapabilities() {
     const cursor = await tools.cursorStatus?.(ctx).catch(() => null);
     return {
       opencode: {state:opencode?.available===true?'available':'unavailable',reason:opencode?.reason||'opencode_unavailable'},
-      pi: { state: 'available' },
+      host: { state: 'available' },
       chatgpt: { state: ctx.mcpConnected?.() ? 'connected' : 'unknown' },
       cursor: { state: 'unavailable', editor_available:cursor?.installed===true,reason:'cursor_agent_adapter_unimplemented' },
       codex:{state:'unavailable',implemented:true,dispatch_mode:'local_handoff',reason:'native_dispatch_unavailable'},

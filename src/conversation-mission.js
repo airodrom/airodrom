@@ -33,7 +33,7 @@ function subjectFor(content) {
 }
 function assertContract(service, mission) {
   const e = mission.envelope, c = service.program.contract(mission.id);
-  if (e.kind !== 'conversation' || !c?.signed || c.manifest.profile !== PROFILE || c.manifest.expires_at <= Date.now() || e.allowed_files.length || e.capability_scopes.length || e.fallback_agents.length || !['opencode', 'pi'].includes(e.preferred_agent) || e.authority?.level !== 'read_only' || e.authority.filesystem.read.length || e.authority.filesystem.write.length || e.dispatch_policy?.privacy !== 'local_only' || JSON.stringify(e.dispatch_policy.providers) !== '["local"]' || JSON.stringify(e.dispatch_policy.billing_classes) !== '["local"]' || fingerprint(c.manifest) !== fingerprint(e.manifest)) throw Error('Bounded conversation authority is unavailable or changed.');
+  if (e.kind !== 'conversation' || !c?.signed || c.manifest.profile !== PROFILE || c.manifest.expires_at <= Date.now() || e.allowed_files.length || e.capability_scopes.length || e.fallback_agents.length || e.preferred_agent !== 'opencode' || e.authority?.level !== 'read_only' || e.authority.filesystem.read.length || e.authority.filesystem.write.length || e.dispatch_policy?.privacy !== 'local_only' || JSON.stringify(e.dispatch_policy.providers) !== '["local"]' || JSON.stringify(e.dispatch_policy.billing_classes) !== '["local"]' || fingerprint(c.manifest) !== fingerprint(e.manifest)) throw Error('Bounded conversation authority is unavailable or changed.');
   const expected = contract(c.manifest.expires_at);
   if (fingerprint(expected) !== fingerprint(c.manifest)) throw Error('Bounded conversation scope changed.');
   const expectedAuthority = { version: 1, level: 'read_only', label: 'Read Only', permissions: { repository: [], runtime: [], network: ['localhost'], secrets: [], data: [] }, filesystem: { read: [], write: [] }, expiresAt: c.manifest.expires_at };
@@ -85,9 +85,6 @@ function create(service, input, owner = 'operator') {
 async function launch(service, dispatch, m) {
   const b = service.bridge, task = b.tasks.get(dispatch.task_id), adapter = b.opencodeAdapter;
   assertContract(service, m); service.assertAuthority(m, { network: ['localhost'] });
-  // Pi's existing typed plans remain available. General Pi prompting requires its
-  // separately qualified worker; there is no unsafe automatic runtime substitution.
-  if (m.envelope.preferred_agent === 'pi') throw Error('Pi rollback supports registered typed Missions; conversation execution requires qualified OpenCode. Use /task with an explicit Pi coding plan or /runtime opencode.');
   if (!(await adapter.readiness()).ready) throw Error('Qualified local OpenCode and Ollama are required.');
   const runId = randomUUID(), startedAt = Date.now(); let started = false;
   try {

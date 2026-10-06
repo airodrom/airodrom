@@ -15,7 +15,7 @@ test('routing waits for semantic fit and respects auth, quota/busy and locality'
  assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription',api_key_overrides_subscription:true}),coding)).suggested_agent,null);
  assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription'}),coding)).suggested_agent,null);
  assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription'}),{...coding,privacy:'local_only'})).state,'waiting');
- assert.equal((await run(context(),{taskType:'tests',privacy:'local_only'})).suggested_agent,'pi');
+ assert.equal((await run(context(),{taskType:'tests',privacy:'local_only'})).suggested_agent,'host');
 });
 test('a selected different agent is never silently dispatched through Claude',async t=>{
  const {fixture}=require('./fixtures/mission-fixture.cjs');const f=await fixture(t),m=f.create();

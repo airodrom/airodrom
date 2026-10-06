@@ -3,5 +3,5 @@
     "noEmit": true, "target": "ES2024", "module": "NodeNext",
     "moduleResolution": "NodeNext", "strict": true, "skipLibCheck": true
   },
-  "include": ["src/sdk/*.d.ts", "tests/types/pi-sdk-contract.ts"]
+  "include": ["src/sdk/*.d.ts", "tests/types/sdk-contract.ts"]
 }

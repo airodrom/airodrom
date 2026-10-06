@@ -9,7 +9,7 @@ const SAFE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bi
 const MAX_OUTPUT = 512 * 1024;
 function isInternalHelper(file) {
   const { HELPER } = require('./slack-credentials');
-  if (path.resolve(file) === HELPER || path.basename(file) === 'pi-slack-keychain') return true;
+  if (path.resolve(file) === HELPER || path.basename(file) === 'airodrom-slack-keychain') return true;
   try {
     const crypto = require('node:crypto');
     const digest = name => crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex');
@@ -53,7 +53,7 @@ class HostExecutor {
     if (missionAuthority) {
       const valid = require('./mission-permissions').checkAuthority(missionAuthority);
       if (!valid.allow) throw Error(valid.reason);
-      const {makeProfile,SECRET_COMPONENT_PATTERN} = require('./worker-sandbox');
+      const {makeProfile,SECRET_COMPONENT_PATTERN} = require('./sandbox-policy');
       const secretPattern = SECRET_COMPONENT_PATTERN.replace(String.raw`\.git|`, '');
       const privatePatterns = [secretPattern, '(^|/)[.]runtime(/|$)'];
       const runtimeRoots = ['/var/empty','/Applications/Xcode.app/Contents','/Library/Developer','/System','/usr/lib','/usr/share','/usr/bin','/bin','/sbin','/Library/Apple','/opt/homebrew','/usr/local','/dev',path.dirname(file),path.dirname(process.execPath)];

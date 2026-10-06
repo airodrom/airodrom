@@ -7,7 +7,7 @@ const { object, fingerprint } = require('./control-plane-store');
 const { canonical } = require('./mission-manifest-paths');
 const { allowsPath } = require('./mission-manifest');
 const DESCRIPTOR = Object.freeze({
-  id: 'pi.typed-coding', version: '1.0.0', protocol: 'coding-plan-v1',
+  id: 'airodrom.typed-coding', version: '1.0.0', protocol: 'coding-plan-v1',
   capabilities: Object.freeze(['exact_file_edit', 'registered_tests', 'registered_lint', 'registered_typecheck']),
   authority: 'intersected_manifest_and_typed_capability_policy',
   termination: 'in_process_awaited_capabilities', provider: null,

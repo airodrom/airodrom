@@ -25,7 +25,7 @@ async function acpProbe(executable,{spawnImpl=spawn,env=environment(),timeout=50
   child.stderr.on('data',()=>{});child.on('error',()=>finish({reachable:false}));child.on('close',()=>finish({reachable:false}));child.stdin.on('error',()=>finish({reachable:false}));
   reader.on('line',line=>{bytes+=Buffer.byteLength(line);if(bytes>64000)return finish({reachable:false});let r;try{r=JSON.parse(line);}catch{return;}
    if(r.id!==1)return;const result=r.result;finish({reachable:result?.protocolVersion===1,load_session:result?.agentCapabilities?.loadSession===true,cursor_login:result?.authMethods?.some(a=>a.id==='cursor_login')===true});});
-  child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'pi-runtime-status',version:'1'}}})+'\n');
+  child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'airodrom-runtime-status',version:'1'}}})+'\n');
  });
 }
 function qualificationObservation(version,{file=path.join(__dirname,'../config/agent-runtime-qualification-v1.json'),now=Date.now()}={}){

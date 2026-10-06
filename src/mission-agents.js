@@ -7,7 +7,7 @@ class MissionAgents {
     const observations={
       opencode:{...(await this.bridge.opencodeAdapter.readiness()),kind:'agent',capabilities:this.bridge.opencodeAdapter.capabilities(),boundary:'disposable scoped workspace; canonical broker applies changes'},
       codex:this.bridge.codexAdapter?.health()||{kind:'agent',implemented:false,available:false,reason:'adapter_unavailable'},
-      pi:{kind:'agent',implemented:true,available:!this.bridge.closed,capabilities:['verification','local_tools'],boundary:'bridge typed capabilities',reason:this.bridge.closed?'stopped':null},
+      host:{kind:'control_plane_capability',implemented:true,available:!this.bridge.closed,capabilities:['verification','local_tools'],boundary:'bridge typed capabilities',reason:this.bridge.closed?'stopped':null},
       claude_code:{kind:'agent',version:claude.version||null,authenticated:claude.authenticated===true,running_jobs:claude.running_jobs||0,jobs:claude.jobs||[],implemented:true,installed:claude.installed===true,available:claude.availability==='available'&&claude.auth_mode==='subscription'&&!claude.api_key_overrides_subscription&&!(claude.running_jobs>0),auth_mode:claude.auth_mode,subscription:claude.subscription||'unknown',capabilities:['coding'],boundary:'local Claude CLI; not an OS sandbox',reason:claude.running_jobs>0?'busy':claude.availability==='available'?(claude.auth_mode==='subscription'?null:'subscription_required'):claude.availability,concurrency:1},
       cursor:{kind:'agent',installed:cursor.installed===true,implemented:true,available:false,capabilities:[],editor_available:cursor.installed===true,runtime:cursor.runtime||null,reason:cursor.runtime?.reason||'cursor_execution_unqualified'},
       chatgpt:{kind:'orchestrator',implemented:true,available:null,reason:'remote client connection not probed'}
@@ -19,7 +19,7 @@ class MissionAgents {
         const lastFailure=this.store.db.prepare("SELECT state FROM cp_runs WHERE agent_id=? AND state IN ('failed','interrupted','cancelled') ORDER BY updated_at DESC LIMIT 1").get(id);
         observation.last_safe_error_class=observation.operational?.last_safe_error_class||(id==='cursor'?['quota_limited','auth_required'].includes(cursor.runtime?.availability)?cursor.runtime.availability:null:lastFailure?.state==='failed'?'agent_run_failed':lastFailure?.state==='interrupted'?'termination_unverified':lastFailure?.state==='cancelled'?'cancelled':null);
         observation.active_run=active||observation.active_run||null;observation.last_success=last||null;
-        observation.availability=id==='claude_code'?(observation.available?'available':observation.reason==='busy'?'busy':!claude.installed?'unavailable':claude.availability==='needs_login'?'auth_required':'unavailable'):id==='pi'?(observation.available?'available':'unavailable'):undefined;
+        observation.availability=id==='claude_code'?(observation.available?'available':observation.reason==='busy'?'busy':!claude.installed?'unavailable':claude.availability==='needs_login'?'auth_required':'unavailable'):id==='host'?(observation.available?'available':'unavailable'):undefined;
         observation.runtime_profile=require('./agent-runtime-profile').agentRuntimeProfile(id,observation);
       }
       this.store.observeAgent(id,observation.kind,observation);

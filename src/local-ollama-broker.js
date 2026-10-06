@@ -20,7 +20,7 @@ const LOCAL_OLLAMA = Object.freeze({
 });
 const LIMITS = Object.freeze({ inputBytes: 128 * 1024, outputBytes: 4 * 1024 * 1024, timeoutMs: 120_000, maxConcurrent: 1 });
 const REQUEST_KEYS = new Set([
-  // These are the complete fields emitted by the pinned Pi 0.87.1
+  // These are the complete fields emitted by the bounded provider transport
   // openai-completions transport for the configured local Ollama model. Do not
   // turn this into a general OpenAI-compatible proxy.
   'model', 'messages', 'stream', 'stream_options', 'store', 'max_completion_tokens',
@@ -334,7 +334,7 @@ class LocalOllamaBroker {
         if (completed) return;
         controller.abort();
         upstream?.destroy?.(new Error(reason));
-        // A JSON error after SSE headers would corrupt Pi's native stream parser.
+        // A JSON error after SSE headers would corrupt the provider stream parser.
         // End an already-started stream instead; send JSON only before headers.
         if (!response.destroyed && !response.writableEnded) {
           if (responseStarted) response.destroy?.();

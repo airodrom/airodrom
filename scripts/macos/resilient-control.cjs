@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '../..');
 const RUNTIME = path.join(ROOT, '.runtime');
 const CONTROL = path.join(ROOT, 'scripts/macos/control.cjs');
-const PORT = Number(process.env.PI_BRIDGE_PORT || 43117);
+const PORT = Number(process.env.AIRODROM_PORT || 43117);
 const GRACE_MS = 5000;
 
 function run(executable, args, options = {}) {

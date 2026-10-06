@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const project = path.resolve(__dirname, '..');
-const fixture = path.join(__dirname, 'fixtures/fake-pi.cjs');
+const fixture = path.join(__dirname, 'fixtures/host-worker.cjs');
 const { PHASES } = require(path.join(project, 'src/execution-lease'));
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const deadline = (promise, ms = 8000) => Promise.race([
@@ -46,13 +46,13 @@ function assertOwnershipInvariants(controller, { allowFailClosed = false } = {})
 }
 
 async function bridge(t, env = {}, options = {}) {
-  const Controller = require(path.join(project, 'src/bridge-controller'));
+  const Controller = require(path.join(project, 'tests/fixtures/test-bridge.cjs'));
   const root = fs.mkdtempSync('/private/tmp/br-lifecycle-');
   const profile = path.join(root, 'source'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const previous = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]]));
   Object.assign(process.env, env);
-  const controller = new Controller({ defaultRuntime: 'pi',
+  const controller = new Controller({ defaultRuntime: 'host',
     dataDir: path.join(root, 'data'),
     sourceProfile: profile,
     executable: fixture,
@@ -87,7 +87,7 @@ function readSources() {
     'src/mcp-tools.js',
     'src/mission-supervisor.js',
     'src/control-server.js',
-    'src/rpc-supervisor.js'
+    'src/host-worker-adapter.js'
   ];
   return files.map(rel => ({ rel, text: fs.readFileSync(path.join(project, rel), 'utf8') }));
 }

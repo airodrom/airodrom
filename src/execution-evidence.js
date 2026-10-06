@@ -24,7 +24,8 @@ function satisfied(task, runId = task.nativeExecutionEvidence?.run_id) {
 }
 function runSatisfied(run) {
   if (!run || run.state !== 'completed') return false;
-  if (run.agent_id !== 'pi') return true;
+  if(require('./removed-runtime').removed(run))return false;
+  if (run.agent_id !== 'host') return true;
   let result = run.result; if (typeof result === 'string') { try { result = JSON.parse(result); } catch { return false; } }
   const e = result?.native_execution_evidence;
   return e?.run_id === run.id && e.required_execution_kind === 'native' && Number.isSafeInteger(e.completed_invocations) && e.completed_invocations > 0;

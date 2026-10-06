@@ -25,36 +25,37 @@ function run(exe,args) {
 }
 function prepare() {
   if(process.platform!=='darwin') throw new Error('macOS is required.');
-  const configuredNode=process.env.AIRODROM_NODE||process.env.PI_BRIDGE_NODE;
+  const configuredNode=process.env.AIRODROM_NODE;
   const candidates=configuredNode?[configuredNode]:['/opt/homebrew/opt/node@22/bin/node','/usr/local/opt/node@22/bin/node',process.execPath];
   const node=candidates.find(p=>path.isAbsolute(p)&&spawnSync(p,['--experimental-sqlite','-e',"new(require('node:sqlite').DatabaseSync)(':memory:').exec('CREATE VIRTUAL TABLE f USING fts5(content)')"],{stdio:'ignore'}).status===0);
   if(!node) throw new Error('Select an absolute Node executable with SQLite FTS5.');
   const existingFile=path.join(project,'.runtime/macos.json');
   const existing=fs.existsSync(existingFile)?JSON.parse(fs.readFileSync(existingFile,'utf8')):{};
-  const dataDir=path.resolve(process.env.PI_BRIDGE_DATA_DIR || existing.dataDir || path.join(project,'.runtime'));
-  const profile=path.resolve(process.env.PI_BRIDGE_SOURCE_PROFILE || process.env.PI_CODING_AGENT_DIR || existing.profile || path.join(home,'.pi/profiles/local-dev'));
-  const port=Number(process.env.PI_BRIDGE_PORT || existing.port || 43117);
+  const dataDir=path.resolve(process.env.AIRODROM_DATA_DIR || existing.dataDir || path.join(project,'.runtime'));
+  const profile=path.resolve(process.env.AIRODROM_SOURCE_PROFILE || existing.profile || path.join(home,'.airodrom/profile'));
+  const port=Number(process.env.AIRODROM_PORT || existing.port || 43117);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid local port.');
-  if(!fs.existsSync(path.join(profile,'settings.json'))) throw new Error('Existing Pi source profile is required.');
+  fs.mkdirSync(profile,{recursive:true,mode:0o700});
+  if(!fs.existsSync(path.join(profile,'settings.json')))atomicJSON(path.join(profile,'settings.json'),{defaultProvider:'ollama',defaultModel:'qwen3-coder:30b'});
   fs.mkdirSync(dataDir,{recursive:true,mode:0o700});
   const dataStat=fs.lstatSync(dataDir);
   if(!dataStat.isDirectory() || dataStat.isSymbolicLink() || dataStat.uid!==process.getuid() || (dataStat.mode&0o077) || Buffer.byteLength(path.join(dataDir,'policy.sock'))>100) throw new Error('Runtime directory must be private, owned, real, and short enough for its socket.');
   fs.mkdirSync(build,{recursive:true,mode:0o700});
   const app=path.join(build,'Pi Bridge.app'); const contents=path.join(app,'Contents');
   fs.mkdirSync(path.join(contents,'MacOS'),{recursive:true,mode:0o700});
-  const helper=path.join(support,'Pi Bridge.app/Contents/MacOS/PiBridgeMenu');
+  const helper=path.join(support,'Pi Bridge.app/Contents/MacOS/AirodromMenu');
   const config={project,node,dataDir,profile,port,agent:path.join(agents,labels[0]+'.plist'),helper};
-  plist(path.join(contents,'Info.plist'),{CFBundleIdentifier:'local.pi-chatgpt-bridge.menubar',CFBundleName:BRANDING.name,CFBundleDisplayName:BRANDING.name,CFBundleExecutable:'PiBridgeMenu',CFBundlePackageType:'APPL',CFBundleVersion:'1',CFBundleShortVersionString:'1.0',LSUIElement:true,NSHighResolutionCapable:true,PiBridgeNode:node,PiBridgeControl:path.join(project,'scripts/macos/control.cjs'),PiBridgeDataDir:dataDir});
-  run('/usr/bin/xcrun',['swiftc','-O','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-macos13.0`,'-module-cache-path',path.join(build,'swift-cache'),path.join(project,'macos/PiBridgeMenu.swift'),'-o',path.join(contents,'MacOS/PiBridgeMenu')]);
+  plist(path.join(contents,'Info.plist'),{CFBundleIdentifier:'local.pi-chatgpt-bridge.menubar',CFBundleName:BRANDING.name,CFBundleDisplayName:BRANDING.name,CFBundleExecutable:'AirodromMenu',CFBundlePackageType:'APPL',CFBundleVersion:'1',CFBundleShortVersionString:'1.0',LSUIElement:true,NSHighResolutionCapable:true,AirodromNode:node,AirodromControl:path.join(project,'scripts/macos/control.cjs'),AirodromDataDir:dataDir});
+  run('/usr/bin/xcrun',['swiftc','-O','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-macos13.0`,'-module-cache-path',path.join(build,'swift-cache'),path.join(project,'macos/AirodromMenu.swift'),'-o',path.join(contents,'MacOS/AirodromMenu')]);
   run('/usr/bin/codesign',['--force','--sign','-',app]);
-  const env={HOME:home,PATH:[path.dirname(node),path.join(home,'.local/npm/bin'),'/opt/homebrew/bin','/usr/local/bin','/usr/bin','/bin','/usr/sbin','/sbin'].join(':'),PI_BRIDGE_DATA_DIR:dataDir,PI_BRIDGE_SOURCE_PROFILE:profile,PI_BRIDGE_PORT:String(port),PI_BRIDGE_BACKGROUND:'1',PI_BRIDGE_LOG_FILE:path.join(dataDir,'background-service.log')};
-  for(const key of ['PI_BRIDGE_WEB','PI_BRIDGE_WEB_HOSTS']) {
+  const env={HOME:home,PATH:[path.dirname(node),path.join(home,'.local/npm/bin'),'/opt/homebrew/bin','/usr/local/bin','/usr/bin','/bin','/usr/sbin','/sbin'].join(':'),AIRODROM_DATA_DIR:dataDir,AIRODROM_SOURCE_PROFILE:profile,AIRODROM_PORT:String(port),AIRODROM_BACKGROUND:'1',AIRODROM_LOG_FILE:path.join(dataDir,'background-service.log')};
+  for(const key of ['AIRODROM_WEB','AIRODROM_WEB_HOSTS']) {
     if(process.env[key]!==undefined) env[key]=process.env[key]; else if(existing.environment?.[key]!==undefined) env[key]=existing.environment[key];
   }
-  const trustedDeveloperMode=process.env.PI_TRUSTED_DEV_MODE ?? existing.environment?.PI_TRUSTED_DEV_MODE;
+  const trustedDeveloperMode=process.env.AIRODROM_TRUSTED_DEV_MODE ?? existing.environment?.AIRODROM_TRUSTED_DEV_MODE;
   if(trustedDeveloperMode!==undefined) {
-    if(trustedDeveloperMode!=='1') throw new Error('PI_TRUSTED_DEV_MODE must be exactly 1 when enabled.');
-    env.PI_TRUSTED_DEV_MODE='1';
+    if(trustedDeveloperMode!=='1') throw new Error('AIRODROM_TRUSTED_DEV_MODE must be exactly 1 when enabled.');
+    env.AIRODROM_TRUSTED_DEV_MODE='1';
   }
   config.environment=env;
   const common={RunAtLoad:true,WorkingDirectory:project,ProcessType:'Background',Umask:63,StandardOutPath:'/dev/null',StandardErrorPath:'/dev/null',ExitTimeOut:20};

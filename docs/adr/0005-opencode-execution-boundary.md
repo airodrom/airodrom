@@ -1,5 +1,7 @@
 # ADR 0005 — OpenCode execution boundary
 
+Historical decision: runtime references are superseded by [ADR 0008](0008-remove-worker-runtime.md). Pi is removed and historical identities cannot execute.
+
 Status: ACCEPTED for the adapter contract. Qualification evidence is separate.
 
 Airodrom admits OpenCode as an execution agent beside Pi. Pi's local control and verification services remain required. Installing or discovering a CLI does not activate it or change the default route.

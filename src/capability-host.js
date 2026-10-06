@@ -64,7 +64,7 @@ class CapabilityHost {
     const executor = task.mission?.authority ? Object.assign(Object.create(this.exec), { run: (file, args, options = {}) => this.exec.run(file, args, {...options, signal, missionAuthority:task.mission.authority, allowGitMetadata:['git_stage','git_commit','git_branch_create','git_checkout','git_pull'].includes(operation)}) }) : this.exec;
     return {
       controlExecution: this.controlExecution, task, home: this.home, env: this.env, scopes: this.scopes, exec: executor, policy: this.policy,
-      trashDir: path.join(this.home, '.Trash'), piOwnedRoot: this.scopes.piOwnedRoot, localServices: this.localServices,
+      trashDir: path.join(this.home, '.Trash'), hostOwnedRoot: this.scopes.hostOwnedRoot, localServices: this.localServices,
       protectedBranches: this.protectedBranches, requestBridgeRestart: this.requestBridgeRestart, bridgePids: this.bridgePids,
       webFetch: input => this.webFetch ? this.webFetch(task, input) : Promise.reject(new Error('Web reader unavailable')), webEnabled: this.webEnabled,
       opencodeStatus: ()=>this.opencodeStatus?.(), mcpConnected: this.mcpConnected, probeHttp: this.probeHttp,
@@ -133,7 +133,7 @@ class CapabilityHost {
 
   auditInput(name, input) { return auditCapabilityInput(name, input); }
 
-  // Operator-readable inventory: what Pi can do, what is detected, and what a
+  // Operator-readable inventory: what Airodrom can do, what is detected, and what a
   // human must do first. Never includes credential values.
   async inventory({ task = null, detect = false } = {}) {
     const scopes = task ? this.taskScopes(task) : null;

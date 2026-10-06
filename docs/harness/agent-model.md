@@ -4,4 +4,4 @@ Cursor remains experimental; governed execution is disabled until independent qu
 
 See [architecture](../ARCHITECTURE.md) and the [runtime matrix](../RUNTIME-SUPPORT-MATRIX.md).
 
-OpenCode is the default primary execution runtime for new bounded general Missions. Pi remains explicit compatibility/rollback; typed plans and independent verification retain their Pi identity.
+OpenCode is the default primary execution runtime for new bounded general Missions. Airodrom owns typed plans and independent verification; Pi is removed and cannot receive or replay context.

@@ -15,7 +15,7 @@
     "macos_screen_recording": "Grant Screen Recording access in System Settings > Privacy & Security > Screen & System Audio Recording.",
     "macos_automation": "Allow the Automation prompt for the target application in System Settings > Privacy & Security > Automation.",
     "touch_id_webauthn": "Complete Touch ID or security-key verification on the device.",
-    "password_mfa_entry": "Enter the password or MFA code yourself; Pi never handles it.",
+    "password_mfa_entry": "Enter the password or MFA code yourself; Airodrom never handles it.",
     "protected_operation_approval": "Review and approve the exact one-shot request in Control Center."
   },
   "alwaysDeny": {
@@ -24,7 +24,7 @@
     "credential_read_raw": "Raw stored credentials are never returned; use status capabilities",
     "auth_token_export": "Private authentication tokens are never exported",
     "assistant_text_tool_execution": "Assistant-text pseudo tool calls are never executed",
-    "audit_record_mutation": "Pi audit records cannot be modified or deleted by a model"
+    "audit_record_mutation": "Airodrom audit records cannot be modified or deleted by a model"
   },
   "legacyTools": {
     "read": "READ_ONLY", "ls": "READ_ONLY", "find": "READ_ONLY", "grep": "READ_ONLY",

@@ -16,8 +16,8 @@ class AppRegistry {
   #apps = new Map();
   #capabilities = new Map();
   register({ manifest, capabilities = {} }) {
-    if (!manifest || Object.keys(manifest).some(k => !['id', 'version', 'sdk'].includes(k)) || typeof manifest.id !== 'string' || typeof manifest.version !== 'string' || !ID.test(manifest.id) || !VERSION.test(manifest.version) || !supports(manifest.sdk)) throw Error('Invalid or incompatible Pi App manifest');
-    if (this.#apps.has(manifest.id)) throw Error('Duplicate Pi App');
+    if (!manifest || Object.keys(manifest).some(k => !['id', 'version', 'sdk'].includes(k)) || typeof manifest.id !== 'string' || typeof manifest.version !== 'string' || !ID.test(manifest.id) || !VERSION.test(manifest.version) || !supports(manifest.sdk)) throw Error('Invalid or incompatible Airodrom App manifest');
+    if (this.#apps.has(manifest.id)) throw Error('Duplicate Airodrom App');
     if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) throw Error('Invalid app capabilities');
     // Validate the entire registration before changing the registry.
     for (const [name, definition] of Object.entries(capabilities)) {

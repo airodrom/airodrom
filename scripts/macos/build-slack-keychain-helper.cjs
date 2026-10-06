@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),{spawnSync}=require('node:child_process');
-const root=path.resolve(__dirname,'../..'),dir=path.join(root,'.runtime/slack-keychain'),dest=path.join(dir,'pi-slack-keychain');
+const root=path.resolve(__dirname,'../..'),dir=path.join(root,'.runtime/slack-keychain'),dest=path.join(dir,'airodrom-slack-keychain');
 fs.mkdirSync(dir,{recursive:true,mode:0o700});
 const st=fs.lstatSync(dir);if(!st.isDirectory()||st.isSymbolicLink()||st.uid!==process.getuid()||(st.mode&0o077))throw Error('Unsafe helper directory');
 // Never replace a trusted binary implicitly. Rebuild requires deliberate removal

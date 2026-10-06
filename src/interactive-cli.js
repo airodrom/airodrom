@@ -6,13 +6,13 @@ const { randomUUID } = require('node:crypto');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/remember <text> · /memory [query] · /forget <id or subject>\n/status · /runtime [opencode|pi] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/remember <text> · /memory [query] · /forget <id or subject>\n/status · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 function intro({ color = false, unicode = true } = {}) {
   const title = color ? '\u001b[1;36mAIRODROM\u001b[0m' : 'AIRODROM';
   return `${unicode ? '◈ ' : ''}${title}\nMANY AGENTS. ONE CONTROL PLANE.\n`;
 }
 function rows(s) {
-  return `OpenCode   ${s.opencode.ready ? s.opencode.version + ' · local Ollama ready' : 'unavailable · ' + s.opencode.reason}\nMemory V2  ready · persistent and private\nControl    ${s.healthy ? 'connected' : 'unavailable'} · browser optional\nPi         explicit rollback · typed Missions\nRuntime    ${s.default_runtime}\n`;
+  return `OpenCode   ${s.opencode.ready ? '● Ready · Primary' : 'unavailable · ' + s.opencode.reason}\nMemory V2  ● Ready · Local\nControl    ${s.healthy ? '● Local' : 'unavailable'}\nRuntime    ${s.default_runtime}\n`;
 }
 function help() { return `${branding.name} — ${branding.tagline}\n\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\n${COMMANDS}\n\n${branding.website}\n`; }
 async function waitResult(home, id, { signal } = {}) {
@@ -60,7 +60,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         if (command === 'quit') break;
         if (command === 'help') output.write(COMMANDS + '\n');
         else if (command === 'status') output.write(rows(await local.status(home)));
-        else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg); output.write('Runtime for fresh tasks: ' + runtime + (runtime === 'pi' ? ' · use /task for a registered typed Mission' : '') + '\n'); }
+        else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg); output.write('Runtime for fresh tasks: ' + runtime + '\n'); }
         else if (command === 'open') { local.open(home); output.write('Control Center opened.\n'); }
         else if (command === 'memory') await memory(home, arg, output);
         else if (command === 'remember') { const item = await local.request(home, '/api/interactive/remember', { content: arg }); output.write('Remembered ' + item.memoryId + '\n'); }

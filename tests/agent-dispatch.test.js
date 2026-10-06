@@ -50,19 +50,19 @@ test('unknown transport never falls back, even after restart, availability chang
  const s=await setup(t,{fallback_agents:['claude_code'],dispatch_policy:cloud}),c=claim(s);report(s,c,{});await s.d.reconcile();assert.equal(s.r.status,'running_unknown');assert.equal(s.f.calls(),0);assert.equal(n(s,'cp_dispatches'),0);s.advance(3600000);s.d.observeAvailability({state:'available'});await s.d.reconcile();assert.equal(claim(s).state,'existing_dispatch');
  await s.f.reopen();await s.d.reconcile();assert.equal(s.r.selected_fallback,null);assert.equal(s.f.calls(),0);
 });
-for(const [agent,policy]of [['claude_code',cloud],['pi',local]])test(`rejection automatically executes compatible ${agent} fallback with independent verification/fixture Acceptance`,async t=>{
+for(const [agent,policy]of [['claude_code',cloud],['host',local]])test(`rejection automatically executes compatible ${agent} fallback with independent verification/fixture Acceptance`,async t=>{
  const f=await fixture(t),p=f.bridge.projects.listProjects()[0];f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});const m=f.create({preferred_agent:'codex',fallback_agents:[agent],dispatch_policy:policy,fixture_auto_acceptance:true});
  const h=f.bridge.codexAdapter.startTask(m.id,'fallback-smoke'),d=f.bridge.agentDispatch,r=d.get(h.run_id),c=d.claim({dispatch_id:r.dispatch_id});d.report({dispatch_id:r.dispatch_id,attempt_id:c.attempt_id,outcome:{accepted:false}});
  const done=await f.settle(m.id,'completed');assert.equal(done.acceptance.length,1);assert.equal(done.verifications[0].result,'passed');assert.equal(d.get(h.run_id).selected_fallback,agent);assert.equal(f.bridge.resultInbox.list({agent:'codex'}).length,0);assert.equal(f.bridge.resultInbox.list({agent}).length,1);assert.equal(f.inference(),0);assert.equal(f.calls(),agent==='claude_code'?1:0);assert.equal(n({f},'cp_leases',"WHERE state IN ('held','quarantined')"),0);
  await Promise.all([d.reconcile(),d.reconcile()]);await f.reopen();await f.bridge.agentDispatch.reconcile();assert.equal(f.calls(),agent==='claude_code'?1:0);assert.equal(f.bridge.missions.detail(m.id).acceptance.length,1);
- if(process.env.DISPATCH_SMOKE_EVIDENCE_DIR){fs.writeFileSync(path.join(process.env.DISPATCH_SMOKE_EVIDENCE_DIR,`fallback-${agent}.json`),JSON.stringify({mode:agent==='pi'?'real_brokered_local_file_action':'real_local_process_with_injected_claude_fixture',live_work:false,manual_retry:false,selected_fallback:agent,mission_id:m.id,codex_run_id:h.run_id,dispatch_attempts:1,writer_duplicates:0,verification:'passed',fixture_acceptance:'accept',inference_calls:0},null,2));}
+ if(process.env.DISPATCH_SMOKE_EVIDENCE_DIR){fs.writeFileSync(path.join(process.env.DISPATCH_SMOKE_EVIDENCE_DIR,`fallback-${agent}.json`),JSON.stringify({mode:agent==='host'?'real_brokered_local_file_action':'real_local_process_with_injected_claude_fixture',live_work:false,manual_retry:false,selected_fallback:agent,mission_id:m.id,codex_run_id:h.run_id,dispatch_attempts:1,writer_duplicates:0,verification:'passed',fixture_acceptance:'accept',inference_calls:0},null,2));}
 });
-for(const [name,policy,fallback]of [['privacy',{...cloud,privacy:'local_only'},['claude_code']],['billing',{...cloud,billing_classes:[]},['claude_code']],['no candidates',cloud,[]],['unknown agent',cloud,['cursor']],['research',{...cloud,task_category:'research'},['claude_code']],['Pi without native plan',{...local,native_actions:[]},['pi']]])test(`fallback WAIT: ${name}`,async t=>{
+for(const [name,policy,fallback]of [['privacy',{...cloud,privacy:'local_only'},['claude_code']],['billing',{...cloud,billing_classes:[]},['claude_code']],['no candidates',cloud,[]],['unknown agent',cloud,['cursor']],['research',{...cloud,task_category:'research'},['claude_code']],['Host without native plan',{...local,native_actions:[]},['host']]])test(`fallback WAIT: ${name}`,async t=>{
  const s=await setup(t,{fallback_agents:fallback,dispatch_policy:policy}),c=claim(s);report(s,c,{accepted:false});await s.d.reconcile();assert.equal(s.r.status,'waiting');assert.equal(s.r.selected_fallback,null);assert.equal(s.f.calls(),0);assert.equal(n(s,'cp_dispatches'),0);
 });
 test('another writer lease blocks fallback and release wakes automatic routing without user retry',async t=>{
- const s=await setup(t,{fallback_agents:['pi'],dispatch_policy:local});s.d.schedule=()=>{};const c=claim(s);report(s,c,{accepted:false});const store=s.f.bridge.controlStore;store.startRun({id:'other-writer',taskId:s.m.task_id,missionId:s.m.id,agentId:'pi'});store.acquireLease({resource:s.f.repo,runId:'other-writer'});await s.d.reconcile();assert.equal(s.r.wait_reason,'workspace_writer');assert.equal(n(s,'cp_dispatches'),0);
- store.updateRun('other-writer',{state:'completed',processState:'not_started',verified:true});await s.d.reconcile();await s.f.settle(s.m.id);assert.equal(s.r.selected_fallback,'pi');
+ const s=await setup(t,{fallback_agents:['host'],dispatch_policy:local});s.d.schedule=()=>{};const c=claim(s);report(s,c,{accepted:false});const store=s.f.bridge.controlStore;store.startRun({id:'other-writer',taskId:s.m.task_id,missionId:s.m.id,agentId:'host'});store.acquireLease({resource:s.f.repo,runId:'other-writer'});await s.d.reconcile();assert.equal(s.r.wait_reason,'workspace_writer');assert.equal(n(s,'cp_dispatches'),0);
+ store.updateRun('other-writer',{state:'completed',processState:'not_started',verified:true});await s.d.reconcile();await s.f.settle(s.m.id);assert.equal(s.r.selected_fallback,'host');
 });
 test('worker, Slack Decision and Memory cannot spoof transport acceptance or change immutable dispatch policy',async t=>{
  const s=await setup(t),c=claim(s);for(const actor of ['worker','slack','memory','codex'])assert.throws(()=>s.d.report({dispatch_id:s.r.dispatch_id,attempt_id:c.attempt_id,outcome:{accepted:true}},actor),/Trusted/);
@@ -92,24 +92,24 @@ test('injected transport retries automatically with bounded time and stable idem
  s.advance(3600000);await s.d.reconcile();assert.equal(calls.length,2);
 });
 test('restart after fallback selection restores the queued native dispatch once',async t=>{
- const s=await setup(t,{fallback_agents:['pi'],dispatch_policy:local});s.f.bridge.missions.stopped=true;const c=claim(s);report(s,c,{accepted:false});await s.d.reconcile();
+ const s=await setup(t,{fallback_agents:['host'],dispatch_policy:local});s.f.bridge.missions.stopped=true;const c=claim(s);report(s,c,{accepted:false});await s.d.reconcile();
  assert.equal(s.r.status,'fallback_selected');assert.equal(n(s,'cp_dispatches'),1);assert.equal(fs.readFileSync(path.join(s.f.repo,'fixture.txt'),'utf8'),'alpha\n');
- await s.f.reopen();await s.f.settle(s.m.id);assert.equal(n(s,'cp_dispatches'),1);assert.equal(s.f.bridge.resultInbox.list({agent:'pi'}).length,1);
+ await s.f.reopen();await s.f.settle(s.m.id);assert.equal(n(s,'cp_dispatches'),1);assert.equal(s.f.bridge.resultInbox.list({agent:'host'}).length,1);
 });
 test('Next Action persists a Codex intent and advances through native fallback without another user command',async t=>{
  const f=await fixture(t),p=f.bridge.projects.listProjects()[0];f.bridge.projects.updateProject(p.projectId,{autonomyLevel:'auto_development'});f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});
- const m=f.create({preferred_agent:'codex',fallback_agents:['pi'],dispatch_policy:local,fixture_auto_acceptance:true});f.bridge.boundedNextActions.register({id:'dispatch-chain',mode:'auto_development',mission_ids:[m.id],max_missions:1,max_runtime_ms:120000});
+ const m=f.create({preferred_agent:'codex',fallback_agents:['host'],dispatch_policy:local,fixture_auto_acceptance:true});f.bridge.boundedNextActions.register({id:'dispatch-chain',mode:'auto_development',mission_ids:[m.id],max_missions:1,max_runtime_ms:120000});
  await f.bridge.boundedNextActions.reconcile();const r=f.bridge.agentDispatch.list({mission_id:m.id})[0];assert.ok(r);const c=f.bridge.agentDispatch.claim({dispatch_id:r.dispatch_id});f.bridge.agentDispatch.report({dispatch_id:r.dispatch_id,attempt_id:c.attempt_id,outcome:{accepted:false}});
  await f.settle(m.id,'completed');await f.bridge.boundedNextActions.reconcile();assert.equal(f.bridge.boundedNextActions.inspect('dispatch-chain').state,'paused');assert.equal(f.inference(),0);
 });
 for(const code of ['invalid_request','policy_denied'])test(`${code} is terminal for this intent, never opens a circuit or bypasses policy via fallback`,async t=>{
- const s=await setup(t,{fallback_agents:['pi'],dispatch_policy:local}),c=claim(s);report(s,c,{accepted:false,code});await s.d.reconcile();assert.equal(s.r.status,'failed');assert.equal(s.r.selected_fallback,null);assert.equal(s.d.circuit().state,'closed');assert.equal(n(s,'cp_result_inbox'),0);assert.equal(n(s,'cp_dispatches'),0);
+ const s=await setup(t,{fallback_agents:['host'],dispatch_policy:local}),c=claim(s);report(s,c,{accepted:false,code});await s.d.reconcile();assert.equal(s.r.status,'failed');assert.equal(s.r.selected_fallback,null);assert.equal(s.d.circuit().state,'closed');assert.equal(n(s,'cp_result_inbox'),0);assert.equal(n(s,'cp_dispatches'),0);
 });
 test('transport timeout is uncertainty, never an inferred rejection or a duplicate attempt',async t=>{
  const s=await setup(t);claim(s);s.advance(120001);await s.d.reconcile();assert.equal(s.r.status,'running_unknown');assert.equal(s.r.no_side_effects,false);assert.equal(claim(s).state,'existing_dispatch');assert.equal(n(s,'cp_agent_dispatch_attempts'),1);
 });
 test('immutable Mission policy tampering fails closed before fallback; caller cannot insert scopes through a report',async t=>{
- const s=await setup(t,{fallback_agents:['pi'],dispatch_policy:local});s.d.schedule=()=>{};const c=claim(s);report(s,c,{accepted:false});
+ const s=await setup(t,{fallback_agents:['host'],dispatch_policy:local});s.d.schedule=()=>{};const c=claim(s);report(s,c,{accepted:false});
  const m=s.f.bridge.controlStore.getMission(s.m.id);m.envelope.dispatch_policy.native_actions[0].content='tampered';s.f.bridge.controlStore.db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify(m.envelope),m.id);await s.d.reconcile();assert.equal(s.r.wait_reason,'immutable_policy_changed');assert.equal(n(s,'cp_dispatches'),0);
 });
 test('safe receipt sanitizer handles twice encoded URLs and never exports argv/environment fields',()=>{
@@ -117,8 +117,8 @@ test('safe receipt sanitizer handles twice encoded URLs and never exports argv/e
  const out=classify({accepted:true,receipt:{url,thread_id:seed,work_ref:seed,argv:seed,env:seed}});assert.ok(!JSON.stringify(out).includes(seed));assert.ok(!Object.hasOwn(out.receipt,'argv'));
 });
 test('paused autonomy blocks retry/fallback until its existing explicit resume action',async t=>{
- const s=await setup(t,{fallback_agents:['pi'],dispatch_policy:local});s.d.schedule=()=>{};const c=claim(s);report(s,c,{accepted:false});
- const e=s.f.bridge.boundedNextActions;e.register({id:'paused-dispatch',mode:'auto_development',mission_ids:[s.m.id],max_missions:1,max_runtime_ms:120000});s.f.bridge.controlStore.db.prepare("INSERT INTO cp_autonomy_claims VALUES(?,?,?,'claimed')").run('paused-dispatch',s.m.id,'owned-claim');e.pause('paused-dispatch');await s.d.reconcile();assert.equal(s.r.wait_reason,'autonomy_paused_or_expired');assert.equal(n(s,'cp_dispatches'),0);e.resume('paused-dispatch');await s.d.reconcile();await s.f.settle(s.m.id);assert.equal(s.r.selected_fallback,'pi');
+ const s=await setup(t,{fallback_agents:['host'],dispatch_policy:local});s.d.schedule=()=>{};const c=claim(s);report(s,c,{accepted:false});
+ const e=s.f.bridge.boundedNextActions;e.register({id:'paused-dispatch',mode:'auto_development',mission_ids:[s.m.id],max_missions:1,max_runtime_ms:120000});s.f.bridge.controlStore.db.prepare("INSERT INTO cp_autonomy_claims VALUES(?,?,?,'claimed')").run('paused-dispatch',s.m.id,'owned-claim');e.pause('paused-dispatch');await s.d.reconcile();assert.equal(s.r.wait_reason,'autonomy_paused_or_expired');assert.equal(n(s,'cp_dispatches'),0);e.resume('paused-dispatch');await s.d.reconcile();await s.f.settle(s.m.id);assert.equal(s.r.selected_fallback,'host');
 });
 test('safe runtime diagnostics export only whitelisted health, refuse non-loopback discovery and never return private URLs',async t=>{
  const os=require('node:os'),root=fs.mkdtempSync(path.join(os.tmpdir(),'safe-discovery-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

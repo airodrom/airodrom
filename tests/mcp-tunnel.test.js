@@ -26,7 +26,7 @@ test('login agent launches an independent durable tunnel with a minimal explicit
   const {options,secret}=fixture(t),plan=buildPlan(options),agent=plan.launchAgent,config=plan.config;
   assert.equal(agent.Label,LABEL);assert.equal(agent.RunAtLoad,true);assert.equal(agent.KeepAlive,true);assert.equal(agent.ThrottleInterval,15);assert.equal(agent.Umask,0o077);
   assert.equal(agent.WorkingDirectory,options.project);
-  assert.deepEqual(Object.keys(agent.EnvironmentVariables).sort(),['HOME','PATH','PI_BRIDGE_DATA_DIR']);
+  assert.deepEqual(Object.keys(agent.EnvironmentVariables).sort(),['AIRODROM_DATA_DIR','HOME','PATH']);
   assert.deepEqual(agent.ProgramArguments.slice(0,2),['/usr/bin/env','-i']);
   assert.deepEqual(agent.ProgramArguments.slice(2,5),Object.entries(agent.EnvironmentVariables).map(([key,value])=>key+'='+value));
   assert.deepEqual(agent.ProgramArguments.slice(5),[path.join(plan.support,'bin/tunnel-client'),'run','--config',plan.configPath]);
@@ -80,7 +80,7 @@ test('rejects group writable binaries, nonprivate data directories and altered a
 test('candidate plist is valid and carries no bridge or menu-bar restart operation',t=>{
   const {options}=fixture(t),plan=buildPlan(options),serialized=plist(plan.launchAgent);
   assert(serialized.includes('<key>KeepAlive</key><true/>'));
-  assert(!serialized.includes('bootout'));assert(!serialized.includes('kickstart'));assert(!serialized.includes('src/index.js'));assert(!serialized.includes('PiBridgeMenu'));
+  assert(!serialized.includes('bootout'));assert(!serialized.includes('kickstart'));assert(!serialized.includes('src/index.js'));assert(!serialized.includes('AirodromMenu'));
   if(process.platform==='darwin') {
     const file=path.join(options.project,'candidate.plist');fs.writeFileSync(file,serialized,{mode:0o600});
     assert.equal(spawnSync('/usr/bin/plutil',['-lint',file],{stdio:'ignore'}).status,0);

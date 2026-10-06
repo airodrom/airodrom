@@ -116,7 +116,7 @@ async function plist(ctx, args) {
 function serviceRegistry(ctx) {
   const services = {
     pi_bridge: {
-      label: 'Pi bridge', status: async () => ({ running: true, pid: process.pid, uptime_s: Math.round(process.uptime()) }),
+      label: 'Airodrom control plane', status: async () => ({ running: true, pid: process.pid, uptime_s: Math.round(process.uptime()) }),
       restart: async () => { if (typeof ctx.requestBridgeRestart !== 'function') fail('Bridge restart is unavailable'); return ctx.requestBridgeRestart(); },
       start: () => fail('The bridge is already running'), stop: () => fail('Stopping the bridge from inside a task is denied; use service_restart')
     },
@@ -129,7 +129,7 @@ function serviceRegistry(ctx) {
     }
   };
   for (const item of ctx.localServices || []) {
-    const pidFile = path.join(ctx.piOwnedRoot || os.tmpdir(), 'services', `${item.name}.pid`);
+    const pidFile = path.join(ctx.hostOwnedRoot || os.tmpdir(), 'services', `${item.name}.pid`);
     const readPid = () => { try { return Number(fs.readFileSync(pidFile, 'utf8').trim()) || null; } catch { return null; } };
     const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
     services[item.name] = {
@@ -185,7 +185,7 @@ function macCapabilities({ notificationState = { sent: [] },now=Date.now } = {})
   const serviceAssess = verb => (ctx, input) => {
     const service = serviceRegistry(ctx)[input.service];
     if (!service) return { scope: 'services', dynamic: { decision: 'deny', kind: 'capability_denied', reason: `Service ${input.service} is not in the fixed registry` } };
-    if (input.service === 'pi_bridge' && verb !== 'restart' && verb !== 'status') return { scope: 'services', dynamic: { decision: 'deny', kind: 'capability_denied', reason: 'Only status and restart are available for the Pi bridge' } };
+    if (input.service === 'pi_bridge' && verb !== 'restart' && verb !== 'status') return { scope: 'services', dynamic: { decision: 'deny', kind: 'capability_denied', reason: 'Only status and restart are available for the Airodrom control plane' } };
     return { scope: 'services' };
   };
   const serviceVerb = verb => ({ validate: serviceInput, assess: serviceAssess(verb), perform: async (ctx, input) => ({ service: input.service, action: verb, ...(await serviceRegistry(ctx)[input.service][verb]()) }) });

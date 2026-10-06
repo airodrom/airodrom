@@ -376,7 +376,7 @@ function developerCapabilities({ jobs = new ClaudeCodeJobs() } = {}) {
       assess: (ctx, input) => {
         const repo = repoFor(ctx, input.repo, { write: true });
         const bridge = ctx.scopes.bridgeRoot && path.relative(ctx.scopes.bridgeRoot, repo.canonical) === '';
-        return { scope: repo.scope, dynamic: bridge ? { decision: 'approval_required', riskClass: 'PRIVILEGED', reason: 'Claude Code editing the Pi bridge itself modifies the enforcement boundary' } : null };
+        return { scope: repo.scope, dynamic: bridge ? { decision: 'approval_required', riskClass: 'PRIVILEGED', reason: 'Claude Code editing the Airodrom control plane itself modifies the enforcement boundary' } : null };
       },
       perform: async (ctx, input) => {
         const repo = repoFor(ctx, input.repo, { write: true }).canonical, { file } = resolveTool(ctx, 'claude_code');
