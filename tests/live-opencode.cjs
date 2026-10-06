@@ -3,12 +3,12 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 if(process.env.AIRODROM_OPENCODE_LIVE!=='1')throw Error('Set AIRODROM_OPENCODE_LIVE=1 for explicit local synthetic qualification');
 const repo=path.resolve(__dirname,'..');
 const {fixture}=require(path.join(repo,'tests/fixtures/mission-fixture.cjs'));
-const {manifest}=require(path.join(repo,'tests/fixtures/opencode-fixture.cjs'));
+const {manifest,qualifyCanonical}=require(path.join(repo,'tests/fixtures/opencode-fixture.cjs'));
 const {OpenCodeAdapter,sandboxProfile}=require(path.join(repo,'src/opencode-adapter'));
 const options={enabled:true,executable:'/opt/homebrew/bin/opencode',model:'ollama/qwen3-coder:30b',timeoutMs:90000};
 let qualification=false;
 test('LIVE OpenCode read-only, one-file edit, artifact return, registered verifier, Acceptance and Settlement',async t=>{
- const f=await fixture(t,{opencode:options}),a=f.bridge.opencodeAdapter;
+ const f=await fixture(t,{opencode:options}),a=f.bridge.opencodeAdapter,canonical=qualifyCanonical(f.bridge);assert.equal(canonical.routing,true);
  assert.equal((await a.readiness()).version,'2.0.20');assert.equal((await a.readiness()).auth_state,'local_not_required');
  const read=await a.execute({workspace:f.repo,files:['fixture.txt'],objective:'Read fixture.txt and return JSON with summary equal to its trimmed content, changed_files:[],tests:[],artifacts:[],limitations:[]',timeoutMs:90000});
  assert.equal(read.result.summary,'alpha');assert.equal(read.changes.length,0);
@@ -16,11 +16,11 @@ test('LIVE OpenCode read-only, one-file edit, artifact return, registered verifi
  f.bridge.missions.dispatch(m.id,{request_id:'live-opencode-fixture'});
  const deadline=Date.now()+120000;let done;
  while(Date.now()<deadline){await f.bridge.missions.tick();done=f.bridge.missions.detail(m.id);if(['awaiting_acceptance','needs_rework','blocked'].includes(done.state))break;await new Promise(r=>setTimeout(r,100));}
- assert.equal(done.state,'awaiting_acceptance',JSON.stringify({state:done.state,reason:done.reason,checks:done.verifications[0]?.checks}));assert.equal(done.verifications[0].result,'passed');
+ assert.equal(done.state,'awaiting_acceptance',JSON.stringify({state:done.state,reason:done.reason,checks:done.verifications[0]?.checks}));assert.equal(done.verifications[0].result,'passed');assert.equal(done.dispatches[0].route.selected,'opencode');assert.ok(done.dispatches[0].route.authority_routing_decision_id);assert.equal(canonical.store.listAcceptancesForMission(m.id).length,0);
  const implementation=done.runs.find(r=>r.agent_id==='opencode');assert.equal(implementation.termination_verified,1);assert.equal(implementation.result.artifacts[0].path,'fixture.txt');assert.equal(done.acceptance.length,0);
  assert.throws(()=>f.bridge.missions.program.settle(m.id,'accept'),/Settlement requires/);
  f.bridge.missions.accept(m.id,{request_id:'live-opencode-accept',verification_id:done.verifications[0].id,decision:'accept',rationale:'Independent synthetic repository checks passed'});
- assert.equal(f.bridge.missions.detail(m.id).program_contract.settlement.state,'settled');
+ assert.equal(f.bridge.missions.detail(m.id).program_contract.settlement.state,'settled');assert.equal(canonical.store.listAcceptancesForMission(m.id).length,1);assert.equal(canonical.store.integrity().ok,true);
  console.log(JSON.stringify({runtime_version:read.provenance.runtime_version,executable_sha256:read.provenance.executable_sha256,model:options.model,read_only:true,edit:true,artifact_return:true,registered_test:true,independent_verification:true,acceptance:true,settlement:true,private_memory_inspected:false}));qualification=true;
 });
 test('LIVE canonical synthetic personal Memory V2 delivery, correction, forget/erase and no session override',async t=>{

@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {OpenCodeAdapter,version,authCategory,parseOutput,disposableEnv,runtimeConfig}=require('../src/opencode-adapter');
 const {fixture}=require('./fixtures/mission-fixture.cjs');
-const {runtime,manifest}=require('./fixtures/opencode-fixture.cjs');
+const {runtime,manifest,qualifyCanonical}=require('./fixtures/opencode-fixture.cjs');
 function event(result,sessionID='ses_fixture'){return JSON.stringify({type:'text',sessionID,part:{messageID:'m',text:JSON.stringify(result)}})+'\n';}
 const result={summary:'observed',changed_files:[],tests:[],artifacts:[],limitations:[]};
 test('OpenCode version/auth observation reports categories and fails closed on unknown formats',()=>{
@@ -53,7 +53,7 @@ test('child environment is isolated and tools deny memory, shell, network, subag
  const value=await f.adapter.execute({...f.request,objective:'environment'});assert.doesNotMatch(value.result.summary,/OPENAI_API_KEY|GITHUB_TOKEN|NODE_OPTIONS|AIRODROM/);
 });
 test('OpenCode Mission runs through independent verifier, Acceptance and ordered Settlement; duplicate dispatch does not rerun',async t=>{
- const r=runtime(t),f=await fixture(t,{opencode:r.options});
+ const r=runtime(t),f=await fixture(t,{opencode:r.options}),canonical=qualifyCanonical(f.bridge);assert.equal(canonical.routing,true);
  assert.throws(()=>f.create({preferred_agent:'opencode'}),/local-only/);
  assert.throws(()=>f.create({fallback_agents:['opencode']}),/explicit preferred route/);
  const m=f.create({preferred_agent:'opencode',fallback_agents:[],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'focused_coding'},manifest:manifest(f.repo)});
@@ -61,9 +61,9 @@ test('OpenCode Mission runs through independent verifier, Acceptance and ordered
  assert.throws(()=>f.bridge.missions.program.settle(m.id,'accept'),/Settlement requires/);
  const dispatch=f.bridge.missions.dispatch(m.id,{request_id:'opencode-dispatch'}),same=f.bridge.missions.dispatch(m.id,{request_id:'opencode-dispatch'});assert.equal(dispatch.dispatch_id,same.dispatch_id);
  const done=await f.settle(m.id);assert.equal(done.verifications[0].result,'passed');assert.equal(done.acceptance.length,0);assert.equal(done.program_contract.settlement.state,'waiting_acceptance');
- assert.equal(done.runs.filter(r=>r.agent_id==='opencode').length,1);assert.equal(f.calls(),0);
+ assert.equal(done.runs.filter(r=>r.agent_id==='opencode').length,1);assert.equal(done.dispatches[0].route.selected,'opencode');assert.ok(done.dispatches[0].route.authority_routing_decision_id);assert.equal(canonical.store.listAcceptancesForMission(m.id).length,0);assert.equal(f.calls(),0);
  f.bridge.missions.accept(m.id,{request_id:'verified-acceptance',verification_id:done.verifications[0].id,decision:'accept',rationale:'Independent fixture evidence passed'});
- assert.equal(f.bridge.missions.detail(m.id).program_contract.settlement.state,'settled');
+ assert.equal(f.bridge.missions.detail(m.id).program_contract.settlement.state,'settled');assert.equal(canonical.store.listAcceptancesForMission(m.id).length,1);assert.equal(canonical.store.integrity().ok,true);
  const timeline=f.bridge.missions.detail(m.id).timeline;assert.ok(timeline.some(e=>e.event_type==='verification.completed'));
 });
 test('bounded context, changed executable and forged provenance cannot grant execution evidence',async t=>{

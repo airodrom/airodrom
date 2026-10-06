@@ -22,4 +22,9 @@ console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:
  return{adapter,workspace,options,request:{workspace,files:['fixture.txt'],objective:'read',timeoutMs:1000}};
 }
 function manifest(repo){const {execFileSync}=require('node:child_process');return{mission:{id:'opencode-fixture',version:1,title:'OpenCode qualification fixture',repository:{root:repo,branch:execFileSync('/usr/bin/git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).trim()},authority:{level:'Development'},duration:{expires_after:'1h'},scope:{repositories:[repo],include:['fixture.txt'],exclude:[]},permissions:{filesystem:{read:true,write:true,delete:false},repository:{branch:false,commit:false,push:false,merge:false},runtime:{test:true,lint:true,typecheck:true,restart_local:false},network:{localhost:true,internet:false},providers:{local_reasoning:true,approved_external:false},memory:{read:true,search:true,write:false,delete:false}},evidence:{required:['tests','diff_check'],optional:[]},settlement:{review_required:true,merge_allowed:false,deploy_allowed:false},budget:{max_files_changed:1,max_commits:0,max_runtime_hours:1,max_external_reasoning_calls:0,max_memory_injections:20}}};}
-module.exports={runtime,manifest};
+function qualifyCanonical(bridge){
+ const a=bridge.authorityRuntime,by=a.store.operator;a.qualification.prepare(by);
+ const c=a.memory.ingest({session_id:'synthetic-runtime-qualification',chunk_id:'synthetic-preference',timestamp:1,speaker:'operator',claim:'No micro-prompts.',kind:'personal_preference',subject_key:'workflow.micro_prompts',value:'forbidden'},by),seed=a.memory.promote(c.id,{},by);a.qualification.proveMemory(seed.id,by);
+ a.qualification.prepareRouter(by);a.qualification.proveRouter(by);a.qualification.enableRouter(by);return a;
+}
+module.exports={runtime,manifest,qualifyCanonical};
