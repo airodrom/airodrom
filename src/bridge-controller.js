@@ -2536,7 +2536,7 @@ class BridgeController extends EventEmitter {
     return {
       ...JSON.parse(JSON.stringify(task)),
       missionAuthority: require('./mission-permissions').snapshot(task.mission?.authority, now, task.mission?.authorityRevoked === true),
-      missionAuthorization: this.missionAuthority.snapshot(task.mission),
+      missionAuthorization: task.controlPlaneMissionId && task.mission?.manifest?.profile === 'bounded-conversation-v1' ? { enabled: true, status: task.mission.authorityRevoked ? 'revoked' : now >= task.mission.authority.expiresAt ? 'expired' : 'active', liveEnabled: true, capabilities: ['local reasoning'], egress: 'local-only', signed: true } : this.missionAuthority.snapshot(task.mission),
       transitions: this.tasks.transitions(task.id),
       approvals: approvals.filter(a => ['pending', 'approved'].includes(a.status)),
       health: this.taskHealth(task, now),
@@ -2577,7 +2577,7 @@ class BridgeController extends EventEmitter {
     return {
       bridge: {
         healthy: !this.closed, pid: process.pid, now: Date.now(), provider: this.config.provider, model: this.config.model, directChatGPT: false,
-        missionAutomation: { liveGrantsEnabled: false, providerAdapterEnabled: this.providerDecisionAdapter.status.liveEnabled, callbackVerifierConfigured: Boolean(this.missionCoordinator?.callbackVerifier), mode: 'local-simulation-tests-only' },
+        missionAutomation: { liveGrantsEnabled: this.missionAuthority.liveReady, providerAdapterEnabled: this.providerDecisionAdapter.status.liveEnabled, callbackVerifierConfigured: Boolean(this.missionCoordinator?.callbackVerifier), mode: 'bounded-mission-admission', promptScope: 'reasoning-only; repository work requires a scoped Mission' },
         level1: { configuredProviderMode: level1Config.providerMode, provider: this.level1ProviderAdapter.status, restrictedWorkerEnabled: level1Config.restrictedWorker?.enabled === true, piWorkerEnabled: false },
         supervisor: { watchdogMs: this.options.watchdogMs || 30000, stallMs: this.options.stallMs || 60000, error: this.supervisorError || null },
         execution

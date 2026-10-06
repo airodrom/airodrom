@@ -14,7 +14,7 @@ test('control preserves live, malformed and unverified locks; only identifies a 
   const dataDir=dir(t), file=path.join(dataDir,'bridge.lock');
   fs.writeFileSync(file,String(process.pid),{mode:0o600});assert.deepEqual(lock({dataDir}),{blocked:true,pid:process.pid});
   fs.writeFileSync(file,'invalid');assert.equal(lock({dataDir}).blocked,true);assert.equal(fs.readFileSync(file,'utf8'),'invalid');
-  const child=spawnSync(process.execPath,['-e','console.log(process.pid)'],{encoding:'utf8'});const dead=Number(child.stdout.trim());
+  const child=spawnSync(process.execPath,['-e','process.exit(0)'],{encoding:'utf8'});assert.equal(child.status,0);const dead=child.pid;assert.ok(Number.isInteger(dead));assert.throws(()=>process.kill(dead,0),{code:'ESRCH'});
   fs.writeFileSync(file,String(dead));assert.equal(lock({dataDir}).blocked,false);assert.equal(fs.readFileSync(file,'utf8'),String(dead));
 });
 test('operator discovery rejects public files, links and non-loopback or mismatched endpoints',t=>{

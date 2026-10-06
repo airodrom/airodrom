@@ -13,3 +13,4 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 
 - [0005 OpenCode execution boundary](0005-opencode-execution-boundary.md): Accepted adapter contract.
 - [0006 default execution runtime](0006-default-runtime-cutover.md): Proposed; preserves required Pi typed/control dependencies.
+- [0007 local interactive Missions](0007-local-interactive-missions.md): Proposed; private bootstrap and signed bounded reasoning admission.

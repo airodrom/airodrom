@@ -234,10 +234,10 @@
       addFact(facts, 'Filesystem authority', `Read: ${current.missionAuthority.filesystem.read.join(', ') || 'None'} · Write: ${current.missionAuthority.filesystem.write.join(', ') || 'None'}`);
     }
     addFact(facts, 'Grant state', current.missionAuthorization?.status || 'inactive');
-    addFact(facts, 'Grant scope', current.missionAuthorization?.enabled ? `${(current.missionAuthorization.capabilities || []).join(', ')} · ${current.missionAuthorization.egress}` : 'Live grants disabled');
+    addFact(facts, 'Grant scope', current.missionAuthorization?.enabled ? `${(current.missionAuthorization.capabilities || []).join(', ')} · ${current.missionAuthorization.egress}` : current.executionAgent === 'opencode' ? 'Registered when an operator submits a bounded prompt' : 'Exact authority required');
     addFact(facts, 'Cumulative budget', current.mission?.budget ? `${Math.round((current.mission.used?.runtimeMs || 0) / 1000)}s / ${Math.round(current.mission.budget.maxRuntimeMs / 1000)}s · ${current.mission.used?.actions || 0} / ${current.mission.budget.maxActions} actions · ${current.mission.used?.retries || 0} / ${current.mission.budget.maxRetries} retries` : '—');
     if (current.previousSessionId) addFact(facts, 'Recovery lineage', `${current.previousSessionId} → ${current.sessionId}`);
-    addFact(facts, 'Live autonomy', state?.bridge?.missionAutomation?.liveGrantsEnabled ? 'Enabled by operator' : 'Disabled · local simulations only');
+    addFact(facts, 'Live autonomy', current.missionAuthorization?.liveEnabled ? 'Bounded local Mission · registered by operator' : current.executionAgent === 'opencode' ? 'Send a prompt to register a bounded Mission' : 'Compatibility mode · exact authority required');
     addFact(facts, 'Session file', current.sessionFile || 'Created when the runtime starts');
     addFact(facts, 'Session storage', bytes(current.sessionBytes));
     addFact(facts, 'Last activity', time(current.lastActivityAt));
@@ -403,7 +403,7 @@
       $('new-task-panel').hidden = true;
       await poll();
       await loadMemory();
-      tell('Task created. Use its bounded Mission route or send a compatibility instruction.');
+      tell('Task created. A question starts a bounded local Mission. Coding work needs a scoped Mission in Control Hub.');
       $('prompt-message').focus();
     });
   });
@@ -414,7 +414,8 @@
     const message = $('prompt-message').value.trim();
     if (!id || !message) return;
     void action('prompt', async () => {
-      await api(`/api/tasks/${encodeURIComponent(id)}/prompt`, { method: 'POST', body: { message } });
+      const receipt = await api(`/api/tasks/${encodeURIComponent(id)}/prompt`, { method: 'POST', body: { message } });
+      if (receipt.taskId && receipt.taskId !== id) selectedId = receipt.taskId;
       if (selectedId === id) $('prompt-message').value = '';
       tell('Message sent. The runtime is working on this task.');
       await poll();

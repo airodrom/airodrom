@@ -131,12 +131,13 @@ class OpenCodeAdapter extends AgentAdapter {
     const providerReady=configured&&(this.options.fixtureExecutable||await new Promise(resolve=>{
       const request=require('node:http').get('http://127.0.0.1:11434/api/tags',{timeout:1000},response=>{let text='',bytes=0;response.on('data',chunk=>{bytes+=chunk.length;if(bytes>256000){request.destroy();resolve(false);}else text+=chunk;});response.on('end',()=>{try{resolve(response.statusCode===200&&JSON.parse(text).models?.some(m=>m.name===this.options.model.slice(7)));}catch{resolve(false);}});response.on('error',()=>resolve(false));});request.on('error',()=>resolve(false));request.on('timeout',()=>{request.destroy();resolve(false);});
     }));
-    const ready = !!executable && observed === VERSION && configured && providerReady && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
+    const pinned = !this.options.pinsFile || (()=>{try{const pins=require('../local-bootstrap').validatePins(require('../local-bootstrap').ownedJSON(this.options.pinsFile));return pins.executables.find(p=>p.id==='opencode').path===executable;}catch{return false;}})();
+    const ready = !!executable && observed === VERSION && configured && providerReady && pinned && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
     return { agentId: this.id, implemented: true, installed: !!executable, version: observed, ready, available: ready,
       availability: ready ? this.active.size ? 'busy' : 'available' : 'unavailable',
       auth_state: configured ? 'local_not_required' : 'auth_required', workspace_required: true,
       execution_authority: false, continuation: false, memory_access_model: 'canonical_authorized_context_only',
-      reason: ready ? null : !executable ? 'opencode_unavailable' : observed !== VERSION ? 'opencode_version_unqualified' : configured ? 'opencode_local_provider_unavailable' : 'opencode_local_provider_not_configured' };
+      reason: ready ? null : !pinned ? 'opencode_runtime_pins_changed' : !executable ? 'opencode_unavailable' : observed !== VERSION ? 'opencode_version_unqualified' : configured ? 'opencode_local_provider_unavailable' : 'opencode_local_provider_not_configured' };
   }
   authorizedContext(context){
     if(context===null)return null;
@@ -200,7 +201,7 @@ class OpenCodeAdapter extends AgentAdapter {
     b.missions.assertAuthority(m);
     require('../memory-content-erasure').assertContext(b.controlStore.db, task.contextPackId);
     const controller = new AbortController(); this.active.set(task.id, controller);
-    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.allowed_files, objective: prompt, context, timeoutMs: this.options.timeoutMs || 60000, signal: controller.signal }); }
+    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, context, timeoutMs: this.options.timeoutMs || 90000, signal: controller.signal }); }
     finally { this.active.delete(task.id); }
   }
   async cancel({ task } = {}) { this.active.get(task?.id)?.abort(); return { cancellation_requested: true, authority: false }; }
