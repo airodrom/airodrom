@@ -43,7 +43,13 @@ class HostExecutor {
     const { HELPER } = require('./slack-credentials');
     const helperDirectory = path.dirname(HELPER);
     const exact = [...new Set([file, process.execPath, ...this.allowed, ...execDependencies.map(p=>p.path)])].filter(candidate => fs.existsSync(candidate) && !isInternalHelper(candidate));
-    const filters = [...exact.map(candidate => `(literal ${quote(fs.realpathSync(candidate))})`), ...['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/Applications/Xcode.app/Contents/Developer/usr/bin', '/Applications/Xcode.app/Contents/Developer/usr/libexec'].map(root => `(subpath ${quote(root)})`)];
+    // Seatbelt matches canonical paths. Xcode.app may be a symlink to a
+    // versioned installation; keep the same trusted roots, resolving aliases
+    // before admitting their children. Unavailable roots grant nothing.
+    const executableRoots = ['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/Applications/Xcode.app/Contents/Developer/usr/bin', '/Applications/Xcode.app/Contents/Developer/usr/libexec'].flatMap(root => {
+      try { return fs.statSync(root).isDirectory() ? [fs.realpathSync(root)] : []; } catch { return []; }
+    });
+    const filters = [...exact.map(candidate => `(literal ${quote(fs.realpathSync(candidate))})`), ...executableRoots.map(root => `(subpath ${quote(root)})`)];
     if (missionAuthority) {
       const valid = require('./mission-permissions').checkAuthority(missionAuthority);
       if (!valid.allow) throw Error(valid.reason);
