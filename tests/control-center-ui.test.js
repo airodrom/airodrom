@@ -55,7 +55,7 @@ test('safety stop prevents prompt submission while keeping explicit review avail
 
 test('active turn shows current activity instead of its previous result; completed turn shows its response', async () => {
   const running = await screen({ status: 'thinking', busy: true, lastResult: 'OLD SUCCESS', events: [{ type: 'tool_execution_start', toolName: 'read', at: Date.now() }] });
-  assert.match(running.elements['last-response'].textContent, /Pi is working/);
+  assert.match(running.elements['last-response'].textContent, /runtime is working/);
   assert.equal(running.elements['activity-list'].children.length, 1);
   assert.equal(running.elements['activity-list'].children[0].children[0].textContent, 'Action started · read');
   const completed = await screen({ status: 'completed', lastResult: 'CURRENT RESPONSE' });

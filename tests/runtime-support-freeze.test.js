@@ -8,7 +8,7 @@ const {fixture}=require('./fixtures/mission-fixture.cjs');
 test('V1 required core is Pi; unsupported and optional profiles cannot grant authority',()=>{
  assert.deepEqual(TIERS,['REQUIRED','SUPPORTED','OPTIONAL','EXPERIMENTAL','UNSUPPORTED']);
  for(const id of ['pi','opencode','claude_code','codex','cursor','cloud']){const p=support(id);assert.equal(p.required_for_private,id==='pi');assert.equal(p.authority,false);}
- assert.equal(support('opencode').tier,'SUPPORTED');assert.equal(support('opencode').agent_role,'PRIMARY RUNTIME CANDIDATE');assert.equal(support('pi').agent_role,'COMPATIBILITY / DEPRECATION CANDIDATE');
+ assert.equal(support('opencode').tier,'SUPPORTED');assert.equal(support('opencode').agent_role,'DEFAULT / PRIMARY');assert.equal(support('pi').agent_role,'COMPATIBILITY / ROLLBACK');
  assert.equal(agentRuntimeProfile('codex',{available:true}).support_tier,'OPTIONAL');assert.equal(agentRuntimeProfile('cursor',{available:true}).support_tier,'EXPERIMENTAL');
  assert.equal(agentRuntimeProfile('cloud',{available:true,direct_dispatch:true}).available,false);assert.equal(cloudStatus().transport,'unsupported');assert.throws(denyCloudDispatch,/intentionally unsupported/);
 });

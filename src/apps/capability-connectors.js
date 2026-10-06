@@ -138,6 +138,7 @@ function databaseCapabilities() {
 }
 
 const AGENTS = Object.freeze({
+  opencode: {label:'OpenCode (default / primary)',capabilities:['coding','bounded_file_work'],cost_class:'local',privacy_class:'local_only',preferred_task_types:['large_multi_file_coding','ide_diagnostics']},
   pi: { label: 'Pi (local bridge)', capabilities: ['local_diagnostics', 'files', 'tests', 'git', 'mac_capabilities', 'developer_tools'], cost_class: 'local', privacy_class: 'local_only', preferred_task_types: ['local_diagnostics', 'local_files', 'tests', 'git'] },
   chatgpt: { label: 'ChatGPT', capabilities: ['architecture', 'review', 'orchestration', 'planning'], cost_class: 'subscription', privacy_class: 'cloud', preferred_task_types: ['architecture', 'review', 'orchestration'] },
   codex: { label: 'Codex', capabilities: ['multi_file_coding','repository_tasks','durable_handoff'], cost_class:'subscription',privacy_class:'cloud',preferred_task_types:['large_multi_file_coding'] },
@@ -149,9 +150,11 @@ const TASK_TYPES = ['local_diagnostics', 'local_files', 'tests', 'git', 'large_m
 function agentCapabilities() {
   const availability = async ctx => {
     const tools = ctx.devtools || {};
+    const opencode = await ctx.opencodeStatus?.();
     const claude = await tools.claudeStatus?.(ctx).catch(() => null);
     const cursor = await tools.cursorStatus?.(ctx).catch(() => null);
     return {
+      opencode: {state:opencode?.available===true?'available':'unavailable',reason:opencode?.reason||'opencode_unavailable'},
       pi: { state: 'available' },
       chatgpt: { state: ctx.mcpConnected?.() ? 'connected' : 'unknown' },
       cursor: { state: 'unavailable', editor_available:cursor?.installed===true,reason:'cursor_agent_adapter_unimplemented' },

@@ -13,7 +13,7 @@
   const actions=el('div',undefined,'hub-actions');$('hub-detail').insertBefore(actions,$('detail-json'));
   async function detail(item) {
     actions.replaceChildren();
-    if(section==='Architecture Memory')actions.append(el('p','Why Pi knew this: exact canonical source, source version, and supersession chain below. Memory grants no authority.'));
+    if(section==='Architecture Memory')actions.append(el('p','Why the runtime knew this: exact canonical source, source version, and supersession chain below. Memory grants no authority.'));
     if(section==='Context Packs'&&item.id){try{item=await api('/api/control-v2/context-inspector?id='+encodeURIComponent(item.id));}catch{}}
     try{if(item.envelope)item=await api('/api/control-v2/mission?id='+encodeURIComponent(item.id));else if(item.question){const data=await api('/api/control-v2/decision?id='+encodeURIComponent(item.id));item={...data.decision,details:data};}}catch(error){$('hub-status').textContent=error.message;return;}
     if(item.continuity?.status==='continuity_unverified'||item.results?.some(r=>r.result?.continuity?.status==='continuity_unverified'))actions.append(el('p','Continuity unverified: retrieval and rework required.'));

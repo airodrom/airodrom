@@ -28,7 +28,7 @@ test('operator discovery rejects public files, links and non-loopback or mismatc
 });
 test('status reports authenticated aggregate health without serializing credentials or task text',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'pi-macos-')),dataDir=path.join(root,'data'),sourceProfile=path.join(root,'profile');fs.mkdirSync(sourceProfile);fs.writeFileSync(path.join(sourceProfile,'settings.json'),'{}');
-  const bridge=await new Bridge({dataDir,sourceProfile}).initialize();const server=new ControlServer(bridge,{port:0});const address=await server.start();
+  const bridge=await new Bridge({ defaultRuntime: 'pi',dataDir,sourceProfile}).initialize();const server=new ControlServer(bridge,{port:0});const address=await server.start();
   t.after(async()=>{await server.close();await bridge.shutdown();fs.rmSync(root,{recursive:true,force:true});});
   bridge.createTask('SENSITIVE_TASK_TITLE');
   atomicJSON(path.join(dataDir,'ui.json'),{...address,pid:process.pid});atomicJSON(path.join(dataDir,'mcp.json'),{port:address.port,pid:process.pid,token:server.mcpToken});

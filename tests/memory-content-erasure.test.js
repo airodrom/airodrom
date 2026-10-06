@@ -224,3 +224,27 @@ test('a stale bundled context is scrubbed even if its copied row disposition say
   assert.equal(f.db.prepare('SELECT snapshot_json FROM authority_context_pack_items').get().snapshot_json.includes('forbidden'),false);
   assert.equal(content.verify(f.db).valid,true);
 });
+test('manifested Mission Review outcomes survive erasure as allowlisted metadata; unknown outcomes fail closed',t=>{
+ for(const outcome of ['passed','failed','operator_review','synthetic_unknown']){
+  const f=fixture(t),id=require('node:crypto').randomUUID();
+  f.db.exec('CREATE TABLE cp_mission_reviews(id TEXT PRIMARY KEY,mission_id TEXT NOT NULL,verification_id TEXT NOT NULL,manifest_hash TEXT NOT NULL,workspace_hash TEXT NOT NULL,result TEXT NOT NULL,evidence TEXT NOT NULL,created_at INTEGER NOT NULL)');
+  f.db.prepare('INSERT INTO cp_mission_reviews VALUES(?,?,?,?,?,?,?,?)').run(id,require('node:crypto').randomUUID(),require('node:crypto').randomUUID(),canonicalHash('synthetic manifest'),canonicalHash('synthetic workspace'),outcome,JSON.stringify({context_pack_id:f.pack.id,canary:'personal canary violet'}),1);
+  if(outcome==='synthetic_unknown'){assert.throws(()=>f.memory.erase(f.m.id,f.store.operator),/incomplete/);assert.throws(()=>content.assertReadable(f.db),/incomplete|denied/);continue;}
+  f.memory.erase(f.m.id,f.store.operator);const row=f.db.prepare('SELECT result,evidence FROM cp_mission_reviews WHERE id=?').get(id);assert.equal(row.result,outcome);assert.doesNotMatch(row.evidence,/personal canary/);assert.equal(content.verify(f.db).valid,true);assert.throws(()=>f.db.prepare('UPDATE cp_mission_reviews SET result=? WHERE id=?').run('synthetic_unknown',id),/Immutable|replay denied/);
+ }
+});
+
+test('result relay receipts retain only validated run identities through erasure',t=>{
+ for(const valid of [true,false]){
+  const f=fixture(t),run=require('node:crypto').randomUUID();
+  f.db.exec('CREATE TABLE cp_result_receipts(event_key TEXT PRIMARY KEY,run_id TEXT NOT NULL,created_at INTEGER NOT NULL)');
+  const key=valid?'result:'+run:'synthetic private receipt';f.db.prepare('INSERT INTO cp_result_receipts VALUES(?,?,?)').run(key,run,1);
+  if(!valid){assert.throws(()=>f.memory.erase(f.m.id,f.store.operator),/incomplete/);assert.throws(()=>content.assertReadable(f.db),/incomplete/);continue;}
+  f.memory.erase(f.m.id,f.store.operator);assert.equal(f.db.prepare('SELECT event_key FROM cp_result_receipts').get().event_key,key);assert.equal(content.verify(f.db).valid,true);
+ }
+});
+
+test('canonical erasure preserves bounded activation states while erasing qualification content references',t=>{
+ const f=fixture(t);f.db.prepare("UPDATE authority_activation SET memory_state='enabled',router_state='enabled',memory_receipt_id=? WHERE id=1").run(f.m.id);
+ f.memory.erase(f.m.id,f.store.operator);const row=f.db.prepare('SELECT * FROM authority_activation').get();assert.equal(row.memory_state,'enabled');assert.equal(row.router_state,'enabled');assert.equal(row.memory_receipt_id,null);assert.equal(content.verify(f.db).valid,true);
+});

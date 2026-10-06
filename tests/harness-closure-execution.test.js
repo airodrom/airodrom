@@ -6,7 +6,7 @@ const evidence = require('../src/execution-evidence');
 async function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync('/private/tmp/pc-'));
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile); fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new Controller({ dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true }).initialize();
+  const bridge = await new Controller({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true }).initialize();
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   return { root, bridge };
 }

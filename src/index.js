@@ -27,7 +27,9 @@ async function main() {
     webEnabled: process.env.PI_BRIDGE_WEB !== 'off',
     level1ActivationEnabled: process.env.PI_BRIDGE_LEVEL1_ACTIVATION === '1',
     level1RestrictedWorkerEnabled: process.env.PI_BRIDGE_LEVEL1_RESTRICTED_WORKER === '1',
-    trustedDeveloperMode
+    trustedDeveloperMode,
+    defaultRuntime: process.env.AIRODROM_DEFAULT_RUNTIME,
+    opencode: { ...require('./default-runtime').OPENCODE_DEFAULTS, ...(process.env.AIRODROM_OPENCODE_MODEL ? {model:process.env.AIRODROM_OPENCODE_MODEL} : {}), ...(process.env.AIRODROM_OPENCODE_EXECUTABLE ? {executable:process.env.AIRODROM_OPENCODE_EXECUTABLE} : {}) }
   }).initialize();
   const ui = new ControlServer(bridge, { port: process.env.PI_BRIDGE_PORT ? Number(process.env.PI_BRIDGE_PORT) : 43117 });
   try {

@@ -11,7 +11,7 @@ async function fixture(t) {
   const root = fs.mkdtempSync('/private/tmp/reasoning-admission-');
   const profile = path.join(root,'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile,'settings.json'), JSON.stringify({ defaultProvider:'fixture', defaultModel:'fixture' }));
-  const bridge = await new Bridge({ dataDir:path.join(root,'data'), sourceProfile:profile, allowFixtureWorker:true, executable:path.join(__dirname,'fixtures/fake-pi.cjs') }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir:path.join(root,'data'), sourceProfile:profile, allowFixtureWorker:true, executable:path.join(__dirname,'fixtures/fake-pi.cjs') }).initialize();
   bridge.config.provider = 'ollama'; bridge.config.model = LOCAL_OLLAMA.model;
   t.after(async()=>{await bridge.shutdown();fs.rmSync(root,{recursive:true,force:true});});
   const task = bridge.tasks.get(bridge.createTask('bounded inference',{reasoningOnly:true}).id);

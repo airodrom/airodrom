@@ -58,7 +58,7 @@ class AgentRouter {
   }
 
   agentId(taskOrId = null) {
-    const id = typeof taskOrId === 'string' ? taskOrId : taskOrId?.executionAgent || 'pi';
+    const id = typeof taskOrId === 'string' ? taskOrId : taskOrId?.executionAgent || require('./default-runtime').DEFAULT_RUNTIME;
     return assertAgentId(id);
   }
 

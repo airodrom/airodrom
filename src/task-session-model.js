@@ -21,9 +21,14 @@ class TaskSessionManager extends EventEmitter {
       const task = JSON.parse(persisted?.snapshot || fs.readFileSync(file, 'utf8'));
       this.saved.set(id, task.status);
       if (task.id !== id || task.sessionDir !== path.join(this.root, id, 'sessions')) throw new Error('Invalid persisted task location');
+      // Erased snapshots are immutable tombstones. Recovery must not replay or
+      // enrich their content, including execution evidence or session metadata.
+      if (task.content_state === 'erased') { if(db)require('./memory-content-erasure').assertReadable(db); this.tasks.set(id, task); continue; }
       task.status = ['waiting_for_provider','waiting_for_operator','queued','completed','idle','cancelled','error','failed','deadline','stalled','approval_expired','blocked','interrupted','awaiting_operator_grant','awaiting_mcp_continuation'].includes(task.status) ? task.status : 'interrupted';
       if (task.status === 'queued' && task.mission?.started) task.status = 'interrupted';
       if (task.status === 'completed' && !require('./execution-evidence').satisfied(task)) { task.status = 'failed'; task.failureKind = 'native_tool_required'; task.lastRunBlocked = true; }
+      // Records predating runtime identity were Pi sessions; retain their historical identity.
+      task.executionAgent ||= 'pi';
       task.connected = false; task.safetyLoaded = false; task.recoveredAt = Date.now();
       this.tasks.set(id, task); this.save(task);
     }

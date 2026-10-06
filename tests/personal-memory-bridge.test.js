@@ -11,7 +11,7 @@ const ControlServer = require('../src/control-server');
 async function fixture(t) {
   const root = fs.mkdtempSync('/private/tmp/bridge-personal-memory-api-'); const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({ dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true }).initialize();
+  const bridge = await new BridgeController({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true }).initialize();
   const control = new ControlServer(bridge, { port: 0 }); await control.start();
   t.after(async () => { await control.close(); await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   const request = (route, { method = 'GET', body } = {}) => new Promise((resolve, reject) => {

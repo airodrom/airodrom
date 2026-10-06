@@ -13,7 +13,7 @@ test('routing waits for semantic fit and respects auth, quota/busy and locality'
  assert.equal((await run(context({installed:true,logged_in:false}),coding)).state,'waiting');
  assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription',running_jobs:1}),coding)).state,'waiting');
  assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription',api_key_overrides_subscription:true}),coding)).suggested_agent,null);
- assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription'}),coding)).suggested_agent,'claude_code');
+ assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription'}),coding)).suggested_agent,null);
  assert.equal((await run(context({installed:true,logged_in:true,auth_mode:'subscription'}),{...coding,privacy:'local_only'})).state,'waiting');
  assert.equal((await run(context(),{taskType:'tests',privacy:'local_only'})).suggested_agent,'pi');
 });

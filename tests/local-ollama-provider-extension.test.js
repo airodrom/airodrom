@@ -293,7 +293,7 @@ test('INTEGRATION: the final Pi-to-Ollama request forces a native Personal Memor
   fs.mkdirSync(workspace, { mode: 0o700 });
   fs.writeFileSync(path.join(sourceProfile, 'settings.json'), JSON.stringify({ defaultProvider: 'ollama', defaultModel: 'qwen3-coder:30b' }));
 
-  const bridge = await new BridgeController({
+  const bridge = await new BridgeController({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'), sourceProfile,
     executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true
   }).initialize();
@@ -483,7 +483,7 @@ test('INTEGRATION: V1.1 repeated explicit single-tool requests force the exact n
   fs.mkdirSync(workspace, { mode: 0o700 });
   fs.writeFileSync(path.join(workspace, 'note.txt'), 'v0\n');
   fs.writeFileSync(path.join(sourceProfile, 'settings.json'), JSON.stringify({ defaultProvider: 'ollama', defaultModel: 'qwen3-coder:30b' }));
-  const bridge = await new BridgeController({
+  const bridge = await new BridgeController({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'), sourceProfile,
     executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true
   }).initialize();

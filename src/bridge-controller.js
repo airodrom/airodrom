@@ -146,6 +146,7 @@ function authorizeLocalOllamaInference(bridge, task, runtime, runId) {
 class BridgeController extends EventEmitter {
   constructor(options = {}) {
     super(); this.options = options;
+    this.defaultRuntime = require('./default-runtime').defaultRuntime(options.defaultRuntime);
     this.dataDir = path.resolve(options.dataDir || path.join(__dirname, '../.runtime'));
     this.executable = options.executable || path.join(os.homedir(), '.local/npm/bin/pi');
     this.runtimes = new Map(); this.inFlight = new Set(); this.tokens = new Map(); this.audit = [];
@@ -330,6 +331,7 @@ class BridgeController extends EventEmitter {
         try { this.chatgptEvents.publishLifecycle(task, eventType); } catch { /* Event delivery must not change task execution. */ }
       });
       for (const task of this.tasks.list()) {
+        if (task.content_state === 'erased') continue;
         this._normalizeMission(task);
         this.policy.registerTask(task);
         if (task.safetyStop?.latched) this.policy.latchSafetyStop(task.id, task.safetyStop.reason, task.safetyStop.evidence);
@@ -348,7 +350,7 @@ class BridgeController extends EventEmitter {
       this.agentRouter.register(this.codexAdapter);
       this.agentRouter.register(new (require('./apps/claude-code-adapter').ClaudeCodeAdapter)(this));
       this.cursorAdapter=new (require('./apps/cursor-adapter').CursorAdapter)();this.agentRouter.register(this.cursorAdapter);
-      this.opencodeAdapter=new (require('./apps/opencode-adapter').OpenCodeAdapter)(this,this.options.opencode||{});this.agentRouter.register(this.opencodeAdapter);
+      this.opencodeAdapter=new (require('./apps/opencode-adapter').OpenCodeAdapter)(this,this.options.opencode||require('./default-runtime').OPENCODE_DEFAULTS);this.agentRouter.register(this.opencodeAdapter);this.capabilityHost.opencodeStatus=()=>this.opencodeAdapter.readiness();
       this.codexRelay=new (require('./codex-completion-relay').CodexCompletionRelay)(this);
       this.agentDispatch=new (require('./agent-dispatch').AgentDispatch)(this,this.options.agentDispatch||{});
       this.controlStore.recover();
@@ -1342,7 +1344,7 @@ class BridgeController extends EventEmitter {
     if (options.requiredExecutionKind !== undefined && !['native', 'reasoning'].includes(options.requiredExecutionKind)) throw new Error('Invalid required execution kind');
     if (options.requiredExecutionKind === 'reasoning' && (options.workspace || options.projectId)) throw new Error('Repository tasks require native execution');
     if (options.reasoningOnly && options.requiredExecutionKind === 'native') throw new Error('Reasoning-only task cannot require native execution');
-    const executionAgent = options.executionAgent ?? 'pi';
+    const executionAgent = options.executionAgent ?? this.defaultRuntime;
     this.agentRouter.resolve(executionAgent);
     const criteria = options.acceptanceCriteria || [];
     if (!Array.isArray(criteria) || criteria.length > 10 || criteria.some(c => typeof c !== 'string' || !c.trim() || c.length > 500)) throw new Error('Invalid acceptance criteria');
@@ -1351,8 +1353,7 @@ class BridgeController extends EventEmitter {
     const requestedAuthority = options.missionAuthority ? require('./mission-permissions').normalizeAuthority(options.missionAuthority, { workspace: options.workspace, operator: options.authorityOperator === true }) : options.workspace ? require('./mission-permissions').trustedDefault(options.workspace, this.options.trustedRepositoryDefaults || []) : null;
     if (options.reasoningOnly && requestedAuthority) throw Error('Reasoning-only tasks cannot have execution authority');
     const task = this.tasks.create(description, options.workspace);
-    // Internal, additive task metadata. Existing MCP callers provide no agent
-    // field and therefore preserve their established Pi behavior.
+    // Freeze the selected identity. Default changes never reinterpret saved tasks.
     task.executionAgent = executionAgent;
     task.requiredExecutionKind = options.workspace || options.projectId ? 'native' : options.requiredExecutionKind || 'reasoning';
     task.mission = {
@@ -1382,6 +1383,7 @@ class BridgeController extends EventEmitter {
     // create no executable authority and cannot cause Pi to start.
     const created = this.createTask(ACTIVE_CHAT_DESCRIPTION, {
       missionObjective: ACTIVE_CHAT_OBJECTIVE,
+      executionAgent: 'pi',
       acceptanceCriteria: ACTIVE_CHAT_ACCEPTANCE_CRITERIA,
       requireMissionGrant: true
     });
@@ -1529,6 +1531,7 @@ class BridgeController extends EventEmitter {
     const verified = this.missionAuthority.verify(mission, 'read');
     if (!verified.allow) throw new Error(`Level 1 read-only mission grant denied: ${verified.reason}`);
     const snapshot = this.createTask(MISSION_OBJECTIVE, {
+      executionAgent: 'pi',
       workspace: WORKSPACE,
       missionObjective: MISSION_OBJECTIVE,
       acceptanceCriteria: ACCEPTANCE_CRITERIA,
@@ -1599,6 +1602,7 @@ class BridgeController extends EventEmitter {
       this._recordPolicyDenial(task, { toolName: 'dispatch' }, { allow: false, kind: 'mission_grant_denied', reason: task.mission?.authorityRevoked ? 'Mission authority revoked' : authorityCheck.reason });
       throw Error('Mission authority is inactive');
     }
+    if (task.executionAgent === 'opencode') throw Error('OpenCode requires a bounded registered Mission; use the Mission create/dispatch API');
     if (task.orchestrator?.mode === 'direct') throw new Error('Orchestrator tasks never start a Pi session; use capability_invoke');
     if (task.safetyStop?.latched || this.policy.safetyStops.has(id) || task.lastRunBlocked) throw new Error('Safety stop is latched; an authenticated local operator must resolve it before continuing');
     if (task.cancelRequested || task.status === 'cancelled' || mission.status === 'cancelled') throw new Error('Cancelled missions cannot be restarted');
@@ -1830,6 +1834,7 @@ class BridgeController extends EventEmitter {
     const task = this.tasks.get(id); this._normalizeMission(task);
     if (task.reasoningMode === 'reasoning_only' && task.reasoningGatewayPolicy) return this.hostReasoningAdmission.run(task, message, { recovery, timeoutMs });
     if (task.reasoningMode === 'reasoning_only') return this.reasoningAdmission.run(task, message, { recovery, timeoutMs });
+    if (task.executionAgent === 'opencode') throw Error('OpenCode requires a bounded registered Mission; use the Mission create/dispatch API');
     if (task.orchestrator?.mode === 'direct') throw new Error('Orchestrator tasks never start a Pi session; use capability_invoke');
     if (task.mission?.level1MissionId && level1Internal !== true) {
       await this.handleLevel1HumanTurn(id);

@@ -120,7 +120,7 @@
     ],
     "source": "src/result-inbox.js",
     "classification": {
-      "event_key": "B",
+      "event_key": "A",
       "run_id": "A",
       "created_at": "A"
     }
@@ -761,7 +761,7 @@
       "goal_id": "A",
       "task_id": "A",
       "owner": "B",
-      "current_revision": "B",
+      "current_revision": "A",
       "current_state": "A",
       "acceptance_strength": "A",
       "created_at": "A",
@@ -1724,8 +1724,8 @@
     "source": "src/authority-schema.js",
     "classification": {
       "id": "A",
-      "memory_state": "B",
-      "router_state": "B",
+      "memory_state": "A",
+      "router_state": "A",
       "source_hash": "D",
       "memory_receipt_id": "B",
       "router_receipt_id": "B",
@@ -1942,7 +1942,7 @@
       "verification_id": "A",
       "manifest_hash": "D",
       "workspace_hash": "D",
-      "result": "B",
+      "result": "A",
       "evidence": "B",
       "created_at": "A"
     }

@@ -11,7 +11,7 @@ test('SIMULATION: fake Pi result is durably correlated in the local MCP inbox', 
   const root = fs.mkdtempSync('/private/tmp/pi-mission1-'), profile = path.join(root, 'profile');
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), '{}');
-  const bridge = await new Bridge({ dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), maxConcurrent: 2 }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), maxConcurrent: 2 }).initialize();
   const ui = new ControlServer(bridge, { port: 0 }); await ui.start();
   t.after(async () => { await ui.close(); await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   const mcp = (name, args) => new Promise((resolve, reject) => {
@@ -46,7 +46,7 @@ test('SIMULATION: lifecycle event without operator trigger configuration remains
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), '{}');
 
-  const bridge = await new Bridge({
+  const bridge = await new Bridge({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'),
     sourceProfile: profile,
     allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'),
@@ -91,7 +91,7 @@ test('SIMULATION: fixture checkpoint is persisted as model narrative, not accept
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), '{}');
 
-  const bridge = await new Bridge({
+  const bridge = await new Bridge({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'),
     sourceProfile: profile,
     allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'),

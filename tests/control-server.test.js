@@ -9,7 +9,7 @@ const ControlServer = require('../src/control-server');
 async function fixture(t) {
   const root = fs.mkdtempSync('/private/tmp/pi-http-');
   const profile = path.join(root,'source'); fs.mkdirSync(profile); fs.writeFileSync(path.join(profile,'settings.json'),'{}');
-  const bridge = await new Bridge({ dataDir:path.join(root,'data'),sourceProfile:profile,allowFixtureWorker:true,executable:path.join(__dirname,'fixtures/fake-pi.cjs') }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir:path.join(root,'data'),sourceProfile:profile,allowFixtureWorker:true,executable:path.join(__dirname,'fixtures/fake-pi.cjs') }).initialize();
   const ui = new ControlServer(bridge,{port:0, connectionStatus: async () => ({ state: 'not_connected', connected: false, tunnelHealthy: false, mcpProbe: 'unknown' })}); await ui.start();
   t.after(async()=>{ await ui.close(); await bridge.shutdown(); fs.rmSync(root,{recursive:true,force:true}); });
   const request = (route, {method='GET',body,headers={},authorized=true}={}) => new Promise((resolve,reject)=>{

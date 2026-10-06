@@ -16,7 +16,7 @@ function makeProfile(root) {
 
 test('BridgeController initializes ProjectMemoryV2Adapter on the bridge database', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), '.tmp-m2a-'));
-  const bridge = await new Bridge({ dataDir: root, sourceProfile: makeProfile(root) }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: root, sourceProfile: makeProfile(root) }).initialize();
 
   t.after(async () => {
     await bridge.shutdown();
@@ -31,7 +31,7 @@ test('BridgeController initializes ProjectMemoryV2Adapter on the bridge database
 
 test('createTask persists the existing task and mission identity into Memory V2', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), '.tmp-m2b-'));
-  const bridge = await new Bridge({ dataDir: root, sourceProfile: makeProfile(root) }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: root, sourceProfile: makeProfile(root) }).initialize();
 
   t.after(async () => {
     await bridge.shutdown();

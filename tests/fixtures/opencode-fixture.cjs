@@ -13,7 +13,7 @@ if(o==='secret'){result.summary='Bearer syntheticResultSecret';}
 if(o==='escalation'){result.authority=true;}
 if(o==='environment'){result.summary=Object.keys(process.env).sort().join(',');}
 if(o.includes('alpha to beta')){fs.writeFileSync('fixture.txt','beta\\n');result.changed_files=['fixture.txt'];}
-if(o==='memory'){const records=p.current_context?.records||[];const fact=records.find(r=>r.subject==='fixture.color');result.summary=fact?fact.content:'unavailable';}
+if(o==='memory'||o.includes('DEFAULT_MEMORY')){const records=p.current_context?.records||[];const fact=records.find(r=>r.subject==='fixture.color');result.summary=fact?fact.content:'unavailable';}
 console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));
 });`,{mode:0o700});
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

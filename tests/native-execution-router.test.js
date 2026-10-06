@@ -12,7 +12,7 @@ async function isolated(t) {
   const root = fs.mkdtempSync('/private/tmp/native-router-');
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new Bridge({ dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs') }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs') }).initialize();
   let inference = 0;
   bridge.localOllamaBroker.proxy = () => { inference++; throw Error('Ollama unavailable'); };
   bridge.ensureRuntime = async () => { throw Error('Local Ollama inference is unavailable for this task'); };

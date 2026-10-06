@@ -249,7 +249,7 @@ async function until(fn) { for (let i = 0; i < 500; i++) { if (fn()) return; awa
 
 test('end-to-end Pi extension -> authenticated socket -> durable queue -> MCP inbox; revoked and cross-task attempts fail', async t => {
   const root = fs.mkdtempSync('/private/tmp/pi-event-e2e-'), profile = path.join(root, 'profile'); fs.mkdirSync(profile); fs.writeFileSync(path.join(profile, 'settings.json'), '{}');
-  const bridge = await new Bridge({ dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs') }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs') }).initialize();
   const ui = new ControlServer(bridge, { port: 0 }); await ui.start();
   t.after(async () => { await ui.close(); await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   const mcp = (name, args, token = ui.mcpToken) => request({ hostname: '127.0.0.1', port: ui.port, path: '/api/mcp/call', method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } }, { name, args });
