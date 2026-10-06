@@ -162,10 +162,11 @@ class OpenCodeAdapter extends AgentAdapter {
         fs.writeFileSync(path.join(root, 'workspace', f), content, { mode: 0o600 });
       }
       const input = safeText(JSON.stringify({ protocol: 'airodrom-opencode-v1', objective, readable_files: files, allowed_files: writable, current_context: currentContext, authority: false, result_contract:{summary:'Describe observed work',changed_files:[],tests:[],artifacts:[],limitations:[]}, instructions: 'Work only on supplied files. No shell, network tools, Memory DB, git or external actions. Use only current_context; if unavailable answer unavailable. Return only one JSON object matching result_contract exactly: summary is a nonempty string; every other field is an array. Never claim verification or Acceptance.' }));
-      const executable = this.executable(), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
+      const executable = this.executable(), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
       const outcome = await launch({ executable, root, writable, input, timeoutMs, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable });
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
       if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
+      if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
       const parsed = parseOutput(outcome.stdout, writable), changes = [];
       const inventory=[];const walk=dir=>{for(const ent of fs.readdirSync(path.join(root,'workspace',dir),{withFileTypes:true})){const f=path.posix.join(dir,ent.name);if(ent.isDirectory())walk(f);else inventory.push(f);}};walk('');
       if(inventory.length!==files.length||inventory.some(f=>!files.includes(f)))fail('opencode_undeclared_write');
@@ -179,12 +180,12 @@ class OpenCodeAdapter extends AgentAdapter {
       if (parsed.result.status !== 'completed') fail('opencode_runtime_failed');
       this.authorizedContext(context);
       return { ...parsed, result: { ...parsed.result, changed_files: changes.map(c => c.path) }, changes,
-        provenance: { runtime_id: this.id, runtime_version: VERSION, executable_sha256: hash(fs.readFileSync(executable)), execution_id: randomUUID(), session_state: 'disposable', workspace_bound: true, termination_verified: true, authority: false } };
+        provenance: { runtime_id: this.id, runtime_version: VERSION, executable_sha256: executableHash, execution_id: randomUUID(), session_state: 'disposable', workspace_bound: true, termination_verified: true, authority: false } };
     } finally { if(cleanup)fs.rmSync(root, { recursive: true, force: true }); }
   }
   async dispatch({ task, repo, prompt, context, requestId } = {}) {
     const b = this.bridge, m = b.controlStore.requireMission(task?.controlPlaneMissionId);
-    if (m.task_id !== task.id || m.envelope.workspace !== repo || m.envelope.preferred_agent !== this.id || m.envelope.fallback_agents.length || m.envelope.dispatch_policy?.privacy !== 'local_only' || JSON.stringify(m.envelope.dispatch_policy.providers) !== '["local"]' || JSON.stringify(m.envelope.dispatch_policy.billing_classes) !== '["local"]') fail('opencode_mission_binding');
+    if (m.task_id !== task.id || m.envelope.workspace !== repo || context?.id !== task.contextPackId || m.envelope.preferred_agent !== this.id || m.envelope.fallback_agents.length || m.envelope.dispatch_policy?.privacy !== 'local_only' || JSON.stringify(m.envelope.dispatch_policy.providers) !== '["local"]' || JSON.stringify(m.envelope.dispatch_policy.billing_classes) !== '["local"]') fail('opencode_mission_binding');
     b.missions.assertAuthority(m);
     require('../memory-content-erasure').assertContext(b.controlStore.db, task.contextPackId);
     const controller = new AbortController(); this.active.set(task.id, controller);

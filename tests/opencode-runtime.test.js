@@ -64,6 +64,9 @@ test('OpenCode Mission runs through independent verifier, Acceptance and ordered
  assert.equal(done.runs.filter(r=>r.agent_id==='opencode').length,1);assert.equal(done.dispatches[0].route.selected,'opencode');assert.ok(done.dispatches[0].route.authority_routing_decision_id);assert.equal(canonical.store.listAcceptancesForMission(m.id).length,0);assert.equal(f.calls(),0);
  f.bridge.missions.accept(m.id,{request_id:'verified-acceptance',verification_id:done.verifications[0].id,decision:'accept',rationale:'Independent fixture evidence passed'});
  assert.equal(f.bridge.missions.detail(m.id).program_contract.settlement.state,'settled');assert.equal(canonical.store.listAcceptancesForMission(m.id).length,1);assert.equal(canonical.store.integrity().ok,true);
+ const task=f.bridge.tasks.get(done.runs.find(run=>run.agent_id==='opencode').task_id);
+ await assert.rejects(f.bridge.opencodeAdapter.dispatch({task,repo:f.repo,prompt:'read',context:{id:'unrelated-pack'}}),/mission_binding/);
+ await assert.rejects(f.bridge.opencodeAdapter.dispatch({task,repo:r.workspace,prompt:'read',context:{id:task.contextPackId}}),/mission_binding/);
  const timeline=f.bridge.missions.detail(m.id).timeline;assert.ok(timeline.some(e=>e.event_type==='verification.completed'));
 });
 test('bounded context, changed executable and forged provenance cannot grant execution evidence',async t=>{
@@ -71,5 +74,5 @@ test('bounded context, changed executable and forged provenance cannot grant exe
  await assert.rejects(f.adapter.execute({...f.request,objective:'x'.repeat(12001)}),/context_bound/);
  assert.throws(()=>f.adapter.assertEvidence({agent_id:'opencode',state:'completed',termination_verified:true,result:{opencode_provenance:{authority:true}}}),/provenance_unavailable/);
  const output=await f.adapter.execute(f.request),run={agent_id:'opencode',state:'completed',termination_verified:true,result:{opencode_provenance:output.provenance}};
- f.adapter.assertEvidence(run);fs.appendFileSync(f.options.executable,'\n// altered fixture\n');assert.throws(()=>f.adapter.assertEvidence(run),/provenance_unavailable/);
+ f.adapter.assertEvidence(run);await assert.rejects(f.adapter.execute({...f.request,objective:'change-executable'}),/executable_changed/);fs.appendFileSync(f.options.executable,'\n// altered fixture\n');assert.throws(()=>f.adapter.assertEvidence(run),/provenance_unavailable/);
 });
