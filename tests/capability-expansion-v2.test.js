@@ -8,7 +8,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const BridgeController = require('../src/bridge-controller');
 const { CapabilityHost } = require('../src/capability-host');
 const { HostExecutor } = require('../src/host-exec');
-const { EXECUTABLES } = require('../src/capability-mac');
+const { EXECUTABLES, APPS } = require('../src/capability-mac');
 const { TAR } = require('../src/capability-files');
 
 const GIT = '/usr/bin/git';
@@ -257,6 +257,13 @@ test('apps and processes: registry-only lifecycle, classified stop, self and sys
     `4343 1 ${uid} 0.0 0.1 00:05 ${stamp} /Applications/Little Snitch.app/Contents/MacOS/Little Snitch Agent`
   ].join('\n');
   const { host, task, exec } = environment(t, { ps });
+  // This test records app commands; installation is also synthetic and must
+  // not depend on whether the operator or hosted runner has Cursor installed.
+  const exists = fs.existsSync; let cursorInstalled = false;
+  t.mock.method(fs, 'existsSync', file => file === APPS.cursor.app ? cursorInstalled : exists(file));
+  assert.equal((await call(host, task, 'app_launch', { app: 'cursor' })).decision, 'deny');
+  assert.equal(exec.calls.some(entry => entry.file === '/usr/bin/open'), false, 'missing app never launches');
+  cursorInstalled = true;
   assert.equal((await call(host, task, 'app_launch', { app: 'cursor' })).result.launched, true);
   assert.deepEqual(exec.calls.find(entry => entry.file === '/usr/bin/open').args, ['-b', 'com.todesktop.230313mzl4w4u92']);
   await assert.rejects(host.prepare(task, 'app_launch', { app: '/Applications/Evil.app' }), /Invalid app/);
