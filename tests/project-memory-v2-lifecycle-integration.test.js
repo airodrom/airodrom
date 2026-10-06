@@ -26,7 +26,7 @@ function repository(head = 'memory-head-a') {
 test('BridgeController persists Memory V2 lifecycle evidence and fails stale recovery closed', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-m2-life-'));
   const memory = new MemoryStore(path.join(root, 'memory.sqlite'));
-  const bridge = new Bridge({ dataDir: root });
+  const bridge = new Bridge({ defaultRuntime: 'pi', dataDir: root });
 
   bridge.memory = memory;
   bridge.tasks = new TaskSessionManager(root, memory.db);

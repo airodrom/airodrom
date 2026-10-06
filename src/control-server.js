@@ -180,7 +180,7 @@ class ControlServer {
       }
       if (url.pathname === '/api/tasks') {
         if (body.workspace != null && (typeof body.workspace !== 'string' || !path.isAbsolute(body.workspace))) throw new Error('Workspace must be an absolute path');
-        return this.json(res, 201, this.bridge.createTask(body.description, { acceptanceCriteria: body.acceptanceCriteria, workspace: body.workspace || undefined, includeSharedMemory: body.includeSharedMemory === true, projectId: body.projectId }));
+        return this.json(res, 201, this.bridge.createTask(body.description, { executionAgent: body.executionAgent, acceptanceCriteria: body.acceptanceCriteria, workspace: body.workspace || undefined, includeSharedMemory: body.includeSharedMemory === true, projectId: body.projectId }));
       }
       if (url.pathname === '/api/checkpoints') {
         const task = this.bridge.tasks.get(body.taskId);

@@ -19,6 +19,15 @@ function safeText(value, max = MAX_CONTEXT) {
   if (redactValue(value) !== value || require('../personal-memory').containsSecret(value)) fail('opencode_sensitive_context');
   return value;
 }
+function contextSafetyView(value, key) {
+  // Typed host digests are correlation metadata, never runtime content. Their
+  // digits can accidentally satisfy the payment-card detector. Other strings,
+  // including malformed digest fields, still pass through the full text guard.
+  if (['context_hash','content_hash','source_hash'].includes(key) && typeof value === 'string' && /^(?:sha256:)?[a-f0-9]{64}$/i.test(value)) return '[digest]';
+  if (Array.isArray(value)) return value.map(item => contextSafetyView(item, key));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([field,item]) => [field,contextSafetyView(item,field)]));
+  return value;
+}
 function relative(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_.\/-]{1,300}$/.test(value) || path.isAbsolute(value) || value.split('/').some(p => !p || p === '.' || p === '..') || /(^|\/)(?:\.git|\.opencode|\.agents|\.claude|node_modules|\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|auth\.json|[^/]+\.(?:sqlite|db|pem|key))($|\/)/i.test(value)) fail('opencode_file_scope');
   return value;
@@ -130,7 +139,8 @@ class OpenCodeAdapter extends AgentAdapter {
   }
   authorizedContext(context){
     if(context===null)return null;
-    safeText(JSON.stringify(context));
+    if(Buffer.byteLength(JSON.stringify(context))>MAX_CONTEXT)fail('opencode_context_bound');
+    safeText(JSON.stringify(contextSafetyView(context)));
     const b=this.bridge,db=b?.controlStore?.db;if(!db||typeof context?.id!=='string')fail('opencode_memory_context_missing');
     require('../memory-content-erasure').assertContext(db,context.id);
     let records;

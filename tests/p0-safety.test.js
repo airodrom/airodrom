@@ -94,7 +94,7 @@ test('broker denial survives a settled MCP_OK narrative with no execution receip
   const { EventEmitter } = require('node:events');
   const bridge = new BridgeController();
   const db=new (require('node:sqlite').DatabaseSync)(':memory:');t.after(()=>db.close());bridge.ledger=new (require('../src/event-ledger').EventLedger)(db);
-  const task = { ...bridge.policy.registerTask({ id: 'a', sessionId: 's', workspace: root }), safetyLoaded: true, events: [], compactions: 0 };
+  const task = { ...bridge.policy.registerTask({ id: 'a', sessionId: 's', workspace: root }), executionAgent:'pi', safetyLoaded: true, events: [], compactions: 0 };
   bridge.tasks = { transitions: () => [], get: () => task, save: () => {} };
   bridge.memory = { search: () => ({ items: [] }), latestCheckpoint: () => null, saveCheckpoint: () => ({ id: 'checkpoint', createdAt: 1 }) };
   bridge.diagnostics = { execute: async () => '' };
@@ -193,7 +193,7 @@ test('Control Center credential and complete task index survive restart with tru
   const active = tasks.create('Active fixture'); active.status = 'thinking'; tasks.save(active);
   let token;
   for (let restart = 0; restart < 2; restart++) {
-    const bridge = new BridgeController({ dataDir: dir });
+    const bridge = new BridgeController({ defaultRuntime: 'pi', dataDir: dir });
     bridge.tasks = restart ? new Manager(dir) : tasks;
     bridge.snapshot = () => ({ bridge: { healthy: true }, tasks: bridge.tasks.list().map(task => bridge.snapshotTask(task)) });
     const ui = new ControlServer(bridge, { port: 0 }); await ui.start();

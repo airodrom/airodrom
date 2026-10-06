@@ -1,11 +1,12 @@
 'use strict';
 // Deterministic advice, separate from execution authority. No invented scores.
 const PROVIDERS={pi:null,opencode:'local',claude_code:'anthropic_subscription',codex:'codex_openai',cursor:'cursor_runtime'};
+function legacyOrder(taskType){return ['local_diagnostics','local_files','tests','git'].includes(taskType)?['pi']:taskType==='ide_diagnostics'?['cursor','claude_code']:['broad_investigation','large_multi_file_coding'].includes(taskType)?['codex','claude_code']:['claude_code','codex'];}
 function routeTask(input,agents){
  const types=['local_diagnostics','local_files','tests','git','focused_refactor','broad_investigation','large_multi_file_coding','ide_diagnostics'];
  if(!types.includes(input.task_type))return{selected:null,reason:'unknown_task_type',rejected:[],execution:'not_dispatched'};
  const deterministic=['local_diagnostics','local_files','tests','git'].includes(input.task_type);
- const order=input.candidate_order|| (deterministic?['pi']:input.task_type==='ide_diagnostics'?['cursor','claude_code']:['broad_investigation','large_multi_file_coding'].includes(input.task_type)?['codex','claude_code']:['claude_code','codex']);
+ const order=input.candidate_order|| (deterministic?['pi']:[require('./default-runtime').DEFAULT_RUNTIME]);
  if(!Array.isArray(order)||order.some(id=>!['pi','opencode','claude_code','codex','cursor'].includes(id)))return{selected:null,reason:'invalid_agent_policy',rejected:[],execution:'not_dispatched'};
  const rejected=[];
  const required=input.required_capabilities||[];
@@ -41,4 +42,4 @@ function routeTaskAndProvider(input,agents,providerRouter){
   {status:agent.selected?'agent_runtime':'waiting',selected_agent:agent.selected,selected_provider:agent.provider||null,provider_rationale:'preserve_agent_transport',execution_authority:false};
  return {agent,provider,execution:'not_dispatched'};
 }
-module.exports={routeTask,routeTaskAndProvider};
+module.exports={routeTask,routeTaskAndProvider,legacyOrder};

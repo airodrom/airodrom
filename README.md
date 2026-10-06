@@ -11,11 +11,11 @@
 >
 > ✅ Core control-plane, Memory V2, verification, Acceptance/Settlement, and public hardening work are preserved.
 >
-> 🔄 Current focus: replacing the original Pi-centered runtime path with a cleaner runtime-adapter architecture, beginning with OpenCode qualification.
+> 🔄 Current focus: OpenCode is the default primary execution runtime; Pi remains compatibility/rollback while Airodrom retains authority.
 >
 > 📦 No supported production release has been published yet.
 
-Airodrom coordinates bounded local work through a durable Pi control plane. Missions carry immutable scope, budgets and verification criteria. Agent results enter an untrusted inbox; independent verification and Acceptance precede local Settlement. Memory supplies authorized reference context and never grants permissions.
+Airodrom coordinates bounded local work through a durable Airodrom control plane. Missions carry immutable scope, budgets and verification criteria. Agent results enter an untrusted inbox; independent verification and Acceptance precede local Settlement. Memory supplies authorized reference context and never grants permissions.
 
 **Status: Pre-release / development paused for runtime migration. Not recommended for installation or production use.** The **1.0.0-rc.1 source candidate** remains unactivated; package publication, daemon installation and production activation require separate owner decisions.
 
@@ -24,8 +24,8 @@ Airodrom coordinates bounded local work through a durable Pi control plane. Miss
 | Runtime | Tier | Candidate boundary |
 | --- | --- | --- |
 | Pi local control and typed execution | REQUIRED | Core source and synthetic regression coverage; host pins required for sandboxed execution |
-| OpenCode | SUPPORTED / PRIMARY RUNTIME CANDIDATE | CLI 2.0.20, macOS and local Ollama; isolated live synthetic Mission and Memory V2 qualification; default unchanged |
-| Pi agentic runtime | COMPATIBILITY / DEPRECATION CANDIDATE | Retained for rollback; local control and verification remain required |
+| OpenCode | SUPPORTED / DEFAULT PRIMARY | CLI 2.0.20, macOS and local Ollama; isolated live synthetic Mission and Memory V2 qualification; bounded default route |
+| Pi agentic runtime | COMPATIBILITY / ROLLBACK | Retained for rollback; local control and verification remain required |
 | Claude Code | SUPPORTED / OPTIONAL FALLBACK | Adapter contract; operator authentication and runtime qualification required |
 | Work/Codex | OPTIONAL EXTERNAL / LIVE UNQUALIFIED | External transport contract tested with stubs; configured live port unqualified |
 | Cursor | EXPERIMENTAL | Observation only; governed execution denied |

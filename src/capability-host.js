@@ -67,7 +67,7 @@ class CapabilityHost {
       trashDir: path.join(this.home, '.Trash'), piOwnedRoot: this.scopes.piOwnedRoot, localServices: this.localServices,
       protectedBranches: this.protectedBranches, requestBridgeRestart: this.requestBridgeRestart, bridgePids: this.bridgePids,
       webFetch: input => this.webFetch ? this.webFetch(task, input) : Promise.reject(new Error('Web reader unavailable')), webEnabled: this.webEnabled,
-      mcpConnected: this.mcpConnected, probeHttp: this.probeHttp,
+      opencodeStatus: ()=>this.opencodeStatus?.(), mcpConnected: this.mcpConnected, probeHttp: this.probeHttp,
       devtools: { claudeStatus: ctx => claudeAuth(ctx).then(auth => ({ installed: auth.installed, logged_in: auth.logged_in, auth_mode: auth.auth_mode,api_key_overrides_subscription:auth.api_key_overrides_subscription,running_jobs:[...this.jobs.jobs.values()].filter(j=>j.status==='running').length })), cursorStatus: ctx => toolStatus(ctx, 'cursor') },
       touched: () => Array.isArray(task.capabilityTouched) ? task.capabilityTouched : [],
       touch: file => this.touch(task, file)

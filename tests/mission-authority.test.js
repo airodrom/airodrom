@@ -127,7 +127,7 @@ test('controller latches a genuine tool denial across fresh sessions until opera
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   fs.writeFileSync(path.join(workspace, 'safe.txt'), 'safe');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const bridge = new BridgeController({ dataDir: path.join(root, 'runtime') });
+  const bridge = new BridgeController({ defaultRuntime: 'pi', dataDir: path.join(root, 'runtime') });
   bridge.ledger = { record: input => input }; // Isolated HTTP-policy fixture records classification.
   const task = { id: 'controller-stop-task', sessionId: 'controller-session-001', workspace: fs.realpathSync(workspace), status: 'thinking', safetyLoaded: true, events: [], mission: { id: 'controller-stop-mission', objective: 'Read one fixture file', objectiveSet: true, criteria: [], scope: { workspace }, budget: { maxRuntimeMs: 60_000, maxActions: 20, maxRetries: 0, maxSpendMicros: 0 }, used: { runtimeMs: 0, actions: 0, retries: 0 }, requireGrant: false } };
   bridge.tasks = { get: id => { if (id !== task.id) throw new Error('missing task'); return task; }, save() {} };

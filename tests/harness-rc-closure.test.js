@@ -34,7 +34,7 @@ test('real reconciliation loop advances bounded two missions with deterministic 
 });
 test('routing matrix separates deterministic agents, providers, handoff, fallback and WAIT',()=>{
  const {routeTask}=require('../src/agent-routing');const agents={pi:{available:true},claude_code:{available:true},codex:{available:false,implemented:true,reason:'native_dispatch_unavailable'},cursor:{available:false,reason:'adapter_unimplemented'}};
- const r=(task_type,extra={})=>routeTask({task_type,...extra},agents);
+ const r=(task_type,extra={})=>routeTask({task_type,candidate_order:['local_files','tests','git','local_diagnostics'].includes(task_type)?['pi']:task_type==='ide_diagnostics'?['cursor','claude_code']:['broad_investigation','large_multi_file_coding'].includes(task_type)?['codex','claude_code']:['claude_code','codex'],...extra},agents);
  for(const type of ['local_files','tests','git','local_diagnostics'])assert.equal(r(type,{unavailable_providers:['ollama']}).selected,'pi');
  assert.equal(r('focused_refactor').selected,'claude_code');assert.equal(r('broad_investigation',{allow_handoff:true}).transport,'handoff');assert.equal(r('broad_investigation').selected,'claude_code');assert.equal(r('ide_diagnostics').selected,'claude_code');
  for(const extra of [{privacy:'local_only'},{writer_conflict:true},{unknown_side_effects:true},{failed_agents:['claude_code']},{unavailable_providers:['anthropic_subscription']},{required_provider:'ollama'}])assert.equal(r('focused_refactor',extra).selected,null);

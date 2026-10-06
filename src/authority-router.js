@@ -8,7 +8,7 @@ const HEALTH_TTL=60000;
 const COST_ORDER=['local','free/local','low','subscription','medium','high','unknown'];
 const POLICY=Object.freeze({version:2,health_ttl_ms:HEALTH_TTL,hard_gate_order:['authority','privacy','capabilities','assurance','memory','availability','lease','auth_quota_circuit','cost'],ranking:['observed_reliability','observed_latency','personal_cost_preference','task_taxonomy','stable_identity'],unknown_cost:'WAIT',unknown_health:'WAIT',memory_authority:false});
 const candidateKey=c=>[c.agent_id,c.runtime_id,c.provider_id||'',c.model_id||''].join(':');
-function taxonomy(taskClass) { return ['local_diagnostics','local_files','tests','git'].includes(taskClass)?['pi']:taskClass==='ide_diagnostics'?['cursor','claude','codex']:['broad_investigation','large_multi_file_coding'].includes(taskClass)?['codex','claude','pi']:['claude','codex','pi']; }
+function taxonomy(taskClass) { return ['local_diagnostics','local_files','tests','git'].includes(taskClass)?['pi']:['opencode','claude','codex','pi']; }
 // Pure selection. Input observations must be collected by the host service;
 // persisting or selecting a route does not authorize an execution operation.
 function evaluateRouting(input,candidates,now) {

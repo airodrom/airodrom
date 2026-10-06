@@ -5,8 +5,8 @@ Support is product scope, not execution authority or current availability. Candi
 | Component | Tier | Dispatch and qualification boundary |
 | --- | --- | --- |
 | Pi local control and typed capabilities | REQUIRED | Immutable Mission scope, protected approvals, lease and independent verification gates |
-| OpenCode | SUPPORTED / PRIMARY RUNTIME CANDIDATE | CLI 2.0.20 on macOS with local Ollama; declared existing files, disposable sessions and canonical Memory V2 only; [qualification](OPENCODE-RUNTIME-V1.md) |
-| Pi agentic RPC | COMPATIBILITY / DEPRECATION CANDIDATE | Installed worker closure, provider admission and sandbox qualification required |
+| OpenCode | SUPPORTED / DEFAULT PRIMARY | CLI 2.0.20 on macOS with local Ollama; default for new general Missions; declared existing files, disposable sessions and canonical Memory V2 only; [qualification](OPENCODE-RUNTIME-V1.md) |
+| Pi agentic RPC | COMPATIBILITY / ROLLBACK | Installed worker closure, provider admission and sandbox qualification required |
 | Claude Code | SUPPORTED / OPTIONAL FALLBACK | Host authentication and qualified runtime required; no new live proof in this pass |
 | Work/Codex | OPTIONAL EXTERNAL / LIVE UNQUALIFIED | Tested port/attempt envelope; no configured live-qualified private transport |
 | Cursor | EXPERIMENTAL | Observation only; governed workspace writes, continuation and result publication denied |

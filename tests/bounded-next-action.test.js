@@ -11,13 +11,13 @@ test('execution defaults off; immutable plan and conservative coding mode fail c
  const safe=register(e,[m],{mode:'auto_safe'});assert.equal((await e.tick(safe)).reason,'coding_requires_auto_development');
 });
 test('two Mission chain dispatches once, waits for acceptance and Decision, preserves restart and stops at budget',async t=>{
- const f=await fixture(t),a=f.create(),b=f.create({objective:'DECISION before updating the fixture.',allowed_files:['fixture.txt','strategy.txt'],criteria:[{id:'strategy',type:'exact_file',path:'strategy.txt',content:'A\n'}]});
+ const f=await fixture(t);f.bridge.boundedNextActions.enabled=false;const a=f.create(),b=f.create({objective:'DECISION before updating the fixture.',allowed_files:['fixture.txt','strategy.txt'],criteria:[{id:'strategy',type:'exact_file',path:'strategy.txt',content:'A\n'}]});
  const e=new BoundedNextAction(f.bridge,{enabled:true}),id=register(e,[a,b]);
  const first=await Promise.all([e.tick(id),e.tick(id)]);assert.equal(first.filter(v=>v.state==='dispatched').length,1);
  await f.settle(a.id);assert.equal((await e.tick(id)).state,'waiting');assert.equal(f.calls(),1);accept(f,a);
  assert.equal((await e.tick(id)).state,'dispatched');await f.settle(b.id,'waiting_for_operator');
  assert.equal((await e.tick(id)).state,'waiting');const decision=f.bridge.controlStore.decisions(b.id)[0];
- await f.reopen();const reopened=new BoundedNextAction(f.bridge,{enabled:true});assert.equal((await reopened.tick(id)).state,'waiting');assert.equal(f.calls(),2);
+ await f.reopen();f.bridge.boundedNextActions.enabled=false;const reopened=new BoundedNextAction(f.bridge,{enabled:true});assert.equal((await reopened.tick(id)).state,'waiting');assert.equal(f.calls(),2);
  f.bridge.missions.answer(decision.id,{request_id:'chain-answer',option_id:'A'});f.bridge.missions.answer(decision.id,{request_id:'chain-answer-duplicate',option_id:'B'});
  await f.settle(b.id);accept(f,b);assert.equal((await reopened.tick(id)).reason,'chain_complete');
  assert.equal(f.bridge.memory.db.prepare('SELECT count(*) n FROM cp_continuations WHERE decision_id=?').get(decision.id).n,1);assert.equal(f.calls(),3);assert.equal(f.inference(),0);

@@ -10,3 +10,6 @@ Status vocabulary: Proposed, Accepted, Rejected, Deprecated, Superseded. Archite
 - [0004 immutable metadata and erasable content](0004-memory-erasure-retention.md): Accepted; opaque migration and logical erasure implemented in candidate source.
 
 See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governance](../../GOVERNANCE.md).
+
+- [0005 OpenCode execution boundary](0005-opencode-execution-boundary.md): Accepted adapter contract.
+- [0006 default execution runtime](0006-default-runtime-cutover.md): Proposed; preserves required Pi typed/control dependencies.

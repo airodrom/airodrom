@@ -125,7 +125,7 @@ test('SIMULATION: the existing Level 1 coordinator journals an unavailable subsc
   const previous = { enabled: config.enabled, restrictedWorker: config.restrictedWorker.enabled, providerMode: config.providerMode, codexEnabled: config.codexSubscription.enabled };
   config.enabled = true; config.restrictedWorker.enabled = true; config.providerMode = CODEX_SUBSCRIPTION_MODE; config.codexSubscription.enabled = true;
   const db = new DatabaseSync(':memory:');
-  const bridge = new BridgeController({ level1ActivationEnabled: true, level1RestrictedWorkerEnabled: true, level1ProviderAdapter: adapter, level1DecisionVerifier: verifier });
+  const bridge = new BridgeController({ defaultRuntime: 'pi', level1ActivationEnabled: true, level1RestrictedWorkerEnabled: true, level1ProviderAdapter: adapter, level1DecisionVerifier: verifier });
   bridge.level1Flow = new Level1MissionFlow(db, { verifier });
   t.after(async () => { await bridge.shutdown(); db.close(); config.enabled = previous.enabled; config.restrictedWorker.enabled = previous.restrictedWorker; config.providerMode = previous.providerMode; config.codexSubscription.enabled = previous.codexEnabled; });
 

@@ -29,7 +29,7 @@ function bridge(t) {
   const root = temporary(t, 'pi-event-ledger-');
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const controller = new BridgeController({
+  const controller = new BridgeController({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'), sourceProfile: profile,
     executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true,
     taskTimeoutMs: 10_000, maxConcurrent: 1
@@ -97,7 +97,7 @@ test('the live create-to-continue sequence keeps request idempotency separate fr
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const dataDir = path.join(root, 'data');
-  const makeController = () => new BridgeController({
+  const makeController = () => new BridgeController({ defaultRuntime: 'pi',
     dataDir, sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'),
     allowFixtureWorker: true, taskTimeoutMs: 10_000, maxConcurrent: 1
   });

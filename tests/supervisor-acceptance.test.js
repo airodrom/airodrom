@@ -14,7 +14,7 @@ async function until(check) {
 async function setup(t) {
   const root = fs.mkdtempSync('/private/tmp/br-accept-'), profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const options = { dataDir: path.join(root, 'data'), sourceProfile: profile, executable: '/nonexistent/no-model-permitted' };
+  const options = { defaultRuntime:'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: '/nonexistent/no-model-permitted' };
   let b = await new Controller(options).initialize();
   const create=b.createTask.bind(b);b.createTask=(...args)=>{const task=create(...args);require('./fixtures/git-baseline.cjs')(task.workspace);return task;};
   t.after(async () => { await b.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });

@@ -8,7 +8,7 @@ const { canonicalHash, genesisHash, ledgerEnvelope, verifyLedgerChain } = requir
 const fields = require('../config/memory-retention-fields.json');
 const states = new WeakMap();
 const EXCLUDED = new Set(['personal_memories','memory_entries','project_memory_v2_missions','project_memory_v2_checkpoints','project_memory_v2_retention','project_memory_v2_forgotten']);
-const NON_CONTENT_ENUMS={cp_verifications:{result:new Set(['passed','failed','unavailable','operator_review'])}};
+const NON_CONTENT_ENUMS={authority_activation:{memory_state:new Set(['disabled','qualifying','enabled']),router_state:new Set(['disabled','qualifying','enabled'])},cp_mission_reviews:{result:new Set(['passed','failed','operator_review'])},cp_verifications:{result:new Set(['passed','failed','unavailable','operator_review'])}};
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PROTECTED_SCOPE=new Set(['project_id','operator_id','task_id','session_id','mission_id','run_id','dispatch_id','actor_id','actor_type','created_by_actor_id','approved_by_actor_id','proposed_by_actor_id','reviewed_by_actor_id','runtime_registry_id','runtime_id','runtime_class','agent_id','domain','scope','event_type']);
 const CORRELATION_SCOPE=['task_id','mission_id','run_id'];
@@ -49,6 +49,7 @@ function validateSchema(db,table) {
     for(const row of db.prepare(`SELECT ${keys.map(quoted).join(',')} FROM ${quoted(table)}`).all())if(keys.some(k=>!UUID.test(row[k]||'')))throw Error('Unknown dispatch envelope identity');
   }
   if(table==='cp_autonomy_claims')for(const row of db.prepare('SELECT request_id FROM cp_autonomy_claims').all())if(!/^autonomy:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.request_id||''))throw Error('Unknown autonomy request identity');
+  if(table==='cp_result_receipts')for(const row of db.prepare('SELECT event_key,run_id FROM cp_result_receipts').all())if(!UUID.test(row.run_id||'')||row.event_key!==`result:${row.run_id}`)throw Error('Unknown result receipt identity');
   return actual;
 }
 function permitRedaction(db,table) {
@@ -309,6 +310,7 @@ function redactRow(db,table,row,marker) {
   }
   if(table==='task_states') {
     const task=jsonValue(row.snapshot),keep=['id','sessionId','sessionDir','workspace','status','createdAt','updatedAt'];
+    if(['opencode','pi','claude_code','codex','cursor'].includes(task.executionAgent))keep.push('executionAgent');
     values.snapshot=JSON.stringify({...Object.fromEntries(Object.entries(task).filter(([k])=>keep.includes(k))),description:'[erased]',context:null,lastResult:null,events:[],retrievedMemory:[],content_state:'erased',erasure_generation:marker.generation});
   }
   if(!Object.keys(values).length){if(columns.some(c=>fields[table].classification[c.name]!=='A'))preventReplay(db,table,row,marker.generation,scope);return false;}

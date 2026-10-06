@@ -225,7 +225,7 @@ test('bridge controller records restart requested/verified ledger events without
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const dataDir = path.join(root, 'data');
-  const bridge = await new BridgeController({
+  const bridge = await new BridgeController({ defaultRuntime: 'pi',
     dataDir, sourceProfile: profile,
     executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true
   }).initialize();

@@ -27,12 +27,13 @@
     "typecheck:authority": "tsc -p tsconfig.authority.json",
     "typecheck:sdk": "tsc -p tsconfig.sdk.json",
     "verify": "node scripts/verify-public.cjs",
-    "test:hardening": "node scripts/run.cjs --test tests/work-execution-adapter.test.js tests/agent-dispatch.test.js tests/harness-codex.test.js tests/codex-completion-relay.test.js tests/mission-service.test.js tests/mission-program.test.js tests/execution-qualification.test.js tests/repository-verification.test.js tests/secret-diagnostic-boundaries.test.js tests/unified-agent-runtime.test.js tests/cursor-runtime-status.test.js tests/runtime-support-freeze.test.js tests/memory-erasure-lifecycle.test.js tests/blocker-closure.test.js tests/personal-memory.test.js tests/memory-privacy-completion.test.js tests/restricted-memory-vault.test.js tests/project-memory-v2.test.js tests/authority-plane.test.js tests/authority-integration.test.js tests/codex-memory-context.test.js tests/architecture-memory.test.js tests/memory.test.js tests/memory-content-erasure.test.js tests/memory-identity.test.js tests/memory-request-identity.test.js tests/memory-provenance-erasure.test.js tests/architecture-identity.test.js tests/memory-restore-authority-freshness.test.js tests/notification-content-erasure.test.js tests/retained-result-erasure.test.js tests/cp-request-identity.test.js tests/memory-identity-plan.test.js tests/chatgpt-events.test.js tests/orchestrator-mcp.test.js tests/task-health-slack.test.js tests/outbox-memory-barrier.test.js tests/harness-outbox.test.js tests/control-plane-api.test.js tests/control-plane-v2.test.js tests/host-reasoning-admission.test.js tests/reasoning-admission.test.js tests/agent-dispatch-identity.test.js tests/retained-read-identity.test.js tests/invocation-origin-erasure.test.js tests/provider-budget-identity.test.js tests/slack-identity.test.js tests/slack-gateway.test.js tests/slack-ci-flow.test.js tests/task-health.test.js tests/memory-identity-read-cache.test.js tests/public-release-policy.test.js tests/opencode-runtime.test.js tests/opencode-memory-v2.test.js",
+    "test:hardening": "node scripts/run.cjs --test tests/work-execution-adapter.test.js tests/agent-dispatch.test.js tests/harness-codex.test.js tests/codex-completion-relay.test.js tests/mission-service.test.js tests/mission-program.test.js tests/execution-qualification.test.js tests/repository-verification.test.js tests/secret-diagnostic-boundaries.test.js tests/unified-agent-runtime.test.js tests/cursor-runtime-status.test.js tests/runtime-support-freeze.test.js tests/memory-erasure-lifecycle.test.js tests/blocker-closure.test.js tests/personal-memory.test.js tests/memory-privacy-completion.test.js tests/restricted-memory-vault.test.js tests/project-memory-v2.test.js tests/authority-plane.test.js tests/authority-integration.test.js tests/codex-memory-context.test.js tests/architecture-memory.test.js tests/memory.test.js tests/memory-content-erasure.test.js tests/memory-identity.test.js tests/memory-request-identity.test.js tests/memory-provenance-erasure.test.js tests/architecture-identity.test.js tests/memory-restore-authority-freshness.test.js tests/notification-content-erasure.test.js tests/retained-result-erasure.test.js tests/cp-request-identity.test.js tests/memory-identity-plan.test.js tests/chatgpt-events.test.js tests/orchestrator-mcp.test.js tests/task-health-slack.test.js tests/outbox-memory-barrier.test.js tests/harness-outbox.test.js tests/control-plane-api.test.js tests/control-plane-v2.test.js tests/host-reasoning-admission.test.js tests/reasoning-admission.test.js tests/agent-dispatch-identity.test.js tests/retained-read-identity.test.js tests/invocation-origin-erasure.test.js tests/provider-budget-identity.test.js tests/slack-identity.test.js tests/slack-gateway.test.js tests/slack-ci-flow.test.js tests/task-health.test.js tests/memory-identity-read-cache.test.js tests/public-release-policy.test.js tests/opencode-runtime.test.js tests/opencode-memory-v2.test.js tests/default-runtime-cutover.test.js",
     "audit:dependencies": "npm audit --audit-level=low",
     "audit:licenses": "node scripts/audit-licenses.cjs",
     "package:check": "node scripts/package-check.cjs",
     "test:opencode": "node scripts/run.cjs --test tests/opencode-runtime.test.js tests/opencode-memory-v2.test.js",
-    "test:opencode:live": "AIRODROM_OPENCODE_LIVE=1 NODE_ENV=test node scripts/run.cjs --test tests/live-opencode.cjs"
+    "test:opencode:live": "AIRODROM_OPENCODE_LIVE=1 NODE_ENV=test node scripts/run.cjs --test tests/live-opencode.cjs",
+    "test:cutover": "node scripts/run.cjs --test tests/default-runtime-cutover.test.js"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -286,6 +287,8 @@
     "src/apps/opencode-adapter.js",
     "src/opencode-adapter.js",
     "docs/OPENCODE-RUNTIME-V1.md",
-    "docs/adr/0005-opencode-execution-boundary.md"
+    "docs/adr/0005-opencode-execution-boundary.md",
+    "src/default-runtime.js",
+    "docs/DEFAULT-RUNTIME-CUTOVER.md"
   ]
 }

@@ -27,12 +27,12 @@
 
   function responseFor(current) {
     if (current.safetyStop?.latched) return { text: 'This task stopped at a safety boundary. Review the blocked action above. No completed response is available for this turn.', empty: true };
-    if (current.busy) return { text: 'Pi is working. The completed response will appear here; follow its activity below.', empty: true };
+    if (current.busy) return { text: 'The runtime is working. The completed response will appear here; follow its activity below.', empty: true };
     if (current.status === 'waiting_for_provider') return { text: 'This task is waiting for its reasoning provider. No completed response is available for this turn.', empty: true };
     if (unsuccessfulStates.has(current.status)) return { text: 'This turn ended without a completed response. Review the task status and any error above.', empty: true };
     return { text: current.lastResult || 'Send a message to begin or continue this task.', empty: !current.lastResult };
   }
-  const activityNames = { agent_start: 'Pi started working', agent_end: 'Response finished', agent_settled: 'Task settled', turn_start: 'New step', turn_end: 'Step finished', message_start: 'Response started', message_end: 'Response updated', tool_execution_start: 'Action started', tool_execution_end: 'Action finished', compaction_start: 'Summarizing context', compaction_end: 'Context summary finished', extension_error: 'Safety extension reported an issue', auto_retry_start: 'Retry started', auto_retry_end: 'Retry finished' };
+  const activityNames = { agent_start: 'Runtime started working', agent_end: 'Response finished', agent_settled: 'Task settled', turn_start: 'New step', turn_end: 'Step finished', message_start: 'Response started', message_end: 'Response updated', tool_execution_start: 'Action started', tool_execution_end: 'Action finished', compaction_start: 'Summarizing context', compaction_end: 'Context summary finished', extension_error: 'Safety extension reported an issue', auto_retry_start: 'Retry started', auto_retry_end: 'Retry finished' };
 
   function node(tag, className, text) {
     const element = document.createElement(tag);
@@ -120,7 +120,7 @@
     const activeChat = current?.mission?.capabilityProfile === 'active-chat-local-ollama-smoke-v1';
     $('create-task-submit').disabled = !available || pending.has('create');
     $('send-prompt').disabled = !available || !current || busy || stopped || paused || current?.status === 'cancelled' || pending.has('prompt');
-    $('send-prompt').textContent = pending.has('prompt') ? 'Sending…' : stopped ? 'Review safety stop' : busy ? 'Pi is working…' : 'Send to Pi ↑';
+    $('send-prompt').textContent = pending.has('prompt') ? 'Sending…' : stopped ? 'Review safety stop' : busy ? 'The runtime is working…' : 'Send to runtime ↑';
     $('pause-task').hidden = !busy;
     $('pause-task').disabled = !available || pending.has('pause');
     $('resume-task').hidden = !paused || stopped;
@@ -183,7 +183,7 @@
     text('task-status', current.stalled ? 'May be stalled' : statusNames[current.status] || current.status);
     $('task-status').className = `badge${taskNeedsAttention(current) ? ' error' : ['approval_required', 'waiting_for_provider', 'waiting_for_operator'].includes(current.status) ? ' warning' : ''}`;
     text('heartbeat-value', current.health ? `${current.health.status} · ${current.health.score === null ? 'Unknown score' : current.health.score + '%'}` : current.heartbeatHealthy ? 'Healthy' : current.connected ? 'Delayed' : 'Not running');
-    text('heartbeat-detail', current.health ? `Process: ${current.health.processState} · Lease: ${current.health.leaseState} · Elapsed: ${current.health.elapsedMs === null ? 'unknown' : Math.floor(current.health.elapsedMs / 1000) + 's'} · Budget: ${current.health.budgetMs === null ? 'unknown' : Math.floor(current.health.budgetMs / 1000) + 's'} · Phase: ${current.health.phase || 'unknown'} · Heartbeat: ${healthAge(current.health.heartbeatAgeMs)} · Event: ${healthAge(current.health.eventAgeMs)} · Output: ${healthAge(current.health.outputAgeMs)} · ${current.health.reasons.join(', ') || (current.health.active ? 'Monitoring' : 'No active run')}` : current.lastHeartbeatAt ? `Last pulse ${elapsed(current.lastHeartbeatAt)}` : 'Pi starts when you send a message');
+    text('heartbeat-detail', current.health ? `Process: ${current.health.processState} · Lease: ${current.health.leaseState} · Elapsed: ${current.health.elapsedMs === null ? 'unknown' : Math.floor(current.health.elapsedMs / 1000) + 's'} · Budget: ${current.health.budgetMs === null ? 'unknown' : Math.floor(current.health.budgetMs / 1000) + 's'} · Phase: ${current.health.phase || 'unknown'} · Heartbeat: ${healthAge(current.health.heartbeatAgeMs)} · Event: ${healthAge(current.health.eventAgeMs)} · Output: ${healthAge(current.health.outputAgeMs)} · ${current.health.reasons.join(', ') || (current.health.active ? 'Monitoring' : 'No active run')}` : current.lastHeartbeatAt ? `Last pulse ${elapsed(current.lastHeartbeatAt)}` : 'Execution starts after authorized dispatch');
     const context = current.context;
     text('context-value', typeof context?.percent === 'number' ? `${context.percent.toLocaleString(undefined, { maximumFractionDigits: 1 })}%` : '—');
     $('context-progress').value = typeof context?.percent === 'number' ? Math.min(100, Math.max(0, context.percent)) : 0;
@@ -192,7 +192,7 @@
     text('compactions-detail', current.lastCompaction ? `Latest ${elapsed(current.lastCompaction.at)}` : 'Session history summaries');
     const alert = $('task-alert');
     alert.hidden = !current.error && !current.stalled && !current.lastRunBlocked && !current.safetyStop?.latched;
-    alert.textContent = current.safetyStop?.latched ? `SAFETY STOP LATCHED: ${current.safetyStop.reason} An authenticated operator must review and explicitly resolve this stop. No new session or tool can continue the mission.` : current.error || (current.lastRunBlocked ? 'An action was blocked before execution. Review its approval status below; the model response is not proof that the action ran.' : current.stalled ? 'No recent task activity. Pi may still be working; check the heartbeat or stop the task.' : '');
+    alert.textContent = current.safetyStop?.latched ? `SAFETY STOP LATCHED: ${current.safetyStop.reason} An authenticated operator must review and explicitly resolve this stop. No new session or tool can continue the mission.` : current.error || (current.lastRunBlocked ? 'An action was blocked before execution. Review its approval status below; the model response is not proof that the action ran.' : current.stalled ? 'No recent task activity. The runtime may still be working; check the heartbeat or stop the task.' : '');
     const activeChat = current.mission?.capabilityProfile === 'active-chat-local-ollama-smoke-v1';
     $('active-chat-operator').hidden = !activeChat;
     if (activeChat) {
@@ -238,7 +238,7 @@
     addFact(facts, 'Cumulative budget', current.mission?.budget ? `${Math.round((current.mission.used?.runtimeMs || 0) / 1000)}s / ${Math.round(current.mission.budget.maxRuntimeMs / 1000)}s · ${current.mission.used?.actions || 0} / ${current.mission.budget.maxActions} actions · ${current.mission.used?.retries || 0} / ${current.mission.budget.maxRetries} retries` : '—');
     if (current.previousSessionId) addFact(facts, 'Recovery lineage', `${current.previousSessionId} → ${current.sessionId}`);
     addFact(facts, 'Live autonomy', state?.bridge?.missionAutomation?.liveGrantsEnabled ? 'Enabled by operator' : 'Disabled · local simulations only');
-    addFact(facts, 'Session file', current.sessionFile || 'Created when Pi starts');
+    addFact(facts, 'Session file', current.sessionFile || 'Created when the runtime starts');
     addFact(facts, 'Session storage', bytes(current.sessionBytes));
     addFact(facts, 'Last activity', time(current.lastActivityAt));
     addFact(facts, 'Context summaries', current.lastCompaction ? JSON.stringify(current.lastCompaction, null, 2) : 'None recorded');
@@ -266,7 +266,7 @@
         approve.addEventListener('click', () => action(approval.id, async () => {
           approve.disabled = true;
           await api(`/api/approvals/${encodeURIComponent(approval.id)}/approve`, { method: 'POST', body: {} });
-          tell('Approval granted. Pi will retry this exact action once.');
+          tell('Approval granted. The runtime will retry this exact action once.');
           await poll();
         }));
         buttons.append(approve);
@@ -397,13 +397,13 @@
     void action('create', async () => {
       const workspace = $('task-workspace').value.trim();
       if (workspace && !workspace.startsWith('/')) throw new Error('Enter an absolute folder path starting with /.');
-      const created = await api('/api/tasks', { method: 'POST', body: { description: $('task-description').value.trim(), ...(workspace ? { workspace } : {}), includeSharedMemory: $('task-shared-memory').checked } });
+      const created = await api('/api/tasks', { method: 'POST', body: { description: $('task-description').value.trim(), executionAgent: $('task-runtime').value, ...(workspace ? { workspace } : {}), includeSharedMemory: $('task-shared-memory').checked } });
       selectedId = created.id;
       $('new-task-form').reset();
       $('new-task-panel').hidden = true;
       await poll();
       await loadMemory();
-      tell('Task created. Send Pi its first instruction.');
+      tell('Task created. Use its bounded Mission route or send a compatibility instruction.');
       $('prompt-message').focus();
     });
   });
@@ -416,7 +416,7 @@
     void action('prompt', async () => {
       await api(`/api/tasks/${encodeURIComponent(id)}/prompt`, { method: 'POST', body: { message } });
       if (selectedId === id) $('prompt-message').value = '';
-      tell('Message sent. Pi is working on this task.');
+      tell('Message sent. The runtime is working on this task.');
       await poll();
     });
   });

@@ -20,7 +20,7 @@ async function bridge(t, env = {}) {
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const previous = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]]));
   Object.assign(process.env, env);
-  const controller = new Controller({ dataDir: path.join(root, 'data'), sourceProfile: profile, executable: fixture, allowFixtureWorker: true });
+  const controller = new Controller({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: fixture, allowFixtureWorker: true });
   t.after(async () => {
     await deadline(controller.shutdown(), 5000);
     for (const [k, v] of Object.entries(previous)) v === undefined ? delete process.env[k] : process.env[k] = v;

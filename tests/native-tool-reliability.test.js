@@ -13,7 +13,7 @@ async function fixture(t) {
   const profile = path.join(root, 'profile');
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({
+  const bridge = await new BridgeController({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'), sourceProfile: profile,
     executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true
   }).initialize();

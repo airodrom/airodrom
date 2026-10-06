@@ -3,7 +3,7 @@
   "sources": [
     {
       "path": "docs/harness/agent-model.md",
-      "source_hash": "54a4a4ae07bd0aa4622bd2db0609cfa6309f1368293700e5cab66b47be8d2c90",
+      "source_hash": "8dfe1fd9f5daa162086df4a8415735a4aa4ba30cef834e28ffb673c4458ee30c",
       "source_type": "canonical_doc",
       "trust": "canonical"
     },
@@ -159,6 +159,17 @@
       "tags": [
         "memory",
         "security"
+      ]
+    },
+    {
+      "key": "13-default-runtime",
+      "category": "architecture_decision",
+      "source_ref": "docs/harness/agent-model.md",
+      "content": "OpenCode is the default primary execution runtime for new bounded general Missions. Pi remains explicit compatibility/rollback; typed plans and independent verification retain their Pi identity.",
+      "tags": [
+        "agents",
+        "runtime",
+        "rollback"
       ]
     }
   ]

@@ -29,7 +29,7 @@ function sandbox(t) {
 function createBridge(t, { now = () => Date.now() } = {}) {
   const root = sandbox(t);
   const authority = new MissionAuthority({ authorityDir: path.join(root, 'authority'), now });
-  const bridge = new BridgeController({ dataDir: path.join(root, 'runtime'), missionAuthority: authority });
+  const bridge = new BridgeController({ defaultRuntime: 'pi', dataDir: path.join(root, 'runtime'), missionAuthority: authority });
   bridge.tasks = new TaskSessionManager(bridge.dataDir);
   bridge.config = { provider: 'ollama', model: 'qwen3-coder:30b', profile: path.join(root, 'profile') };
   return { root, authority, bridge };

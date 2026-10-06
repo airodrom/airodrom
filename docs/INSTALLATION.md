@@ -6,7 +6,9 @@ Verify the archive against the separately reviewed checksums. Inspect its file l
 
 ## Operator setup
 
-Prepare a private local Pi source profile with reviewed non-secret settings and model metadata. Authenticate optional external agents through their supported private mechanisms. Keep auth files mode 0600 under private directories, outside Git and release artifacts. Do not put keys in shell arguments or share raw runtime discovery.
+OpenCode 2.0.20 and the local Ollama `qwen3-coder:30b` model are the default bounded execution surface. Availability is checked before dispatch; unavailable execution waits for review. See [cutover and rollback](DEFAULT-RUNTIME-CUTOVER.md).
+
+Prepare a private local Pi compatibility source profile with reviewed non-secret settings and model metadata. Authenticate optional external agents through their supported private mechanisms. Keep auth files mode 0600 under private directories, outside Git and release artifacts. Do not put keys in shell arguments or share raw runtime discovery.
 
 Sandboxed worker execution additionally requires an operator-owned `config/safe-autonomy-manifest.json` containing exact executable, runtime library, package closure, input and job pins for the installed host. The distributed `.example.json` is deliberately unconfigured and grants nothing. It is not safe to copy another host's pins or replace mismatches with wildcard paths. Have a competent operator build and review the exact inventory before attempting runtime qualification. Registered verifier tools start with an empty configuration.
 

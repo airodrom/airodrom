@@ -401,7 +401,7 @@ async function controller(t, env) {
   const root = fs.realpathSync(fs.mkdtempSync('/private/tmp/cap-v2b-'));
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({ dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true, capabilityHost: env.host }).initialize();
+  const bridge = await new BridgeController({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true, capabilityHost: env.host }).initialize();
   env.host.saveTask = item => bridge.tasks.save(item);
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   return bridge;

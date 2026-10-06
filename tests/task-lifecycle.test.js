@@ -52,7 +52,7 @@ async function bridge(t, env = {}, options = {}) {
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const previous = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]]));
   Object.assign(process.env, env);
-  const controller = new Controller({
+  const controller = new Controller({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'),
     sourceProfile: profile,
     executable: fixture,

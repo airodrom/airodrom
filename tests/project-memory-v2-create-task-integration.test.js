@@ -13,7 +13,7 @@ test('createTask persists mission identity into Memory V2', t => {
   // inherits the checkout's repository state (including a detached PR HEAD).
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'm2c-'));
   const memory = new MemoryStore(path.join(root, 'memory.sqlite'));
-  const bridge = new Bridge({ dataDir: root });
+  const bridge = new Bridge({ defaultRuntime: 'pi', dataDir: root });
   bridge.memory = memory;
   bridge.tasks = new TaskSessionManager(root, memory.db);
   bridge.projectMemoryV2 = new ProjectMemoryV2Adapter({ db: memory.db });

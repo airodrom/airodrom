@@ -108,7 +108,7 @@ test('SIMULATION: LEVEL1_RESTRICTED_WORKER uses the normal Level 1 task/event/pr
     }
   });
   const authority = new MissionAuthority({ fixtureOnly: true });
-  const bridge = new Controller({
+  const bridge = new Controller({ defaultRuntime: 'pi',
     dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(root, 'must-not-run-pi'),
     missionAuthority: authority, level1ActivationEnabled: true, level1RestrictedWorkerEnabled: true,
     level1ProviderAdapter: adapter, level1DecisionVerifier: verifier
