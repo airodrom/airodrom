@@ -1,8 +1,23 @@
 # Airodrom
 
+> [!CAUTION]
+> 🚧 **PROJECT STATUS: PRE-RELEASE — DEVELOPMENT PAUSED FOR RUNTIME MIGRATION**
+>
+> ⏸️ Airodrom is temporarily paused while the runtime layer is being migrated and re-qualified.
+>
+> ❌ **Not recommended for installation or production use.**
+>
+> 🔬 The repository is public for architecture review, development visibility, and ongoing engineering work.
+>
+> ✅ Core control-plane, Memory V2, verification, Acceptance/Settlement, and public hardening work are preserved.
+>
+> 🔄 Current focus: replacing the original Pi-centered runtime path with a cleaner runtime-adapter architecture, beginning with OpenCode qualification.
+>
+> 📦 No supported production release has been published yet.
+
 Airodrom coordinates bounded local work through a durable Pi control plane. Missions carry immutable scope, budgets and verification criteria. Agent results enter an untrusted inbox; independent verification and Acceptance precede local Settlement. Memory supplies authorized reference context and never grants permissions.
 
-This is the **1.0.0-rc.1 source candidate**. It is private and unactivated. The supported distribution is a reviewed source archive; package publication, daemon installation and production activation require separate owner decisions.
+**Status: Pre-release / development paused for runtime migration. Not recommended for installation or production use.** The **1.0.0-rc.1 source candidate** remains unactivated; package publication, daemon installation and production activation require separate owner decisions.
 
 ## Runtime support
 
@@ -16,7 +31,7 @@ This is the **1.0.0-rc.1 source candidate**. It is private and unactivated. The 
 
 Agents perform work; reasoning providers supply inference. Model selection and agent text cannot change execution policy. DeepSeek remains disabled/auth_required. See the [runtime matrix](docs/RUNTIME-SUPPORT-MATRIX.md).
 
-## Review and install locally
+## Source review and development validation
 
 Use a compatible Node **22.23.3 or later in the 22.x line**, with SQLite and FTS5, and npm 10.9.9. The audited host is macOS arm64; other operating systems are unqualified. Extract the source archive into an empty private directory, verify its checksum and file manifest, then run:
 
