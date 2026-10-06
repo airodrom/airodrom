@@ -21,6 +21,13 @@ description = "Non-secret canonical invariant key; exact identifier only"
 condition = "AND"
 paths = ["(^|/)config/architecture\\-memory\\-sources\\-v1\\.json$"]
 regexTarget = "secret"
+regexes = ["^10\\-bounded\\-execution$"]
+
+[[allowlists]]
+description = "Non-secret canonical invariant key; exact identifier only"
+condition = "AND"
+paths = ["(^|/)config/architecture\\-memory\\-sources\\-v1\\.json$"]
+regexTarget = "secret"
 regexes = ["^12\\-anthropic\\-observation$"]
 
 [[allowlists]]

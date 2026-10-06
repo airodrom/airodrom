@@ -12,7 +12,9 @@ The complete local tree produced 24 Gitleaks findings: 7 reviewed source false p
 
 ## Public candidate policy
 
-The clean candidate contains only explicit source files; original private refs/history and accounts/session/incident artifacts are never published. Gitleaks default rules are extended, with seven exact path-and-value scoped exceptions for four non-secret canonical keys and known synthetic rejection fixtures. No file-wide or detector-wide bypass is used. Private-path/session boundaries are separately checked by `npm run verify`; synthetic neutral path examples remain only in denial tests and upstream authorship remains in required notices.
+The clean candidate contains only explicit source files; original private refs/history and accounts/session/incident artifacts are never published. Gitleaks default rules are extended, with eight exact path-and-value scoped exceptions for five non-secret canonical keys and known synthetic rejection fixtures. No file-wide or detector-wide bypass is used. Private-path/session boundaries are separately checked by `npm run verify`; synthetic neutral path examples remain only in denial tests and upstream authorship remains in required notices.
+
+On October 6, 2026, the runtime removal changed a canonical architecture invariant key to `10-bounded-execution`. The history scanner classified this public metadata identifier as `generic-api-key`. Its exception matches only that complete identifier in `config/architecture-memory-sources-v1.json`; adjacent content and all other values remain scanned.
 
 Fresh candidate directory and intended-history scans report zero unresolved findings under that reviewed policy. Distribution archives/packages are separately inventoried and scanned after extraction. Scanner matches and credential values are not included in public reports. Detection cannot prove the absence of arbitrary opaque secrets, and the private repository itself must not be made public.
 
@@ -20,6 +22,7 @@ Fresh candidate directory and intended-history scans report zero unresolved find
 
 | File | Rule | Disposition |
 | --- | --- | --- |
+| `config/architecture-memory-sources-v1.json` | `generic-api-key` | Non-secret canonical invariant key; exact identifier only |
 | `config/architecture-memory-sources-v1.json` | `generic-api-key` | Non-secret canonical invariant key; exact identifier only |
 | `config/architecture-memory-sources-v1.json` | `generic-api-key` | Non-secret canonical invariant key; exact identifier only |
 | `config/architecture-memory-sources-v1.json` | `generic-api-key` | Non-secret canonical invariant key; exact identifier only |
