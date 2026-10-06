@@ -1,13 +1,14 @@
 # Runtime support matrix
 
-Support is product scope, not execution authority or current availability. Candidate validation uses synthetic stores, transport stubs and optional installed-runtime fixture simulations. No live provider or production operation is qualified by this pass.
+Support is product scope, not execution authority or current availability. Candidate validation uses synthetic stores, transport stubs and optional installed-runtime fixture simulations. The OpenCode pass adds isolated live local-runtime qualification with synthetic personal Memory V2. Production remains unactivated.
 
 | Component | Tier | Dispatch and qualification boundary |
 | --- | --- | --- |
 | Pi local control and typed capabilities | REQUIRED | Immutable Mission scope, protected approvals, lease and independent verification gates |
-| Pi agentic RPC | Local optional path | Installed worker closure, provider admission and sandbox qualification required |
-| Claude Code | SUPPORTED, optional | Host authentication and qualified runtime required; no new live proof in this pass |
-| Work/Codex | OPTIONAL | Tested port/attempt envelope; no configured live-qualified private transport |
+| OpenCode | SUPPORTED / PRIMARY RUNTIME CANDIDATE | CLI 2.0.20 on macOS with local Ollama; declared existing files, disposable sessions and canonical Memory V2 only; [qualification](OPENCODE-RUNTIME-V1.md) |
+| Pi agentic RPC | COMPATIBILITY / DEPRECATION CANDIDATE | Installed worker closure, provider admission and sandbox qualification required |
+| Claude Code | SUPPORTED / OPTIONAL FALLBACK | Host authentication and qualified runtime required; no new live proof in this pass |
+| Work/Codex | OPTIONAL EXTERNAL / LIVE UNQUALIFIED | Tested port/attempt envelope; no configured live-qualified private transport |
 | Cursor | EXPERIMENTAL | Observation only; governed workspace writes, continuation and result publication denied |
 | Generic Cloud | UNSUPPORTED | No concrete runtime; receives no dispatch/context |
 | Reasoning providers | Separate from agents | Privacy/cost admission; inference grants no execution authority; DeepSeek disabled/auth_required |

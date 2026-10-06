@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..');
 const expected=JSON.parse(fs.readFileSync(path.join(root,'release-files.json'),'utf8'));
 const excluded=new Set(['node_modules','.git','.runtime','data','work','outputs']);
 const files=[];const errors=[];
-function visit(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,e.name),rel=path.relative(root,file).split(path.sep).join('/');if(e.isSymbolicLink()){errors.push({file:rel,rule:'symlink'});continue;}if(e.isDirectory()){if(!excluded.has(e.name)&&!e.name.startsWith('.tmp'))visit(file);}else if(e.isFile()&&!rel.endsWith('.log')&&rel!=='config/safe-autonomy-manifest.json')files.push(rel);}}
+function visit(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(dir===root&&e.name==='.git')continue;const file=path.join(dir,e.name),rel=path.relative(root,file).split(path.sep).join('/');if(e.isSymbolicLink()){errors.push({file:rel,rule:'symlink'});continue;}if(e.isDirectory()){if(!excluded.has(e.name)&&!e.name.startsWith('.tmp'))visit(file);}else if(e.isFile()&&!rel.endsWith('.log')&&rel!=='config/safe-autonomy-manifest.json')files.push(rel);}}
 visit(root);
 for(const f of files)if(!expected.includes(f))errors.push({file:f,rule:'not_allowlisted'});
 for(const f of expected)if(!files.includes(f))errors.push({file:f,rule:'missing'});

@@ -348,6 +348,7 @@ class BridgeController extends EventEmitter {
       this.agentRouter.register(this.codexAdapter);
       this.agentRouter.register(new (require('./apps/claude-code-adapter').ClaudeCodeAdapter)(this));
       this.cursorAdapter=new (require('./apps/cursor-adapter').CursorAdapter)();this.agentRouter.register(this.cursorAdapter);
+      this.opencodeAdapter=new (require('./apps/opencode-adapter').OpenCodeAdapter)(this,this.options.opencode||{});this.agentRouter.register(this.opencodeAdapter);
       this.codexRelay=new (require('./codex-completion-relay').CodexCompletionRelay)(this);
       this.agentDispatch=new (require('./agent-dispatch').AgentDispatch)(this,this.options.agentDispatch||{});
       this.controlStore.recover();

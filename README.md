@@ -24,8 +24,10 @@ Airodrom coordinates bounded local work through a durable Pi control plane. Miss
 | Runtime | Tier | Candidate boundary |
 | --- | --- | --- |
 | Pi local control and typed execution | REQUIRED | Core source and synthetic regression coverage; host pins required for sandboxed execution |
-| Claude Code | SUPPORTED, optional | Adapter contract; operator authentication and runtime qualification required |
-| Work/Codex | OPTIONAL | External transport contract tested with stubs; configured live port unqualified |
+| OpenCode | SUPPORTED / PRIMARY RUNTIME CANDIDATE | CLI 2.0.20, macOS and local Ollama; isolated live synthetic Mission and Memory V2 qualification; default unchanged |
+| Pi agentic runtime | COMPATIBILITY / DEPRECATION CANDIDATE | Retained for rollback; local control and verification remain required |
+| Claude Code | SUPPORTED / OPTIONAL FALLBACK | Adapter contract; operator authentication and runtime qualification required |
+| Work/Codex | OPTIONAL EXTERNAL / LIVE UNQUALIFIED | External transport contract tested with stubs; configured live port unqualified |
 | Cursor | EXPERIMENTAL | Observation only; governed execution denied |
 | Generic Cloud | UNSUPPORTED | No dispatch or context transfer |
 
