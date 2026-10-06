@@ -119,7 +119,7 @@ test('MCP schemas: create_task exposes array capability_scopes from the V2 polic
   assert.equal(create.properties.capability_scopes.type, 'array');
   assert.equal(create.properties.capability_scopes.maxItems, 16);
   assert.deepEqual(create.properties.capability_scopes.items, { type: 'string', enum: policy.taskScopes });
-  assert.deepEqual(create.properties.mission_mode.enum, ['active_chat_local_smoke', 'orchestrator', 'reasoning_only']);
+  assert.deepEqual(create.properties.mission_mode.enum, ['orchestrator', 'reasoning_only']);
   const invoke = TOOLS.find(tool => tool.name === 'capability_invoke');
   assert.deepEqual(invoke.inputSchema.required, ['task_id', 'name', 'request_id']);
   assert.equal(invoke.inputSchema.properties.input.type, 'object');

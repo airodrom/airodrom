@@ -78,7 +78,7 @@ test('true reasoning failure durably waits for Ollama, releases lease, survives 
   assert.equal(recovered.providerWait.reason, 'ollama_unavailable');
   const policyTask = { id: task.id };
   assert.equal(f.bridge.nativeExecution.providerFailure(policyTask, Error('Mission grant does not authorize local inference')), false);
-  assert.equal(f.bridge.nativeExecution.providerFailure(policyTask, Error('Pi exited before the task settled')), false);
+  assert.equal(f.bridge.nativeExecution.providerFailure(policyTask, Error('Worker exited before the task settled')), false);
 });
 
 test('Claude Mission, Decision exact continuation and verification/acceptance bypass unavailable Ollama', async t => {
@@ -162,10 +162,15 @@ test('typed Git, file and status operations bypass Ollama; protected paths remai
   assert.equal(f.inference(), 0);
 });
 
-test('Pi deterministic acceptance settles with unavailable Ollama and no runtime startup', async t => {
+test('Host deterministic acceptance settles with unavailable Ollama and no runtime startup', async t => {
   const f = await isolated(t); f.bridge.config.provider = 'ollama';
-  const task = f.bridge.tasks.get(f.bridge.createTask('native acceptance', { acceptanceMode: 'incomplete_once', acceptanceCriteria: ['runtime:fresh-session-continuation'] }).id);
-  await f.bridge.prompt(task.id, 'Run deterministic acceptance');
+  f.bridge.defaultRuntime = 'opencode';
+  const created = await f.mcp.call('create_task', { description: 'native acceptance', message: 'Run deterministic acceptance', request_id: 'native-acceptance-create', acceptance_mode: 'incomplete_once', acceptance_criterion: 'runtime:fresh-session-continuation' });
+  const task = f.bridge.tasks.get(created.task_id);
+  for (let n=0;n<100 && f.bridge.leases.size;n++) await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(task.executionAgent,'host');
+  assert.equal(task.mission.runtimeEvidence.initial.outcome,'incomplete');
+  assert.throws(()=>f.bridge.createTask('wrong runtime', { executionAgent:'opencode', acceptanceMode:'incomplete_once', acceptanceCriteria:['runtime:fresh-session-continuation'] }), /requires Airodrom host primitives/);
   assert.equal(f.inference(), 0);
   assert.equal(f.bridge.runtimes.size, 0);
   assert.ok(f.bridge.ledger.listTaskEvents(task.id, { limit: 500 }).events.some(e => e.metadata?.dispatch_path === 'verification_native'));

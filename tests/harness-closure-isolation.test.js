@@ -7,7 +7,7 @@ const { HELPER } = require('../src/slack-credentials');
 const { HostExecutor } = require('../src/host-exec');
 test('ordinary and trusted workers deny helper before exec through every process API and alias', { skip: process.platform !== 'darwin' }, t => {
   assert.ok(fs.existsSync(HELPER), 'dedicated helper must exist for real OS regression');
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pi-helper-boundary-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'host-helper-boundary-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const link = path.join(root, 'linked'), copy = path.join(root, 'renamed'), hard = path.join(root, 'hardlink');
   fs.symlinkSync(HELPER, link); fs.copyFileSync(HELPER, copy); fs.chmodSync(copy, 0o700); fs.linkSync(HELPER, hard);
@@ -22,12 +22,12 @@ test('ordinary and trusted workers deny helper before exec through every process
     const file = path.join(root, `worker-${trustedDeveloperMode}.sb`); fs.writeFileSync(file, profile);
     for (const [label, target] of attempts) for (const api of ['spawnSync', 'execFileSync', 'execSync']) {
       const code = `const cp=require('child_process');try { const f=${JSON.stringify(target)}; let r; if(${JSON.stringify(api)}==='spawnSync'){r=cp.spawnSync(f,['probe','invalid-account'],{stdio:'ignore'});process.exit(r.status===64?64:r.error?0:2);} else if(${JSON.stringify(api)}==='execFileSync')cp.execFileSync(f,['probe','invalid-account'],{stdio:'ignore'});else cp.execSync("'"+f+"' probe invalid-account",{stdio:'ignore'});process.exit(2);}catch(e){process.exit(e.status===64?64:0)}`;
-      const child = spawnSync('/usr/bin/sandbox-exec', ['-f', file, process.execPath, '-e', code], { cwd: path.dirname(HELPER), env: { PATH: `${path.dirname(HELPER)}:/usr/bin:/bin`, PI_SLACK_KEYCHAIN_HELPER: HELPER, BRIDGE_EXECUTION_DOMAIN: 'control_plane_internal', AIRODROM_TRUSTED_DEV_MODE: '1' }, encoding: 'utf8' });
+      const child = spawnSync('/usr/bin/sandbox-exec', ['-f', file, process.execPath, '-e', code], { cwd: path.dirname(HELPER), env: { PATH: `${path.dirname(HELPER)}:/usr/bin:/bin`, AIRODROM_SLACK_KEYCHAIN_HELPER: HELPER, BRIDGE_EXECUTION_DOMAIN: 'control_plane_internal', AIRODROM_TRUSTED_DEV_MODE: '1' }, encoding: 'utf8' });
       assert.equal(child.status, 0, `${label}/${api}/trusted=${trustedDeveloperMode}: ${child.stderr}`);
     }
-    const shell = spawnSync('/usr/bin/sandbox-exec', ['-f', file, '/bin/sh', '-c', '"$PI_SLACK_KEYCHAIN_HELPER" probe invalid-account'], { env: { PI_SLACK_KEYCHAIN_HELPER: HELPER }, encoding: 'utf8' });
+    const shell = spawnSync('/usr/bin/sandbox-exec', ['-f', file, '/bin/sh', '-c', '"$AIRODROM_SLACK_KEYCHAIN_HELPER" probe invalid-account'], { env: { AIRODROM_SLACK_KEYCHAIN_HELPER: HELPER }, encoding: 'utf8' });
     assert.notEqual(shell.status, 64); assert.match(shell.stderr, /Operation not permitted/);
-    const read = spawnSync('/usr/bin/sandbox-exec', ['-f', file, '/bin/sh', '-c', 'cat "$PI_SLACK_KEYCHAIN_HELPER" >/dev/null'], { env: { PATH: '/usr/bin:/bin', PI_SLACK_KEYCHAIN_HELPER: HELPER }, encoding: 'utf8' });
+    const read = spawnSync('/usr/bin/sandbox-exec', ['-f', file, '/bin/sh', '-c', 'cat "$AIRODROM_SLACK_KEYCHAIN_HELPER" >/dev/null'], { env: { PATH: '/usr/bin:/bin', AIRODROM_SLACK_KEYCHAIN_HELPER: HELPER }, encoding: 'utf8' });
     assert.notEqual(read.status, 0, 'helper bytes cannot be copied or interpreted');
   }
 });
@@ -40,7 +40,7 @@ test('generic host executor cannot confer helper authority via allowlist, copied
   assert.equal(calls, 0);
 });
 test('host capability interpreter children inherit denial before helper exec', { skip: process.platform !== 'darwin' }, async t => {
-  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'pi-host-boundary-')));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'host-boundary-')));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const copy=path.join(root,'renamed');fs.copyFileSync(HELPER,copy);fs.chmodSync(copy,0o700);
   const host=new HostExecutor({allowed:[process.execPath,'/bin/sh','/missing/fixed-tool']});
   for(const file of [HELPER,copy]){

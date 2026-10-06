@@ -32,16 +32,16 @@ test('actual stdio tools/list exposes the canonical twenty-one tools, optional a
   assert.equal(schema.properties.acceptance_criterion.type, 'string');
   assert.equal(schema.properties.acceptance_criterion.maxLength, 500);
   assert.deepEqual(schema.properties.acceptance_mode.enum, ['incomplete_once']);
-  assert.deepEqual(schema.properties.mission_mode.enum, ['active_chat_local_smoke', 'orchestrator', 'reasoning_only']);
+  assert.deepEqual(schema.properties.mission_mode.enum, ['orchestrator', 'reasoning_only']);
   assert.equal(schema.properties.capability_scopes.type, 'array');
   assert.deepEqual(schema.properties.capability_scopes.items.enum, ['repo', 'developer_environment', 'personal', 'mac_local', 'communications', 'calendar', 'system_readonly']);
   const args = { description: 'Schema validation', message: 'Validate the schema.', request_id: 'schema-validation' };
   assert.doesNotThrow(() => validate('create_task', args));
   assert.doesNotThrow(() => validate('create_task', { ...args, workspace: 'isolated', acceptance_mode: 'incomplete_once', acceptance_criterion: 'runtime:fresh-session-continuation' }));
-  assert.doesNotThrow(() => validate('create_task', { ...args, mission_mode: 'active_chat_local_smoke', workspace: 'isolated' }));
+  assert.throws(() => validate('create_task', { ...args, mission_mode: 'active_chat_local_smoke', workspace: 'isolated' }), /Invalid mission_mode/);
 });
 
-test('live create_task rejects an invalid acceptance pairing before creating task data', { skip: process.env.PI_MCP_VALIDATE_LIVE !== '1' }, () => {
+test('live create_task rejects an invalid acceptance pairing before creating task data', { skip: process.env.AIRODROM_MCP_VALIDATE_LIVE !== '1' }, () => {
   // Explicit opt-in: the running bridge validates this request but cannot create a task.
   const result = exchange('tools/call', { name: 'create_task', arguments: {
     description: 'Schema validation only', message: 'Validate only.', request_id: 'schema-validation-invalid-pair',

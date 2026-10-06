@@ -6,7 +6,7 @@ Airodrom host primitives own typed plans (`airodrom.typed-coding`), broker execu
 
 Historical Pi task/run/Mission identities remain readable; no alias maps them to an executable runtime. Tasks predating an execution identity are historical removed-runtime records. Resume, dispatch, capability invocation, context construction and publication deny removed identities. Existing sessions are never imported into canonical memory. Signed older typed plans must be registered again as a new host plan; immutable prior envelopes are not rewritten. No user data is deleted.
 
-The old Active Chat local-model smoke is optional and retired. The browser/CLI OpenCode conversation profile and synthetic Memory V2 qualification cover supported reasoning. The Level 1 signed deterministic read remains model-independent. Ollama remains a provider/control-plane capability.
+The old Active Chat local-model smoke is optional and retired. Its creation mode is removed from the MCP schema; historical removed-runtime grants and continuations are denied. The deterministic acceptance fixture selects Airodrom host primitives without starting any agent. The browser/CLI OpenCode conversation profile and synthetic Memory V2 qualification cover supported reasoning. The Level 1 signed deterministic read remains model-independent. Ollama remains a provider/control-plane capability.
 
 The following retained names have zero Pi runtime dependency:
 
@@ -45,7 +45,7 @@ Existing standalone service configurations must explicitly use the canonical nam
 
 ## Fresh removal validation
 
-The removal implementation was validated from the verified main baseline `00face4e3e7e5a73163a32d746cd815f7418de8c`. Fresh local results: full repository 1,343 passed, 2 prerequisite skips, zero failures; hardening 748 passed; focused runtime/CLI/Memory/restore/Mission/lifecycle checks 108 passed; removal regressions 14 passed and 224 active files scanned with 45 exact legacy lines, zero errors. Suites overlap and must not be added.
+The removal implementation was validated from the verified main baseline `00face4e3e7e5a73163a32d746cd815f7418de8c`. Fresh local results: full repository 1,343 passed, 2 prerequisite skips, zero failures; hardening 748 passed; focused runtime/CLI/Memory/restore/Mission/lifecycle checks 129 passed; removal regressions 14 passed and 224 active files scanned with 45 exact legacy lines, zero errors. Suites overlap and must not be added.
 
 Three installed OpenCode 2.0.20 synthetic live checks passed with Pi absent from the command path: read/edit/artifact provenance and independent host verification/Acceptance/Settlement; canonical Memory V2 remember, bounded retrieve, correction, forget/erase, stale-context denial and restore non-resurrection; timeout/cancellation. The isolated no-argument CLI launched, executed OpenCode questions and completed synthetic memory correction/forget. No real user memory was inspected.
 

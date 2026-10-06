@@ -76,12 +76,16 @@ test('SIMULATION: Task B remains undispatched until a host-recorded Task A broke
   const mcp = new McpTools(bridge, { authenticatedConnection: () => connection });
   const prompts = [];
   bridge.prompt = async (id, message, options) => { prompts.push({ id, message, options }); };
-  const created = await mcp.call('create_task', activeArgs('active-create-0001'), { name: 'untrusted-client-name', version: '1' });
-  const task = bridge.tasks.get(created.task_id);
+  // Construct only the internal policy fixture; the retired mode is absent from the public schema.
+  const created = bridge.createActiveChatTask();
+  const task = bridge.tasks.get(created.id);
+  task.source = { transport: 'mcp', request_id: 'active-create-0001', client_reported: { name: 'untrusted-client-name', version: '1' }, connectionAuthenticated: true, mcpConnection: { ...connection } };
+  task.mcpRequests = { 'active-create-0001': mcp.hash(TASK_A_REQUEST) };
+  task.latestMcpRequestId = 'active-create-0001'; bridge.tasks.save(task);
   assert.equal(task.status, 'awaiting_operator_grant');
   assert.equal(task.source.connectionAuthenticated, true);
   assert.equal(task.source.client_reported.name, 'untrusted-client-name');
-  assert.deepEqual(prompts, [], 'MCP task text cannot dispatch Pi before an operator grant');
+  assert.deepEqual(prompts, [], 'MCP task text cannot dispatch a worker before an operator grant');
   assert.throws(() => bridge.authorizeActiveChatMission(task.id, { trusted: false, id: randomUUID(), mcpConnectionEpoch: connection.epoch }), /operator authorization/);
   authority.initializeOperatorKey();
   bridge.authorizeActiveChatMission(task.id, { trusted: true, id: randomUUID(), mcpConnectionEpoch: connection.epoch });
@@ -162,7 +166,9 @@ test('SIMULATION: active grant expiry, cancellation, action exhaustion, and immu
   assert.throws(() => assertActiveChatMission(fresh), /identity changed/);
 });
 
-test('retired optional Active Chat smoke cannot create executable tasks in the product', () => {
+test('retired optional Active Chat smoke cannot create executable tasks in the product', async () => {
  const Bridge=require('../src/bridge-controller');const bridge=new Bridge();
- assert.throws(()=>bridge.createActiveChatTask(),/retired/);assert.equal(bridge.runtimes.size,0);
+ assert.throws(()=>bridge.createActiveChatTask(),/retired/);
+ await assert.rejects(new McpTools(bridge).call('create_task',activeArgs('retired-create-0001')),/Invalid mission_mode/);
+ assert.equal(bridge.runtimes.size,0);
 });

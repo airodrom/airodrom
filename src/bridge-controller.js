@@ -1333,8 +1333,9 @@ class BridgeController extends EventEmitter {
     if (options.requiredExecutionKind !== undefined && !['native', 'reasoning'].includes(options.requiredExecutionKind)) throw new Error('Invalid required execution kind');
     if (options.requiredExecutionKind === 'reasoning' && (options.workspace || options.projectId)) throw new Error('Repository tasks require native execution');
     if (options.reasoningOnly && options.requiredExecutionKind === 'native') throw new Error('Reasoning-only task cannot require native execution');
-    const executionAgent = options.executionAgent ?? this.defaultRuntime;
+    const executionAgent = options.executionAgent ?? (options.acceptanceMode ? 'host' : this.defaultRuntime);
     require('./removed-runtime').assertExecutable(executionAgent);
+    if (options.acceptanceMode && executionAgent !== 'host') throw Error('Deterministic acceptance requires Airodrom host primitives');
     this.agentRouter.resolve(executionAgent);
     const criteria = options.acceptanceCriteria || [];
     if (!Array.isArray(criteria) || criteria.length > 10 || criteria.some(c => typeof c !== 'string' || !c.trim() || c.length > 500)) throw new Error('Invalid acceptance criteria');
@@ -1374,6 +1375,7 @@ class BridgeController extends EventEmitter {
     return this.missionAuthority.initializeOperatorKey();
   }
   _activeChatTask(task) {
+    require('./removed-runtime').assertExecutable(task);
     if (!task?.activeChat || task.activeChat.profile !== ACTIVE_CHAT_PROFILE_ID) throw new Error('Task is not an Active Chat local-Qwen smoke');
     assertActiveChatMission(task.mission);
     return task;

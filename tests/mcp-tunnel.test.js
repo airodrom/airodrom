@@ -89,14 +89,14 @@ test('candidate plist is valid and carries no bridge or menu-bar restart operati
 
 // Opt-in integration with the shipped binary catches schema drift such as the
 // unsupported YAML pid field that the pure plan tests previously accepted.
-test('generated profile is accepted by the installed tunnel client schema', {skip: !process.env.PI_TUNNEL_CLIENT}, t=>{
+test('generated profile is accepted by the installed tunnel client schema', {skip: !process.env.AIRODROM_TUNNEL_CLIENT}, t=>{
   const {options}=fixture(t),plan=buildPlan(options);
   fs.mkdirSync(plan.support,{recursive:true,mode:0o700});
   fs.writeFileSync(path.join(plan.support,'runtime-api-key'),'fixture-only-not-a-real-key',{mode:0o600});
   const file=path.join(options.project,'profile.json');
   const doctor=config=>{
     fs.writeFileSync(file,JSON.stringify(config),{mode:0o600});
-    return spawnSync(process.env.PI_TUNNEL_CLIENT,['doctor','--config',file,'--json'],{encoding:'utf8',timeout:15000,env:{HOME:options.home,PATH:process.env.PATH}});
+    return spawnSync(process.env.AIRODROM_TUNNEL_CLIENT,['doctor','--config',file,'--json'],{encoding:'utf8',timeout:15000,env:{HOME:options.home,PATH:process.env.PATH}});
   };
   const valid=doctor(plan.config);
   assert.equal(valid.status,0,valid.stderr+valid.stdout);
