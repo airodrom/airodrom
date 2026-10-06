@@ -10,7 +10,7 @@ The legacy plain-prompt API now creates an OpenCode identity by default and requ
 
 Every dispatch stores its selected route, task identity and run agent. OpenCode additionally records pinned executable/version, disposable execution identity and verified termination. Runtime selection conveys no authority; independent repository verification precedes Acceptance and local Settlement for either runtime.
 
-Completed Mission erasure retains only allowlisted review outcomes, validated result relay identities, the Mission revision foreign key and selected runtime identity. Unknown outcomes or receipt shapes fail closed. Content and cache copies remain erasable.
+Completed Mission erasure retains only allowlisted review outcomes, validated result relay identities, the Mission revision foreign key and selected runtime identity. Unknown outcomes or receipt shapes fail closed. Content and cache copies remain erasable. OpenCode reconstructs delivery from canonical records; typed digest metadata is checked separately from text so a checksum-valid digit sequence in a hash cannot cause an intermittent secret-detector rejection. Malformed metadata and sensitive content remain denied.
 
 The cutover tests cover default and explicit routes, unavailable policy, persisted identities, isolated rollback, minimum synthetic Memory V2 context, correction, canonical erasure, denied stale packs/session reuse, Pi non-delivery and runtime-independent Acceptance/Settlement. The live synthetic pass exercises the actual installed OpenCode default. These are source and isolated fixture changes; the README pre-release pause remains. No release, tag, package artifact, deployment or production activation is authorized here.
 

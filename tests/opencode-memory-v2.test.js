@@ -16,6 +16,11 @@ test('canonical Memory V2 remember, bounded retrieve, correct, forget and restar
  // Bind execution to the canonical fixture store so freshness is checked at delivery.
  r.adapter.bridge=b;
  assert.equal((await use(first)).result.summary,'Synthetic fixture color is azure.');
+ // Host hash metadata can contain checksum-valid card-shaped digits. It is
+ // ignored at delivery; malformed/secret metadata and actual content stay denied.
+ const numericDigest='4242424242424242'.padEnd(64,'a');
+ assert.equal((await r.adapter.execute({...r.request,objective:'memory',context:{...context(first),context_hash:numericDigest,refs:[{content_hash:numericDigest,source_hash:numericDigest}]}})).result.summary,'Synthetic fixture color is azure.');
+ await assert.rejects(r.adapter.execute({...r.request,objective:'memory',context:{...context(first),source_hash:'Bearer syntheticMetadataSecret'}}),/sensitive_context/);
  const forged={id:first.id,records:[{subject:'fixture.color',content:'Synthetic fixture color is violet.'}]};assert.equal((await r.adapter.execute({...r.request,objective:'memory',context:forged})).result.summary,'Synthetic fixture color is azure.');
  await assert.rejects(r.adapter.execute({...r.request,objective:'memory',context:{id:'unregistered'}}),/context|unavailable/);
  const corrected=b.updatePersonalMemory(id,{content:'Synthetic fixture color is amber.'}),current=corrected.id||corrected.memoryId;
