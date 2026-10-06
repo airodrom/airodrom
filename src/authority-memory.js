@@ -7,6 +7,16 @@ const erasure = require('./memory-erasure');
 const KINDS = new Set(['architecture','project_operational','personal_preference','mission_episodic']);
 const PRIVACY = ['public','internal','restricted_security'];
 const RETRIEVAL_POLICY = 'governed-memory-v1';
+function referenceContent(memory) {
+  const value=memory.value;
+  if(memory.kind==='mission_episodic'&&value&&typeof value==='object'&&!Array.isArray(value)){
+    // Verification digests and millisecond timestamps are audit metadata, not
+    // inference reference content. Actual semantic fields still get text guards.
+    const {evidence_hash,accepted_at,...reference}=value;
+    return json(reference);
+  }
+  return typeof value==='string'?value:json(value);
+}
 function exact(input,fields) { if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!fields.includes(k)))throw new Error('Malformed memory packet'); }
 function string(value,max=500) { if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>max||value.includes('\0'))throw new Error('Invalid bounded memory field');return value; }
 function explicitPreference(key,value,claim) {
@@ -171,10 +181,12 @@ class AuthorityMemory {
     for(let i=eligible.length-1;i>=0;i--){const m=eligible[i];if(m.kind==='personal_preference'&&m.scope==='global'&&eligible.some(x=>x.kind===m.kind&&x.scope==='project_specific'&&x.subject_key===m.subject_key)){excluded.push({memory_id:m.id,subject_key:m.subject_key,reason:'project_preference_override'});eligible.splice(i,1);}}
     if(all.some(m=>m.kind==='project_operational'&&m.domains.some(d=>domains.includes(d))&&['expired','reverification_required'].includes(this.eligibility(m,input,now))))return {state:'WAIT',reason:'operational_memory_requires_reverification',excluded};
     if(required.some(key=>!eligible.some(m=>m.subject_key===key)))return {state:'WAIT',reason:'required_memory_ineligible',excluded};
-    const terms=(input.query||'').toLowerCase().split(/\W+/).filter(x=>x.length>2);
+    const terms=input.relevance==='all_query_terms'?((input.query||'').toLowerCase().match(/[\p{L}\p{N}_]+/gu)||[]):(input.query||'').toLowerCase().split(/\W+/).filter(x=>x.length>2);
+    if(input.relevance!==undefined&&input.relevance!=='all_query_terms')throw Error('Unknown memory relevance policy');
+    if(input.relevance==='all_query_terms')for(let i=eligible.length-1;i>=0;i--)if(!terms.length||!terms.every(t=>(eligible[i].subject_key+' '+json(eligible[i].value)).toLowerCase().includes(t))){excluded.push({memory_id:eligible[i].id,subject_key:eligible[i].subject_key,reason:'query_not_relevant'});eligible.splice(i,1);}
     const rank=m=>[required.includes(m.subject_key)?1:0,m.kind==='architecture'?1:0,m.domains.filter(d=>domains.includes(d)).length,terms.filter(t=>(m.subject_key+' '+json(m.value)).toLowerCase().includes(t)).length,m.assurance,m.canonical_priority,m.last_verified_at||0];
     eligible.sort((a,b)=>{const x=rank(a),y=rank(b);for(let i=0;i<x.length;i++)if(x[i]!==y[i])return y[i]-x[i];return a.id<b.id?-1:a.id>b.id?1:0;});
-    let bytes=2;const items=[];const maxBytes=Math.min(input.max_bytes||8000,8000),maxItems=Math.min(input.max_items||20,20);
+    let bytes=2;const items=[];const maxBytes=Math.min(input.max_bytes??8000,8000),maxItems=Math.min(input.max_items??20,20);
     for(const m of eligible){const item={memory_id:m.id,kind:m.kind,scope:m.scope,project_id:m.project_id,subject_key:m.subject_key,value:m.value,source_hash:m.source_hash,source_refs:m.source_refs,assurance:m.assurance,privacy:m.privacy,status:m.status,revision:m.revision,supersedes_id:m.supersedes_id,superseded_by_id:m.superseded_by_id,expires_at:m.expires_at,ttl_ms:m.ttl_ms,last_verified_at:m.last_verified_at,canonical_priority:m.canonical_priority,reverify_task_classes:m.reverify_task_classes,reverification_satisfied:!m.reverify_task_classes.includes(input.task_class)||input.verified_sources?.[m.id]===m.source_hash};
       const n=Buffer.byteLength(json(item))+1;if(items.length>=maxItems||bytes+n>maxBytes){excluded.push({memory_id:m.id,subject_key:m.subject_key,reason:'budget'});continue;}items.push(item);bytes+=n;
     }
@@ -216,4 +228,4 @@ class AuthorityMemory {
     return this.promote(c.id,{acceptance_id:acceptanceId,source_type:'accepted_mission',assurance:2,domains:['mission_history']},by);
   }
 }
-module.exports={AuthorityMemory,RETRIEVAL_POLICY,explicitPreference};
+module.exports={AuthorityMemory,RETRIEVAL_POLICY,explicitPreference,referenceContent};

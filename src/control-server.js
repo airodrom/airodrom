@@ -64,6 +64,29 @@ class ControlServer {
     }
     return task;
   }
+  interactiveMemory(query = '') {
+    const b = this.bridge;
+    if (b.authorityRuntime?.active) {
+      const result = b.authorityRuntime.memoryItems({ domain: 'personal', query, limit: 20 });
+      const terms = query.toLowerCase().match(/[\p{L}\p{N}_]+/gu) || [];
+      return { ...result, items: result.items.filter(m => !terms.length || terms.every(term => (m.subject + ' ' + m.content).toLowerCase().includes(term))) };
+    }
+    return query ? b.personalMemory.search(query, { domain: 'personal', limit: 20, includeSensitive: false }) : b.personalMemory.recent({ domain: 'personal', limit: 20, includeSensitive: false });
+  }
+  interactiveTask(id) {
+    const m = this.bridge.controlStore.requireMission(id), task = this.bridge.tasks.get(m.task_id);
+    const v = this.bridge.controlStore.db.prepare('SELECT id FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC LIMIT 1').get(id);
+    let summary = task.lastResult;
+    if (task.contextPackId) { try { this.bridge.opencodeAdapter.authorizedContext({ id: task.contextPackId }); } catch { summary = 'Memory context changed; create a fresh task.'; } }
+    return { mission_id: id, task_id: task.id, state: m.state, reason: m.reason, runtime: m.envelope.preferred_agent, summary: summary || 'No result yet.', verification_id: v?.id || null, accepted: m.state === 'completed' };
+  }
+  rememberInteractive(content) {
+    require('./control-plane-store').text(content, 'memory content', 2000);
+    const subject = require('./conversation-mission').subjectFor(content);
+    const same = this.interactiveMemory(subject).items.filter(m => m.subject === subject);
+    if (same.length > 1) throw Error('Memory subject is ambiguous; correct an explicit memory ID.');
+    return same.length ? this.bridge.updatePersonalMemory(same[0].memoryId, { content }) : this.bridge.rememberPersonalMemory({ domain: 'personal', type: 'fact', subject, content, source: 'user_explicit', sensitivity: 'normal' });
+  }
   status() {
     const tasks = this.bridge.tasks.list().map(task => this.bridge.snapshotTask(task)), counts = {};
     const statuses = new Set(['idle', 'running', 'starting', 'thinking', 'running_tool', 'compacting', 'approval_required', 'blocked', 'paused', 'completed', 'cancelled', 'error', 'interrupted', 'awaiting_operator_grant', 'awaiting_mcp_continuation']);
@@ -117,6 +140,9 @@ class ControlServer {
         return this.json(res, 200, result);
       }
       if (!this.authorize(req)) return this.json(res, 401, { error: 'Open the private Control Center link printed by the bridge to connect' });
+      if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'bounded registered local Mission; no tools', active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n });
+      if (req.method === 'GET' && url.pathname === '/api/interactive/memory') return this.json(res, 200, this.interactiveMemory(url.searchParams.get('query') || ''));
+      if (req.method === 'GET' && url.pathname === '/api/interactive/task') return this.json(res, 200, this.interactiveTask(url.searchParams.get('mission_id')));
       if (req.method === 'GET' && url.pathname.startsWith('/api/control-v2/')) return this.json(res, 200, controlPlaneRead(this.bridge, url));
       if (req.method === 'POST' && url.pathname.startsWith('/api/control-v2/')) {
         if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') return this.json(res, 415, { error: 'JSON content type required' });
@@ -132,7 +158,8 @@ class ControlServer {
       if (req.method === 'GET' && url.pathname === '/api/memory') {
         const taskId = url.searchParams.get('taskId'); const task = this.bridge.tasks.get(taskId);
         const query = url.searchParams.get('query') || '';
-        const result = query ? this.bridge.memory.search(query, { taskId, includeShared: task.includeSharedMemory === true }) : { items: this.bridge.memory.list({ taskId, includeShared: task.includeSharedMemory === true }) };
+        const canonical = task.executionAgent === 'opencode' && task.includeSharedMemory === true;
+        const result = canonical ? { items: this.interactiveMemory(query).items.map(m => ({ ...m, id: m.memoryId, kind: m.type, shared: true, provenance: { source: 'operator', authority: false } })) } : query ? this.bridge.memory.search(query, { taskId, includeShared: task.includeSharedMemory === true }) : { items: this.bridge.memory.list({ taskId, includeShared: task.includeSharedMemory === true }) };
         return this.json(res, 200, result);
       }
       if (req.method === 'GET' && url.pathname === '/api/personal-memory') {
@@ -165,6 +192,34 @@ class ControlServer {
       if (req.method !== 'POST') return this.json(res, 404, { error: 'Operation not exposed' });
       if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') return this.json(res, 415, { error: 'JSON content type required' });
       const body = await readJSON(req);
+      if (url.pathname === '/api/interactive/tasks') {
+        const created = this.bridge.missions.createConversation(body);
+        this.bridge.missions.dispatch(created.mission_id, { request_id: 'interactive:' + body.request_id });
+        return this.json(res, 202, created);
+      }
+      if (url.pathname === '/api/interactive/cancel') {
+        require('./control-plane-store').object(body, ['mission_id', 'request_id']);
+        return this.json(res, 200, this.bridge.missions.cancel(body.mission_id, body));
+      }
+      if (url.pathname === '/api/interactive/stop') {
+        if (Object.keys(body).length || typeof this.localShutdown !== 'function') throw Error('Only the managed local service can be stopped by this endpoint.');
+        this.json(res, 202, { stopping: true }); setImmediate(() => this.localShutdown().catch(() => {})); return;
+      }
+      if (url.pathname === '/api/interactive/remember') {
+        require('./control-plane-store').object(body, ['content']);
+        return this.json(res, 201, this.rememberInteractive(body.content));
+      }
+      if (url.pathname === '/api/interactive/forget') {
+        require('./control-plane-store').object(body, ['selection']);
+        const selection = require('./control-plane-store').text(body.selection, 'memory selection', 240);
+        let items;
+        if (/^[0-9a-f-]{36}$/i.test(selection)) {
+          const b = this.bridge, m = b.authorityRuntime?.active ? b.authorityRuntime.memory.get(selection) : b.personalMemory.get(selection);
+          items = m && (m.domain === 'personal' || m.scope === 'global') && (m.status === 'active' || m.status === 'approved') ? [{ memoryId: selection }] : [];
+        } else items = this.interactiveMemory(selection).items;
+        if (items.length !== 1) throw Error('Forget requires one current memory ID or an unambiguous query.');
+        this.bridge.forgetPersonalMemory(items[0].memoryId); return this.json(res, 200, { memoryId: items[0].memoryId, forgotten: true });
+      }
       if (url.pathname === '/api/active-chat/authority/initialize') {
         if (Object.keys(body).length) throw new Error('Active Chat authority initialization accepts no arguments');
         return this.json(res, 201, this.bridge.initializeActiveChatAuthority());
@@ -180,7 +235,8 @@ class ControlServer {
       }
       if (url.pathname === '/api/tasks') {
         if (body.workspace != null && (typeof body.workspace !== 'string' || !path.isAbsolute(body.workspace))) throw new Error('Workspace must be an absolute path');
-        return this.json(res, 201, this.bridge.createTask(body.description, { executionAgent: body.executionAgent, acceptanceCriteria: body.acceptanceCriteria, workspace: body.workspace || undefined, includeSharedMemory: body.includeSharedMemory === true, projectId: body.projectId }));
+        const created = this.bridge.createTask(body.description, { executionAgent: body.executionAgent, acceptanceCriteria: body.acceptanceCriteria, workspace: body.workspace || undefined, includeSharedMemory: body.includeSharedMemory === true, projectId: body.projectId, ...(!body.workspace && (body.executionAgent || this.bridge.defaultRuntime) === 'opencode' ? { capabilityScopes: [] } : {}) });
+        return this.json(res, 201, created);
       }
       if (url.pathname === '/api/checkpoints') {
         const task = this.bridge.tasks.get(body.taskId);
@@ -189,7 +245,11 @@ class ControlServer {
         this.bridge.supervisor.schedule();
         return this.json(res, 201, checkpoint);
       }
-      if (url.pathname === '/api/memory') return this.json(res, 201, this.bridge.saveMemory(body));
+      if (url.pathname === '/api/memory') {
+        const task = this.bridge.tasks.get(body.taskId);
+        if (task.executionAgent === 'opencode' && body.shared === true) return this.json(res, 201, this.rememberInteractive(body.content));
+        return this.json(res, 201, this.bridge.saveMemory(body));
+      }
       if (url.pathname === '/api/personal-memory/remember') return this.json(res, 201, this.bridge.rememberPersonalMemory(body));
       let personalMemoryMatch = /^\/api\/personal-memory\/([A-Za-z0-9_.:-]{1,160})\/(update|forget)$/.exec(url.pathname);
       if (personalMemoryMatch) {
@@ -233,6 +293,12 @@ class ControlServer {
           if (task.mission?.capabilityProfile === 'active-chat-local-ollama-smoke-v1') return this.json(res, 403, { error: 'Active Chat smoke accepts only its authenticated MCP continuation' });
           this.assertCanRun(id);
           if (typeof body.message !== 'string' || !body.message.trim() || body.message.length > 59000 || /^\s*[/!@]/.test(body.message)) throw new Error('Plain-text prompt required (maximum 59,000 characters)');
+          if (task.executionAgent === 'opencode') {
+            if (task.requiredExecutionKind === 'native') throw Error('Coding work requires a registered scoped Mission with allowed files and verification. Use Control Hub Mission creation.');
+            const created = this.bridge.missions.createConversation({ request_id: randomUUID(), message: body.message, include_memory: task.includeSharedMemory === true, runtime: task.executionAgent, ...(!task.controlPlaneMissionId ? { task_id: task.id } : {}) });
+            this.bridge.missions.dispatch(created.mission_id, { request_id: 'browser:' + randomUUID() });
+            return this.json(res, 202, { accepted: true, taskId: created.task_id, missionId: created.mission_id, scope: 'reasoning_only' });
+          }
           this.bridge.prompt(id, body.message).catch(() => {}); return this.json(res, 202, { accepted: true, taskId: id });
         }
         if (task.mission?.level1MissionId) {
@@ -242,8 +308,13 @@ class ControlServer {
         }
         if (action === 'cancel') {
           for (const controller of this.webRequests.get(id) || []) controller.abort();
+          if (task.controlPlaneMissionId && this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind === 'conversation') {
+            this.bridge.missions.cancel(task.controlPlaneMissionId, { request_id: randomUUID() });
+            return this.json(res, 200, this.bridge.snapshotTask(task));
+          }
           return this.json(res, 200, await this.bridge.cancel(id));
         }
+        if (['pause', 'resume'].includes(action) && task.controlPlaneMissionId && this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind === 'conversation') throw Error('Bounded conversation Missions cannot use legacy pause/resume. Cancel and submit a fresh question.');
         if (action === 'pause') return this.json(res, 200, await this.bridge.pause(id));
         if (action === 'resume') { await this.bridge.resume(id); return this.json(res, 202, { accepted: true, taskId: id, status: 'resuming' }); }
         if (action === 'resolve-stop') {

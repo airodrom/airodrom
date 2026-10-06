@@ -20,11 +20,13 @@ function safeText(value, max = MAX_CONTEXT) {
   return value;
 }
 function contextSafetyView(value, key, parentKey) {
-  // Typed host digests are correlation metadata, never runtime content. Their
+  // Typed host digests and the root pack UUID are correlation metadata, never
+  // runtime content. Their
   // digits can accidentally satisfy the payment-card detector. Other strings,
   // including malformed digest fields, still pass through the full text guard.
   const digestField = ['context_hash','content_hash','source_hash'].includes(key) || key === 'hash' && parentKey === 'context_sources';
   if (digestField && typeof value === 'string' && /^(?:sha256:)?[a-f0-9]{64}$/i.test(value)) return '[digest]';
+  if(key==='id'&&parentKey===undefined&&typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value))return '[pack UUID]';
   if (Array.isArray(value)) return value.map(item => contextSafetyView(item, key, parentKey));
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([field,item]) => [field,contextSafetyView(item,field,key)]));
   return value;
@@ -123,20 +125,30 @@ class OpenCodeAdapter extends AgentAdapter {
     for (const file of candidates) try { const real = fs.realpathSync(file); if (fs.statSync(real).isFile() && (fs.statSync(real).mode & 0o111)) return real; } catch {}
     return null;
   }
+  verifyArtifact(executable) {
+    try {
+      if(!executable)fail('opencode_unavailable');
+      if(this.options.pinsFile){const pins=require('../local-bootstrap').validatePins(require('../local-bootstrap').ownedJSON(this.options.pinsFile));if(pins.executables.find(p=>p.id==='opencode').path!==executable)fail('opencode_runtime_pins_changed');}
+      else if(!this.options.fixtureExecutable)require('../worker-sandbox').verifyExecutable({id:'opencode',path:executable,sha256:require('../../config/agent-runtime-qualification-v1.json').opencode.executable_sha256});
+    } catch { fail('opencode_runtime_pins_changed'); }
+    return executable;
+  }
   async readiness() {
     const executable = this.executable();
-    const r = executable ? spawnSync(executable, ['--version'], { encoding: 'utf8', timeout: 3000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin' } }) : null;
+    // Unqualified artifacts must not execute even for a version/status probe.
+    const pinned = !executable || (()=>{try{this.verifyArtifact(executable);return true;}catch{return false;}})();
+    const r = executable && pinned ? spawnSync(executable, ['--version'], { encoding: 'utf8', timeout: 3000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin' } }) : null;
     const observed = r?.status === 0 ? version(r.stdout) : null;
     const configured = this.options.enabled === true && /^ollama\/[A-Za-z0-9_.:-]{1,120}$/.test(this.options.model || '');
     const providerReady=configured&&(this.options.fixtureExecutable||await new Promise(resolve=>{
       const request=require('node:http').get('http://127.0.0.1:11434/api/tags',{timeout:1000},response=>{let text='',bytes=0;response.on('data',chunk=>{bytes+=chunk.length;if(bytes>256000){request.destroy();resolve(false);}else text+=chunk;});response.on('end',()=>{try{resolve(response.statusCode===200&&JSON.parse(text).models?.some(m=>m.name===this.options.model.slice(7)));}catch{resolve(false);}});response.on('error',()=>resolve(false));});request.on('error',()=>resolve(false));request.on('timeout',()=>{request.destroy();resolve(false);});
     }));
-    const ready = !!executable && observed === VERSION && configured && providerReady && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
+    const ready = !!executable && observed === VERSION && configured && providerReady && pinned && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
     return { agentId: this.id, implemented: true, installed: !!executable, version: observed, ready, available: ready,
       availability: ready ? this.active.size ? 'busy' : 'available' : 'unavailable',
       auth_state: configured ? 'local_not_required' : 'auth_required', workspace_required: true,
       execution_authority: false, continuation: false, memory_access_model: 'canonical_authorized_context_only',
-      reason: ready ? null : !executable ? 'opencode_unavailable' : observed !== VERSION ? 'opencode_version_unqualified' : configured ? 'opencode_local_provider_unavailable' : 'opencode_local_provider_not_configured' };
+      reason: ready ? null : !pinned ? 'opencode_runtime_pins_changed' : !executable ? 'opencode_unavailable' : observed !== VERSION ? 'opencode_version_unqualified' : configured ? 'opencode_local_provider_unavailable' : 'opencode_local_provider_not_configured' };
   }
   authorizedContext(context){
     if(context===null)return null;
@@ -145,7 +157,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const b=this.bridge,db=b?.controlStore?.db;if(!db||typeof context?.id!=='string')fail('opencode_memory_context_missing');
     require('../memory-content-erasure').assertContext(db,context.id);
     let records;
-    if(b.authorityRuntime?.active){const a=b.authorityRuntime,p=a.store.one('context_pack_manifests',context.id);if(!p||!a.memory.validatePack(context.id,{operator_id:a.store.operatorId,project_id:p.project_id}).valid)fail('opencode_memory_context_unavailable');records=a.memory.items(context.id).map(m=>({subject:m.subject_key,content:typeof m.value==='string'?m.value:JSON.stringify(m.value),authority:false}));}
+    if(b.authorityRuntime?.active){const a=b.authorityRuntime,p=a.store.one('context_pack_manifests',context.id);if(!p||!a.memory.validatePack(context.id,{operator_id:a.store.operatorId,project_id:p.project_id}).valid)fail('opencode_memory_context_unavailable');records=a.memory.items(context.id).map(m=>({subject:m.kind==='mission_episodic'?'Accepted mission episode':m.subject_key,content:require('../authority-memory').referenceContent(m),authority:false}));}
     else{const p=b.controlContext.inspect(context.id);records=p.refs.map(ref=>{const m=b.personalMemory.get(ref.memory_id,{includeSensitive:false});if(!m||require('../architecture-memory').hash(m.content)!==ref.content_hash)fail('opencode_memory_context_unavailable');return{subject:m.subject,content:m.content,authority:false};});}
     const minimum={records,authority:false};if(records.length>20||Buffer.byteLength(JSON.stringify(minimum))>8000)fail('opencode_context_bound');safeText(JSON.stringify(minimum));return minimum;
   }
@@ -154,10 +166,11 @@ class OpenCodeAdapter extends AgentAdapter {
     const p=run.result?.opencode_provenance,executable=this.executable();
     if(run.state!=='completed'||!run.termination_verified||!p||p.runtime_id!=='opencode'||p.runtime_version!==VERSION||p.authority!==false||p.workspace_bound!==true||p.termination_verified!==true||p.session_state!=='disposable'||!executable||p.executable_sha256!==hash(fs.readFileSync(executable)))fail('opencode_provenance_unavailable');
   }
-  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, signal, sessionId } = {}) {
+  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId } = {}) {
     if (sessionId) fail('opencode_session_reuse_denied');
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || deadline !== null && !Number.isSafeInteger(deadline) || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
+    const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
     if (!(await this.readiness()).ready) fail('opencode_unavailable_or_unsupported');
-    if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || fs.realpathSync(workspace) !== workspace || !Array.isArray(files) || files.length > 8 || new Set(files).size !== files.length || !Array.isArray(writable) || new Set(writable).size !== writable.length || writable.some(f => !files.includes(f))) fail('opencode_workspace_binding');
     files.forEach(relative); writable.forEach(relative); safeText(objective, 12000);
     const currentContext=this.authorizedContext(context);
@@ -173,8 +186,10 @@ class OpenCodeAdapter extends AgentAdapter {
         fs.writeFileSync(path.join(root, 'workspace', f), content, { mode: 0o600 });
       }
       const input = safeText(JSON.stringify({ protocol: 'airodrom-opencode-v1', objective, readable_files: files, allowed_files: writable, current_context: currentContext, authority: false, result_contract:{summary:'Describe observed work',changed_files:[],tests:[],artifacts:[],limitations:[]}, instructions: 'Work only on supplied files. No shell, network tools, Memory DB, git or external actions. Use only current_context; if unavailable answer unavailable. Return only one JSON object matching result_contract exactly: summary is a nonempty string; every other field is an array. Never claim verification or Acceptance.' }));
-      const executable = this.executable(), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
-      const outcome = await launch({ executable, root, writable, input, timeoutMs, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable });
+      const executable = this.verifyArtifact(this.executable()), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
+      const remaining = expiresAt - Date.now();
+      if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
+      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable });
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
       if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
       if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
@@ -200,8 +215,10 @@ class OpenCodeAdapter extends AgentAdapter {
     b.missions.assertAuthority(m);
     require('../memory-content-erasure').assertContext(b.controlStore.db, task.contextPackId);
     const controller = new AbortController(); this.active.set(task.id, controller);
-    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.allowed_files, objective: prompt, context, timeoutMs: this.options.timeoutMs || 60000, signal: controller.signal }); }
-    finally { this.active.delete(task.id); }
+    const deadline = m.envelope.kind==='conversation' ? m.envelope.manifest.expires_at : null;
+    const expiryTimer = deadline === null ? null : setTimeout(()=>controller.abort(), Math.max(0, deadline-Date.now()));
+    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal }); }
+    finally { clearTimeout(expiryTimer); this.active.delete(task.id); }
   }
   async cancel({ task } = {}) { this.active.get(task?.id)?.abort(); return { cancellation_requested: true, authority: false }; }
   async shutdown() { for (const controller of this.active.values()) controller.abort(); }

@@ -33,7 +33,9 @@
     "package:check": "node scripts/package-check.cjs",
     "test:opencode": "node scripts/run.cjs --test tests/opencode-runtime.test.js tests/opencode-memory-v2.test.js",
     "test:opencode:live": "AIRODROM_OPENCODE_LIVE=1 NODE_ENV=test node scripts/run.cjs --test tests/live-opencode.cjs",
-    "test:cutover": "node scripts/run.cjs --test tests/default-runtime-cutover.test.js"
+    "test:cutover": "node scripts/run.cjs --test tests/default-runtime-cutover.test.js",
+    "install:local": "node scripts/install-local.cjs",
+    "test:interactive": "node scripts/run.cjs --test tests/interactive-cli.test.js"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -289,6 +291,13 @@
     "docs/OPENCODE-RUNTIME-V1.md",
     "docs/adr/0005-opencode-execution-boundary.md",
     "src/default-runtime.js",
-    "docs/DEFAULT-RUNTIME-CUTOVER.md"
+    "docs/DEFAULT-RUNTIME-CUTOVER.md",
+    "scripts/install-local.cjs",
+    "scripts/local-service.cjs",
+    "src/local-bootstrap.js",
+    "src/interactive-cli.js",
+    "src/conversation-mission.js",
+    "docs/INTERACTIVE-CLI-V1.md",
+    "docs/adr/0007-local-interactive-missions.md"
   ]
 }

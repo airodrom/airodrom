@@ -6,7 +6,7 @@ function runtime(t){
  fs.writeFileSync(fake,`#!${process.execPath}
 const fs=require('node:fs');if(process.argv.includes('--version')){console.log('opencode v2.0.20');process.exit(0);}
 let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{const p=JSON.parse(raw),o=p.objective,config=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT);let result={summary:'fixture result',changed_files:[],tests:[],artifacts:[],limitations:[]};
-if(o==='timeout'){setTimeout(()=>{},10000);return;}if(o==='nonzero'){console.error('token=syntheticFailureSecret');process.exit(7);}if(o==='malformed'){console.log('broken');return;}
+if(o==='timeout'||o.startsWith('conversation-timeout')){setTimeout(()=>{},10000);return;}if(o==='nonzero'){console.error('token=syntheticFailureSecret');process.exit(7);}if(o==='malformed'){console.log('broken');return;}
 if(o==='change-executable')fs.appendFileSync(process.argv[1],'\\n// changed fixture\\n');
 if(o==='undeclared')fs.writeFileSync('outside.txt','not authorized');
 if(o==='secret'){result.summary='Bearer syntheticResultSecret';}
@@ -14,6 +14,7 @@ if(o==='escalation'){result.authority=true;}
 if(o==='environment'){result.summary=Object.keys(process.env).sort().join(',');}
 if(o.includes('alpha to beta')){fs.writeFileSync('fixture.txt','beta\\n');result.changed_files=['fixture.txt'];}
 if(o==='memory'||o.includes('DEFAULT_MEMORY')){const records=p.current_context?.records||[];const fact=records.find(r=>r.subject==='fixture.color');result.summary=fact?fact.content:'unavailable';}
+if(o.includes('test codename')){const records=p.current_context?.records||[];const fact=records.find(r=>r.subject==='test codename');result.summary=fact?fact.content:'unavailable';}
 console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));
 });`,{mode:0o700});
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
