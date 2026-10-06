@@ -5,6 +5,7 @@ class MissionAgents {
     const detected=await this.bridge.capabilityHost.agentStatus();
     const claude=detected.claude_code||{},cursor=detected.cursor||{};
     const observations={
+      opencode:{...(await this.bridge.opencodeAdapter.readiness()),kind:'agent',capabilities:this.bridge.opencodeAdapter.capabilities(),boundary:'disposable scoped workspace; canonical broker applies changes'},
       codex:this.bridge.codexAdapter?.health()||{kind:'agent',implemented:false,available:false,reason:'adapter_unavailable'},
       pi:{kind:'agent',implemented:true,available:!this.bridge.closed,capabilities:['verification','local_tools'],boundary:'bridge typed capabilities',reason:this.bridge.closed?'stopped':null},
       claude_code:{kind:'agent',version:claude.version||null,authenticated:claude.authenticated===true,running_jobs:claude.running_jobs||0,jobs:claude.jobs||[],implemented:true,installed:claude.installed===true,available:claude.availability==='available'&&claude.auth_mode==='subscription'&&!claude.api_key_overrides_subscription&&!(claude.running_jobs>0),auth_mode:claude.auth_mode,subscription:claude.subscription||'unknown',capabilities:['coding'],boundary:'local Claude CLI; not an OS sandbox',reason:claude.running_jobs>0?'busy':claude.availability==='available'?(claude.auth_mode==='subscription'?null:'subscription_required'):claude.availability,concurrency:1},

@@ -1,12 +1,12 @@
 'use strict';
 // Deterministic advice, separate from execution authority. No invented scores.
-const PROVIDERS={pi:null,claude_code:'anthropic_subscription',codex:'codex_openai',cursor:'cursor_runtime'};
+const PROVIDERS={pi:null,opencode:'local',claude_code:'anthropic_subscription',codex:'codex_openai',cursor:'cursor_runtime'};
 function routeTask(input,agents){
  const types=['local_diagnostics','local_files','tests','git','focused_refactor','broad_investigation','large_multi_file_coding','ide_diagnostics'];
  if(!types.includes(input.task_type))return{selected:null,reason:'unknown_task_type',rejected:[],execution:'not_dispatched'};
  const deterministic=['local_diagnostics','local_files','tests','git'].includes(input.task_type);
  const order=input.candidate_order|| (deterministic?['pi']:input.task_type==='ide_diagnostics'?['cursor','claude_code']:['broad_investigation','large_multi_file_coding'].includes(input.task_type)?['codex','claude_code']:['claude_code','codex']);
- if(!Array.isArray(order)||order.some(id=>!['pi','claude_code','codex','cursor'].includes(id)))return{selected:null,reason:'invalid_agent_policy',rejected:[],execution:'not_dispatched'};
+ if(!Array.isArray(order)||order.some(id=>!['pi','opencode','claude_code','codex','cursor'].includes(id)))return{selected:null,reason:'invalid_agent_policy',rejected:[],execution:'not_dispatched'};
  const rejected=[];
  const required=input.required_capabilities||[];
  const wait=reason=>({selected:null,selected_agent:null,provider:null,selected_provider:null,reason,wait_reason:reason,rejected,fallback_plan:[],state:'WAIT',execution:'not_dispatched'});
@@ -22,7 +22,7 @@ function routeTask(input,agents){
   else if(input.allowed_cost_classes&&!input.allowed_cost_classes.includes(profile?.cost_class|| (id==='pi'?'local':'subscription')))reason='cost_policy';
   else if(required.some(c=>!a?.capabilities?.includes(c)))reason='required_capability';
   else if(a?.operational?.circuit?.state==='open'&&a.operational.availability==='unavailable')reason='circuit_open';
-  else if(input.privacy==='local_only'&&!deterministic)reason='local_reasoning_transport_required';
+  else if(input.privacy==='local_only'&&!deterministic&&id!=='opencode')reason='local_reasoning_transport_required';
   else if(input.required_provider&&provider!==input.required_provider)reason='provider_policy';
   else if(input.failed_agents?.includes(id))reason='prior_failure_requires_review';
   else if(input.unavailable_providers?.includes(provider))reason='provider_unavailable';

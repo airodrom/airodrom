@@ -162,10 +162,18 @@ test('wrapped acceptance reads share policy and broker routing without shell app
     assert.equal(policy.check(task.id, bash('cd escape && ls')).allow, false);
     fs.unlinkSync(path.join(workspace, 'escape'));
   }
+  // Home-relative reads need an owned Git directory, also when this suite is
+  // launched from a worktree whose Git pointer intentionally remains denied.
+  const homeRepo = fs.mkdtempSync(path.join(path.dirname(root), 'p0-home-wrapper-'));
+  t.after(() => fs.rmSync(homeRepo, { recursive: true, force: true }));
+  execFileSync('/usr/bin/git', ['init', '-q', homeRepo], { stdio: 'pipe' });
+  fs.writeFileSync(path.join(homeRepo, 'fixture.txt'), 'synthetic home wrapper\n');
+  execFileSync('/usr/bin/git', ['-C', homeRepo, 'add', '.'], { stdio: 'pipe' });
+  execFileSync('/usr/bin/git', ['-C', homeRepo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'fixture'], { stdio: 'pipe' });
   const policy = new SafetyPolicy();
-  const task = policy.registerTask({ id: 'home-wrapper', sessionId: 's', workspace: root });
+  const task = policy.registerTask({ id: 'home-wrapper', sessionId: 's', workspace: homeRepo });
   for (const command of ['git status', 'git status --short', 'git status --porcelain', 'git log -n 5 --oneline', 'git rev-parse HEAD', 'git rev-parse --short HEAD']) {
-    const homeRelative = path.relative(require('node:os').homedir(), root);
+    const homeRelative = path.relative(require('node:os').homedir(), homeRepo);
     const wrapped = `cd ~/${homeRelative} && ${command}`;
     assert.equal(policy.check(task.id, bash(wrapped)).allow, true);
     await new SafeDiagnostics(policy).execute(task, wrapped);

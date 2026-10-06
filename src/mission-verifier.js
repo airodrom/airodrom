@@ -7,6 +7,7 @@ const hash=s=>createHash('sha256').update(s).digest('hex');
 class MissionVerifier {
   constructor(bridge,store){this.bridge=bridge;this.store=store;}
   async verify(mission,run){
+    try{this.bridge.opencodeAdapter?.assertEvidence(run);}catch{return{status:'failed',checks:[{id:'runtime_provenance',status:'failed',evidence:{reason:'opencode_provenance_unavailable'}}],workspace_hash:'unavailable'};}
     const envelope=mission.envelope,checks=[],task=this.bridge.tasks.get(run.task_id);
     const add=(id,status,evidence)=>checks.push({id,status,evidence:redactValue(evidence)});
     const call=async(name,input)=>{

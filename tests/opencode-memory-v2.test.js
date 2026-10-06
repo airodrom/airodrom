@@ -1,0 +1,35 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {runtime}=require('./fixtures/opencode-fixture.cjs');
+const {fixture}=require('./fixtures/mission-fixture.cjs');
+test('canonical Memory V2 remember, bounded retrieve, correct, forget and restart cannot deliver stale personal context to OpenCode',async t=>{
+ const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,a=b.authorityRuntime,by=a.store.operator;
+ a.qualification.prepare(by);
+ const c=a.memory.ingest({session_id:'synthetic-qualification',chunk_id:'synthetic-preference',timestamp:1,speaker:'operator',claim:'No micro-prompts.',kind:'personal_preference',subject_key:'workflow.micro_prompts',value:'forbidden'},by),seed=a.memory.promote(c.id,{},by);a.qualification.proveMemory(seed.id,by);
+ assert.equal(a.active,true);
+ const remembered=b.rememberPersonalMemory({domain:'personal',type:'preference',subject:'fixture.color',content:'Synthetic fixture color is azure.',source:'user_explicit',confidence:95,sensitivity:'normal'});
+ const id=remembered.id||remembered.memoryId;
+ const retrieve=()=>{const pack=a.memory.build({operator_id:a.store.operatorId,include_personal:true,required_keys:['fixture.color'],domains:['fixture'],privacy:'internal',max_items:1,max_bytes:2000});return pack;};
+ const first=retrieve();assert.equal(first.state,'ready');assert.equal(first.items.length,1);assert.equal(first.items[0].memory_id,id);
+ const context=p=>({id:p.id,records:p.items.map(m=>({subject:m.subject_key,content:m.value})),authority:false});
+ const use=async p=>r.adapter.execute({...r.request,objective:'memory',context:context(p)});
+ // Bind execution to the canonical fixture store so freshness is checked at delivery.
+ r.adapter.bridge=b;
+ assert.equal((await use(first)).result.summary,'Synthetic fixture color is azure.');
+ const forged={id:first.id,records:[{subject:'fixture.color',content:'Synthetic fixture color is violet.'}]};assert.equal((await r.adapter.execute({...r.request,objective:'memory',context:forged})).result.summary,'Synthetic fixture color is azure.');
+ await assert.rejects(r.adapter.execute({...r.request,objective:'memory',context:{id:'unregistered'}}),/context|unavailable/);
+ const corrected=b.updatePersonalMemory(id,{content:'Synthetic fixture color is amber.'}),current=corrected.id||corrected.memoryId;
+ await assert.rejects(use(first),/context|erased|invalid|unavailable/i);
+ const second=retrieve();assert.equal(second.items[0].value,'Synthetic fixture color is amber.');assert.equal((await use(second)).result.summary,'Synthetic fixture color is amber.');
+ b.forgetPersonalMemory(current);
+ await assert.rejects(use(second),/context|erased|invalid|unavailable/i);
+ const forgotten=retrieve();assert.equal(forgotten.state,'WAIT');assert.equal(forgotten.items?.length||0,0);
+ assert.equal((await r.adapter.execute({...r.request,objective:'memory'})).result.summary,'unavailable');
+ await assert.rejects(r.adapter.execute({...r.request,objective:'memory',sessionId:'ses_fixture',context:context(second)}),/session_reuse_denied/);
+ assert.equal(a.memory.get(id)?.status,'superseded');assert.equal(a.memory.get(current)?.status,'forgotten');
+ b.forgetPersonalMemory(seed.id);
+ a.memory.erase(id,by);a.memory.erase(current,by);
+ assert.doesNotMatch(JSON.stringify(a.memory.get(current)),/azure|amber/);
+ const payload=JSON.stringify(a.memory.build({operator_id:a.store.operatorId,include_personal:true,domains:['fixture'],privacy:'internal',max_items:1,max_bytes:2000}));assert.doesNotMatch(payload,/azure|amber/);
+ await f.reopen();assert.equal(f.bridge.authorityRuntime.active,true);assert.equal((await f.bridge.opencodeAdapter.execute({...r.request,objective:'memory'})).result.summary,'unavailable');assert.doesNotMatch(JSON.stringify(f.bridge.personalMemoryContext({projectId:null},'fixture color')),/azure|amber/);
+});

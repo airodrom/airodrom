@@ -1,5 +1,5 @@
 import { AuthorityStore } from '../../src/authority-store';
-import type { AuthorityQueries } from '../../src/authority-types';
+import type { AuthorityQueries, Coordinates } from '../../src/authority-types';
 import type { DatabaseSync } from 'node:sqlite';
 function consume(db: DatabaseSync) {
   const store: AuthorityQueries = new AuthorityStore(db);
@@ -13,3 +13,8 @@ function events(store:AuthorityStore) {
   store.append('agent.accepted',{version:1});
 }
 void consume;void events;
+
+const opencodeCoordinates: Coordinates = {agentId:'opencode',runtimeId:'opencode'};
+// @ts-expect-error Unknown executors cannot become typed authority identities.
+const unknownCoordinates: Coordinates = {agentId:'unknown_executor',runtimeId:'unknown'};
+void opencodeCoordinates;void unknownCoordinates;
