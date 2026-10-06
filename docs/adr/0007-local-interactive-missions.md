@@ -7,7 +7,9 @@ OpenCode as the default. Bootstrap pins the actual installed Node, Seatbelt and
 qualified OpenCode artifacts through the existing executable verifier. The
 installed OpenCode version, model and digest must match the qualification record;
 a real disposable synthetic adapter probe must pass before pins are saved.
-Changed artifacts fail closed. Bootstrap enables no external provider or web tool.
+Artifacts are validated before version probes and again immediately before
+runtime launch. Changed artifacts fail closed. Bootstrap enables no external
+provider or web tool.
 
 Authenticated operator input registers a fresh signed conversation Mission in
 the existing control-plane store. Its fixed contract admits one local inference
@@ -17,6 +19,9 @@ within 2,000 bytes. Its lifetime is at most two minutes. The task gets an isolat
 workspace and a durable read lease. Frozen identity, signature, permissions,
 workspace, erasure state and expiry are rechecked before dispatch and on return.
 The execution adapter receives fresh disposable state and minimum current context.
+An expiry abort timer covers dispatch, and the launch timeout is clamped to the
+remaining absolute authority lifetime. Browser cancellation uses the canonical
+Mission stop path; legacy pause/resume cannot mutate this profile.
 
 The host verifies confinement, provenance and termination independently. Factual
 accuracy remains operator review. `/accept` requires canonical verification and
@@ -30,8 +35,16 @@ Browser OpenCode prompts use the same registered conversation path. Submission
 errors are returned synchronously rather than hidden behind an accepted response.
 Shared memories saved for new OpenCode browser tasks use Personal Memory V2;
 legacy task scratch memory is not silently imported as personal truth. Correction
-and forget invalidate delivered context. Runtime caches cannot become a memory
-source. Existing private instances and their data remain separate.
+and forget invalidate delivered context. Answer delivery and Acceptance recheck
+current canonical context, including expiry. Runtime caches cannot become a
+memory source. Untrusted terminal answers, memory and errors cannot emit terminal
+control sequences. Existing private instances and their data remain separate.
+Read projections suppress stale conversation payloads in current task, inbox,
+Mission, timeline and authority views without rewriting immutable history.
+Accepted episode timestamps, verification digests and opaque episode identities
+stay in audit records and are omitted from runtime reference text; semantic
+content retains secret guards. A validated canonical pack UUID is lookup metadata,
+and cannot trigger a payment-card alarm or exempt any free-text content.
 
 This is a compatible new admission profile; Development Manifest semantics stay
 intact. Validation includes deterministic boundary tests, real synthetic local

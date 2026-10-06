@@ -6,7 +6,7 @@ function runtime(t){
  fs.writeFileSync(fake,`#!${process.execPath}
 const fs=require('node:fs');if(process.argv.includes('--version')){console.log('opencode v2.0.20');process.exit(0);}
 let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{const p=JSON.parse(raw),o=p.objective,config=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT);let result={summary:'fixture result',changed_files:[],tests:[],artifacts:[],limitations:[]};
-if(o==='timeout'){setTimeout(()=>{},10000);return;}if(o==='nonzero'){console.error('token=syntheticFailureSecret');process.exit(7);}if(o==='malformed'){console.log('broken');return;}
+if(o==='timeout'||o.startsWith('conversation-timeout')){setTimeout(()=>{},10000);return;}if(o==='nonzero'){console.error('token=syntheticFailureSecret');process.exit(7);}if(o==='malformed'){console.log('broken');return;}
 if(o==='change-executable')fs.appendFileSync(process.argv[1],'\\n// changed fixture\\n');
 if(o==='undeclared')fs.writeFileSync('outside.txt','not authorized');
 if(o==='secret'){result.summary='Bearer syntheticResultSecret';}

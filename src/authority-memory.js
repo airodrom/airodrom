@@ -7,6 +7,16 @@ const erasure = require('./memory-erasure');
 const KINDS = new Set(['architecture','project_operational','personal_preference','mission_episodic']);
 const PRIVACY = ['public','internal','restricted_security'];
 const RETRIEVAL_POLICY = 'governed-memory-v1';
+function referenceContent(memory) {
+  const value=memory.value;
+  if(memory.kind==='mission_episodic'&&value&&typeof value==='object'&&!Array.isArray(value)){
+    // Verification digests and millisecond timestamps are audit metadata, not
+    // inference reference content. Actual semantic fields still get text guards.
+    const {evidence_hash,accepted_at,...reference}=value;
+    return json(reference);
+  }
+  return typeof value==='string'?value:json(value);
+}
 function exact(input,fields) { if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!fields.includes(k)))throw new Error('Malformed memory packet'); }
 function string(value,max=500) { if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>max||value.includes('\0'))throw new Error('Invalid bounded memory field');return value; }
 function explicitPreference(key,value,claim) {
@@ -218,4 +228,4 @@ class AuthorityMemory {
     return this.promote(c.id,{acceptance_id:acceptanceId,source_type:'accepted_mission',assurance:2,domains:['mission_history']},by);
   }
 }
-module.exports={AuthorityMemory,RETRIEVAL_POLICY,explicitPreference};
+module.exports={AuthorityMemory,RETRIEVAL_POLICY,explicitPreference,referenceContent};

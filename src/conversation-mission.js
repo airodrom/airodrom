@@ -7,6 +7,21 @@ const { transaction, fingerprint, object, text, identifier } = require('./contro
 const { workspaceSnapshot } = require('./control-context');
 const PROFILE = 'bounded-conversation-v1';
 const MAX_RUNTIME = 120000;
+const STALE_CONTEXT = 'Memory context changed; create a fresh task.';
+function projectRead(bridge, taskId, value, missionId = null) {
+  const m=(taskId&&bridge.controlStore.missionForTask(taskId))||(missionId&&bridge.controlStore.getMission(missionId));
+  if(m?.envelope.kind!=='conversation')return value;
+  try {
+    const task=bridge.tasks.get(m.task_id);
+    if(!task.contextPackId)throw Error('Context is not available');
+    bridge.opencodeAdapter.authorizedContext({id:task.contextPackId});
+    return value;
+  } catch { return {status:'unavailable',summary:STALE_CONTEXT,context_current:false,untrusted:true,accepted:false}; }
+}
+function projectEvent(bridge,event) {
+  const payload=projectRead(bridge,event.task_id,event.payload,event.mission_id);
+  return payload===event.payload?event:{...event,payload,metadata:{context_current:false}};
+}
 function memoryQuery(message) {
   const words = message.toLowerCase().match(/[\p{L}\p{N}_]+/gu) || [];
   const stop = new Set('what who where when why how is are was were do does did a an the my our your me you i please tell ask using use personal memory remember saved from about it this only answer current synthetic return json summary with must be equal exactly and or to in of'.split(' '));
@@ -26,6 +41,14 @@ function assertContract(service, mission) {
   if (!grant || fingerprint(e.authority) !== fingerprint(expectedAuthority) || fingerprint(JSON.parse(grant.ceiling).mission_authority) !== fingerprint(expectedAuthority)) throw Error('Bounded conversation permission ceiling changed.');
   const task = service.bridge.tasks.get(mission.task_id);
   if (task.controlPlaneMissionId !== mission.id || task.workspace !== e.workspace || task.executionAgent !== e.preferred_agent || task.capabilityScopes.length || task.requiredExecutionKind !== 'reasoning' || task.safetyStop?.latched || task.cancelRequested) throw Error('Bounded conversation task binding changed.');
+  if (task.contextPackId) {
+    const binding=service.db.prepare('SELECT context_pack_id FROM cp_mission_tasks WHERE task_id=? AND mission_id=?').get(task.id,mission.id);
+    const pack=service.bridge.controlContext.inspect(task.contextPackId);
+    const run=service.store.run(pack.run_id);
+    if(binding?.context_pack_id!==pack.id || pack.mission_id!==mission.id || run?.task_id!==task.id || run.mission_id!==mission.id)throw Error('Bounded conversation context binding changed.');
+    const current=service.bridge.opencodeAdapter.authorizedContext({id:pack.id});
+    if(current.records.length>(e.include_memory?1:0) || Buffer.byteLength(JSON.stringify(current))>2000)throw Error('Bounded conversation context exceeded its scope.');
+  }
   if (workspaceSnapshot(e.workspace).hash !== e.baseline.hash) throw Error('Conversation workspace changed.');
 }
 function contract(expires_at) {
@@ -104,4 +127,4 @@ function verify(service, mission, run) {
     return { status: 'operator_review', checks: [{ id: 'read_only_boundary', status: 'passed', evidence: { no_workspace_changes: true, termination_verified: true } }, { id: 'response', status: 'operator_review', evidence: { factual_accuracy: 'unverified', accepted: false } }], workspace_hash: workspaceSnapshot(mission.envelope.workspace).hash };
   } catch { return { status: 'failed', checks: [{ id: 'read_only_boundary', status: 'failed', evidence: { reason: 'conversation_evidence_unavailable' } }], workspace_hash: 'unavailable' }; }
 }
-module.exports = { PROFILE, MAX_RUNTIME, memoryQuery, subjectFor, contract, assertContract, create, launch, verify };
+module.exports = { PROFILE, MAX_RUNTIME, STALE_CONTEXT, projectRead, projectEvent, memoryQuery, subjectFor, contract, assertContract, create, launch, verify };

@@ -42,11 +42,13 @@ function pin(id, file) {
 async function qualify({ executable, model = 'ollama/qwen3-coder:30b', adapter = null } = {}) {
   const { OpenCodeAdapter, VERSION } = require('./opencode-adapter');
   const runtime = adapter || new OpenCodeAdapter(null, { enabled: true, executable, model });
-  const ready = await runtime.readiness();
-  if (!ready.ready) throw Error('OpenCode is not ready: ' + ready.reason + '. Install qualified OpenCode 2.0.20 and start Ollama with qwen3-coder:30b.');
   const evidence = require('../config/agent-runtime-qualification-v1.json').opencode;
-  const opencode = pin('opencode', runtime.executable());
-  if (process.platform + '-' + process.arch !== evidence.platform || model !== evidence.model || ready.version !== VERSION || opencode.sha256 !== evidence.executable_sha256 || evidence.execution_qualified !== true) throw Error('Installed OpenCode artifacts do not match the qualified local runtime. Requalify them before startup.');
+  const candidate = runtime.executable();
+  if (!candidate) throw Error('OpenCode is not ready: opencode_unavailable. Install qualified OpenCode 2.0.20 and start Ollama with qwen3-coder:30b.');
+  const opencode = pin('opencode', candidate);
+  if (process.platform + '-' + process.arch !== evidence.platform || model !== evidence.model || opencode.sha256 !== evidence.executable_sha256 || evidence.execution_qualified !== true) throw Error('Installed OpenCode artifacts do not match the qualified local runtime. Requalify them before startup.');
+  const ready = await runtime.readiness();
+  if (!ready.ready || ready.version !== VERSION) throw Error('OpenCode is not ready: ' + ready.reason + '. Install qualified OpenCode 2.0.20 and start Ollama with qwen3-coder:30b.');
   const node = pin('node', process.execPath), sandbox = pin('sandbox-exec', '/usr/bin/sandbox-exec');
   // Use the adapter's existing real sandbox and synthetic result parser before recording pins.
   const probe = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'airodrom-bootstrap-')));

@@ -77,7 +77,7 @@ class ControlServer {
     const m = this.bridge.controlStore.requireMission(id), task = this.bridge.tasks.get(m.task_id);
     const v = this.bridge.controlStore.db.prepare('SELECT id FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC LIMIT 1').get(id);
     let summary = task.lastResult;
-    if (task.contextPackId) { try { require('./memory-content-erasure').assertContext(this.bridge.controlStore.db, task.contextPackId); } catch { summary = 'Memory context changed; create a fresh task.'; } }
+    if (task.contextPackId) { try { this.bridge.opencodeAdapter.authorizedContext({ id: task.contextPackId }); } catch { summary = 'Memory context changed; create a fresh task.'; } }
     return { mission_id: id, task_id: task.id, state: m.state, reason: m.reason, runtime: m.envelope.preferred_agent, summary: summary || 'No result yet.', verification_id: v?.id || null, accepted: m.state === 'completed' };
   }
   rememberInteractive(content) {
@@ -308,8 +308,13 @@ class ControlServer {
         }
         if (action === 'cancel') {
           for (const controller of this.webRequests.get(id) || []) controller.abort();
+          if (task.controlPlaneMissionId && this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind === 'conversation') {
+            this.bridge.missions.cancel(task.controlPlaneMissionId, { request_id: randomUUID() });
+            return this.json(res, 200, this.bridge.snapshotTask(task));
+          }
           return this.json(res, 200, await this.bridge.cancel(id));
         }
+        if (['pause', 'resume'].includes(action) && task.controlPlaneMissionId && this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind === 'conversation') throw Error('Bounded conversation Missions cannot use legacy pause/resume. Cancel and submit a fresh question.');
         if (action === 'pause') return this.json(res, 200, await this.bridge.pause(id));
         if (action === 'resume') { await this.bridge.resume(id); return this.json(res, 202, { accepted: true, taskId: id, status: 'resuming' }); }
         if (action === 'resolve-stop') {

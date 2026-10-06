@@ -2533,8 +2533,14 @@ class BridgeController extends EventEmitter {
       if (typeof runtime.rpc._workerStillAlive === 'function') workerLiveness = runtime.rpc._workerStillAlive() ? 'alive' : 'dead';
       else workerLiveness = runtime.rpc.running ? 'alive' : 'unknown';
     }
+    let lastResult = task.lastResult;
+    if (task.contextPackId && task.mission?.manifest?.profile === 'bounded-conversation-v1') {
+      try { this.opencodeAdapter.authorizedContext({ id: task.contextPackId }); }
+      catch { lastResult = 'Memory context changed; create a fresh task.'; }
+    }
     return {
       ...JSON.parse(JSON.stringify(task)),
+      lastResult,
       missionAuthority: require('./mission-permissions').snapshot(task.mission?.authority, now, task.mission?.authorityRevoked === true),
       missionAuthorization: task.controlPlaneMissionId && task.mission?.manifest?.profile === 'bounded-conversation-v1' ? { enabled: true, status: task.mission.authorityRevoked ? 'revoked' : now >= task.mission.authority.expiresAt ? 'expired' : 'active', liveEnabled: true, capabilities: ['local reasoning'], egress: 'local-only', signed: true } : this.missionAuthority.snapshot(task.mission),
       transitions: this.tasks.transitions(task.id),

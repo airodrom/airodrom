@@ -5,6 +5,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
+const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
 const COMMANDS = '/remember <text> · /memory [query] · /forget <id or subject>\n/status · /runtime [opencode|pi] · /open · /task <mission.json> · /accept · /help · /quit';
 function intro({ color = false, unicode = true } = {}) {
   const title = color ? '\u001b[1;36mAIRODROM\u001b[0m' : 'AIRODROM';
@@ -29,7 +30,7 @@ async function waitResult(home, id, { signal } = {}) {
 async function memory(home, query, output) {
   const data = await local.request(home, '/api/interactive/memory' + (query ? '?query=' + encodeURIComponent(query) : ''));
   if (!data.items.length) output.write('No current memories found.\n');
-  else for (const item of data.items) output.write(`${item.memoryId}  ${item.content}\n`);
+  else for (const item of data.items) output.write(terminalText(`${item.memoryId}  ${item.content}\n`));
   return data;
 }
 async function scopedTask(home, file) {
@@ -75,9 +76,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           const created = await local.request(home, '/api/interactive/tasks', { message: value, request_id: randomUUID(), include_memory: true, runtime }); lastMission = created.mission_id;
           output.write('Running ' + created.runtime + ' · bounded local Mission\n');
           const r = await waitResult(home, created.mission_id, { signal: active.signal });
-          output.write(r.summary + '\n'); output.write('Answer ready for your review. /accept records Acceptance and local Settlement.\n'); active = null;
+          output.write(terminalText(r.summary) + '\n'); output.write('Answer ready for your review. /accept records Acceptance and local Settlement.\n'); active = null;
         }
-      } catch (error) { active = null; output.write('Airodrom: ' + require('./secret-observation').safeValue(error.message) + '\n'); }
+      } catch (error) { active = null; output.write('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
       if (output.isTTY) output.write('\nairo › ');
     }
   } finally { process.removeListener('SIGINT', interrupt); rl.close(); }
@@ -98,5 +99,5 @@ async function main(args = process.argv.slice(2)) {
   else if (command === 'memory') await memory(home, rest.join(' '), process.stdout);
   else process.stdout.write('Scoped Mission dispatched: ' + await scopedTask(home, rest[0]) + '\n');
 }
-if (require.main === module) main().catch(error => { console.error('Airodrom: ' + require('./secret-observation').safeValue(error.message)); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
-module.exports = { intro, rows, help, memory, scopedTask, waitResult, interactive, main };
+if (require.main === module) main().catch(error => { console.error('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message))); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
+module.exports = { intro, rows, help, terminalText, memory, scopedTask, waitResult, interactive, main };

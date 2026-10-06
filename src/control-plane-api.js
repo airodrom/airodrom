@@ -48,7 +48,8 @@ function controlPlaneRead(bridge, url) {
     const filters = { limit, order: url.searchParams.get('order') === 'desc' ? 'desc' : 'asc' };
     for (const name of ['taskId','runId','missionId','agent','eventType','status']) if (url.searchParams.has(name)) filters[name] = url.searchParams.get(name);
     for (const name of ['afterSequence','beforeSequence','fromMs','toMs']) if (url.searchParams.has(name)) filters[name] = Number(url.searchParams.get(name));
-    return bridge.ledger.list(filters);
+    const result=bridge.ledger.list(filters);
+    return {...result,events:result.events.map(event=>require('./conversation-mission').projectEvent(bridge,event))};
   }
   if (section === 'run') {const run=store.run(identifier(url.searchParams.get('id')));if(!run)throw Error('Run not found');return run;}
   if (section === 'task') {const id=identifier(url.searchParams.get('id')),task=bridge.tasks.get(id);return {id:task.id,mission_id:store.missionForTask(id)?.id,status:task.status,health:bridge.taskHealth(task),authority:require('./mission-permissions').snapshot(task.mission?.authority,Date.now(),task.mission?.authorityRevoked===true),assigned_agent:task.assignedAgent||null,context_pack_id:task.contextPackId||null};}
