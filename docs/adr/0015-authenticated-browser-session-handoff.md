@@ -2,7 +2,7 @@
 
 Status: Proposed. Independent privacy/authority review and maintainer merge disposition are pending. No deployment or publication decision is included.
 
-Extends accepted ADR 0013 with a separate, operator-consented browser session mode. Public research and purpose-bound Vault login remain compatible. The signed manifest seals a dedicated-manual session authorization, exact HTTPS origin, source baseline, three-minute budget, no downloads, no Vault use and local-only processing. Existing canonical Runs, invocations, read leases, verification, Acceptance and Settlement remain mandatory. Human hand-back is an authenticated operator operation bound to the current waiting Mission. Models and website content cannot authorize it.
+Extends accepted ADR 0013 with a separate, operator-consented browser session mode. Public research and purpose-bound Vault login remain compatible. The signed manifest seals a dedicated-manual session authorization, exact HTTPS origin, source baseline, three-minute budget, no downloads, no Vault use and local-only processing. Existing canonical Runs, invocations, read leases, verification, Acceptance and Settlement remain mandatory. Browser lifetime is bounded by the signed manifest deadline, including time spent before dispatch or awaiting manual login. Human hand-back is an authenticated operator operation bound to the current waiting Mission. Models and website content cannot authorize it.
 
 ## Supported mechanism and choice
 
@@ -18,7 +18,7 @@ Manual login POST is limited to fixed same-origin login/session/MFA endpoints. R
 
 The hand-back boundary stops active traffic, navigates to a blank document and reloads within inspection policy. MFA/CAPTCHA/sign-in indicators prevent automated inspection; operator takeover requires a fresh consented Mission if the current browser stops. The only DOM projection emits fixed feature categories and fixed routes. No personal text, identity, amounts, ledger rows, private URLs or reversible commitments to private values enter evidence or models. Reports reuse independently verified origin-root evidence and compare navigation observations against current approved Arecibo docs/code; labels never establish functional capability or a missing feature. Recommendations do not execute.
 
-A 0700 profile root and exclusive owner lease prevent concurrent sessions. Browser-managed files are hardened to 0600/0700 after supported context closure. Unknown termination or profile integrity retains the lease and quarantines canonical authority. Browser-managed private session/cache files may contain site data within the private profile; they are not reports or model context. This is local filesystem isolation, not a new encryption or physical-erasure claim. No user profile is removed automatically.
+A 0700 profile root and exclusive owner lease prevent concurrent sessions. Before launch, metadata-only inspection rejects symlinks, hardlinks, non-owned entries, special files and broad permissions anywhere in a reused profile; integrity failures retain the lease without reading, repairing or deleting suspect data. Browser-managed files are hardened to 0600/0700 after supported context closure. Unknown termination or profile integrity retains the lease and quarantines canonical authority. Browser-managed private session/cache files may contain site data within the private profile; they are not reports or model context. This is local filesystem isolation, not a new encryption or physical-erasure claim. No user profile is removed automatically.
 
 ## Evidence and disposition
 

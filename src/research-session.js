@@ -15,13 +15,27 @@ function authorization(a,scope){
  if(!a||Object.keys(a).some(k=>!['id','origin','login_url','confirmed','purpose','mode'].includes(k))||!UUID.test(a.id||'')||a.confirmed!==true||a.purpose!=='competitor_product_research'||a.mode!=='dedicated_manual'||scope.usePersistentProfile!==true||scope.useVault||scope.allowDownloads!==false||scope.origins.length!==1||a.origin!==scope.origins[0]||new URL(a.login_url).origin!==a.origin)throw error('sealed_session_authorization_required');
  safeOrigin(a.origin);return Object.freeze(structuredClone(a));
 }
+function validateProfileTree(dir,{privateModes=true}={}){
+ let nodes=0;
+ const visit=(file,depth)=>{
+  if(++nodes>100000||depth>64)throw error('profile_metadata_bound');
+  const stat=fs.lstatSync(file);
+  if(stat.isSymbolicLink()||stat.uid!==process.getuid?.()||!stat.isDirectory()&&!stat.isFile()||stat.isFile()&&stat.nlink!==1||privateModes&&stat.mode&0o077)throw error('profile_integrity_denied');
+  if(stat.isDirectory())for(const name of fs.readdirSync(file))visit(path.join(file,name),depth+1);
+ };
+ visit(dir,0);
+}
 function profile(root,origin){
  // No caller-selected paths. Inspect metadata only, never browser secret files.
  privateDirectory(root);const base=privateDirectory(path.join(root,'browser-profiles'),true),dir=privateDirectory(path.join(base,hash(origin)),true),lock=path.join(dir,'.airodrom-owner');
- const fd=fs.openSync(lock,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);fs.closeSync(fd);
- return {dir,release:()=>fs.unlinkSync(lock)};
+ const fd=fs.openSync(lock,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);let identity;
+ try{identity=fs.fstatSync(fd);validateProfileTree(dir);}finally{fs.closeSync(fd);}
+ // Integrity failure retains the owner lease as quarantine. Never repair,
+ // follow or delete suspect browser files, and never launch Chrome into them.
+ return {dir,release:()=>{const current=fs.lstatSync(lock);if(!current.isFile()||current.isSymbolicLink()||current.dev!==identity.dev||current.ino!==identity.ino||current.uid!==identity.uid||current.nlink!==1||current.mode&0o077)throw error('profile_owner_lease_changed');fs.unlinkSync(lock);}};
 }
 function harden(dir){
+ validateProfileTree(dir,{privateModes:false});
  for(const row of fs.readdirSync(dir,{withFileTypes:true})){
   const file=path.join(dir,row.name),stat=fs.lstatSync(file);
   if(stat.isSymbolicLink()||stat.uid!==process.getuid?.()||stat.isFile()&&stat.nlink!==1)throw error('profile_integrity_denied');
@@ -139,4 +153,4 @@ class SessionBrowser extends ResearchBrowser{
   })();return this.closePromise;
  }
 }
-module.exports={SessionBrowser,authorization,profile,harden,allowedURL,inspectSessionDocument,ROUTES};
+module.exports={SessionBrowser,authorization,profile,harden,validateProfileTree,allowedURL,inspectSessionDocument,ROUTES};
