@@ -141,10 +141,12 @@ function intro({ color = false, mode, unicode = true, columns = 80, rows = 40, g
   const graphic = mode !== 'none' && unicode ? inlineImage(graphics, width, height) : '';
   const info = [version, '', 'Personal assistant.', 'Local. Private. Governed.'];
   if (graphic) {
-    if (compact) return title + '\r\n' + graphic + '\r\n'.repeat(height) + wrap(version, columns) + '\n';
+    // Reserve rows first, including when the shell prompt starts near the bottom.
+    const placement = '\r\n'.repeat(height) + `\x1b[${height}A\r` + graphic;
+    if (compact) return title + '\r\n' + placement + '\r\n'.repeat(height) + wrap(version, columns) + '\n';
     const start = Math.floor((height - info.length) / 2);
     // Move across the image without writing spaces over its anchor cell.
-    return title + '\r\n' + graphic + Array.from({length:height}, (_, i) =>
+    return title + '\r\n' + placement + Array.from({length:height}, (_, i) =>
       `\x1b[${width + 3}C${info[i - start] || ''}\r\n`).join('');
   }
   const art = mark({ mode, compact, small, unicode });
