@@ -13,23 +13,30 @@ function fixture(t){
  return {home,values,calls,port,vault:new SecretVault(home,port)};
 }
 test('natural identifier ingress has no value in default routing or credential fallthrough',()=>{
- for(const text of ['Hi Airo, save my mailbox number 818','hi airo please save secret of my mailbox number - 818']){
+ for(const text of ["Hi Airo, let's save my mailbox number 818.",'Hi Airo, let’s save my mailbox number 818.','Hello Airodrom, please let us save my mailbox number 818.','Hi Airo, save my mailbox number 818','hi airo please save secret of my mailbox number - 818']){
   assert.equal(intent.parse(text,{capture:true}).value,'818');assert.equal(intent.parse(text).classification,'private_identifier');assert.doesNotMatch(JSON.stringify(intent.parse(text)),/818/);
  }
  assert.equal(intent.parse('Save my mailbox number 818\nThanks').action,'clarify');assert.equal(intent.parse('My mailbox number is 818\nExplain that').action,'clarify');
  assert.equal(intent.parse("What's my mailbox number?").action,'reveal');
- for(const text of ['save my mailbox number password is synthetic-credential','save my password 818','save my PIN 818','save my mailbox number sk-proj-syntheticcanary'])assert.equal(intent.parse(text),null);
+ for(const text of ["Hi Airo, let's save my password 818.","Hi Airo, let's save my mailbox number PIN 818.",'Hi Airo, let’s save my mailbox number sk-proj-syntheticcanary.','save my mailbox number password is synthetic-credential','save my password 818','save my PIN 818','save my mailbox number sk-proj-syntheticcanary']){
+  assert.equal(intent.parse(text),null);assert.equal(require('../src/assistant-intent').parse(text).kind,'secret');
+ }
+ for(const text of ["Hi Airo, let's not save my mailbox number 818.","Hi Airo, let's save my mailbox number 818 and locker number 999.","Hi Airo, let's save my mailbox number 818. Then send it.","Hi Airo, let's save my mailbox number 818.\nYes"]){
+  assert.equal(intent.parse(text).action,'clarify');assert.doesNotMatch(JSON.stringify(intent.parse(text)),/818|999/);
+ }
  assert.equal(intent.parse('Save my mailbox number').action,'clarify');assert.equal(intent.parse('Hi'),null);
 });
 test('confirmed named save and restart lookup disclose only in operator reveal output',async t=>{
  const f=fixture(t),out=output();
- const saved=await guide({message:'Hi Airo, save my mailbox number 818',input:new Terminal(['yes\r']),output:out,vault:f.vault});assert.equal(saved.state,'saved');
+ const saved=await guide({message:"Hi Airo, let's save my mailbox number 818.",input:new Terminal(['yes\r']),output:out,vault:f.vault});assert.equal(saved.state,'saved');
  const metadata=fs.readFileSync(path.join(f.home,'vault-dispositions.json'),'utf8');assert.doesNotMatch(metadata+out.text()+JSON.stringify(saved),/818/);assert.equal(f.values.get(saved.reference),'818');
  const restarted=new SecretVault(f.home,f.port),reveal=output();const receipt=await guide({message:"What's my mailbox number?",input:new Terminal(['yes\r']),output:reveal,vault:restarted});
  assert.equal(receipt.state,'revealed');assert.match(reveal.text(),/mailbox number is 818/);assert.doesNotMatch(JSON.stringify(receipt),/818/);assert.deepEqual(f.calls.map(c=>c.op),['put','read']);
 });
 test('confirmation refusal and non-operator streams cannot save or reveal',async t=>{
  const f=fixture(t),out=output();assert.equal((await guide({message:'Save my mailbox number 818',input:new Terminal(['no\r']),output:out,vault:f.vault})).state,'cancelled');assert.equal(f.calls.length,0);
+ for(const answer of ['no\r','\r','\x03'])assert.equal((await guide({message:"Hi Airo, let's save my mailbox number 818.",input:new Terminal([answer]),output:out,vault:f.vault})).state,'cancelled');
+ assert.equal(f.calls.length,0);assert.equal(f.vault.search('Mailbox number').length,0);
  const saved=f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'});f.calls.length=0;
  assert.throws(()=>f.vault.revealPrivate(saved.reference,{confirmed:false}));
  assert.equal((await guide({message:"What's my mailbox number?",input:new Terminal(['no\r']),output:out,vault:f.vault})).state,'cancelled');assert.equal(f.calls.length,0);
@@ -38,6 +45,7 @@ test('confirmation refusal and non-operator streams cannot save or reveal',async
 });
 test('labels collide case-insensitively and rename cannot repurpose credentials',async t=>{
  const f=fixture(t),a=f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'});assert.throws(()=>f.vault.put('999','operator',{kind:'private_identifier',name:'mailbox NUMBER'}),/label/);
+ const collision=await guide({message:"Hi Airo, let's save my mailbox number 999.",input:new Terminal(['yes\r']),output:output(),vault:f.vault});assert.equal(collision.state,'collision');assert.equal(f.values.get(a.reference),'818');
  f.vault.rename(a.reference,'Locker number');assert.equal(f.vault.search('mailbox').length,0);assert.equal(f.vault.search('locker')[0].reference,a.reference);
  const credential=f.vault.put('synthetic-credential','operator',{kind:'password'});f.vault.rename(credential.reference,'Mailbox password');assert.throws(()=>f.vault.revealPrivate(credential.reference,{confirmed:true}),/identifier/);
  const out=output();assert.equal((await guide({message:'/secret reveal Mailbox password',input:new Terminal(['yes\r']),output:out,vault:f.vault})).state,'denied');assert.doesNotMatch(out.text(),/synthetic-credential/);

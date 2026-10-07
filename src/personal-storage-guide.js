@@ -25,6 +25,7 @@ async function guide({input, output, home, plan, message, signal, vault, request
    if (!['1', '2'].includes(target) || signal?.aborted) return cancelled();
    if (target === '2' && !vault.status().configured) {output.write('Keychain is unavailable. Prepare secure entry with airodrom secret prepare.\n'); return {state:'unavailable'};}
    const backend = target === '1' ? 'Sensitive Memory' : 'Vault';
+   if(target==='2'&&vault.search(name).some(item=>item.name.toLowerCase()===name.toLowerCase())){output.write('That label already exists in Vault. Review or remove it first.\n');return {state:'collision'};}
    output.write(`Save ${name.toLowerCase()} in ${backend}?\n`);
    if ((await choose('Type yes to confirm (hidden): ')).toLowerCase() !== 'yes' || signal?.aborted) return cancelled();
    const receipt = target === '1' ? await request({action:'save', label:name, value, confirmed:true}) : vault.put(value, 'operator', {kind:'private_identifier', name});
@@ -32,24 +33,26 @@ async function guide({input, output, home, plan, message, signal, vault, request
    return {state:'saved', backend, ...(target === '1' ? {memoryId:receipt.memoryId} : {reference:receipt.reference})};
   }
   const memory = await request({action:'lookup', label:name});
-  const choices = [...memory.items.map(item => ({backend:'Sensitive Memory', id:item.memoryId})), ...vault.search(name).filter(item=>item.kind==='private_identifier'&&item.name.toLowerCase()===name.toLowerCase()).map(item => ({backend:'Vault', id:item.reference}))];
+  const vaultRows=vault.search(name).filter(item=>item.kind==='private_identifier');
+  const exact=vaultRows.filter(item=>item.name.toLowerCase()===name.toLowerCase());
+  const choices = [...memory.items.map(item => ({backend:'Sensitive Memory', id:item.memoryId, label:name})), ...(exact.length?exact:vaultRows).map(item => ({backend:'Vault', id:item.reference, label:item.name}))];
   if (!choices.length) {output.write(`No current ${name.toLowerCase()} entry found.\n`); return {state:'empty'};}
   let selected = choices[0];
   if (choices.length > 1) {
-   choices.forEach((item, i) => output.write(`${i + 1}. ${name} · ${item.backend}\n`));
+   choices.forEach((item, i) => output.write(`${i + 1}. ${item.label} · ${item.backend}\n`));
    const index = await choose('Choose an entry number, or 0 to cancel (hidden): ');
    selected = /^[1-9]\d*$/.test(index) ? choices[Number(index) - 1] : null;
    if (!selected || signal?.aborted) return cancelled();
   }
-  output.write(`Reveal ${name.toLowerCase()} from ${selected.backend} in this terminal?\n`);
+  output.write(`Reveal ${selected.label.toLowerCase()} from ${selected.backend} in this terminal?\n`);
   if ((await choose('Type yes to reveal (hidden): ')).toLowerCase() !== 'yes' || signal?.aborted) return cancelled();
-  const vaultSelectionCurrent = () => vault.search(name).some(item => item.reference === selected.id && item.kind === 'private_identifier' && item.name.toLowerCase() === name.toLowerCase());
+  const vaultSelectionCurrent = () => vault.search(selected.label).some(item => item.reference === selected.id && item.kind === 'private_identifier' && item.name.toLowerCase() === selected.label.toLowerCase());
   if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
   value = selected.backend === 'Vault' ? vault.revealPrivate(selected.id, {confirmed:true}) : (await request({action:'reveal', label:name, id:selected.id, confirmed:true})).value;
   if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
   if (signal?.aborted) return cancelled();
   if (typeof value !== 'string' || !/^\d{1,12}$/.test(value)) throw Error('Private number unavailable.');
-  output.write(`Your ${name.toLowerCase()} is ${value}.\n`);
+  output.write(`Your ${selected.label.toLowerCase()} is ${value}.\n`);
   return {state:'revealed', operator_only:true};
  } catch (error) {
   if (signal?.aborted || error.message === 'Secure entry cancelled') return cancelled();
