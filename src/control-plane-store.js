@@ -10,7 +10,7 @@ const VERSION = 3;
 const {migrateMissionSchema}=require('./mission-schema');
 const {assertTransition}=require('./mission-lifecycle');
 const TERMINAL = new Set(['completed','failed','cancelled','interrupted']);
-const STATES = new Set(['planned','dispatching','verifying','awaiting_acceptance','ready','running','waiting_for_operator','waiting_for_dependency','waiting_for_agent','verification','awaiting_orchestrator_acceptance','needs_rework','blocked','paused','cancelled','completed']);
+const STATES = new Set(['draft','planned','dispatching','verifying','awaiting_acceptance','ready','running','waiting_for_operator','waiting_for_dependency','waiting_for_agent','verification','awaiting_orchestrator_acceptance','needs_rework','blocked','paused','cancelled','completed']);
 const json = JSON.stringify;
 function fingerprint(value) {
   const stable = x => Array.isArray(x) ? x.map(stable) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, stable(x[k])])) : x;
@@ -151,7 +151,7 @@ class ControlPlaneStore {
     });
   }
   event(type, missionId, metadata={}, extra={}) { return transaction(this.db,()=>{const m=missionId?this.getMission(missionId):null;const event=this.ledger.record({ eventType:type,agent:'bridge',direction:'internal',missionId:missionId||null,taskId:m?.task_id||extra.taskId||null,metadata:{ ...(['mission.paused','mission.resumed','mission.cancelled','mission.created'].includes(type)?{dispatch_path:'native_workflow'}:{}),...metadata,...(m?{mission_revision:m.revision}:{}) },...extra });
-    if(this.outbox&&m?.envelope.control_version===2&&require('./slack-runtime').ROUTES[type])this.outbox.enqueue({key:`ledger:${event.event_id}`,destination:'slack_event',ref:missionId,eventType:type,correlation:{mission_id:missionId,task_id:m.task_id,run_id:extra.runId||null},payload:{event_id:event.event_id,decision_id:metadata.decision_id||null}});return event;}); }
+    if(this.outbox&&m?.envelope.kind!=='work_request'&&m?.envelope.control_version===2&&require('./slack-runtime').ROUTES[type])this.outbox.enqueue({key:`ledger:${event.event_id}`,destination:'slack_event',ref:missionId,eventType:type,correlation:{mission_id:missionId,task_id:m.task_id,run_id:extra.runId||null},payload:{event_id:event.event_id,decision_id:metadata.decision_id||null}});return event;}); }
 
   getMission(id) {require('./memory-content-erasure').assertReadable(this.db); const r=this.db.prepare('SELECT * FROM cp_missions WHERE id=?').get(id);if(!r)return null;const canonical=this.authorityRuntime?.active?this.authorityRuntime.store.getMission(id):null;return {...r,...(canonical?{revision:canonical.current_revision,state:canonical.current_state,task_id:canonical.task_id}:{}),envelope:JSON.parse(r.envelope)}; }
   requireMission(id,owner=null) { const m=this.getMission(identifier(id));if(!m || (owner && m.owner!==owner))throw new Error('Mission not found in this caller context');return m; }
@@ -168,7 +168,7 @@ class ControlPlaneStore {
     });
   }
   state(id,state,reason=null) { if(!STATES.has(state))throw new Error('Invalid Mission state');return transaction(this.db,()=>{
-    const m=this.requireMission(id);if(m.envelope.control_version===2)assertTransition(m.state,state);if(['completed','cancelled'].includes(m.state)&&state!==m.state)throw new Error('Terminal Mission cannot resume');
+    const m=this.requireMission(id);if(m.envelope.kind==='work_request'&&!['draft','cancelled'].includes(state))throw Error('Work request draft grants no execution authority');if(m.envelope.control_version===2)assertTransition(m.state,state);if(['completed','cancelled'].includes(m.state)&&state!==m.state)throw new Error('Terminal Mission cannot resume');
     if(this.authorityRuntime?.active)this.authorityRuntime.store.setState(id,state);
     this.db.prepare(`UPDATE cp_missions SET state=?,reason=?,updated_at=?,revision=revision+${this.authorityRuntime?.active?0:1} WHERE id=?`).run(state,reason?text(reason,'state reason',1000):null,this.now(),id);
     this.db.prepare('UPDATE project_missions SET status=?,updated_at=? WHERE mission_id=?').run(['completed','cancelled'].includes(state)?state:['blocked','needs_rework'].includes(state)?'blocked':'active',this.now(),id);
@@ -176,6 +176,7 @@ class ControlPlaneStore {
   }); }
   run(id){require('./memory-content-erasure').assertReadable(this.db);const r=this.db.prepare('SELECT * FROM cp_runs WHERE id=?').get(id);return r?{...r,result:r.result?JSON.parse(r.result):null}:null;}
   startRun({id,taskId,missionId=null,agentId='host',generation=1,nativeSessionId=null,role='worker'}) {require('./removed-runtime').assertExecutable(agentId);return transaction(this.db,()=>{
+    if(missionId&&this.requireMission(missionId).envelope.kind==='work_request')throw Error('Work request draft grants no execution authority');
     if(this.run(id))return this.run(id);
     const now=this.now();this.db.prepare("INSERT INTO cp_runs(id,mission_id,task_id,agent_id,generation,state,process_state,liveness_state,native_session_id,created_at,updated_at) VALUES(?,?,?,?,?,'starting','not_started','unknown',?,?,?)").run(id,missionId,taskId,agentId,generation,nativeSessionId,now,now);
     if(this.authorityRuntime?.active&&missionId){const a=this.authorityRuntime.store,m=a.getMission(missionId);a.startRun({id,task_id:taskId,mission_id:missionId,mission_revision:m.current_revision,agent_id:agentId});}

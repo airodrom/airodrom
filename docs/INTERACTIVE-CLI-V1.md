@@ -50,18 +50,27 @@ but never rewrites another installation's configuration.
 | `airodrom task mission.json` | Register and dispatch an explicit scoped Mission |
 
 Interactive commands are `/remember <text>`, `/memory [query]`, `/forget <id or
-unambiguous query>`, `/status`, `/runtime [opencode]`, `/open`, `/task
-<mission.json>`, `/accept [review evidence]`, `/help` and `/quit`. Repeating “My
+unambiguous query>`, `/vault`, `/mission new [objective]`, `/mission list`,
+`/mission status [id]`, `/mission cancel [id]`, `/status`, `/details`,
+`/runtime [opencode]`, `/open`, `/task <mission.json>`, `/accept [review evidence]`,
+`/help` and `/quit`. Repeating “My
 test codename is …” uses its subject to correct the current fact. Arbitrary
 corrections can use the existing explicit memory-ID update API. Secret-like
 content is rejected by the canonical memory service. No remembered instruction
 can grant authority.
 
-Every plain input registers a fresh bounded reasoning Mission. It reads at most
-one relevant memory and gives OpenCode no file tools, shell, network tools, MCP,
-subagents or database access. An answer awaits operator review; `/accept` records
-Acceptance and Settlement. Coding requires declared scope and registered
-verification through `/task` or Control Hub. OpenCode is the only interactive agent choice. Typed deterministic plans execute through Airodrom host capabilities and independent verification. Pi is removed; unavailable OpenCode waits or fails closed. Historical removed-runtime tasks cannot receive context or resume.
+Ordinary questions use persistent direct local conversation with relevant
+ordinary Memory V2 references. They create no Work Mission, Task or execution
+lease and do not require `/accept`. The host routes Memory, secure Vault,
+authorized connectors, work and explicit Missions before inference. Work needs a
+host-registered bounded template; missing scope or qualification creates a
+non-executable Mission draft with a clarification. `/task` and Control Hub retain
+declared scope, registered verification, Acceptance and Settlement for executable
+work. OpenCode remains the default bounded execution runtime; typed deterministic
+plans use Airodrom host capabilities. Pi is removed and unavailable or
+unqualified execution fails closed. Historical removed-runtime tasks cannot
+receive context or resume. See [Conversation Engine V1](CONVERSATION-ENGINE-V1.md)
+for routing, persistence, secure entry and connector boundaries.
 
 The legacy foreground `npm start` and macOS login-service commands remain
 available for existing installations. Their private instances are not adopted
@@ -69,5 +78,7 @@ or removed by this CLI. An old browser tab must use its owning updated service
 before it can run the new admission path. Legacy task/shared scratch memories
 are not automatically imported into Personal Memory V2.
 
-See [ADR 0007](adr/0007-local-interactive-missions.md) for authority and privacy
-semantics, and [the existing runtime boundary](OPENCODE-RUNTIME-V1.md) for limits.
+See proposed [ADR 0011](adr/0011-conversation-engine-and-intent-routing.md) for the
+ordinary chat distinction, [ADR 0007](adr/0007-local-interactive-missions.md) for
+the retained governed Mission contract, and [the existing runtime
+boundary](OPENCODE-RUNTIME-V1.md) for execution limits.

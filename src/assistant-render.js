@@ -36,17 +36,40 @@ function receipt(data) {
  return 'Request handled.\n';
 }
 function rail(m) {return '────────────────────────────────────────\n'+`${m.model?.id||'Model unavailable'} · ${name(m.model?.locality||'local')} · ${name(m.runtime)}\n`+`Memory: ${m.memory?.selected_count??'Unavailable'} selected · ${m.memory?.delivery||'Unavailable'}\n`+`Response: ${['awaiting_acceptance','completed'].includes(m.state)?'ready':name(m.state)} · Verification: ${name(m.verification?.status)}\nReview: ${m.acceptance?.status==='accept'?'accepted':'/accept'} · Settlement: ${name(m.settlement?.status)}\n`+'────────────────────────────────────────\n';}
-function waitingFrame({elapsed=0,columns=80,mode='none',reduced=false}={}) {
+const waitingDots=[[1,2,4,64],[8,16,32,128]];
+const waitingPalette=[[110,105,220],[80,145,255],[69,200,220],[85,210,175]];
+function waitingFish(time,length,{mode,reduced}) {
+ // Four single-column glyphs: no emoji widths, extra rows or cursor movement.
+ if(length<8)return null;
+ const phase=(time%6.4)/6.4,column=Math.min(length-4,Math.floor(phase*(length-3)));
+ if(reduced)return {column:0,body:'><o>',splash:false};
+ const jump=(phase-.32)/.36,arc=jump>0&&jump<1?4*jump*(1-jump):0;
+ const body=mode==='none'||arc<.2?'><o>':arc<.65?'><ᵒ>':'˃˂ᵒ˃';
+ return {column,body,splash:mode!=='none'&&phase>=.68&&phase<.73};
+}
+function waitingFrame({elapsed=0,columns=80,mode='none',reduced=false,fish=true}={}) {
  const seconds=(Math.max(0,elapsed)/1000).toFixed(1)+'s';
  const width=Math.max(0,Math.floor(columns)-1); // Leave the wrap column unused.
- const label='◈ Thinking', room=width-label.length-seconds.length-4;
- if(room<4)return (width>=seconds.length+2?'◈ '+seconds:seconds).slice(0,width);
- const length=Math.min(14,room), phase=reduced?0:Math.floor(elapsed/80)%(length+4);
+ const label='⠿ Thinking', room=width-label.length-seconds.length-4;
+ if(room<4)return (width>=seconds.length+2?'⠿ '+seconds:seconds).slice(0,width);
+ const length=Math.min(20,room),time=reduced?0:Math.max(0,elapsed)/1000;
+ const swimmer=fish?waitingFish(time,length,{mode,reduced}):null;
  const bar=Array.from({length},(_,i)=>{
-  const lit=reduced?i===Math.floor(length/2):Math.abs(i-phase)<2;
-  const char=lit?'━':'─';
+  // Rise and fall inside the logo's eight-dot cells, keeping cleanup on one line.
+  const pulse=(Math.sin(i*.48-time*4.1)+1)/2,thickness=.55+pulse*.65;
+  let mask=0;
+  for(let x=0;x<2;x++){
+   const center=1.5+1.05*Math.sin((i*2+x)*.36-time*2.8);
+   for(let y=0;y<4;y++)if(Math.abs(y-center)<thickness)mask|=waitingDots[x][y];
+  }
+  // Overlay only the fish's cells; the water and palette keep their original phases.
+  if(swimmer?.splash&&(i===swimmer.column-1||i===swimmer.column+4))mask|=waitingDots[i===swimmer.column-1?1:0][0];
+  const char=swimmer&&i>=swimmer.column&&i<swimmer.column+4?swimmer.body[i-swimmer.column]:String.fromCharCode(0x2800+mask);
   if(mode==='none')return char;
-  const color=mode==='truecolor'?`38;2;${lit?'69;200;220':'80;145;255'}`:mode==='256'?`38;5;${lit?80:69}`:lit?'96':'34';
+  const hue=(Math.sin(i*.24-time*1.2)+1)/2,position=hue*(waitingPalette.length-1);
+  const stop=Math.min(waitingPalette.length-2,Math.floor(position)),mix=position-stop;
+  const rgb=waitingPalette[stop].map((v,n)=>Math.round(v+(waitingPalette[stop+1][n]-v)*mix));
+  const color=mode==='truecolor'?`38;2;${rgb.join(';')}`:mode==='256'?`38;5;${16+36*Math.round(rgb[0]/51)+6*Math.round(rgb[1]/51)+Math.round(rgb[2]/51)}`:[35,34,36,96][Math.round(hue*3)];
   return `\x1b[${color}m${char}`;
  }).join('')+(mode==='none'?'':'\x1b[0m');
  return `${label}  ${bar}  ${seconds}`;
