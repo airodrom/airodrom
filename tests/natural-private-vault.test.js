@@ -78,6 +78,14 @@ test('a selection renamed or revoked while confirmation is open cannot be reveal
  const input=new Terminal([stream=>{f.vault.forget(saved.reference);f.calls.length=0;stream.emit('data',Buffer.from('yes\r'));}]);
  assert.equal((await guide({message:"What's my mailbox number?",input,output:out,vault:f.vault})).state,'unavailable');assert.deepEqual(f.calls,[]);assert.doesNotMatch(out.text(),/818/);
 });
+test('native reveal rechecks its confirmed name and cancellation after value resolution',async t=>{
+ for(const change of ['rename','cancel']){
+  const f=fixture(t),saved=f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'}),out=output(),controller=new AbortController();
+  const vault=new SecretVault(f.home,(op,id,value)=>{if(op==='read'){if(change==='rename')f.vault.rename(saved.reference,'Locker number');else controller.abort();}return f.port(op,id,value);});
+  const receipt=await guide({message:'/secret reveal Mailbox number',input:new Terminal(['yes\r']),output:out,vault,signal:controller.signal});
+  assert.equal(receipt.state,change==='rename'?'unavailable':'cancelled');assert.doesNotMatch(out.text(),/818|Your mailbox number is/);
+ }
+});
 test('rename collisions and empty Vault show a useful next step without writes or reads',async t=>{
  const f=fixture(t),empty=output();assert.equal((await guide({message:'/secret list',input:new Terminal(),output:empty,vault:f.vault})).state,'listed');assert.match(empty.text(),/empty.*\/vault/);
  f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'});f.vault.put('999','operator',{kind:'private_identifier',name:'Locker number'});f.calls.length=0;

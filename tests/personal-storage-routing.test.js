@@ -22,9 +22,10 @@ test('greetings, contractions, polite preambles, nickname and punctuation route 
  assert.equal(intent.parse('Hi Airo, please forget 12345678-1234-4123-8123-123456789012').kind,'forget');
 });
 test('quoted, negated, incomplete, multiline and ambiguous input cannot authorize a save',()=>{
- for(const message of ['Please store','Can you remember?',"Don't save my mailbox number 818",'Do not remember my mailbox number 818','Explain the text "save my mailbox number 818"','"Save my mailbox number 818"','Save my mailbox number','Maybe save my mailbox number 818','Hi Airo, save my mailbox number 818\nThanks','Please store my mailbox number 818 and send it']){
+ for(const message of ['Please store','Can you remember?',"Don't save my mailbox number 818",'Do not remember my mailbox number 818','Explain the text "save my mailbox number 818"','"Save my mailbox number 818"','Maybe save my mailbox number 818','Hi Airo, save my mailbox number 818\nThanks','Please store my mailbox number 818 and send it']){
   assert.equal(intent.parse(message).kind,'clarify',message);
  }
+ const entry=intent.parse('Save my mailbox number');assert.equal(entry.kind,'private_vault');assert.equal(entry.action,'save');assert.equal(entry.value_present,false);assert.equal('value' in entry,false);
  for(const message of ['Explain the phrase "remember I prefer TypeScript"','Do not save my name','I remember a poem'])assert.equal(intent.parse(message).kind,'conversation');
 });
 test('credential-looking input is refused before all storage and inference paths',async()=>{

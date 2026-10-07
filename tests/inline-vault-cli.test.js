@@ -3,14 +3,14 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {PassThrough}=require('node:stream');
 const local=require('../src/local-bootstrap'),vaultModule=require('../src/secret-vault'),{interactive}=require('../src/interactive-cli');
 const EXACT="Hi Airo, let's save my mailbox number 818.";
-function fixture(t,{credentialRefusal=false}={}){
+function fixture(t,{credentialRefusal=false,nickname}={}){
  const home=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'airo-inline-test-')));
  fs.chmodSync(home,0o700);t.after(()=>fs.rmSync(home,{recursive:true,force:true}));
  const values=new Map(),calls=[],serviceCalls=[];
  const port=(op,id,value)=>{calls.push({op,id});if(op==='put')values.set(id,value);else if(op==='read')return values.get(id);};
  const CanonicalVault=vaultModule.SecretVault;
  t.mock.method(vaultModule,'SecretVault',function(directory){return new CanonicalVault(directory,port);});
- t.mock.method(local,'start',async()=>({default_runtime:'opencode'}));
+ t.mock.method(local,'start',async()=>({default_runtime:'opencode',nickname}));
  t.mock.method(local,'request',async(...args)=>{
   if(args[1]==='/api/interactive/memory?query=name')return {items:[]};
   serviceCalls.push(args);
@@ -99,6 +99,19 @@ test('greeted let us credential input stays refused by real host router without 
  assert.equal(f.serviceCalls.length,0);
 });
 
+test('valueless identifier requests retain native entry with persisted nickname and fresh confirmation',async t=>{
+ const f=fixture(t,{nickname:'Nova'}),cli=f.terminal();await cli.until('You › ');
+ const phrase="Nova, please save my mailbox number.";
+ const plan=require('../src/assistant-intent').parse(phrase,{nickname:'Nova'});
+ assert.equal(plan.kind,'private_vault');assert.equal(plan.value_present,false);
+ await cli.send(phrase+'\r','Mailbox number (digits; hidden until preview; Ctrl+C cancels): ');
+ assert.deepEqual(f.calls,[]);assert.deepEqual(f.serviceCalls,[]);
+ await cli.send('818\r','Confirm [y/N]');assert.deepEqual(f.calls,[]);
+ await cli.send('yes\r','You › ');assert.match(cli.text(),/Saved as Mailbox number in your private Vault/);
+ assert.equal(f.values.get(f.reopen().search('Mailbox number')[0].reference),'818');
+ assert.deepEqual(f.calls.map(c=>c.op),['put']);assert.deepEqual(f.serviceCalls,[]);
+ await cli.send('/quit\r','Local service remains available');await cli.running;
+});
 test('incremental credential typing and edited paste cannot echo values or reach a service',async t=>{
  const f=fixture(t),cli=f.terminal();await cli.until('You › ');
  cli.input.write('Hi Airo, save my pass');cli.input.write('word ');

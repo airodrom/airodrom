@@ -1,10 +1,10 @@
 'use strict';
 // Terminal-only host workflow. No HTTP, model, event, or history value path.
 const path=require('node:path'),{parse}=require('./private-vault-intent');
-async function guide({message,input,output,home,signal,vault}={}) {
+async function guide({message,input,output,home,signal,vault,nickname}={}) {
  if(!input?.isTTY||!output?.isTTY||typeof input.setRawMode!=='function')throw Error('Private Vault requires an interactive operator terminal.');
  if(input.listenerCount('data')||input.listenerCount('readable'))throw Error('Close ordinary terminal input before Private Vault.');
- const intent=parse(message,{capture:true});message=null;if(!intent)throw Error('Use /secret for private identifiers. Credentials require /vault secure entry.');
+ const intent=parse(message,{capture:true,nickname});message=null;if(!intent)throw Error('Use /secret for private identifiers. Credentials require /vault secure entry.');
  const local=require('./local-bootstrap');
  if(!vault){local.privateDirectory(home,true);vault=new(require('./secret-vault').SecretVault)(local.privateDirectory(path.join(home,'data'),true));}
  const terminal=require('./vault-cli');
@@ -47,7 +47,7 @@ async function guide({message,input,output,home,signal,vault}={}) {
    if(!await confirm(`Reveal ${selected.name} to you in this operator terminal?`))return cancel();
    current();
    // Reveal to the terminal only. No value-bearing receipt is returned.
-   let value=vault.revealPrivate(selected.reference,{confirmed:true});try{output.write(`Your ${selected.name.toLowerCase()} is ${value}.\n`);}finally{value='';}return {state:'revealed'};
+   let value=vault.revealPrivate(selected.reference,{confirmed:true});try{current();if(signal?.aborted)return cancel();output.write(`Your ${selected.name.toLowerCase()} is ${value}.\n`);}finally{value='';}return {state:'revealed'};
   }
   if(intent.action==='remove'){
    if(!await confirm(`Remove ${selected.name} and permanently revoke its reference?`))return cancel();

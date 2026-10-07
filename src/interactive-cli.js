@@ -169,7 +169,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   const privateGuide = async message => {
     if (!input.isTTY || !output.isTTY || !input.setRawMode) throw Error('Private Vault requires an interactive operator terminal.');
     await detachReader();
-    try { output.write('\nAiro\n');await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal}); }
+    try { output.write('\nAiro\n');await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal,nickname:assistantNickname}); }
     finally { if (!quitting && !input.readableEnded) {while(input.read()!==null){};attachReader();} }
   };
   const accountGuide = async entry_url => {
