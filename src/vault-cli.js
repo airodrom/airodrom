@@ -7,6 +7,10 @@ async function hidden(input,output,{prompt='Secret (hidden; Enter saves, Ctrl+C 
  if(input.listenerCount('data')||input.listenerCount('readable'))throw Error('Close ordinary terminal input before secure entry.');
  if(!Number.isInteger(maximum)||maximum<1||maximum>8192)throw Error('Invalid secure entry bound');
  if(signal?.aborted)throw Error('Secure entry cancelled');
+ // Every prompt requires fresh input. Separate queued chunks from an earlier
+ // menu must not become a later confirmation or credential value.
+ input.pause();
+ if(typeof input.read==='function')while(input.read()!==null){}
  const previousRaw=!!input.isRaw;
  return new Promise((resolve,reject)=>{
   let value='',finished=false;const decoder=new(require('node:string_decoder').StringDecoder)('utf8');

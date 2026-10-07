@@ -13,6 +13,13 @@ async function guide({input, output, home, plan, message, signal, vault, request
   vault = new (require('./secret-vault').SecretVault)(local.privateDirectory(path.join(home, 'data'), true));
  }
  const choose = prompt => hidden(input, output, {prompt, maximum:16, signal});
+ const confirm = async prompt => {
+  output.write('Yes / No — No cancels; pressing Enter chooses No.\n');
+  const approved = (await choose(prompt)).toLowerCase() === 'yes' && !signal?.aborted;
+  // Only a fixed decision label is echoed. Private or unexpected input stays hidden.
+  output.write(approved ? 'Yes\n' : 'No\n');
+  return approved;
+ };
  const cancelled = () => {output.write('Private storage cancelled.\n'); return {state:'cancelled'};};
  let value = '';
  try {
@@ -27,7 +34,7 @@ async function guide({input, output, home, plan, message, signal, vault, request
    const backend = target === '1' ? 'Sensitive Memory' : 'Vault';
    if(target==='2'&&vault.search(name).some(item=>item.name.toLowerCase()===name.toLowerCase())){output.write('That label already exists in Vault. Review or remove it first.\n');return {state:'collision'};}
    output.write(`Save ${name.toLowerCase()} in ${backend}?\n`);
-   if ((await choose('Type yes to confirm (hidden): ')).toLowerCase() !== 'yes' || signal?.aborted) return cancelled();
+   if (!await confirm('Type yes to confirm (hidden): ')) return cancelled();
    const receipt = target === '1' ? await request({action:'save', label:name, value, confirmed:true}) : vault.put(value, 'operator', {kind:'private_identifier', name});
    output.write(`${name} saved in ${backend}.\n`);
    return {state:'saved', backend, ...(target === '1' ? {memoryId:receipt.memoryId} : {reference:receipt.reference})};
@@ -45,7 +52,7 @@ async function guide({input, output, home, plan, message, signal, vault, request
    if (!selected || signal?.aborted) return cancelled();
   }
   output.write(`Reveal ${selected.label.toLowerCase()} from ${selected.backend} in this terminal?\n`);
-  if ((await choose('Type yes to reveal (hidden): ')).toLowerCase() !== 'yes' || signal?.aborted) return cancelled();
+  if (!await confirm('Type yes to reveal (hidden): ')) return cancelled();
   const vaultSelectionCurrent = () => vault.search(selected.label).some(item => item.reference === selected.id && item.kind === 'private_identifier' && item.name.toLowerCase() === selected.label.toLowerCase());
   if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
   value = selected.backend === 'Vault' ? vault.revealPrivate(selected.id, {confirmed:true}) : (await request({action:'reveal', label:name, id:selected.id, confirmed:true})).value;
