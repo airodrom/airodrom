@@ -18,6 +18,7 @@ function install() {
   const r = spawnSync('npm', ['link', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: root, stdio: 'ignore', timeout: 30000 });
   if (r.status !== 0 || fs.realpathSync(target) !== path.join(root, 'scripts/airodrom.cjs')) throw Error('Local npm link did not complete. No shell settings were changed.');
   if (!(process.env.PATH || '').split(path.delimiter).includes(bin)) throw Error('Installed the command in the user npm bin directory. Add that directory to Terminal PATH; shell settings were preserved.');
+  require('./macos/prepare-local-menu.cjs').prepare(require('../src/local-bootstrap').localHome());
   console.log('Local command installed. Run airodrom from any Terminal directory. Undo with npm unlink -g airodrom.');
 }
 if (require.main === module) { try { install(); } catch (e) { console.error(e.message); process.exitCode = 1; } }

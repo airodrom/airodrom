@@ -86,7 +86,7 @@ function sandboxProfile(root, executable, writable) {
   for (const f of writable) profile += `(allow file-write* (literal ${quote(path.join(root, 'workspace', f))}))\n`;
   return profile;
 }
-function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable }) {
+function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable, onStart }) {
   if (process.platform !== 'darwin' && !fixtureExecutable) fail('opencode_platform_unqualified');
   const file = fixtureExecutable || '/usr/bin/sandbox-exec';
   const args = fixtureExecutable ? [] : ['-p', sandboxProfile(root, executable, writable), executable, 'run', '--standalone', '--format', 'json', '--agent', 'airodrom', '--model', env.OPENCODE_MODEL || JSON.parse(env.OPENCODE_CONFIG_CONTENT).model];
@@ -102,6 +102,7 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
     // Diagnostics are never returned or persisted, including failure paths.
     child.stderr.on('data', c => { bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); } });
     child.stdin.on('error', () => {});
+    child.once('spawn', () => { try { onStart?.(); } catch { stop(); } });
     child.on('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new AgentAdapterError('opencode_spawn_failed', 'opencode_spawn_failed')); });
     child.on('close', async (code, childSignal) => {
       clearTimeout(timer); signal?.removeEventListener('abort', abort);
@@ -166,7 +167,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const p=run.result?.opencode_provenance,executable=this.executable();
     if(run.state!=='completed'||!run.termination_verified||!p||p.runtime_id!=='opencode'||p.runtime_version!==VERSION||p.authority!==false||p.workspace_bound!==true||p.termination_verified!==true||p.session_state!=='disposable'||!executable||p.executable_sha256!==hash(fs.readFileSync(executable)))fail('opencode_provenance_unavailable');
   }
-  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId } = {}) {
+  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart } = {}) {
     if (sessionId) fail('opencode_session_reuse_denied');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || deadline !== null && !Number.isSafeInteger(deadline) || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
@@ -189,7 +190,7 @@ class OpenCodeAdapter extends AgentAdapter {
       const executable = this.verifyArtifact(this.executable()), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
       const remaining = expiresAt - Date.now();
       if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
-      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable });
+      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart });
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
       if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
       if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
@@ -217,7 +218,9 @@ class OpenCodeAdapter extends AgentAdapter {
     const controller = new AbortController(); this.active.set(task.id, controller);
     const deadline = m.envelope.kind==='conversation' ? m.envelope.manifest.expires_at : null;
     const expiryTimer = deadline === null ? null : setTimeout(()=>controller.abort(), Math.max(0, deadline-Date.now()));
-    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal }); }
+    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal,
+      onStart: () => { b.controlStore.event('runtime.execution.started',m.id,{agent_id:'opencode'},{runId:b.controlContext.inspect(context.id).run_id}); b.emit('change'); }
+    }); }
     finally { clearTimeout(expiryTimer); this.active.delete(task.id); }
   }
   async cancel({ task } = {}) { this.active.get(task?.id)?.abort(); return { cancellation_requested: true, authority: false }; }

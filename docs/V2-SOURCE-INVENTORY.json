@@ -1,0 +1,27 @@
+{
+  "baseline": "ea4d362a2d4a881116f4f201f08c0502359152b4",
+  "scope": "Frozen Visual Experience V2 including native menu bar and repository productization",
+  "somin_head": "a07c89ebb02ec71a5fcff34f20a3c013869432dd",
+  "sources": {
+    "ThemeProvider.tsx": "f8a486a1211834b78dfbe9b14c301e86cabd19abd0ace68ab4bc463ffabc6baa",
+    "StyledComponents.tsx": "7fa37f390ddcfdda4ce1774760384f3206d854e42d63253747d8fecce72f8e5e",
+    "HackerLayout.tsx": "4fc86acaf2a25b7d61fdd9564ed66bfef81375212e7abd0ad1a3912776cc89a5",
+    "PlatformShell.tsx": "ea712dc9ce8b2001feb6d1876fac658b568771b9e98dc156c07f8029a61f63c2",
+    "AreciboShell.tsx": "27834e9deb484c61f0d43062953fb44b0e60bc941a4a9de7b0c919a396f36e4c",
+    "AreciboWidgets.tsx": "4f3a40000142c65b51c2bfead67816d32324ee4c5a4bf6e0254b751a6001444a",
+    "WeatherAtmosphere.tsx": "818a9d3aae9fa8e219b11e12442efe1a48e138fe333588540187c49feb9b348e",
+    "CyberPercentLoader.tsx": "b510a90a3e3ea8ecc71ed0ec18dde4d3a21300744916dcf0d0a45d5bf01b5940"
+  },
+  "adaptations": {
+    "ThemeProvider": "Airodrom palette, display/monospace roles, 150/300ms property-specific interactions",
+    "StyledComponents": "GlassCard, HackerButton and input focus in plain CSS",
+    "HackerLayout": "Layered static atmospheric gradient and grid, responsive sidebar",
+    "PlatformShell/AreciboShell": "Gradient-framed header, translucent panels, active navigation and status chips",
+    "AreciboWidgets": "Status tones, restrained card entry and elevation; real counts without count-up",
+    "WeatherAtmosphere": "Live reduced-motion preference and hidden-page guard only",
+    "CyberPercentLoader": "Track/surface styling only; all simulated progress excluded"
+  },
+  "delivery": "Authenticated same-origin bounded cursor polling, 2.5s minimum with backoff, 200-event pages, 500 retained safe events",
+  "display": "Overview/feed/native/receipts: bounded host metadata only. Separate explicit authenticated Memory display: up to20 current normal-sensitivity personal records, cleared on canonical generation change/navigation/hide/auth loss or mutation.",
+  "actions": "Existing conversation admission, task-bound cancellation/dispatch/Acceptance; explicit canonical Memory retrieve/remember/correct/forget; project archive and task-bound protected Approval review; canonical local lifecycle and qualification only"
+}

@@ -22,6 +22,13 @@ private struct BridgeStatus: Codable {
     let lastHeartbeatAt: Double?
     let now: Double
     let managed: Bool
+    struct Product: Codable {
+        struct Mission: Codable { let id: String?; let label: String; let state: String; let phase: String; let progress: String }
+        let control: String?; let status: String; let runtime: String; let runtimeReason: String?; let memory: String; let provider: String
+        let approvals: Int?; let mission: Mission?; let diagnostic: String
+        let quarantined_leases: Int?
+    }
+    let product: Product?
     var valid: Bool {
         tasks.active >= 0 && tasks.connected >= 0 && tasks.total >= 0 &&
         tasks.counts.values.allSatisfy { $0 >= 0 && $0 <= 1_000_000 } && (pid == nil || pid! > 0)
@@ -34,7 +41,7 @@ private struct BridgeStatus: Codable {
         return "http://127.0.0.1:\(port)"
     }
 }
-private enum ControlAction: String { case status, start, stop, restart, open }
+private enum ControlAction: String { case status, start, stop, restart, open, cli, doctor, requalify; case openMission = "open-mission", cancelMission = "cancel-mission" }
 private enum HelperError: Error {
     case configuration, timeout, command, response, busy
     var message: String {
@@ -51,6 +58,7 @@ private struct Configuration {
     let node: String
     let control: String
     let dataDirectory: String
+    let localHome: String?
     init() throws {
         let info = Bundle.main.infoDictionary ?? [:]
         guard let node = info["AirodromNode"] as? String,
@@ -60,6 +68,7 @@ private struct Configuration {
               FileManager.default.isExecutableFile(atPath: node),
               FileManager.default.isReadableFile(atPath: control) else { throw HelperError.configuration }
         self.node = node; self.control = control; self.dataDirectory = directory
+        self.localHome = info["AirodromHome"] as? String
     }
 }
 private final class Invocation: @unchecked Sendable {
@@ -85,9 +94,9 @@ private final class Invocation: @unchecked Sendable {
 private final class Controller {
     let configuration: Configuration
     init(configuration: Configuration) { self.configuration = configuration }
-    func perform(_ action: ControlAction, completion: @escaping (Result<BridgeStatus, HelperError>) -> Void) {
+    func perform(_ action: ControlAction, missionId: String? = nil, completion: @escaping (Result<BridgeStatus, HelperError>) -> Void) {
         DispatchQueue.global(qos: .utility).async { [configuration] in
-            let mutation = action == .start || action == .stop || action == .restart
+            let mutation = action == .start || action == .stop || action == .restart || action == .requalify
             let controlLock = mutation ? acquirePrivateLock(configuration.dataDirectory, name: "macos-control.lock") : nil
             if mutation && controlLock == nil { completion(.failure(.busy)); return }
             defer { if let controlLock { Darwin.close(controlLock) } }
@@ -95,14 +104,19 @@ private final class Controller {
             let process = invocation.process
             process.executableURL = URL(fileURLWithPath: configuration.node)
             process.arguments = [configuration.control, action.rawValue, "--control-locked"]
+            if action == .openMission || action == .cancelMission {
+                guard let missionId, UUID(uuidString: missionId) != nil else { completion(.failure(.response)); return }
+                process.arguments?.append(missionId)
+            }
             process.currentDirectoryURL = URL(fileURLWithPath: configuration.control).deletingLastPathComponent()
             process.environment = ["HOME": NSHomeDirectory(), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "en_US.UTF-8"]
+            if let home = configuration.localHome { process.environment?["AIRODROM_HOME"] = home }
             process.standardOutput = output
             process.standardError = FileHandle.nullDevice
             process.standardInput = FileHandle.nullDevice
             do { try process.run() } catch { completion(.failure(.command)); return }
             let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-            timer.schedule(deadline: .now() + 25)
+            timer.schedule(deadline: .now() + ([ControlAction.start, .restart, .requalify].contains(action) ? 160 : 25))
             timer.setEventHandler { invocation.expire() }
             timer.resume()
             let data = output.fileHandleForReading.readDataToEndOfFile()
@@ -116,159 +130,159 @@ private final class Controller {
         }
     }
 }
+private func brandImage() -> NSImage {
+    let polygons: [[CGPoint]] = [[CGPoint(x: 12.000, y: 223.348),CGPoint(x: 106.431, y: 32.652),CGPoint(x: 152.323, y: 136.423),CGPoint(x: 162.203, y: 136.423),CGPoint(x: 131.860, y: 70.607),CGPoint(x: 149.893, y: 32.706),CGPoint(x: 244.000, y: 223.348),CGPoint(x: 180.020, y: 223.348),CGPoint(x: 163.175, y: 189.334),CGPoint(x: 92.825, y: 189.334),CGPoint(x: 76.465, y: 223.348),CGPoint(x: 12.000, y: 223.348)],[CGPoint(x: 150.109, y: 62.617),CGPoint(x: 145.304, y: 72.281),CGPoint(x: 182.234, y: 148.301),CGPoint(x: 97.738, y: 148.301),CGPoint(x: 121.386, y: 99.709),CGPoint(x: 105.837, y: 62.509),CGPoint(x: 33.057, y: 210.930),CGPoint(x: 42.667, y: 210.930),CGPoint(x: 106.970, y: 81.352),CGPoint(x: 113.395, y: 97.225),CGPoint(x: 84.294, y: 156.399),CGPoint(x: 186.121, y: 156.399),CGPoint(x: 213.171, y: 210.930),CGPoint(x: 223.429, y: 210.930),CGPoint(x: 150.109, y: 62.617)],[CGPoint(x: 128.459, y: 113.692),CGPoint(x: 118.147, y: 136.423),CGPoint(x: 139.095, y: 136.423),CGPoint(x: 128.459, y: 113.692)],[CGPoint(x: 78.355, y: 168.817),CGPoint(x: 57.677, y: 210.930),CGPoint(x: 68.043, y: 210.930),CGPoint(x: 84.834, y: 176.916),CGPoint(x: 171.760, y: 176.916),CGPoint(x: 188.389, y: 210.930),CGPoint(x: 198.701, y: 210.930),CGPoint(x: 178.023, y: 168.817),CGPoint(x: 78.355, y: 168.817)]]
+    let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { rect in
+        NSColor.black.setFill()
+        let path = NSBezierPath(); path.windingRule = .evenOdd
+        for polygon in polygons {
+            for (index, point) in polygon.enumerated() {
+                let p = CGPoint(x: point.x / 256 * rect.width, y: (256 - point.y) / 256 * rect.height)
+                if index == 0 { path.move(to: p) } else { path.line(to: p) }
+            }
+            path.close()
+        }
+        path.fill(); return true
+    }
+    image.isTemplate = true
+    image.accessibilityDescription = "Airodrom connected A mark"
+    return image
+}
 private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let controller: Controller
     private let helperLock: Int32
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
-    private let stateRow = NSMenuItem(title: "Status: Starting", action: nil, keyEquivalent: "")
-    private let detailRow = NSMenuItem(title: "Checking bridge…", action: nil, keyEquivalent: "")
-    private let endpointRow = NSMenuItem(title: "Control Center: checking…", action: nil, keyEquivalent: "")
-    private let pidRow = NSMenuItem(title: "Bridge process: checking…", action: nil, keyEquivalent: "")
-    private let mcpRow = NSMenuItem(title: "MCP: checking…", action: nil, keyEquivalent: "")
-    private let mcpActivityRow = NSMenuItem(title: "Last MCP request: checking…", action: nil, keyEquivalent: "")
-    private let tasksRow = NSMenuItem(title: "Tasks: checking…", action: nil, keyEquivalent: "")
-    private let taskStatesRow = NSMenuItem(title: "Task states", action: nil, keyEquivalent: "")
-    private let activityRow = NSMenuItem(title: "Last activity: checking…", action: nil, keyEquivalent: "")
-    private let heartbeatRow = NSMenuItem(title: "Last heartbeat: checking…", action: nil, keyEquivalent: "")
-    private let checkedRow = NSMenuItem(title: "Last checked: not yet", action: nil, keyEquivalent: "")
-    private var startItem: NSMenuItem!, restartItem: NSMenuItem!, stopItem: NSMenuItem!, openItem: NSMenuItem!, quitItem: NSMenuItem!
-    private var timer: Timer?
-    private var status: BridgeStatus?
-    private var checkedAt: Date?
-    private var lastError: String?
-    private var currentAction: ControlAction?
-    private var pendingAction: ControlAction?
+    private let stateRow = NSMenuItem(title: "Status: Waiting", action: nil, keyEquivalent: "")
+    private let runtimeRow = NSMenuItem(title: "OpenCode: Unavailable · Primary", action: nil, keyEquivalent: "")
+    private let memoryRow = NSMenuItem(title: "Memory V2: Unavailable · Local", action: nil, keyEquivalent: "")
+    private let missionRow = NSMenuItem(title: "Active Mission: none observed", action: nil, keyEquivalent: "")
+    private let approvalsRow = NSMenuItem(title: "Approvals: unavailable", action: nil, keyEquivalent: "")
+    private let detailRow = NSMenuItem(title: "Checking local observations…", action: nil, keyEquivalent: "")
+    private var startItem: NSMenuItem!, stopItem: NSMenuItem!, restartItem: NSMenuItem!, openItem: NSMenuItem!, qualifyItem: NSMenuItem!
+    private var cliItem: NSMenuItem!, doctorItem: NSMenuItem!, copyItem: NSMenuItem!
+    private var openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
+    private var timer: Timer?, status: BridgeStatus?, currentAction: ControlAction?
+    private var checkedAt: Date?, lastError: String?, failures = 0
     private var quitAfterAction = false
     init(controller: Controller, helperLock: Int32) { self.controller = controller; self.helperLock = helperLock; super.init() }
+    func inspectMenu(_ value: BridgeStatus) -> [String: Any] {
+        // Native fixture inspection renders the actual menu, without activating
+        // a window or executing an item. The process exits after its snapshot.
+        applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        status = value; currentAction = nil; render()
+        func entries(_ source: NSMenu) -> [[String: Any]] {
+            source.items.filter { !$0.isSeparatorItem }.map { item in
+                var row: [String: Any] = ["title": item.title, "enabled": item.isEnabled, "key": item.keyEquivalent]
+                if let sub = item.submenu { row["items"] = entries(sub) }
+                return row
+            }
+        }
+        return ["template_icon": statusItem.button?.image?.isTemplate == true, "items": entries(menu)]
+    }
+    private func item(_ title: String, _ selector: Selector, in target: NSMenu, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: selector, keyEquivalent: key); item.target = self; target.addItem(item); return item
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "A"
-        statusItem.button?.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
-        statusItem.button?.setAccessibilityLabel(platformName)
-        statusItem.menu = menu
-        menu.autoenablesItems = false
-        menu.addItem(NSMenuItem(title: platformName, action: nil, keyEquivalent: ""))
-        [stateRow, detailRow, endpointRow, pidRow].forEach { menu.addItem($0) }
+        statusItem.button?.image = brandImage(); statusItem.button?.setAccessibilityLabel("Airodrom")
+        statusItem.menu = menu; menu.autoenablesItems = false
+        menu.addItem(NSMenuItem(title: "AIRODROM · PRE-RELEASE", action: nil, keyEquivalent: ""))
+        [stateRow, runtimeRow, memoryRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
+        openItem = item("Open Control Center", #selector(openCenter), in: menu, key: "o")
+        cliItem = item("New Mission / Open CLI", #selector(openCLI), in: menu)
+        menu.addItem(.separator()); menu.addItem(missionRow); menu.addItem(approvalsRow)
+        openMissionItem = item("Open Mission", #selector(openMission), in: menu)
+        cancelMissionItem = item("Cancel Mission", #selector(cancelMission), in: menu)
+        _ = item("Review Missions & Approvals", #selector(openCenter), in: menu)
         menu.addItem(.separator())
-        [mcpRow, mcpActivityRow].forEach { menu.addItem($0) }
-        menu.addItem(NSMenuItem(title: "ChatGPT: end-to-end connection unverified", action: nil, keyEquivalent: ""))
-        menu.addItem(.separator())
-        [tasksRow, taskStatesRow, activityRow, heartbeatRow, checkedRow].forEach { menu.addItem($0) }
-        menu.addItem(.separator())
-        openItem = actionItem("Open Control Center", #selector(openCenter))
-        startItem = actionItem("Start Bridge", #selector(startBridge))
-        restartItem = actionItem("Restart Bridge", #selector(restartBridge))
-        stopItem = actionItem("Stop Bridge", #selector(stopBridge))
-        menu.addItem(.separator())
-        quitItem = actionItem("Quit Menu-Bar Helper", #selector(quitHelper))
-        render(); request(.status)
-        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
-            guard let self else { return }; self.render(); self.request(.status)
+        let health = NSMenu(); health.autoenablesItems = false
+        ["Control Plane", "OpenCode", "Memory V2", "Local provider"].forEach { health.addItem(NSMenuItem(title: $0 + ": unavailable", action: nil, keyEquivalent: "")) }
+        let healthRow = NSMenuItem(title: "System Health", action: nil, keyEquivalent: ""); healthRow.submenu = health; menu.addItem(healthRow)
+        let diagnostics = NSMenu(); diagnostics.autoenablesItems = false
+        doctorItem = item("Run Doctor", #selector(runDoctor), in: diagnostics)
+        qualifyItem = item("Requalify OpenCode (service must be stopped)", #selector(requalifyRuntime), in: diagnostics)
+        copyItem = item("Copy Safe Diagnostic Summary", #selector(copyDiagnostic), in: diagnostics)
+        let diagnosticsRow = NSMenuItem(title: "Diagnostics", action: nil, keyEquivalent: ""); diagnosticsRow.submenu = diagnostics; menu.addItem(diagnosticsRow)
+        let service = NSMenu(); service.autoenablesItems = false
+        startItem = item("Start Service", #selector(startBridge), in: service)
+        stopItem = item("Stop Service", #selector(stopBridge), in: service)
+        restartItem = item("Restart Service", #selector(restartBridge), in: service)
+        service.addItem(NSMenuItem(title: "Launch at Login: managed by optional macOS installer", action: nil, keyEquivalent: ""))
+        let serviceRow = NSMenuItem(title: "Service", action: nil, keyEquivalent: ""); serviceRow.submenu = service; menu.addItem(serviceRow)
+        menu.addItem(.separator()); menu.addItem(detailRow)
+        _ = item("Help / Documentation", #selector(documentation), in: menu)
+        _ = item("About Airodrom", #selector(about), in: menu)
+        _ = item("Quit Menu Bar (service stays running)", #selector(quitHelper), in: menu, key: "q")
+        request(.status)
+        timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self, self.currentAction == nil else { return }
+            self.request(.status)
         }
-        self.timer = timer
-        // Common modes keep polling while the menu is open.
-        RunLoop.main.add(timer, forMode: .common)
-    }
-    private func actionItem(_ title: String, _ selector: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-        item.target = self; menu.addItem(item); return item
+        if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
     private func request(_ action: ControlAction) {
-        guard !quitAfterAction else { return }
-        if currentAction != nil {
-            if action != .status, currentAction == .status, pendingAction == nil { pendingAction = action; render() }
-            return
-        }
-        currentAction = action
-        if action != .status { lastError = nil }
-        render()
-        controller.perform(action) { [weak self] result in
+        guard currentAction == nil, !quitAfterAction else { return }
+        currentAction = action; render()
+        controller.perform(action, missionId: status?.product?.mission?.id) { [weak self] result in
             DispatchQueue.main.async {
-                guard let self else { return }
-                self.currentAction = nil; self.checkedAt = Date()
+                guard let self else { return }; self.currentAction = nil; self.checkedAt = Date()
                 switch result {
-                case .success(let status): self.status = status; self.lastError = nil
-                case .failure(let error): self.lastError = error.message
+                case .success(let value): self.status = value; self.lastError = nil; self.failures = 0
+                case .failure(let error): self.status = nil; self.lastError = error.message; self.failures += 1
                 }
+                self.render()
                 if self.quitAfterAction { NSApp.terminate(nil); return }
-                if let pending = self.pendingAction { self.pendingAction = nil; self.request(pending) }
-                else { self.render() }
+                if action == .doctor { self.show("Airodrom Doctor", self.status?.product?.diagnostic ?? "Safe diagnostics unavailable.") }
             }
         }
-    }
-    private static func relative(_ milliseconds: Double?) -> String {
-        guard let milliseconds, milliseconds.isFinite, milliseconds > 0,
-              milliseconds < 253_402_300_800_000 else { return "not reported" }
-        let seconds = max(0, Int((Date().timeIntervalSince1970 * 1000 - milliseconds) / 1000))
-        if seconds < 5 { return "just now" }
-        if seconds < 60 { return "\(seconds)s ago" }
-        if seconds < 3_600 { return "\(seconds / 60)m ago" }
-        if seconds < 86_400 { return "\(seconds / 3_600)h ago" }
-        return "\(seconds / 86_400)d ago"
     }
     private func render() {
-        guard statusItem != nil else { return }
-        let action = pendingAction ?? currentAction
-        let changing = action != nil && action != .status && action != .open
-        let state = lastError != nil ? BridgeState.error : (status?.state ?? .starting)
-        let visibleState = action == .start || action == .restart ? "Starting" : action == .stop ? "Stopping" : state.rawValue
-        stateRow.title = "Status: \(visibleState)"
-        // control.cjs owns the fixed operator-message allowlist. No raw stderr,
-        // task error, token URL, or remote/model content is ever displayed.
-        detailRow.title = lastError ?? status?.message.map { String($0.prefix(200)) } ?? (status?.managed == true ? "Managed by macOS login startup" : "Bridge startup is not managed")
-        endpointRow.title = "Control Center: \(status?.localEndpoint ?? "unavailable")"
-        pidRow.title = status?.pid.map { "Bridge process: \($0)" } ?? "Bridge process: not running"
-        mcpRow.title = status?.mcp.ready == true ? "MCP: local endpoint ready" : "MCP: local endpoint unavailable"
-        mcpActivityRow.title = "Last MCP request: \(Self.relative(status?.mcp.lastCallAt))"
-        if let tasks = status?.tasks {
-            tasksRow.title = "Tasks: \(tasks.active) active · \(tasks.connected) connected · \(tasks.total) total"
-            let submenu = NSMenu()
-            let labels = ["starting": "Starting", "thinking": "Thinking", "running_tool": "Running tool", "compacting": "Compacting", "approval_required": "Approval required", "blocked": "Blocked", "idle": "Idle", "completed": "Completed", "cancelled": "Cancelled", "error": "Error", "interrupted": "Interrupted"]
-            var shown = 0
-            for key in labels.keys.sorted() {
-                if let count = tasks.counts[key], count > 0 {
-                    submenu.addItem(NSMenuItem(title: "\(labels[key]!): \(count)", action: nil, keyEquivalent: "")); shown += 1
-                }
-            }
-            let other = tasks.counts.filter { labels[$0.key] == nil }.values.reduce(0, +)
-            if other > 0 { submenu.addItem(NSMenuItem(title: "Other: \(other)", action: nil, keyEquivalent: "")); shown += 1 }
-            if shown == 0 { submenu.addItem(NSMenuItem(title: "No saved tasks", action: nil, keyEquivalent: "")) }
-            taskStatesRow.submenu = submenu
-        } else { tasksRow.title = "Tasks: unavailable"; taskStatesRow.submenu = nil }
-        activityRow.title = "Last activity: \(Self.relative(status?.lastActivityAt))"
-        heartbeatRow.title = "Last heartbeat: \(Self.relative(status?.lastHeartbeatAt))"
-        checkedRow.title = "Last checked: \(Self.relative(checkedAt.map { $0.timeIntervalSince1970 * 1000 }))"
-        let color: NSColor = changing || state == .starting ? .systemOrange : state == .connected ? .systemGreen : state == .error ? .systemRed : .secondaryLabelColor
-        if let dot = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: visibleState) {
-            let config = NSImage.SymbolConfiguration(pointSize: 7, weight: .regular).applying(.init(paletteColors: [color]))
-            statusItem.button?.image = dot.withSymbolConfiguration(config)
-            statusItem.button?.imagePosition = .imageLeading
+        let changing = currentAction != nil && currentAction != .status
+        let p = status?.product, state = status?.state
+        let visible = changing ? "Waiting" : p?.status ?? "Unavailable"
+        stateRow.title = "Status: " + visible
+        runtimeRow.title = "OpenCode: " + (p?.runtime ?? "Unavailable") + " · Primary"
+        if p?.runtimeReason == "opencode_runtime_pins_changed" { runtimeRow.title += " · Requalification required" }
+        memoryRow.title = "Memory V2: " + (p?.memory ?? "Unavailable") + " · Local"
+        missionRow.title = p?.mission.map { $0.label + " · " + $0.phase } ?? "Active Mission: none observed"
+        approvalsRow.title = p?.approvals.map { "Approvals: " + String($0) + " waiting" } ?? "Approvals: unavailable"
+        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : ""
+        statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title
+        statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title)
+        detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Local observations checked just now")
+        let available = currentAction == nil
+        startItem.isEnabled = available && state == .stopped
+        stopItem.isEnabled = available && state == .connected && status?.managed == true && status?.tasks.active == 0 && (p?.quarantined_leases ?? 0) == 0
+        restartItem.isEnabled = stopItem.isEnabled
+        openItem.isEnabled = available && state == .connected
+        cliItem.isEnabled = available && controller.configuration.localHome != nil
+        doctorItem.isEnabled = available && status?.product != nil
+        qualifyItem.isEnabled = available && state == .stopped && controller.configuration.localHome != nil
+        copyItem.isEnabled = available && p != nil
+        openMissionItem.isEnabled = available && p?.mission?.id != nil && controller.configuration.localHome != nil
+        cancelMissionItem.isEnabled = openMissionItem.isEnabled && ["dispatching", "running", "verifying", "awaiting_acceptance", "waiting_for_operator"].contains(p?.mission?.state ?? "")
+        if let health = menu.items.first(where: { $0.title == "System Health" })?.submenu {
+            let values = [p?.control, p?.runtime, p?.memory, p?.provider]
+            for (index, item) in health.items.enumerated() { item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + (values[index] ?? "Unavailable") }
         }
-        statusItem.button?.toolTip = "\(platformName) — \(visibleState)"
-        statusItem.button?.setAccessibilityValue(visibleState)
-        let busy = quitAfterAction || (action != nil && action != .status)
-        quitItem.isEnabled = !quitAfterAction
-        if quitAfterAction { detailRow.title = "Quitting after the current control request finishes…" }
-        openItem.isEnabled = !busy
-        startItem.isEnabled = !busy && state != .connected && state != .starting
-        restartItem.isEnabled = !busy && status?.pid != nil
-        stopItem.isEnabled = !busy && status?.pid != nil
     }
+    private func show(_ title: String, _ message: String) { let alert = NSAlert(); alert.messageText = title; alert.informativeText = message; alert.runModal() }
     @objc private func openCenter() { request(.open) }
+    @objc private func openCLI() { request(.cli) }
+    @objc private func openMission() { request(.openMission) }
+    @objc private func cancelMission() { request(.cancelMission) }
+    @objc private func runDoctor() { request(.doctor) }
+    @objc private func requalifyRuntime() { request(.requalify) }
     @objc private func startBridge() { request(.start) }
     @objc private func restartBridge() { request(.restart) }
     @objc private func stopBridge() { request(.stop) }
-    @objc private func quitHelper() {
-        if currentAction != nil {
-            quitAfterAction = true; pendingAction = nil; render()
-        } else { NSApp.terminate(nil) }
-    }
-    func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate(); Darwin.close(helperLock)
-        // Quit only this helper; leave the bridge and its LaunchAgent alone.
-    }
+    @objc private func copyDiagnostic() { guard let text = status?.product?.diagnostic else { return }; NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+    @objc private func documentation() { if let url = URL(string: "https://github.com/airodrom/airodrom#readme") { NSWorkspace.shared.open(url) } }
+    @objc private func about() { show("AIRODROM", "AI operating platform\n\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Version unavailable") · PRE-RELEASE\nOpenCode executes. Airodrom governs.\nLocal Memory V2 · independent verification · Acceptance · Settlement") }
+    @objc private func quitHelper() { if currentAction != nil { quitAfterAction = true } else { NSApp.terminate(nil) } }
+    func applicationWillTerminate(_ notification: Notification) { timer?.invalidate(); Darwin.close(helperLock) }
 }
 private func acquirePrivateLock(_ directory: String, name: String) -> Int32? {
     var directoryInfo = stat()
@@ -310,15 +324,26 @@ private func main() -> Int32 {
     let controller = Controller(configuration: configuration), arguments = CommandLine.arguments
     if arguments.count == 2 && arguments[1] == "--open-control-center" { return openControlCenter(configuration.dataDirectory) }
     if arguments.count > 1 {
-        guard arguments.count == 3, arguments[1] == "--action", let action = ControlAction(rawValue: arguments[2]) else {
-            fputs("Usage: AirodromMenu [--action status|start|stop|restart|open]\n", stderr); return 2
+        let inspecting = arguments.count == 2 && arguments[1] == "--inspect-menu"
+        guard inspecting || (arguments.count == 3 && arguments[1] == "--action" && ControlAction(rawValue: arguments[2]) != nil) else {
+            fputs("Usage: AirodromMenu [--action status|start|stop|restart|open|cli|doctor|requalify]\n", stderr); return 2
         }
+        let action = inspecting ? ControlAction.status : ControlAction(rawValue: arguments[2])!
         let done = DispatchSemaphore(value: 0)
         var exitCode: Int32 = 1
         controller.perform(action) { result in
             switch result {
             case .success(let status):
-                if let data = try? JSONEncoder().encode(status) {
+                if inspecting {
+                    DispatchQueue.main.async {
+                        let delegate = MenuApplication(controller: controller, helperLock: -1)
+                        if let data = try? JSONSerialization.data(withJSONObject: delegate.inspectMenu(status)) {
+                            FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([0x0a])); Darwin.exit(0)
+                        }
+                        Darwin.exit(1)
+                    }
+                    return
+                } else if let data = try? JSONEncoder().encode(status) {
                     FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([0x0a]))
                     exitCode = status.state == .error ? 1 : 0
                 }
@@ -327,8 +352,10 @@ private func main() -> Int32 {
                     FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([0x0a]))
                 }
             }
+            if inspecting { Darwin.exit(exitCode) }
             done.signal()
         }
+        if inspecting { NSApplication.shared.setActivationPolicy(.accessory); NSApplication.shared.run() }
         done.wait(); return exitCode
     }
     guard let lock = acquirePrivateLock(configuration.dataDirectory, name: "menu.lock") else {

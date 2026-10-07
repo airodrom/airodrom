@@ -150,7 +150,7 @@ class ControlPlaneStore {
     const check=this.db.prepare('PRAGMA integrity_check').get();if(Object.values(check)[0]!=='ok')throw new Error('Control plane integrity check failed');
     });
   }
-  event(type, missionId, metadata={}, extra={}) { return transaction(this.db,()=>{const m=missionId?this.getMission(missionId):null;const event=this.ledger.record({ eventType:type,agent:'bridge',direction:'internal',missionId:missionId||null,taskId:m?.task_id||extra.taskId||null,metadata:{ ...(['mission.paused','mission.resumed','mission.cancelled','mission.created'].includes(type)?{dispatch_path:'native_workflow'}:{}),...metadata },...extra });
+  event(type, missionId, metadata={}, extra={}) { return transaction(this.db,()=>{const m=missionId?this.getMission(missionId):null;const event=this.ledger.record({ eventType:type,agent:'bridge',direction:'internal',missionId:missionId||null,taskId:m?.task_id||extra.taskId||null,metadata:{ ...(['mission.paused','mission.resumed','mission.cancelled','mission.created'].includes(type)?{dispatch_path:'native_workflow'}:{}),...metadata,...(m?{mission_revision:m.revision}:{}) },...extra });
     if(this.outbox&&m?.envelope.control_version===2&&require('./slack-runtime').ROUTES[type])this.outbox.enqueue({key:`ledger:${event.event_id}`,destination:'slack_event',ref:missionId,eventType:type,correlation:{mission_id:missionId,task_id:m.task_id,run_id:extra.runId||null},payload:{event_id:event.event_id,decision_id:metadata.decision_id||null}});return event;}); }
 
   getMission(id) {require('./memory-content-erasure').assertReadable(this.db); const r=this.db.prepare('SELECT * FROM cp_missions WHERE id=?').get(id);if(!r)return null;const canonical=this.authorityRuntime?.active?this.authorityRuntime.store.getMission(id):null;return {...r,...(canonical?{revision:canonical.current_revision,state:canonical.current_state,task_id:canonical.task_id}:{}),envelope:JSON.parse(r.envelope)}; }
@@ -164,7 +164,7 @@ class ControlPlaneStore {
       this.db.prepare('INSERT INTO cp_grants VALUES(?,?,?,?)').run(grant,id,json(ceiling),now);
       this.db.prepare('INSERT INTO cp_missions(id,project_id,goal_id,task_id,owner,state,envelope,grant_id,created_at,updated_at,acceptance_strength) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,projectId,goalId,taskId,owner,'ready',json(envelope),grant,now,now,legacy?'runtime_only':'criteria');
       if(this.authorityRuntime?.active)this.authorityRuntime.registerMission(this.getMission(id));
-      this.event('mission.created',id,{legacy,grant_id:grant});return this.getMission(id);
+      this.event('mission.request_received',id);this.event('mission.created',id,{legacy,grant_id:grant});this.event('mission.authority_registered',id);return this.getMission(id);
     });
   }
   state(id,state,reason=null) { if(!STATES.has(state))throw new Error('Invalid Mission state');return transaction(this.db,()=>{
@@ -175,11 +175,11 @@ class ControlPlaneStore {
     this.event(`mission.${state}`,id,{previous:m.state,state});return this.getMission(id);
   }); }
   run(id){require('./memory-content-erasure').assertReadable(this.db);const r=this.db.prepare('SELECT * FROM cp_runs WHERE id=?').get(id);return r?{...r,result:r.result?JSON.parse(r.result):null}:null;}
-  startRun({id,taskId,missionId=null,agentId='host',generation=1,nativeSessionId=null}) {require('./removed-runtime').assertExecutable(agentId);return transaction(this.db,()=>{
+  startRun({id,taskId,missionId=null,agentId='host',generation=1,nativeSessionId=null,role='worker'}) {require('./removed-runtime').assertExecutable(agentId);return transaction(this.db,()=>{
     if(this.run(id))return this.run(id);
     const now=this.now();this.db.prepare("INSERT INTO cp_runs(id,mission_id,task_id,agent_id,generation,state,process_state,liveness_state,native_session_id,created_at,updated_at) VALUES(?,?,?,?,?,'starting','not_started','unknown',?,?,?)").run(id,missionId,taskId,agentId,generation,nativeSessionId,now,now);
     if(this.authorityRuntime?.active&&missionId){const a=this.authorityRuntime.store,m=a.getMission(missionId);a.startRun({id,task_id:taskId,mission_id:missionId,mission_revision:m.current_revision,agent_id:agentId});}
-    this.event('run.started',missionId,{agent_id:agentId,generation},{taskId,runId:id});return this.run(id);
+    this.event('run.started',missionId,{agent_id:agentId,generation,execution_role:role},{taskId,runId:id});return this.run(id);
   });}
   updateRun(id,{state,processState,liveness='unknown',verified=false,resolution=null,result=null,jobId=null,pid=null,deferAudit=false}={}) { return transaction(this.db,()=>{
     const run=this.run(id);if(!run)throw new Error('Run not found');if(TERMINAL.has(run.state)&&run.state!==state)throw new Error('Run already settled');

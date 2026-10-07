@@ -1,0 +1,7 @@
+'use strict';
+const local=require('./local-bootstrap'),path=require('node:path');
+async function doctor(home){let running=false,status=null,pins='Unavailable';try{running=!local.isStopped(home);}catch{}try{local.validatePins(local.ownedJSON(path.join(home,'runtime-pins.json')));pins='Ready';}catch{try{local.repairablePins(local.ownedJSON(path.join(home,'runtime-pins.json')));pins='Degraded · host pin needs requalification';}catch{pins='Unavailable · restore qualified artifacts';}}
+ if(running)try{status=await local.request(home,'/api/product/native-status');}catch{}
+ return {product:'Airodrom',release:'PRE-RELEASE',control:status?.control||(running?'Unavailable':'Stopped'),opencode:status?.runtime||'Unavailable',memory:status?.memory||'Unavailable',pins,active_missions:status?.active_missions??null,waiting_approvals:status?.approvals??null,repair:pins.startsWith('Degraded')?'Run airodrom stop, airodrom requalify, then airodrom start. Active or quarantined work prevents repair.':'Install qualified artifacts and use airodrom start.',privacy:'Only fixed categories and aggregate counts. No tokens, URLs, paths, memory, prompts or process arguments.'};}
+function summary(d){return ['AIRODROM · PRE-RELEASE','Control: '+d.control,'OpenCode: '+d.opencode+' · Primary','Memory V2: '+d.memory+' · Local','Runtime pins: '+d.pins,'Active Missions: '+(d.active_missions??'unavailable'),'Waiting Approvals: '+(d.waiting_approvals??'unavailable'),d.repair,d.privacy].join('\n')+'\n';}
+module.exports={doctor,summary};

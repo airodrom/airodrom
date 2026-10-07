@@ -66,6 +66,15 @@ class AuthorityStore {
     }
     if (restoreFromBackup) {
       erasure.reconcile(db, erasureSourceDb);
+      for(const restored of db.prepare("SELECT * FROM authority_memories WHERE status='active'").all()) {
+        if(erasure.marker(db,'governed',restored.id))continue;
+        const prior=erasureSourceDb.prepare('SELECT * FROM authority_memories WHERE id=?').get(restored.id);
+        if(!prior)throw Error('Restore requires current authoritative memory identity');
+        if(restored.operator_id!==prior.operator_id||restored.project_id!==prior.project_id||restored.scope!==prior.scope)throw Error('Restore supersession scope mismatch');
+        if(['kind','subject_key','value_json','content_hash','source_type','source_hash','source_refs_json','candidate_id','metadata_json','privacy','assurance','domains_json','reverify_task_classes_json','canonical_priority'].some(key=>restored[key]!==prior[key]))throw Error('Restore memory identity content mismatch');
+        const successor=prior.superseded_by_id&&db.prepare('SELECT 1 FROM authority_memories WHERE id=?').get(prior.superseded_by_id)?prior.superseded_by_id:null;
+        if(prior.status==='superseded')db.prepare("UPDATE authority_memories SET status='superseded',superseded_by_id=?,effective_until=? WHERE id=? AND status='active'").run(successor,prior.effective_until,prior.id);
+      }
       for (const prior of erasureSourceDb.prepare('SELECT id,operator_id,project_id,scope,expires_at,ttl_ms,last_verified_at FROM authority_memories').all()) {
         const restored = db.prepare('SELECT * FROM authority_memories WHERE id=?').get(prior.id);
         if (!restored) continue;

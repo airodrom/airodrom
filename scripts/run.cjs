@@ -4,11 +4,11 @@
 const { spawnSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const BRANDING = require('../src/branding');
-const check = "const {DatabaseSync}=require('node:sqlite');new DatabaseSync(':memory:').exec('CREATE VIRTUAL TABLE f USING fts5(content)')";
+const check = "const v=process.versions.node.split('.').map(Number);if(v[0]!==22||v[1]<23||v[1]===23&&v[2]<3)process.exit(1);const {DatabaseSync}=require('node:sqlite');new DatabaseSync(':memory:').exec('CREATE VIRTUAL TABLE f USING fts5(content)')";
 const configuredNode = process.env.AIRODROM_NODE;
 const candidates = configuredNode ? [configuredNode] : [process.execPath, '/opt/homebrew/opt/node@22/bin/node', '/usr/local/opt/node@22/bin/node'];
 const executable = [...new Set(candidates)].find(p => fs.existsSync(p) && spawnSync(p, ['--experimental-sqlite','-e',check], {stdio:'ignore'}).status === 0);
-if (!executable) { console.error(`${BRANDING.name} requires an installed Node 22.13+ build with SQLite FTS5. Set AIRODROM_NODE to its executable.`); process.exit(1); }
+if (!executable) { console.error(`${BRANDING.name} requires installed Node 22.23.3 or later in the 22.x line with SQLite FTS5. Set AIRODROM_NODE to its executable.`); process.exit(1); }
 const child = spawn(executable, ['--experimental-sqlite', ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, ...(process.argv.includes('--test')?{NODE_ENV:'test'}:{}), PATH: require('node:path').dirname(executable) + require('node:path').delimiter + process.env.PATH } });
 for (const signal of ['SIGINT','SIGTERM']) process.on(signal, () => child.kill(signal));
 child.on('error', e => { console.error(e.message); process.exitCode = 1; });

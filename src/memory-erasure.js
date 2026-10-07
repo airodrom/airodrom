@@ -16,7 +16,10 @@ function disposition(db) {
   }
   const provenance=db.prepare('SELECT generation,source_event_id,source_provenance FROM memory_erasure_markers ORDER BY generation').all();
   const retained=exists(db,'memory_erasure_content_rows')?db.prepare('SELECT * FROM memory_erasure_content_rows ORDER BY table_name,row_key').all():[];
-  return scopeHash({markers:db.prepare('SELECT store,identity,scope_hash,action,erased_at FROM memory_erasure_markers ORDER BY store,identity,action').all(),provenance,identities,retained});
+  const supersession={};
+  if(exists(db,'personal_memories'))supersession.personal=db.prepare('SELECT memory_id,domain,project_id,task_id,session_id,status,superseded_by,expires_at FROM personal_memories ORDER BY memory_id').all();
+  if(exists(db,'authority_memories'))supersession.governed=db.prepare('SELECT id,operator_id,project_id,scope,status,superseded_by_id,effective_until,expires_at,ttl_ms,last_verified_at FROM authority_memories ORDER BY id').all();
+  return scopeHash({markers:db.prepare('SELECT store,identity,scope_hash,action,erased_at FROM memory_erasure_markers ORDER BY store,identity,action').all(),provenance,identities,retained,supersession});
 }
 function assertCurrent(db,seen=new Set()) {
   if(seen.has(db))throw Error('Cyclic recovery authority requires independent current evidence');

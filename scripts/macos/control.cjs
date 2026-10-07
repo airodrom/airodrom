@@ -64,12 +64,12 @@ async function status(c) {
   const base = {state:'Stopped', managed:j.loaded, pid:null, endpoint:`http://127.0.0.1:${c.port}`, now:Date.now(), mcp:{ready:false,lastCallAt:null}, tasks:{active:0,connected:0,total:0,counts:{}},lastActivityAt:null,lastHeartbeatAt:null};
   try {
     const { ui, mcp, token } = uiDiscovery(c);
-    const [s, m] = await Promise.all([request(c.port, token, '/api/status'), request(c.port, mcp.token, '/api/mcp/health').catch(()=>({ready:false}))]);
+    const [s, m, product] = await Promise.all([request(c.port, token, '/api/status'), request(c.port, mcp.token, '/api/mcp/health').catch(()=>({ready:false})), request(c.port,token,'/api/product/native-status').catch(()=>null)]);
     if (s.pid !== ui.pid || !s.healthy) throw new Error('Health mismatch');
     return {...base, state:'Connected', pid:s.pid, managed:j.loaded && j.pid === s.pid, now:time(s.now) || base.now,
       mcp:{ready:m.ready === true && m.pid === s.pid,lastCallAt:time(s.mcp?.lastCallAt)},
       tasks:{active:count(s.tasks?.active),connected:count(s.tasks?.connected),total:count(s.tasks?.total),counts:Object.fromEntries(statuses.filter(k=>count(s.tasks?.counts?.[k])).map(k=>[k,count(s.tasks.counts[k])]))},
-      lastActivityAt:time(s.lastActivityAt),lastHeartbeatAt:time(s.lastHeartbeatAt)};
+      lastActivityAt:time(s.lastActivityAt),lastHeartbeatAt:time(s.lastHeartbeatAt),product};
   } catch {
     if (locked.blocked && (!j.pid || locked.pid !== j.pid)) return {...base,state:'Error',message:'Existing lock is in use or cannot be verified. No process was changed.'};
     if (j.loaded) return {...base,state:j.running ? 'Starting' : 'Error',pid:j.pid,message:j.running ? 'Waiting for local health.' : 'Login service is waiting or failed. Check the private service log.'};
@@ -111,7 +111,7 @@ async function open(c) {
 }
 async function action(command) {
   const c=config();
-  if (command === 'status') return status(c);
+  if (command === 'status' || command === 'doctor') return status(c);
   if (command === 'open') return open(c);
   if (!['start','stop','restart'].includes(command)) throw new Error('Unknown bridge action.');
   if(!process.argv.includes('--control-locked')) {
