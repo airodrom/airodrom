@@ -7,7 +7,7 @@ test('terminal mark uses canonical cutouts and portable color/width modes',()=>{
  for(const [env,expected]of [[{TERM:'xterm-256color',COLORTERM:'truecolor'},'truecolor'],[{TERM:'xterm-256color'},'256'],[{TERM:'xterm'},'16'],[{NO_COLOR:'',TERM:'xterm'},'none'],[{TERM:'dumb'},'none']]){
  const mode=brand.colorMode({tty:true,env});assert.equal(mode,expected);const output=brand.intro({mode,columns:80});assert.match(output,/AIRODROM/);assert.match(output,/PRE-RELEASE/);if(mode==='none')assert.doesNotMatch(output,/\x1b/);else assert.match(output,/\x1b/);
  }
- assert.equal(brand.mark().length,12);assert.equal(brand.mark({compact:true}).length,10);assert.equal(brand.colorMode({tty:false,env:{COLORTERM:'truecolor'}}),'none');
+ assert.equal(brand.mark().length,8);assert.equal(brand.mark({compact:true}).length,7);assert.equal(brand.colorMode({tty:false,env:{COLORTERM:'truecolor'}}),'none');
  const strip=require('node:util').stripVTControlCharacters;
  for(const mode of ['truecolor','256','16'])assert.deepEqual(brand.mark({mode}).map(row=>strip(row).replace(/[▀▄]/g,'#')),brand.mark({unicode:false}).map(row=>row.replace(/[+.]/g,'#')),'colored empty cells and canonical cutouts remain transparent');
  for(const width of [20,28,40,77,78,80])for(const mode of ['none','16','256','truecolor'])for(const unicode of [false,true]){
