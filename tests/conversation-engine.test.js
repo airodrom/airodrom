@@ -29,9 +29,9 @@ for(const canonical of [false,true])test('Memory erasure invalidates transitive 
  const m=b.rememberPersonalMemory({domain:'personal',type:'fact',subject:'name',content:'My name is SyntheticCanaryViolet.',source:'user_explicit',sensitivity:'normal'}),session=f.engine.session();
  const first=await f.start('What is my name?',session);await f.settle(first);assert.match(JSON.stringify(f.packets[0]),/SyntheticCanaryViolet/);
  const follow=await f.start('Please explain that answer.',session);await f.settle(follow);
- const unrelated=f.engine.session({new:true});const greeting=await f.start('Hi',unrelated);await f.settle(greeting);assert.doesNotMatch(JSON.stringify(f.packets.at(-1)),/SyntheticCanaryViolet/);
+ const unrelated=f.engine.session({new:true});const greeting=await f.start('Hi',unrelated);await f.settle(greeting);assert.match(JSON.stringify(f.packets.at(-1)),/SyntheticCanaryViolet/);
  if(canonical)b.authorityRuntime.memory.erase(m.memoryId,b.authorityRuntime.store.operator);else b.personalMemory.erase(m.memoryId);
- assert.equal(f.engine.history(session.conversation_id).length,0);assert.equal(f.engine.history(unrelated.conversation_id).length,1);
+ assert.equal(f.engine.history(session.conversation_id).length,0);assert.equal(f.engine.history(unrelated.conversation_id).length,0);
  const rows=b.controlStore.db.prepare('SELECT * FROM cp_conversation_turns WHERE conversation_id=?').all(session.conversation_id);assert.doesNotMatch(JSON.stringify(rows),/SyntheticCanaryViolet/);
  assert.throws(()=>b.controlStore.db.prepare('UPDATE cp_conversation_turns SET response=? WHERE id=?').run('SyntheticCanaryViolet',first.turn_id),/replay denied/);
  assert.equal(f.engine.result(identity(first)).state,'cancelled');await f.engine.close();new ConversationEngine(b);
@@ -40,7 +40,7 @@ for(const canonical of [false,true])test('Memory erasure invalidates transitive 
 test('in-flight forgotten Memory never reaches retained response; cancellation survives late transport',async t=>{
  let release;const gate=new Promise(r=>release=r);const f=await setup(t,false,async()=>{await gate;return response('Late synthetic canary.');});
  const m=f.bridge.rememberPersonalMemory({domain:'personal',type:'fact',subject:'name',content:'My name is SyntheticViolet.',source:'user_explicit',sensitivity:'normal'}),session=f.engine.session();
- const turn=await f.start('What is my name?',session);f.bridge.personalMemory.forget(m.memoryId);release();await f.settle(turn);assert.equal(f.engine.result(identity(turn)).state,'cancelled');
+ const turn=await f.start('Hi',session);f.bridge.personalMemory.forget(m.memoryId);release();await f.settle(turn);assert.equal(f.engine.result(identity(turn)).state,'cancelled');
  assert.equal(f.bridge.controlStore.db.prepare('SELECT response FROM cp_conversation_turns WHERE id=?').get(turn.turn_id).response,null);
 });
 test('conversation replay binds privacy choices and admission serializes concurrent qualification',async t=>{

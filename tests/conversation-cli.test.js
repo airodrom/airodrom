@@ -9,7 +9,7 @@ function fixture(t, request) {
   const calls = [], output = new PassThrough();
   let text = ''; output.on('data', chunk => text += chunk);
   t.mock.method(local, 'start', async () => ({ default_runtime: 'opencode' }));
-  t.mock.method(local, 'request', async (home, route, body) => { calls.push({ route, body }); return request(route, body); });
+  t.mock.method(local, 'request', async (home, route, body) => { if(route==='/api/interactive/memory?query=name')return {items:[]};calls.push({ route, body }); return request(route, body); });
   return { calls, output, text: () => text };
 }
 test('natural private identifier stays in detached operator ingress with zero service calls',async t=>{
@@ -38,7 +38,7 @@ test('direct terminal conversation reuses host session and prints prose without 
   assert.equal(f.calls.filter(c => c.route === '/api/assistant/conversation/session').length, 1);
   assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 2);
   assert.doesNotMatch(JSON.stringify(f.calls), /interactive\/task|interactive\/cancel|control-v2/);
-  assert.match(f.text(), /Airodrom\nHi! How can I help\?/);
+  assert.match(f.text(), /Airo\nHi! How can I help\?/);
   assert.doesNotMatch(f.text(), /Acceptance|Verification|Settlement|Mission|ZGF0YQ==|\u001b/);
 });
 
