@@ -7,7 +7,9 @@ async function capture(input,output,{prompt,maximum=8192,signal,choices}={}){
  if(input.listenerCount('data')||input.listenerCount('readable'))throw Error('Close ordinary terminal input before secure entry.');
  if(!Number.isInteger(maximum)||maximum<1||maximum>8192)throw Error('Invalid secure entry bound');
  if(signal?.aborted)throw Error('Secure entry cancelled');
- // Queued paste belongs to the previous prompt, never to a fresh decision.
+ // Every prompt requires fresh input. Separate queued chunks from an earlier
+ // menu must not become a later confirmation or credential value.
+ input.pause();
  if(typeof input.read==='function')while(input.read()!==null){}
  const previousRaw=!!input.isRaw;
  return new Promise((resolve,reject)=>{

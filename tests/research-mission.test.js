@@ -27,6 +27,14 @@ async function researchFixture(t,{block=false,uncertain=false,account=false,manu
  const create=extra=>b.missions.createResearch({request_id:randomUUID(),objective:'Audit public fixture and compare with Arecibo.',entry_url:'https://public.example/',...extra});
  return{...f,b,create,actions,browsers,resolved};
 }
+test('opaque research request digits cannot become secret-like mission prose',async t=>{
+ const f=await researchFixture(t),request_id='41111111-1111-4111-8112-111111111111';
+ assert.equal(require('../src/personal-memory').containsSecret(request_id),true);
+ const first=f.create({request_id}),second=f.create({request_id:'41111111-1111-4111-8112-111111111112'});
+ assert.notEqual(first.mission_id,second.mission_id);
+ assert.equal(f.create({request_id}).mission_id,first.mission_id);
+ assert.throws(()=>f.create({objective:'Audit public fixture. password is synthetic-test-value'}),/sensitive|credentials/);
+});
 test('research follows canonical native invocation, Verification, owner Acceptance and Settlement without writes or inference',async t=>{
  const f=await researchFixture(t,{provenanceDigits:true});delete f.b.options.researchMission.reportFactory;const denied=[path.join(f.repo,'.env'),path.join(f.repo,'private-export.json')];for(const file of denied)fs.writeFileSync(file,'Synthetic denied-file read canary\n');const originalRead=fs.readFileSync,originalOpen=fs.openSync,originalProjectSnapshot=f.b._projectMemoryRepositorySnapshot;let deniedReads=0,legacySnapshots=0;f.b._projectMemoryRepositorySnapshot=()=>{legacySnapshots++;throw Error('Research called broad legacy repository metadata');};const guard=file=>{if(typeof file==='string'&&denied.includes(path.resolve(file))){deniedReads++;throw Error('Research opened denied private content');}};fs.readFileSync=function(file,...args){guard(file);return originalRead.call(this,file,...args);};fs.openSync=function(file,...args){guard(file);return originalOpen.call(this,file,...args);};t.after(()=>{fs.readFileSync=originalRead;fs.openSync=originalOpen;f.b._projectMemoryRepositorySnapshot=originalProjectSnapshot;});
  const r=f.create(),before=fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),m=f.b.controlStore.getMission(r.mission_id),task=f.b.tasks.get(r.task_id);

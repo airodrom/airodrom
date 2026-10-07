@@ -349,6 +349,11 @@
     "src/browser-research.js",
     "docs/NATURAL-PRIVATE-VAULT-V1.md",
     "docs/adr/0012-natural-private-vault-and-research-gate.md",
+    "src/personal-storage-intent.js",
+    "src/personal-storage-service.js",
+    "src/personal-storage-guide.js",
+    "docs/adr/0014-conversational-private-storage.md",
+    "src/conversation-address.js",
     "src/research-account-guide.js",
     "src/research-baseline.js",
     "src/research-browser.js",
@@ -361,7 +366,6 @@
     "config/research-profile-v1.json",
     "docs/BROWSER-RESEARCH-V1.md",
     "docs/adr/0013-governed-browser-product-research.md",
-    "src/conversation-address.js",
     "docs/BROWSER-RESEARCH-V1-QUALIFICATION.md"
   ]
 }

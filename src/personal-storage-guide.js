@@ -1,0 +1,70 @@
+'use strict';
+// Detached native operator terminal; values never enter inference or receipts.
+const {hidden} = require('./vault-cli');
+const storage = require('./personal-storage-intent');
+async function guide({input, output, home, plan, message, signal, vault, request} = {}) {
+ if (!input?.isTTY || !output?.isTTY || typeof input.setRawMode !== 'function') throw Error('Private storage requires an interactive operator terminal.');
+ if (input.listenerCount('data') || input.listenerCount('readable')) throw Error('Close ordinary terminal input before private storage.');
+ const name = storage.label(plan?.label);
+ if (!['save', 'reveal'].includes(plan?.action)) throw Error('Choose a private storage operation.');
+ request ||= body => require('./local-bootstrap').request(home, '/api/assistant/private-memory', body);
+ if (!vault) {
+  const local = require('./local-bootstrap'), path = require('node:path');
+  vault = new (require('./secret-vault').SecretVault)(local.privateDirectory(path.join(home, 'data'), true));
+ }
+ const choose = prompt => hidden(input, output, {prompt, maximum:16, signal});
+ const confirm = async prompt => {
+  output.write('Yes / No — No cancels; pressing Enter chooses No.\n');
+  const approved = (await choose(prompt)).toLowerCase() === 'yes' && !signal?.aborted;
+  // Only a fixed decision label is echoed. Private or unexpected input stays hidden.
+  output.write(approved ? 'Yes\n' : 'No\n');
+  return approved;
+ };
+ const cancelled = () => {output.write('Private storage cancelled.\n'); return {state:'cancelled'};};
+ let value = '';
+ try {
+  if (plan.action === 'save') {
+   if (typeof message !== 'string' || require('./assistant-intent').secret(message) || /[\r\n\0]/.test(message)) throw Error('Private number unavailable.');
+   value = /\b(\d{1,12})[.!?]*\s*$/.exec(message)?.[1] || '';
+   if (!value) throw Error('Private number unavailable.');
+   output.write(`I can save ${name.toLowerCase()} locally. Its value stays hidden.\n1. Sensitive Memory (private local SQLite; operator-only)\n2. Named Vault entry (macOS Keychain)\n3. Cancel\n`);
+   const target = await choose('Choose 1–3 (hidden): ');
+   if (!['1', '2'].includes(target) || signal?.aborted) return cancelled();
+   if (target === '2' && !vault.status().configured) {output.write('Keychain is unavailable. Prepare secure entry with airodrom secret prepare.\n'); return {state:'unavailable'};}
+   const backend = target === '1' ? 'Sensitive Memory' : 'Vault';
+   if(target==='2'&&vault.search(name).some(item=>item.name.toLowerCase()===name.toLowerCase())){output.write('That label already exists in Vault. Review or remove it first.\n');return {state:'collision'};}
+   output.write(`Save ${name.toLowerCase()} in ${backend}?\n`);
+   if (!await confirm('Type yes to confirm (hidden): ')) return cancelled();
+   const receipt = target === '1' ? await request({action:'save', label:name, value, confirmed:true}) : vault.put(value, 'operator', {kind:'private_identifier', name});
+   output.write(`${name} saved in ${backend}.\n`);
+   return {state:'saved', backend, ...(target === '1' ? {memoryId:receipt.memoryId} : {reference:receipt.reference})};
+  }
+  const memory = await request({action:'lookup', label:name});
+  const vaultRows=vault.search(name).filter(item=>item.kind==='private_identifier');
+  const exact=vaultRows.filter(item=>item.name.toLowerCase()===name.toLowerCase());
+  const choices = [...memory.items.map(item => ({backend:'Sensitive Memory', id:item.memoryId, label:name})), ...(exact.length?exact:vaultRows).map(item => ({backend:'Vault', id:item.reference, label:item.name}))];
+  if (!choices.length) {output.write(`No current ${name.toLowerCase()} entry found.\n`); return {state:'empty'};}
+  let selected = choices[0];
+  if (choices.length > 1) {
+   choices.forEach((item, i) => output.write(`${i + 1}. ${item.label} · ${item.backend}\n`));
+   const index = await choose('Choose an entry number, or 0 to cancel (hidden): ');
+   selected = /^[1-9]\d*$/.test(index) ? choices[Number(index) - 1] : null;
+   if (!selected || signal?.aborted) return cancelled();
+  }
+  output.write(`Reveal ${selected.label.toLowerCase()} from ${selected.backend} in this terminal?\n`);
+  if (!await confirm('Type yes to reveal (hidden): ')) return cancelled();
+  const vaultSelectionCurrent = () => vault.search(selected.label).some(item => item.reference === selected.id && item.kind === 'private_identifier' && item.name.toLowerCase() === selected.label.toLowerCase());
+  if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
+  value = selected.backend === 'Vault' ? vault.revealPrivate(selected.id, {confirmed:true}) : (await request({action:'reveal', label:name, id:selected.id, confirmed:true})).value;
+  if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
+  if (signal?.aborted) return cancelled();
+  if (typeof value !== 'string' || !/^\d{1,12}$/.test(value)) throw Error('Private number unavailable.');
+  output.write(`Your ${selected.label.toLowerCase()} is ${value}.\n`);
+  return {state:'revealed', operator_only:true};
+ } catch (error) {
+  if (signal?.aborted || error.message === 'Secure entry cancelled') return cancelled();
+  output.write('Private storage unavailable. Review the current named entry; values stay hidden.\n');
+  return {state:'unavailable'};
+ } finally {value = '';}
+}
+module.exports = {guide};

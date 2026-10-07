@@ -160,3 +160,7 @@ previously approved fish revision while normal integration awaited approval. Exi
 private homes, Memory and Vault data were preserved. No release, deployment,
 registry publication or production activation was performed. ADR 0011 remains
 Accepted following the owner’s explicit PR #19 review disposition.
+
+## Conversational private storage repair (proposed)
+
+The focused repair described in [ADR 0014](adr/0014-conversational-private-storage.md) recognizes greeting, nickname, polite and contraction prefixes before routing a save request. `Hi Airo, let's save my mailbox number 818.` opens a native choice between operator-only Sensitive Memory and a named Keychain Vault entry, followed by explicit confirmation. Save and reveal prompts visibly offer Yes / No; No or Enter cancels. Asking `What's my mailbox number?` performs host lookup and asks for operator reveal confirmation. Quoted text, negation and ambiguous requests do not authorize storage. Credentials supplied in chat are refused and must be entered again through the native hidden-input Vault guide. Independent privacy/security and runtime/authority reviews passed the recorded implementation; the owner authorized normal merge and local reinstall after required local gates pass.
