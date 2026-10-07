@@ -1,6 +1,6 @@
 # Browser Research V1 qualification
 
-Reviewed code candidate: `940e51d` (includes the normal merge of current main `33ba963`). This evidence document changes no executable behavior. Maintainer approval and local installation remain pending; these results do not authorize release, deployment or production activation.
+Reviewed code candidate: `940e51d` (includes the normal merge of current main `33ba963`). This evidence document changes no executable behavior. The owner explicitly approved reviewed PR #24 for normal merge and local installation on 2026-10-07. Local installation is verified separately; these results do not authorize release, deployment or production activation.
 
 ## Focused checks
 
@@ -35,4 +35,4 @@ Account research supports a purpose-bound existing-account standard POST login u
 
 Account creation, payments, settings changes, deletion and other data mutations remain unsupported and fail closed. Public UTF-8 text/CSV/JSON downloads require exact approval and are limited to 48 KiB. Reports distinguish observations from claims and inference, retain unknown comparisons, and never automatically implement recommendations. Infrastructure cost estimates are assumptions, not measured vendor prices.
 
-Remote rulesets currently impose no hosted checks; the existing public candidate workflow remains manually disabled under the repository fast-track policy. No hosted run or broad duplicate regression suite was started. The required concrete maintainer disposition remains pending.
+Remote rulesets currently impose no hosted checks; the existing public candidate workflow remains manually disabled under the repository fast-track policy. No hosted run or broad duplicate regression suite was started. The concrete maintainer disposition approves PR #24 for normal merge and local installation only.

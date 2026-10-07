@@ -1,6 +1,6 @@
 # ADR 0013 — Governed browser and Arecibo product research
 
-Status: Proposed. Concrete maintainer disposition, independent boundary review and focused qualification remain merge gates.
+Status: Accepted. The owner explicitly approved reviewed PR #24 for normal merge and local installation on 2026-10-07 after independent boundary review and focused qualification. Publication, deployment and production activation remain unauthorized.
 
 This replaces the browser-unavailable portion of accepted ADR 0012 only. Its private Vault, Unicode ingress, erasure and operator confirmation boundaries remain in force. Ordinary conversation remains governed by accepted ADR 0011.
 
