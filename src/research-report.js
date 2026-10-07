@@ -8,7 +8,7 @@ const {ResearchNetwork,MAX_DOWNLOAD_BYTES}=require('./research-network');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const SHA=/^[a-f0-9]{64}$/;
 const MAX_MARKDOWN=12000;
-const PRIVATE_CATEGORIES=Object.freeze(['dashboard','projects','settings','billing','team','integrations','activity','analytics','documentation','support','profile','transactions','accounts','balances','cashflow','forecasts','expenses','budgets','reconciliation','reports','payments']);
+const PRIVATE_CATEGORIES=Object.freeze(['dashboard','projects','settings','billing','team','integrations','activity','analytics','documentation','support','profile','transactions','accounts','balances','cashflow','forecasts','expenses','budgets','reconciliation','reports','payments','goals','recurring','insights']);
 const SURVEY_AREAS=Object.freeze([
  {id:'homepage',label:'Homepage and marketing',signal:/marketing|business|platform|product/i,path:/^\/$/},
  {id:'features',label:'Product features',signal:/features?|capabilit|cash.?flow|forecast|budget|expense/i,path:/features?|products?/i},
@@ -22,6 +22,7 @@ const SURVEY_AREAS=Object.freeze([
  {id:'mobile',label:'Mobile and responsive',signal:/mobile|responsive/i},
  {id:'help',label:'Help and documentation',signal:/documentation|help center|support|frequently asked|\bFAQ\b/i,path:/docs?|help|support/i,privateCategory:'documentation'}
 ].map(Object.freeze));
+const NAV_FEATURES=Object.freeze({cashflow:['cashflow'],transactions:['transactions'],forecast:['forecasts'],budgeting:['budgets'],expense_management:['expenses']});
 const FEATURE_SIGNALS=Object.freeze({
  cashflow:/cash[ -]?flow|cash position|cash movement/i,
  transactions:/transactions?|ledger|transaction explorer/i,
@@ -159,13 +160,13 @@ class ResearchReport {
   if(new Set(accessible.map(e=>e.url)).size>12)throw Error('Research public page bound exceeded');
   let requested=input.features;
   if(requested!==undefined&&(!Array.isArray(requested)||requested.length>12||requested.some(id=>typeof id!=='string'||!FEATURE_SIGNALS[id])))throw Error('Unknown research feature category');
-  const categories=[...new Set(requested||Object.keys(FEATURE_SIGNALS).filter(id=>accessible.some(e=>FEATURE_SIGNALS[id].test(e.text))))].slice(0,10);
+  const categories=[...new Set(requested||Object.keys(FEATURE_SIGNALS).filter(id=>accessible.some(e=>FEATURE_SIGNALS[id].test(e.text))||privateRecords.some(e=>(NAV_FEATURES[id]||[]).some(c=>e.row.categories.includes(c)))))].slice(0,10);
   const findings=categories.map(id=>{
    const seenURLs=new Set(),sources=accessible.filter(e=>{if(!FEATURE_SIGNALS[id].test(e.text)||seenURLs.has(e.url))return false;seenURLs.add(e.url);return true;}).slice(0,2);
-   const known=snapshot.features.find(f=>f.id===id);
-   return {id,label:known?.label||id.replaceAll('_',' '),classification:sources.length?'documented':'inaccessible',evidence_ids:sources.map(e=>e.row.id),description:sources.length?'Captured public text mentions this capability; functional behavior and account availability were not verified.':'This category was requested but was not established by the captured public evidence.'};
+   const navigation=privateRecords.filter(e=>(NAV_FEATURES[id]||[]).some(c=>e.row.categories.includes(c))).slice(0,2),known=snapshot.features.find(f=>f.id===id);
+   return {id,label:known?.label||id.replaceAll('_',' '),classification:navigation.length?'observed':sources.length?'documented':'inaccessible',evidence_ids:(navigation.length?navigation:sources).map(e=>e.row.id),description:navigation.length?'Only the associated account navigation label was observed; functional capability and financial content remain unverified.':sources.length?'Captured public text mentions this capability; functional behavior and account availability were not verified.':'This category was requested but was not established by the captured public evidence.'};
   });
-  const comparison=findings.map(f=>{const base=snapshot.features.find(b=>b.id===f.id);return {feature_id:f.id,feature:f.label,competitor_classification:f.classification,status:f.classification==='inaccessible'?'unknown':base?.status||'unknown',reason:f.classification==='inaccessible'?'Competitor capability was not established, so no gap is asserted.':base?.reason||'Approved baseline does not establish this feature or its absence.',competitor_refs:f.evidence_ids,baseline_refs:base?.refs||[]};});
+  const comparison=findings.map(f=>{const base=snapshot.features.find(b=>b.id===f.id);return {feature_id:f.id,feature:f.label,competitor_classification:f.classification,status:f.classification==='inaccessible'?'unknown':base?.status||'unknown',reason:f.classification==='inaccessible'?'Competitor capability was not established, so no gap is asserted.':f.classification==='observed'?'Competitor navigation label only; functionality is unverified. '+(base?.reason||'Arecibo coverage is unknown.'):base?.reason||'Approved baseline does not establish this feature or its absence.',competitor_refs:f.evidence_ids,baseline_refs:base?.refs||[]};});
   const prices=[],seenPrices=new Set();
   for(const e of accessible)for(const line of e.text.split(/\r?\n/))if(/(?:[$€£]\s*\d|\b(?:CAD|USD|EUR|GBP)\s*\d|\d\s*(?:CAD|USD|EUR|GBP)\b)/i.test(line)&&!unsafeEvidenceText(line)&&prices.length<5&&!seenPrices.has(e.url+'|'+line.trim())){seenPrices.add(e.url+'|'+line.trim());prices.push({text:line.trim().slice(0,150),classification:'documented',evidence_id:e.row.id,currency:/\bCAD\b/i.test(line)?'CAD':/\bUSD\b/i.test(line)?'USD':/€|\bEUR\b/i.test(line)?'EUR':'unknown'});}
   const budget=(min,max)=>({classification:'estimate',effort_days:{min,max},currency:this.estimateCurrency,amount:{min:min*this.estimateDayRate,max:max*this.estimateDayRate},assumed_day_rate:this.estimateDayRate,basis:'Illustrative engineering planning assumption, not a vendor quote or approved budget; excludes external fees and ongoing operation.'});

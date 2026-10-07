@@ -23,6 +23,7 @@ async function submit(server,input){
  object(input,['message','request_id','conversation_id','include_memory','model','worker','workspace']);identifier(input.request_id,'request ID',160);
  if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(input.request_id))throw Error('Opaque request UUID required');
  const parsed=intent.parse(input.message);
+ if(parsed.kind==='research_session')return parsed;
  if(parsed.kind==='research')return require('./assistant-missions').newMission(server,{objective:parsed.objective,capability_classes:['web_read'],request_id:input.request_id,workspace:input.workspace,model:input.model,worker:input.worker,explicit:false});
  if(parsed.kind==='preference')return server.conversationEngine.setPreference({nickname:parsed.nickname});
  if(parsed.kind==='remember'){const item=server.rememberInteractive(parsed.content);return {kind:'remembered',memoryId:item.memoryId,message:'Remembered.'};}

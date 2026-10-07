@@ -1,0 +1,25 @@
+# ADR 0014 — Authenticated browser session handoff
+
+Status: Proposed. Independent privacy/authority review and maintainer merge disposition are pending. No deployment or publication decision is included.
+
+Extends accepted ADR 0013 with a separate, operator-consented browser session mode. Public research and purpose-bound Vault login remain compatible. The signed manifest seals a dedicated-manual session authorization, exact HTTPS origin, source baseline, three-minute budget, no downloads, no Vault use and local-only processing. Existing canonical Runs, invocations, read leases, verification, Acceptance and Settlement remain mandatory. Human hand-back is an authenticated operator operation bound to the current waiting Mission. Models and website content cannot authorize it.
+
+## Supported mechanism and choice
+
+[Chrome's remote-debugging guidance](https://developer.chrome.com/blog/remote-debugging-port) requires a nondefault user-data directory for remote debugging starting in Chrome 136. [Playwright persistent contexts](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context) explicitly exclude automating the default Chrome profile. Supported CDP attachment exists to separately enabled debugging browsers, but externally supplied debugging endpoints are unavailable in this V1: session/process/profile ownership cannot be inferred from a listening local endpoint.
+
+V1 uses `launchPersistentContext`, Chrome sandbox enabled, visible browser, browser-owned storage under private Airodrom data, and Playwright's debugging pipe. It opens no debugging TCP port. It never imports the normal Chrome login, reads Chrome secret files, copies cookies or storage state, or accepts a caller-selected profile/endpoint. The truthful choices are dedicated login/reuse or cancel, with the external attach limitation explained.
+
+## Privacy and network boundary
+
+An owned loopback CONNECT proxy permits only the sealed domain on TLS port 443, resolves and pins only public DNS addresses, and denies HTTP and other hosts. It transports encrypted TLS bytes and never decrypts credentials or account content. Playwright inspection reads request method, URL and resource class, never headers, bodies, cookies or response contents. Service workers, WebSockets, alternate transports, popups, browser permissions, downloads and private screenshots are disabled. Scope installation precedes proxy admission.
+
+Manual login POST is limited to fixed same-origin login/session/MFA endpoints. Read-only investigation allows GET/HEAD on fixed product navigation, fixed read endpoints and static assets. Query parameters, encoded paths, settings, exports, mutations and unrecognized endpoints are denied. All HTTP redirects are blocked at the browser Response stage before follow-up: Playwright routing applies only to the first URL of a redirected request. No extra redirect origins are approved in V1. OAuth, external APIs and POST GraphQL are inaccessible until separately designed and reviewed. This conservative limitation may prevent real Monarch login or complete rendering; no live qualification is claimed.
+
+The hand-back boundary stops active traffic, navigates to a blank document and reloads within inspection policy. MFA/CAPTCHA/sign-in indicators prevent automated inspection; operator takeover requires a fresh consented Mission if the current browser stops. The only DOM projection emits fixed feature categories and fixed routes. No personal text, identity, amounts, ledger rows, private URLs or reversible commitments to private values enter evidence or models. Reports reuse independently verified origin-root evidence and compare navigation observations against current approved Arecibo docs/code; labels never establish functional capability or a missing feature. Recommendations do not execute.
+
+A 0700 profile root and exclusive owner lease prevent concurrent sessions. Browser-managed files are hardened to 0600/0700 after supported context closure. Unknown termination or profile integrity retains the lease and quarantines canonical authority. Browser-managed private session/cache files may contain site data within the private profile; they are not reports or model context. This is local filesystem isolation, not a new encryption or physical-erasure claim. No user profile is removed automatically.
+
+## Evidence and disposition
+
+Only the focused session security checks and synthetic visible-browser smoke are requested locally. See [handoff qualification](../BROWSER-SESSION-HANDOFF-V1.md). Existing mandatory hosted checks, if any, and independent boundary review must pass before normal merge and local reinstall. No broad local suite, real financial account, production activation, release or deployment is authorized.

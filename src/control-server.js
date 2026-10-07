@@ -289,6 +289,15 @@ class ControlServer {
         require('./control-plane-store').object(body,['mission_id','url','request_id']);
         return this.json(res,202,this.bridge.missions.research.download(body.mission_id,{url:body.url,request_id:body.request_id},'operator'));
       }
+      if(url.pathname==='/api/assistant/research/session'){
+        require('./control-plane-store').object(body,['entry_url','mode','confirmed','request_id']);
+        const created=this.bridge.missions.research.create({request_id:body.request_id,entry_url:body.entry_url,objective:'Inspect explicitly authorized account feature navigation and compare with current Arecibo evidence.',session_authorization:{mode:body.mode,confirmed:body.confirmed}},'operator');
+        const id=created.mission_id||created.id;if(created.state==='ready')this.bridge.missions.dispatch(id,{request_id:'session-dispatch:'+body.request_id},'operator');
+        return this.json(res,202,{kind:'mission',mission_id:id,state:this.bridge.missions.require(id,'operator').state,browser_research_available:true,session_mode:'dedicated_manual',message:'Dedicated browser opening. Sign in manually, complete MFA, then confirm hand-back. Normal Chrome login is not inherited.',authority:false});
+      }
+      if(url.pathname==='/api/assistant/research/session/ready'){
+        require('./control-plane-store').object(body,['mission_id','request_id','confirmed']);return this.json(res,200,this.bridge.missions.research.ready(body.mission_id,{request_id:body.request_id,confirmed:body.confirmed},'operator'));
+      }
       if(url.pathname==='/api/assistant/research/account'){
         require('./control-plane-store').object(body,['entry_url','username_reference','password_reference','confirmed','request_id']);
         if(body.confirmed!==true)throw Error('Explicit purpose-bound owner authorization is required');

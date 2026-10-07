@@ -362,6 +362,10 @@
     "docs/BROWSER-RESEARCH-V1.md",
     "docs/adr/0013-governed-browser-product-research.md",
     "src/conversation-address.js",
-    "docs/BROWSER-RESEARCH-V1-QUALIFICATION.md"
+    "docs/BROWSER-RESEARCH-V1-QUALIFICATION.md",
+    "src/research-session.js",
+    "src/research-session-guide.js",
+    "docs/BROWSER-SESSION-HANDOFF-V1.md",
+    "docs/adr/0014-authenticated-browser-session-handoff.md"
   ]
 }
