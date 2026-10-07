@@ -1,6 +1,11 @@
 # Airodrom
 
-<p align="center"><img src="public/brand/airodrom-logo-horizontal-dark.svg" alt="Airodrom" width="480"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/airodrom-logo-horizontal-dark.svg">
+    <img src="public/brand/airodrom-logo-horizontal-light.svg" alt="Airodrom" width="480">
+  </picture>
+</p>
 
 **AI operating platform · PRE-RELEASE · 1.0.0-rc.1**
 
