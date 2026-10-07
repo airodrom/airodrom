@@ -109,12 +109,22 @@ class MissionService {
     this.store.state(id,'dispatching');return{mission_id:id,task_id:task.id,dispatch_id:dispatch,status:'queued'};
   }
   schedule(){if(this.stopped||this.pending)return;this.pending=true;queueMicrotask(()=>{this.pending=false;this.tick().catch(()=>{});});}
+  retireRemovedRuntime(m){
+    // Retire only work that never started. Uncertain/running invocations and
+    // writer leases retain their existing reconciliation requirements.
+    return transaction(this.db,()=>{
+      const dispatches=this.db.prepare("UPDATE cp_dispatches SET state='blocked',updated_at=? WHERE mission_id=? AND state='queued'").run(Date.now(),m.id).changes;
+      const continuations=this.db.prepare("UPDATE cp_continuations SET state='cancelled' WHERE mission_id=? AND state='queued'").run(m.id).changes;
+      if(require('./mission-lifecycle').TRANSITIONS[m.state]?.includes('blocked'))this.store.state(m.id,'blocked','Historical runtime removed');
+      if(dispatches||continuations)this.store.event('mission.historical_runtime_removed',m.id,{dispatches,continuations,authority:false});
+    });
+  }
   async tick(){
     if(this.busy||this.stopped||this.bridge.closed)return;this.busy=true;
     try{
       this.store.expireDecisions();this.acceptanceEngine.reconcile();this.program.tick();
       for(const c of this.db.prepare("SELECT * FROM cp_continuations WHERE state='queued'").all()){
-        const m=this.store.getMission(c.mission_id);if(m?.envelope.control_version!==2)continue;
+        const m=this.store.getMission(c.mission_id);if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);continue;}if(m?.envelope.control_version!==2)continue;
         const chains=this.db.prepare('SELECT c.* FROM cp_autonomy_claims a JOIN cp_autonomy_chains c ON c.id=a.chain_id WHERE a.mission_id=?').all(m.id);
         if(chains.some(chain=>{if(Date.now()-chain.started_at>=chain.max_runtime_ms){this.bridge.boundedNextActions.pause(chain.id,'runtime_budget');return true;}return chain.state==='paused';}))continue;
         if(m.state==='cancelled'){this.db.prepare("UPDATE cp_continuations SET state='cancelled' WHERE id=?").run(c.id);continue;}
@@ -136,8 +146,9 @@ class MissionService {
     }finally{this.busy=false;}
   }
   async launch(dispatch){
-    let m=this.store.getMission(dispatch.mission_id);if(m.state==='cancelled')return;
-    if(require('./removed-runtime').removed(m)){this.store.state(m.id,'blocked','Historical runtime removed');return;}
+    let m=this.store.getMission(dispatch.mission_id);
+    if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);return;}
+    if(m.state==='cancelled')return;
     try{
       if(m.envelope.kind==='conversation')return await require('./conversation-mission').launch(this,dispatch,m);
       const project=this.bridge.projects.getProject(m.project_id);if(project.status==='archived')throw Error('Project is archived');

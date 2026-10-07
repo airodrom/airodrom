@@ -22,3 +22,31 @@ test('legacy environment variables cannot change provider or runtime selection',
 test('historical task principals cannot invoke tools or receive memory through a direct broker caller', async t => { const f=await fixture(t), b=f.bridge, task=b.tasks.get(b.createTask('Historical principal').id); task.executionAgent=REMOVED_RUNTIME; b.tasks.save(task); b.policy.registerTask(task); for (const toolName of ['ls','personal_memory_recent']) { const result=await b.capabilityBroker.execute(task.id,{toolName,input:toolName==='ls'?{path:'.'}:{domain:'personal'}}); assert.equal(result.allow,false); assert.equal(result.decision.kind,'runtime_removed'); } const decision=b.policy.check(task.id,{toolName:'read',input:{path:'file.txt'}}); assert.equal(decision.allow,false); assert.equal(decision.kind,'runtime_removed'); });
 
 test('historical completed evidence stays readable and cannot gain new execution', async t => { const f=await fixture(t), b=f.bridge, m=f.create(); const task=b.tasks.get(m.task_id); task.executionAgent=REMOVED_RUNTIME; task.status='completed'; task.lastResult='Historical synthetic evidence'; b.tasks.save(task); const envelope={...m.envelope,preferred_agent:REMOVED_RUNTIME}; b.controlStore.db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify(envelope),m.id); const view=b.missions.detail(m.id); assert.equal(view.runtimeRemoved,true); assert.equal(view.next_action,'inspect'); assert.throws(()=>b.missions.dispatch(m.id,{request_id:'historical-dispatch'}),/Historical runtime removed/); await f.reopen(); const old=f.bridge.tasks.get(task.id); assert.equal(old.status,'completed'); assert.equal(old.lastResult,'Historical synthetic evidence'); assert.equal(f.bridge.snapshotTask(old).runtimeLabel,'Historical runtime removed'); await assert.rejects(f.bridge._ensureHostRuntime(old.id),/Historical runtime removed/); });
+
+test('queued historical dispatch is retired once and cannot stall supported Missions',async t=>{
+ const f=await fixture(t),b=f.bridge,db=b.controlStore.db,old=f.create();
+ b.missions.queue(old.id);
+ db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify({...old.envelope,preferred_agent:REMOVED_RUNTIME}),old.id);
+ const fresh=f.create({objective:'Fresh supported deterministic Mission',task_type:'local_files',dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
+ b.missions.queue(fresh.id);
+ await b.missions.tick();await b.missions.tick();await b.missions.tick();
+ assert.equal(b.missions.detail(old.id).state,'blocked');assert.equal(db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=?').get(old.id).state,'blocked');
+ assert.equal(db.prepare('SELECT count(*) n FROM cp_runs WHERE mission_id=?').get(old.id).n,0);
+ assert.equal((await f.settle(fresh.id)).state,'awaiting_acceptance');assert.equal(f.inference(),0);assert.equal(f.calls(),0);
+ assert.equal(b.ledger.list({missionId:old.id,limit:100}).events.filter(e=>e.event_type==='mission.historical_runtime_removed').length,1);
+});
+
+test('queued historical continuation is cancelled without releasing uncertain writers or changing completed evidence',async t=>{
+ const f=await fixture(t),b=f.bridge,db=b.controlStore.db,m=f.create();
+ b.controlStore.startRun({id:'old-uncertain-run',taskId:m.task_id,missionId:m.id,agentId:'host'});
+ const lease=b.controlStore.acquireLease({resource:f.repo,runId:'old-uncertain-run',missionId:m.id});
+ db.prepare('UPDATE cp_runs SET agent_id=?,state=?,process_state=? WHERE id=?').run(REMOVED_RUNTIME,'termination_unverified','unknown','old-uncertain-run');
+ db.prepare("UPDATE cp_leases SET state='quarantined' WHERE id=?").run(lease);
+ db.prepare('UPDATE cp_missions SET state=?,envelope=? WHERE id=?').run('completed',JSON.stringify({...m.envelope,preferred_agent:REMOVED_RUNTIME}),m.id);
+ db.prepare("INSERT INTO cp_continuations VALUES('old-continuation','old-decision',?,'queued',?)").run(m.id,Date.now());
+ db.prepare("INSERT INTO cp_dispatches VALUES('old-uncertain',?,?,'unknown',NULL,NULL,NULL,?,?)").run(m.id,m.task_id,Date.now(),Date.now());
+ await b.missions.tick();await b.missions.tick();
+ assert.equal(db.prepare("SELECT state FROM cp_continuations WHERE id='old-continuation'").get().state,'cancelled');
+ assert.equal(db.prepare("SELECT state FROM cp_dispatches WHERE id='old-uncertain'").get().state,'unknown');
+ assert.equal(b.missions.detail(m.id).state,'completed');assert.equal(db.prepare('SELECT state FROM cp_leases WHERE id=?').get(lease).state,'quarantined');assert.equal(b.controlStore.run('old-uncertain-run').state,'termination_unverified');
+});

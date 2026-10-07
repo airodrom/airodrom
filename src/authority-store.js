@@ -80,7 +80,10 @@ class AuthorityStore {
         if (erasure.scopeHash([restored.operator_id,restored.project_id,restored.scope]) !== marker.scope_hash) throw Error('Restore governed erasure scope mismatch');
         // Operator payload purge and suppression run inside the canonical host
         // redaction transaction. Constructor writes must obey replay guards.
-        if(marker.action==='operator_erasure')continue;
+        // A later operator erasure dominates an earlier forget/expiry marker.
+        // Its retained-row replay guard must remain intact; only canonical
+        // host redaction may modify that row during restore.
+        if(erasure.marker(db,'governed',marker.identity)?.action==='operator_erasure')continue;
         db.prepare("UPDATE authority_memories SET status='forgotten',effective_until=? WHERE id=?").run(marker.erased_at, marker.identity);
       }
     }

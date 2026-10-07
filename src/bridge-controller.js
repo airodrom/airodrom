@@ -198,7 +198,7 @@ class BridgeController extends EventEmitter {
       webFetch: (task, input) => this.web.fetch(input, { taskId: task.id, sessionId: task.sessionId }),
       webEnabled: () => this.web.enabled === true,
       mcpConnected: () => Boolean(this.tasks?.list().some(item => item.source?.transport === 'mcp' && Date.now() - (item.updatedAt || 0) < 15 * 60_000)),
-      bridgeworkerds: () => [...this.runtimes.values()].map(runtime => runtime?.rpc?.child?.pid).filter(Number.isInteger)
+      bridgePids: () => [...this.runtimes.values()].map(runtime => runtime?.rpc?.child?.pid).filter(Number.isInteger)
     });
     this.capabilityBroker = new CapabilityBroker({
       policy: this.policy, diagnostics: this.diagnostics, getTask: id => this.tasks?.get(id), runner: this.sandboxRunner,
