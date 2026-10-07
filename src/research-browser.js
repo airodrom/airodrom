@@ -9,7 +9,7 @@ const {privateDirectory}=require('./local-bootstrap');
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const MAX_EVIDENCE=4194304;
-const PRIVATE_CATEGORIES=['dashboard','projects','settings','billing','team','integrations','activity','analytics','documentation','support','profile','transactions','accounts','balances','cashflow','forecasts','expenses','budgets','reconciliation','reports','payments'];
+const PRIVATE_CATEGORIES=['dashboard','projects','settings','billing','team','integrations','activity','analytics','documentation','support','profile','transactions','accounts','balances','cashflow','forecasts','expenses','budgets','reconciliation','reports','payments','goals','recurring','insights'];
 const exact=(o,keys)=>{if(!o||typeof o!=='object'||Array.isArray(o)||Object.keys(o).some(k=>!keys.includes(k)))throw error('invalid_action');};
 const bounded=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
 const clean=value=>require('node:util').stripVTControlCharacters(String(value||'')).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,'');

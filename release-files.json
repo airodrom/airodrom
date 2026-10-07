@@ -533,5 +533,10 @@
   "tests/research-credentials.test.js",
   "tests/research-mission.test.js",
   "tests/research-report.test.js",
-  "docs/BROWSER-RESEARCH-V1-QUALIFICATION.md"
+  "docs/BROWSER-RESEARCH-V1-QUALIFICATION.md",
+  "src/research-session.js",
+  "src/research-session-guide.js",
+  "tests/research-session.test.js",
+  "docs/BROWSER-SESSION-HANDOFF-V1.md",
+  "docs/adr/0015-authenticated-browser-session-handoff.md"
 ]

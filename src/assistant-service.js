@@ -24,6 +24,7 @@ async function submit(server,input){
  if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(input.request_id))throw Error('Opaque request UUID required');
  const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.()});
  if(parsed.kind==='private_storage')return {...parsed,message:'Open this request in the native Airodrom terminal to choose Sensitive Memory or Vault and confirm.'};
+ if(parsed.kind==='research_session')return parsed;
  if(parsed.kind==='research')return require('./assistant-missions').newMission(server,{objective:parsed.objective,capability_classes:['web_read'],request_id:input.request_id,workspace:input.workspace,model:input.model,worker:input.worker,explicit:false});
  if(parsed.kind==='preference')return server.conversationEngine.setPreference({nickname:parsed.nickname});
  if(parsed.kind==='remember'){const item=server.rememberInteractive(parsed.content);return {kind:'remembered',memoryId:item.memoryId,message:'Remembered.'};}

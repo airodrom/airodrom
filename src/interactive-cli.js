@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /research account <HTTPS login URL>\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /research login <HTTPS URL> · /research account <HTTPS login URL>\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -177,6 +177,14 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     try { return await require('./research-account-guide').guide({entry_url,input,output,home,signal:active?.signal}); }
     finally { if (!quitting && !input.readableEnded) {while(input.read()!==null){};attachReader();} }
   };
+  const sessionGuide = async entry_url => {
+    await detachReader();try{return await require('./research-session-guide').guide({entry_url,input,output,home,signal:active?.signal});}
+    finally{if(!quitting&&!input.readableEnded)attachReader();}
+  };
+  const sessionReady = async mission_id => {
+    await detachReader();try{return await require('./research-session-guide').ready({mission_id,input,output,home,signal:active?.signal});}
+    finally{if(!quitting&&!input.readableEnded)attachReader();}
+  };
   const session = async () => {
     if (!conversationId) conversationId = (await local.request(home, '/api/assistant/conversation/session', {})).conversation_id;
     if (!conversationId) throw Error('Conversation session is unavailable.');
@@ -194,6 +202,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   };
   const handleReceipt = async (receipt, json = false, message = null) => {
     if (receipt.kind === 'preference') assistantNickname=receipt.nickname;
+    if(receipt.kind==='research_session'){stopAnswer();await handleReceipt(await sessionGuide(receipt.entry_url),json,message);return;}
     if (receipt.kind === 'chat') {
       if (!indicator) startAnswer();
       const result = await waitConversation(home, receipt, { signal: active?.signal });
@@ -215,7 +224,12 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       if (receipt.mission_id || receipt.mission?.id) lastMission = receipt.mission_id || receipt.mission.id;
       show(output, receipt, missionReceipt, json);
       if (receipt.kind === 'mission' && ['dispatching', 'running', 'verifying'].includes(receipt.state)) {
-        const result = await answer(lastMission,receipt.browser_research_available?{timeoutMs:200000}:{});
+        let result = await answer(lastMission,receipt.browser_research_available?{timeoutMs:200000}:{});
+        if(receipt.session_mode==='dedicated_manual'&&result.state==='waiting_for_operator'){
+          const status=await local.request(home,'/api/assistant/mission',{action:'status',mission_id:lastMission,request_id:randomUUID()});
+          if(status.mission?.research?.handoff_required&&await sessionReady(lastMission))result=await answer(lastMission,{timeoutMs:200000});
+        }
+
         if(receipt.browser_research_available&&['awaiting_acceptance','completed'].includes(result.state)){const report=await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(lastMission));output.write(terminalText(report.markdown||'Research report is unavailable; inspect /mission status.')+'\n');}
         else if(receipt.browser_research_available)output.write('Research needs owner intervention. Use /mission status or Control Center to review the required action. No report has been qualified.\n');
         else output.write(terminalText(result.summary || '') + '\n');
@@ -299,8 +313,8 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg);show(output,{runtime},d=>'Runtime for fresh tasks: '+render.name(d.runtime),json); }
         else if (command === 'open') { local.open(home); output.write('Control Center opened.\n'); }
         else if(command==='research'){
-          if(!/^account\s+https:\/\/\S+$/i.test(arg))throw Error('Use /research account <HTTPS login URL> to authorize existing Vault credentials for a separate research Mission.');
-          active=new AbortController();const receipt=await accountGuide(arg.replace(/^account\s+/i,''));await handleReceipt(receipt,json);active=null;
+          if(!/^(?:login|account)\s+https:\/\/\S+$/i.test(arg))throw Error('Use /research login <HTTPS URL> for dedicated manual login, or /research account <HTTPS login URL> for stored Vault credentials.');
+          active=new AbortController();const receipt=await (/^login\s/i.test(arg)?sessionGuide(arg.replace(/^login\s+/i,'')):accountGuide(arg.replace(/^account\s+/i,'')));await handleReceipt(receipt,json);active=null;
         }
         else if (command === 'memory') await memory(home, arg, output,json);
         else if (command === 'remember') { const item = await local.request(home, '/api/interactive/remember', { content: arg }); output.write('Remembered in Memory V2. ID: ' + item.memoryId + '\n'); }
