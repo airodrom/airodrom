@@ -34,10 +34,12 @@ function safe(value) {
     return Object.fromEntries(Object.entries(x).map(([k, v]) => {
       if (parent === 'permissions' && k === 'secrets' && Array.isArray(v) && v.every(flag => ['use', 'production'].includes(flag)))
         return ['restricted_permission_dimension', v];
-      const field = [...trail, k].join('.');
+      const segments = [...trail, k], gitCoordinate = ['verification_manifest', 'repository', 'head'];
+      const typedGitField = segments.length === 3 && segments.every((key, i) => key === gitCoordinate[i]) ||
+        segments.length === 4 && segments[0] === 'envelope' && segments.slice(1).every((key, i) => key === gitCoordinate[i]);
       // Git HEAD is a typed host-observed coordinate. Its hexadecimal digits
       // can coincidentally match a payment-card pattern; free text remains scanned.
-      const gitHead = /^(?:envelope\.)?verification_manifest\.repository\.head$/.test(field) && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
+      const gitHead = typedGitField && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
       const coordinate = typeof v === 'string' && (
         (/(?:^|_)hash$/.test(k) && /^[a-f0-9]{64}$/.test(v)) ||
         (/(?:^|_)(?:id|ref)$|^memoryId$|^taskId$|^runId$/.test(k) && /^(?:sha256:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(v)) ||

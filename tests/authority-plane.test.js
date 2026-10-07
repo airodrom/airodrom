@@ -52,12 +52,21 @@ test('typed Git revision digits never masquerade as card text; secret content st
   assert.equal(s.getMissionRevision(mission.id, 1).envelope.verification_manifest.repository.head, revision);
  }
  for (const value of [
+  { 'verification_manifest.repository.head': head },
+  { 'envelope.verification_manifest.repository.head': head },
+  { envelope: { 'verification_manifest.repository.head': head } },
+  { envelope: { 'verification_manifest.repository': { head } } },
+  { envelope: { verification_manifest: { 'repository.head': head } } },
   { envelope: { objective: head } },
   { envelope: { repository: { head } } },
   { envelope: { verification_manifest: { repository: { description: head } } } },
   { envelope: { verification_manifest: { repository: { head: '4111111111111111' } } } },
   { envelope: { verification_manifest: { repository: [{ head }] } } },
   { envelope: { verification_manifest: { repository: { head } }, objective: 'sk-fixtureprivatecredential' } }
- ]) assert.throws(() => safe(value), /Sensitive authority data rejected/);
+ ]) {
+  assert.throws(() => safe(value), /Sensitive authority data rejected/);
+  assert.throws(() => s.createMission(value.envelope ? value : { envelope: value }), /Sensitive authority data rejected/);
+ }
+ assert.equal(s.db.prepare('SELECT count(*) n FROM authority_missions').get().n, 2);
  assert.equal(s.integrity().ok, true);
 });
