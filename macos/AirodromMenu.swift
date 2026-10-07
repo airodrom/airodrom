@@ -180,6 +180,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private var timer: Timer?, status: BridgeStatus?, currentAction: ControlAction?
     private var checkedAt: Date?, lastError: String?, failures = 0
     private var quitAfterAction = false
+    private var pendingAction: (action: ControlAction, missionId: String?)?
     init(controller: Controller, helperLock: Int32) { self.controller = controller; self.helperLock = helperLock; super.init() }
     func inspectMenu(_ value: BridgeStatus) -> [String: Any] {
         // Native fixture inspection renders the actual menu, without activating
@@ -199,9 +200,19 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let frameChanged = firstFrame != statusItem.button?.image?.tiffRepresentation
         let running = animationTimer != nil, originalState = animationState, ticks = animationTicks
         let displayed = entries(menu)
+        // Exercise the actual menu while a refresh owns the request slot.
+        currentAction = .status; render()
+        let openDuringRefresh = openItem.isEnabled
+        let refreshItems = [openItem!, cliItem!, openMissionItem!, cancelMissionItem!].map { ["title": $0.title, "enabled": $0.isEnabled] as [String: Any] }
+        request(.open)
+        let openQueued = pendingAction?.action == .open
+        pendingAction = nil
+        request(.openMission)
+        let selectedMissionPreserved = pendingAction?.action == .openMission && pendingAction?.missionId == status?.product?.mission?.id
+        pendingAction = nil; currentAction = nil
         status = nil; render()
         let stoppedOnIdle = animationTimer == nil && statusItem.button?.image === idleImage
-        return ["frame_changed": frameChanged, "stopped_on_idle": stoppedOnIdle, "template_icon": statusItem.button?.image?.isTemplate == true, "items": displayed, "animation_state": originalState, "animation_running": running, "animation_ticks": ticks, "reduced_motion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion]
+        return ["refresh_items": refreshItems, "queued_mission_matches_selection": selectedMissionPreserved, "open_during_refresh": openDuringRefresh, "open_queued": openQueued, "frame_changed": frameChanged, "stopped_on_idle": stoppedOnIdle, "template_icon": statusItem.button?.image?.isTemplate == true, "items": displayed, "animation_state": originalState, "animation_running": running, "animation_ticks": ticks, "reduced_motion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion]
     }
     private func item(_ title: String, _ selector: Selector, in target: NSMenu, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key); item.target = self; target.addItem(item); return item
@@ -247,23 +258,36 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
     private func request(_ action: ControlAction) {
-        guard currentAction == nil, !quitAfterAction else { return }
+        request(action, missionId: status?.product?.mission?.id)
+    }
+    private func request(_ action: ControlAction, missionId selectedMissionId: String?) {
+        guard !quitAfterAction else { return }
+        if currentAction == .status && action != .status {
+            // Keep the operator's selection, including its exact Mission, while
+            // the background refresh finishes. Only one action can be queued.
+            guard pendingAction == nil else { return }
+            pendingAction = (action, selectedMissionId); render(); return
+        }
+        guard currentAction == nil else { return }
         currentAction = action; render()
-        controller.perform(action, missionId: status?.product?.mission?.id) { [weak self] result in
+        controller.perform(action, missionId: selectedMissionId) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }; self.currentAction = nil; self.checkedAt = Date()
                 switch result {
                 case .success(let value): self.status = value; self.lastError = nil; self.failures = 0
                 case .failure(let error): self.status = nil; self.lastError = error.message; self.failures += 1
                 }
-                self.render()
                 if self.quitAfterAction { NSApp.terminate(nil); return }
+                if let pending = self.pendingAction {
+                    self.pendingAction = nil; self.request(pending.action, missionId: pending.missionId); return
+                }
+                self.render()
                 if action == .doctor { self.show("Airodrom Doctor", self.status?.product?.diagnostic ?? "Safe diagnostics unavailable.") }
             }
         }
     }
     private func render() {
-        let changing = currentAction != nil && currentAction != .status
+        let changing = pendingAction != nil || currentAction != nil && currentAction != .status
         let p = status?.product, state = status?.state
         let visible = changing ? "Waiting" : p?.status ?? "Unavailable"
         updateAnimation(changing: changing)
@@ -279,16 +303,17 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title
         statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title)
         detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Local observations checked just now")
-        let available = currentAction == nil
+        let available = pendingAction == nil && currentAction == nil
+        let navigationAvailable = pendingAction == nil && (currentAction == nil || currentAction == .status)
         startItem.isEnabled = available && state == .stopped
         stopItem.isEnabled = available && state == .connected && status?.managed == true && status?.tasks.active == 0 && (p?.quarantined_leases ?? 0) == 0
         restartItem.isEnabled = stopItem.isEnabled
-        openItem.isEnabled = available && state == .connected
-        cliItem.isEnabled = available && controller.configuration.localHome != nil
-        doctorItem.isEnabled = available && status?.product != nil
+        openItem.isEnabled = navigationAvailable && state == .connected
+        cliItem.isEnabled = navigationAvailable && controller.configuration.localHome != nil
+        doctorItem.isEnabled = navigationAvailable && status?.product != nil
         qualifyItem.isEnabled = available && state == .stopped && controller.configuration.localHome != nil
-        copyItem.isEnabled = available && p != nil
-        openMissionItem.isEnabled = available && p?.mission?.id != nil && controller.configuration.localHome != nil
+        copyItem.isEnabled = navigationAvailable && p != nil
+        openMissionItem.isEnabled = navigationAvailable && p?.mission?.id != nil && controller.configuration.localHome != nil
         cancelMissionItem.isEnabled = openMissionItem.isEnabled && ["dispatching", "running", "verifying", "awaiting_acceptance", "waiting_for_operator"].contains(p?.mission?.state ?? "")
         if let health = menu.items.first(where: { $0.title == "System Health" })?.submenu {
             let values = [p?.control, p?.runtime, p?.memory, p?.provider]
