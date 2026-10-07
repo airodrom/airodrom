@@ -196,6 +196,7 @@ test('Control Center credential and complete task index survive restart with tru
     const bridge = new BridgeController({ defaultRuntime: 'host', dataDir: dir });
     bridge.tasks = restart ? new Manager(dir) : tasks;
     bridge.snapshot = () => ({ bridge: { healthy: true }, tasks: bridge.tasks.list().map(task => bridge.snapshotTask(task)) });
+    bridge.conversationEngine = { close: async () => {}, start: () => { throw Error('Task index fixture cannot call inference'); } };
     const ui = new ControlServer(bridge, { port: 0 }); await ui.start();
     try {
       token ||= ui.token;
