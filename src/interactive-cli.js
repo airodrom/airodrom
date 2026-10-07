@@ -6,15 +6,13 @@ const { randomUUID } = require('node:crypto');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/remember <text> · /memory [query] · /forget <id or subject>\n/status · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
-function intro({ color = false, unicode = true } = {}) {
-  const title = color ? '\u001b[1;36mAIRODROM\u001b[0m' : 'AIRODROM';
-  return `${unicode ? '◈ ' : ''}${title}\nMANY AGENTS. ONE CONTROL PLANE.\n`;
-}
+const COMMANDS = '/remember <text> · /memory [query] · /forget <id or subject>\n/status · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const intro = require('./terminal-brand').intro;
 function rows(s) {
-  return `OpenCode   ${s.opencode.ready ? '● Ready · Primary' : 'unavailable · ' + s.opencode.reason}\nMemory V2  ● Ready · Local\nControl    ${s.healthy ? '● Local' : 'unavailable'}\nRuntime    ${s.default_runtime}\n`;
+  const p=s.product, runtime=p?.runtime|| (s.opencode.ready?'Ready':s.opencode.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
+  return `OpenCode   ${runtime==='Ready'?'● Ready · Primary':runtime+' · '+(p?.runtimeReason||s.opencode.reason)}\nMemory V2  ${p?.memory||'Unavailable'} · Local\nControl    ${p?.control|| (s.healthy?'Ready':'Unavailable')} · Local\nProvider   ${p?.provider||'Unavailable'}\nMissions   ${p?.active_missions??'Unavailable'} active · ${p?.approvals??'Unavailable'} approvals waiting\nPrivacy    Prompts, reasoning and credentials stay private\n`;
 }
-function help() { return `${branding.name} — ${branding.tagline}\n\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\n${COMMANDS}\n\n${branding.website}\n`; }
+function help() { return `${branding.name} — ${branding.tagline}\n\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  menu         Open the native macOS menu helper\n  help         Show full command guidance\n  doctor       Inspect safe readiness and pin categories\n  requalify    Fresh confined qualification while stopped\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\n${COMMANDS}\n\n${branding.website}\n`; }
 async function waitResult(home, id, { signal } = {}) {
   const deadline = Date.now() + 130000;
   while (Date.now() < deadline) {
@@ -43,7 +41,7 @@ async function scopedTask(home, file) {
   return mission.id;
 }
 async function interactive(home, { input = process.stdin, output = process.stdout, env = process.env } = {}) {
-  output.write(intro({ color: !!output.isTTY && env.NO_COLOR === undefined && env.TERM !== 'dumb', unicode: env.TERM !== 'dumb' }));
+  output.write(intro({ mode: require('./terminal-brand').colorMode({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80 }));
   const s = await local.start(home, env); output.write(rows(s));
   output.write('\nType a question, or /help for commands. Each question gets a fresh bounded Mission.\n');
   const rl = readline.createInterface({ input, output, terminal: !!input.isTTY && !!output.isTTY });
@@ -58,7 +56,8 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       try {
         const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(value), command = match?.[1], arg = match?.[2]?.trim() || '';
         if (command === 'quit') break;
-        if (command === 'help') output.write(COMMANDS + '\n');
+        if (command === 'help') output.write(help());
+        else if (command === 'doctor') output.write(require('./product-diagnostics').summary(await require('./product-diagnostics').doctor(home)));
         else if (command === 'status') output.write(rows(await local.status(home)));
         else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg); output.write('Runtime for fresh tasks: ' + runtime + '\n'); }
         else if (command === 'open') { local.open(home); output.write('Control Center opened.\n'); }
@@ -87,7 +86,10 @@ async function interactive(home, { input = process.stdin, output = process.stdou
 async function main(args = process.argv.slice(2)) {
   const [command, ...rest] = args, home = local.localHome();
   if (!command) return interactive(home);
-  if (['--help', '-h'].includes(command)) { process.stdout.write(help()); return; }
+  if (['help', '--help', '-h'].includes(command)) { process.stdout.write(help()); return; }
+  if (command === 'menu') { const app = require('../scripts/macos/prepare-local-menu.cjs').prepare(home); const r = require('node:child_process').spawnSync('/usr/bin/open',[app],{stdio:'ignore',timeout:5000}); if(r.status!==0) throw Error('Native menu could not open.'); process.stdout.write('Airodrom menu opened. Service lifecycle is separate.\n'); return; }
+  if (command === 'doctor') { process.stdout.write(require('./product-diagnostics').summary(await require('./product-diagnostics').doctor(home))); return; }
+  if (command === 'requalify') { await local.requalify(home); process.stdout.write('OpenCode requalified. Run airodrom start.\n'); return; }
   if (command === '--version') { process.stdout.write(branding.name + ' ' + require('../package.json').version + '\n'); return; }
   if (command === 'status') { process.stdout.write(local.isStopped(home) ? 'Airodrom is stopped. Run airodrom to start.\n' : rows(await local.status(home))); return; }
   if (command === 'stop') { await local.stop(home); process.stdout.write('Airodrom stopped. Personal Memory is preserved.\n'); return; }

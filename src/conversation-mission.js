@@ -86,6 +86,7 @@ async function launch(service, dispatch, m) {
   const b = service.bridge, task = b.tasks.get(dispatch.task_id), adapter = b.opencodeAdapter;
   assertContract(service, m); service.assertAuthority(m, { network: ['localhost'] });
   if (!(await adapter.readiness()).ready) throw Error('Qualified local OpenCode and Ollama are required.');
+  service.store.event('runtime.qualification.checked',m.id,{agent_id:'opencode',status:'passed'});
   const runId = randomUUID(), startedAt = Date.now(); let started = false;
   try {
     const pack = transaction(service.db, () => {
@@ -104,6 +105,7 @@ async function launch(service, dispatch, m) {
     assertContract(service, service.store.requireMission(m.id)); require('./memory-content-erasure').assertContext(service.db, pack.id);
     if (output.changes.length) throw Error('Read-only conversation returned changes.');
     transaction(service.db, () => {
+      service.store.event('runtime.context.delivered',m.id,{context_pack_id:pack.id},{runId});
       task.lastResult = output.result.summary; b.tasks.save(task);
       service.store.updateRun(runId, { state: 'completed', processState: 'exited', verified: true, result: { opencode_provenance: output.provenance, inference_only: true, accepted: false } });
       service.captureResult(runId, { status: 'completed', result: { text: JSON.stringify(output.result) } });

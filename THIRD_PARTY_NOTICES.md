@@ -1636,3 +1636,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Owner-controlled visual source adaptation
+
+Airodrom ports visual patterns from owner-controlled Somin source into plain CSS and native product surfaces. No Somin runtime, authentication, business APIs, fonts or package dependencies are distributed. Source hashes and exact adaptations are documented in docs/V2-SOURCE-INVENTORY.json. The Airodrom brand assets are supplied by the repository owner.

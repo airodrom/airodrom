@@ -1,0 +1,28 @@
+/* Airodrom brand tokens v2.0.0 - exact sRGB palette */
+:root {
+  --airodrom-blue: #5091FF;
+  --airodrom-cyan: #45C8DC;
+  --airodrom-indigo: #6E69DC;
+  --airodrom-mint: #55D2AF;
+  --airodrom-light: #F7F8FA;
+  --airodrom-dark: #080B12;
+  --airodrom-surface: #0C1220;
+  --airodrom-elevated: #10192A;
+  --airodrom-white: #FFFFFF;
+  --airodrom-font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --airodrom-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --airodrom-space-unit: 8px;
+  --airodrom-control-radius: 8px;
+  --airodrom-panel-radius: 12px;
+  --airodrom-feedback-duration: 150ms;
+  --airodrom-panel-duration: 240ms;
+  --airodrom-primary-fill: var(--airodrom-blue);
+  --airodrom-primary-label: var(--airodrom-dark);
+  --airodrom-focus-ring: var(--airodrom-indigo);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --airodrom-focus-ring: var(--airodrom-cyan); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --airodrom-feedback-duration: 0ms; --airodrom-panel-duration: 0ms; }
+}

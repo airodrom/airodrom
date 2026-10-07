@@ -28,7 +28,26 @@ function safe(value) {
   canonicalSerialize(value);
   // Validated digest fields are not payment-card numbers. Keep scanning all
   // free text and values; only typed digests and opaque coordinates are exempt.
-  const inspection=(x,parent)=>Array.isArray(x)?x.map(v=>inspection(v,parent)):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>parent==='permissions'&&k==='secrets'&&Array.isArray(v)&&v.every(flag=>['use','production'].includes(flag))?['restricted_permission_dimension',v]:[k,typeof v==='string'&&((/(?:^|_)hash$/.test(k)&&/^[a-f0-9]{64}$/.test(v))||(/(?:^|_)(?:id|ref)$|^memoryId$|^taskId$|^runId$/.test(k)&&/^(?:sha256:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(v))||(x===value&&x.kind==='mission_episodic'&&k==='subject_key'&&/^episode\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)))?'[opaque coordinate]':inspection(v,k)])):x;
+  const inspection = (x, parent, trail = []) => {
+    if (Array.isArray(x)) return x.map((v, i) => inspection(v, parent, [...trail, String(i)]));
+    if (!x || typeof x !== 'object') return x;
+    return Object.fromEntries(Object.entries(x).map(([k, v]) => {
+      if (parent === 'permissions' && k === 'secrets' && Array.isArray(v) && v.every(flag => ['use', 'production'].includes(flag)))
+        return ['restricted_permission_dimension', v];
+      const segments = [...trail, k], gitCoordinate = ['verification_manifest', 'repository', 'head'];
+      const typedGitField = segments.length === 3 && segments.every((key, i) => key === gitCoordinate[i]) ||
+        segments.length === 4 && segments[0] === 'envelope' && segments.slice(1).every((key, i) => key === gitCoordinate[i]);
+      // Git HEAD is a typed host-observed coordinate. Its hexadecimal digits
+      // can coincidentally match a payment-card pattern; free text remains scanned.
+      const gitHead = typedGitField && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
+      const coordinate = typeof v === 'string' && (
+        (/(?:^|_)hash$/.test(k) && /^[a-f0-9]{64}$/.test(v)) ||
+        (/(?:^|_)(?:id|ref)$|^memoryId$|^taskId$|^runId$/.test(k) && /^(?:sha256:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(v)) ||
+        (x === value && x.kind === 'mission_episodic' && k === 'subject_key' && /^episode\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)) || gitHead
+      );
+      return [k, coordinate ? '[opaque coordinate]' : inspection(v, k, [...trail, k])];
+    }));
+  };
   const secret=x=>typeof x==='string'?(/^(?:(?:sha256|arch):)?[a-f0-9]{64}$/.test(x)?false:containsSecret(x)||/\b(?:xox[baprs]-|xapp-|sk-ant-|sk-proj-|sk-|crsr_)[A-Za-z0-9_-]{8,}/.test(x)||/\b(?:--(?:token|password)|[A-Z_]*(?:TOKEN|PASSWORD|API_KEY))\s+\S+/.test(x)||[...x.matchAll(/https?:\/\/[^\s<>"']+/g)].some(([u])=>{try{const url=new URL(u);return !!url.username||!!url.password||[...url.searchParams.keys()].some(sensitiveKey)||/token|secret|signature|credential/i.test(url.hash);}catch{return true;}})):Array.isArray(x)?x.some(secret):x&&typeof x==='object'?Object.entries(x).some(([k,v])=>sensitiveKey(k)||secret(v)):false;
   if (secret(inspection(value))) throw new Error('Sensitive authority data rejected');
   return value;
@@ -66,6 +85,15 @@ class AuthorityStore {
     }
     if (restoreFromBackup) {
       erasure.reconcile(db, erasureSourceDb);
+      for(const restored of db.prepare("SELECT * FROM authority_memories WHERE status='active'").all()) {
+        if(erasure.marker(db,'governed',restored.id))continue;
+        const prior=erasureSourceDb.prepare('SELECT * FROM authority_memories WHERE id=?').get(restored.id);
+        if(!prior)throw Error('Restore requires current authoritative memory identity');
+        if(restored.operator_id!==prior.operator_id||restored.project_id!==prior.project_id||restored.scope!==prior.scope)throw Error('Restore supersession scope mismatch');
+        if(['kind','subject_key','value_json','content_hash','source_type','source_hash','source_refs_json','candidate_id','metadata_json','privacy','assurance','domains_json','reverify_task_classes_json','canonical_priority'].some(key=>restored[key]!==prior[key]))throw Error('Restore memory identity content mismatch');
+        const successor=prior.superseded_by_id&&db.prepare('SELECT 1 FROM authority_memories WHERE id=?').get(prior.superseded_by_id)?prior.superseded_by_id:null;
+        if(prior.status==='superseded')db.prepare("UPDATE authority_memories SET status='superseded',superseded_by_id=?,effective_until=? WHERE id=? AND status='active'").run(successor,prior.effective_until,prior.id);
+      }
       for (const prior of erasureSourceDb.prepare('SELECT id,operator_id,project_id,scope,expires_at,ttl_ms,last_verified_at FROM authority_memories').all()) {
         const restored = db.prepare('SELECT * FROM authority_memories WHERE id=?').get(prior.id);
         if (!restored) continue;

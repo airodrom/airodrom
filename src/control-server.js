@@ -116,7 +116,9 @@ class ControlServer {
       if (req.headers.host !== `127.0.0.1:${this.port}` || (req.headers.origin && req.headers.origin !== this.origin) || req.headers['sec-fetch-site'] === 'cross-site') return this.json(res, 403, { error: 'Local same-origin requests only' });
       const url = new URL(req.url, this.origin);
       if (!url.pathname.startsWith('/api/')) {
-        const assets = { '/branding.js': ['branding.js','text/javascript; charset=utf-8'], '/hub': ['control-hub.html','text/html; charset=utf-8'], '/control-hub.js': ['control-hub.js','text/javascript; charset=utf-8'], '/control-hub.css': ['control-hub.css','text/css; charset=utf-8'], '/': ['index.html','text/html; charset=utf-8'], '/app.js': ['app.js','text/javascript; charset=utf-8'], '/style.css': ['style.css','text/css; charset=utf-8'] };
+        const assets = { '/branding.js': ['branding.js','text/javascript; charset=utf-8'], '/hub': ['control-hub.html','text/html; charset=utf-8'], '/control-hub.js': ['control-hub.js','text/javascript; charset=utf-8'], '/control-hub.css': ['control-hub.css','text/css; charset=utf-8'], '/workspace': ['index.html','text/html; charset=utf-8'], '/app.js': ['app.js','text/javascript; charset=utf-8'], '/style.css': ['style.css','text/css; charset=utf-8'] };
+        assets['/'] = ['control-hub.html','text/html; charset=utf-8'];
+        for (const file of ['airodrom-mark.svg','airodrom-logo-horizontal-dark.svg','airodrom-3d-model-blue.svg']) assets['/brand/'+file]=['brand/'+file,'image/svg+xml'];
         const asset = assets[url.pathname];
         if (req.method !== 'GET' || !asset) return this.json(res, 404, { error: 'Not found' });
         res.setHeader('Content-Type', asset[1]); res.end(fs.readFileSync(path.join(__dirname, '../public', asset[0]))); return;
@@ -140,7 +142,16 @@ class ControlServer {
         return this.json(res, 200, result);
       }
       if (!this.authorize(req)) return this.json(res, 401, { error: 'Open the private Control Center link printed by the bridge to connect' });
-      if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'bounded registered local Mission; no tools', active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n });
+      if (req.method === 'GET' && url.pathname === '/api/product/native-status') return this.json(res, 200, await require('./product-observability').nativeStatus(this.bridge));
+      if (req.method === 'GET' && url.pathname === '/api/product/memory') {
+        const query=url.searchParams.get('query')||'';if(query.length>240)throw Error('Memory query too long');
+        const result=this.interactiveMemory(query);
+        return this.json(res,200,{generation:require('./product-observability').memoryStatus(this.bridge).generation,items:result.items.map(m=>({id:require('./product-observability').id(m.memoryId),subject:require('./secret-observation').safeValue(m.subject),content:require('./secret-observation').safeValue(m.content),status:'active',source:'Explicit operator reference; not authority'}))});
+      }
+      if (req.method === 'GET' && url.pathname === '/api/product/overview') return this.json(res, 200, await require('./product-observability').overview(this.bridge,{currentOffset:Number(url.searchParams.get('current_offset')||0)}));
+      if (req.method === 'GET' && url.pathname === '/api/product/events') return this.json(res, 200, require('./product-observability').events(this.bridge, url));
+      if (req.method === 'GET' && url.pathname === '/api/product/mission') return this.json(res, 200, require('./product-observability').missionView(this.bridge, this.bridge.missions.require(url.searchParams.get('id'))));
+      if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'bounded registered local Mission; no tools', active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n, quarantined_leases: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE state='quarantined'").get().n });
       if (req.method === 'GET' && url.pathname === '/api/interactive/memory') return this.json(res, 200, this.interactiveMemory(url.searchParams.get('query') || ''));
       if (req.method === 'GET' && url.pathname === '/api/interactive/task') return this.json(res, 200, this.interactiveTask(url.searchParams.get('mission_id')));
       if (req.method === 'GET' && url.pathname.startsWith('/api/control-v2/')) return this.json(res, 200, controlPlaneRead(this.bridge, url));
@@ -192,6 +203,32 @@ class ControlServer {
       if (req.method !== 'POST') return this.json(res, 404, { error: 'Operation not exposed' });
       if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') return this.json(res, 415, { error: 'JSON content type required' });
       const body = await readJSON(req);
+      if (url.pathname.startsWith('/api/product/')) {
+        try {
+          const action = url.pathname.slice('/api/product/'.length);
+          if(['remember-memory','correct-memory','forget-memory'].includes(action)){
+            require('./control-plane-store').object(body,action==='remember-memory'?['content']:action==='correct-memory'?['id','content']:['id']);
+            if(action!=='remember-memory'){
+              if(!require('./product-observability').id(body.id))throw Error('Current personal memory identity required');
+              const a=this.bridge.authorityRuntime,m=a?.active?a.memory.get(body.id):this.bridge.personalMemory.get(body.id);
+              if(!m || (a?.active ? m.operator_id!==a.store.operatorId||m.scope!=='global'||m.kind!=='personal_preference'||!['public','internal'].includes(m.privacy)||a.memory.eligibility(m,{operator_id:a.store.operatorId,include_personal:true,privacy:'internal'},a.store.now())!==null : m.domain!=='personal'||m.sensitivity!=='normal'||m.status!=='active'))throw Error('Current authorized personal memory required');
+            }
+            const m=action==='remember-memory'?this.rememberInteractive(body.content):action==='correct-memory'?this.bridge.updatePersonalMemory(body.id,{content:require('./control-plane-store').text(body.content,'memory content',2000)}):this.bridge.forgetPersonalMemory(body.id);
+            if(this.bridge.authorityRuntime?.active)this.bridge.ledger.record({eventType:action==='forget-memory'?'product.memory.forgotten':action==='correct-memory'?'product.memory.corrected':'product.memory.recorded',agent:'bridge',direction:'internal',metadata:{}});
+            return this.json(res,200,{memory_id:require('./product-observability').id(m?.memoryId||m?.id||body.id),receipt:action==='forget-memory'?'Forgotten':'Current canonical memory recorded'});
+          }
+          if(action==='archive-project'){
+            require('./control-plane-store').object(body,['id','request_id']);if(body.request_id)require('./control-plane-store').text(body.request_id,'request id',240);const project=this.bridge.projects.archiveProject(body.id);
+            return this.json(res,200,{project_id:require('./product-observability').id(project.projectId),status:'archived'});
+          }
+          if (!['dispatch-mission','cancel-mission','accept-mission'].includes(action)) return this.json(res, 404, { error: 'Product action unavailable' });
+          require('./control-plane-store').object(body, action === 'accept-mission' ? ['id','request_id','verification_id','decision','rationale','evidence'] : ['id','request_id']);
+          this.bridge.missions.require(body.id);
+          await require('./control-plane-api').controlPlaneWrite(this.bridge, action, body);
+          const mission = this.bridge.missions.require(body.id);
+          return this.json(res, 200, { mission_id: require('./product-observability').id(mission.id), state: require('./product-observability').state(mission.state), receipt: 'Canonical operation recorded' });
+        } catch { return this.json(res, 400, { error: 'Canonical operation refused. Refresh current authority and verification before retrying.' }); }
+      }
       if (url.pathname === '/api/interactive/tasks') {
         const created = this.bridge.missions.createConversation(body);
         this.bridge.missions.dispatch(created.mission_id, { request_id: 'interactive:' + body.request_id });

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+<title id="title">Airodrom - airodrom-mark.svg</title>
+<desc id="desc">Full detail signature mark; transparent background. Brand asset v2.0.0. Original vector geometry.</desc>
+<defs><linearGradient id="airodrom-gradient" gradientUnits="userSpaceOnUse" x1="12" y1="224" x2="244" y2="32"><stop offset="0" stop-color="#5091FF"/><stop offset="1" stop-color="#6E69DC"/></linearGradient></defs>
+<path d="M12.000,223.348 L106.431,32.652 L152.323,136.423 L162.203,136.423 L131.860,70.607 L149.893,32.706 L244.000,223.348 L180.020,223.348 L163.175,189.334 L92.825,189.334 L76.465,223.348 L12.000,223.348Z M150.109,62.617 L145.304,72.281 L182.234,148.301 L97.738,148.301 L121.386,99.709 L105.837,62.509 L33.057,210.930 L42.667,210.930 L106.970,81.352 L113.395,97.225 L84.294,156.399 L186.121,156.399 L213.171,210.930 L223.429,210.930 L150.109,62.617Z M128.459,113.692 L118.147,136.423 L139.095,136.423 L128.459,113.692Z M78.355,168.817 L57.677,210.930 L68.043,210.930 L84.834,176.916 L171.760,176.916 L188.389,210.930 L198.701,210.930 L178.023,168.817 L78.355,168.817Z" fill="url(#airodrom-gradient)" fill-rule="evenodd" stroke="none"/>
+</svg>

@@ -148,3 +148,51 @@ test('Project V2 restore validates workspace scope before legacy tombstone clean
  assert.throws(()=>new ProjectMemoryV2({db:backup,restoreFromBackup:true,erasureSourceDb:f.db}),/scope mismatch/);
  assert.equal(backup.prepare('SELECT count(*) n FROM project_memory_v2_missions').get().n,1);
 });
+
+test('pre-correction backups cannot revive superseded Personal or governed Memory after correction and forget',t=>{
+ for(const forget of [false,true]){
+  const f=fixture(t),old=f.personal.remember(f.input()),g=governedRecord(f),pack=f.governed.build({operator_id:f.store.operatorId,include_personal:true}),backup=f.snapshot();
+  const replacement=f.personal.update(old.memoryId,{content:'Current synthetic amber'}),candidate=governedRecordCandidate(f,'allowed'),next=f.governed.promote(candidate.id,{supersedes_id:g.memory.id},f.store.operator);
+  if(forget){f.personal.forget(replacement.memoryId);f.governed.forget(next.id,f.store.operator);}
+  const restored=new PersonalMemory({db:backup,restoreFromBackup:true,erasureSourceDb:f.db,now:f.now}),store=new AuthorityStore(backup,{restoreFromBackup:true,erasureSourceDb:f.db,now:f.now}),memory=new AuthorityMemory(store);
+  assert.equal(restored.get(old.memoryId),null);assert.equal(restored.search('orchid').items.length,0);assert.equal(restored.get(old.memoryId,{includeInactive:true}).status,'superseded');
+  assert.equal(memory.build({operator_id:store.operatorId,include_personal:true}).items.length,0);assert.equal(memory.validatePack(pack.id,{operator_id:store.operatorId,include_personal:true}).valid,false);assert.equal(memory.get(g.memory.id).status,'superseded');assert.deepEqual(backup.prepare('PRAGMA foreign_key_check').all(),[]);
+ }
+});
+function governedRecordCandidate(f,value){return f.governed.propose({kind:'personal_preference',operator_id:f.store.operatorId,project_id:null,scope:'global',subject_key:'workflow.micro_prompts',value,source_hash:'0'.repeat(64),source_refs:[{operator_id:f.store.operatorId}]},f.store.operator);}
+test('later correction alone invalidates restored Memory freshness without a new erasure marker',t=>{
+ for(const governed of [false,true]){
+  const f=fixture(t),old=governed?governedRecord(f).memory:f.personal.remember(f.input()),backup=f.snapshot();
+  const restored=governed?new AuthorityMemory(new AuthorityStore(backup,{restoreFromBackup:true,erasureSourceDb:f.db})):new PersonalMemory({db:backup,restoreFromBackup:true,erasureSourceDb:f.db});
+  const markers=f.db.prepare('SELECT count(*) n FROM memory_erasure_markers').get().n;
+  if(governed){const c=governedRecordCandidate(f,'allowed');f.governed.promote(c.id,{supersedes_id:old.id},f.store.operator);}else f.personal.update(old.memoryId,{content:'Current synthetic amber'});
+  assert.equal(f.db.prepare('SELECT count(*) n FROM memory_erasure_markers').get().n,markers);
+  assert.throws(()=>governed?restored.build({operator_id:f.store.operatorId,include_personal:true}):restored.get(old.memoryId),/stale erasure generation/);
+ }
+});
+test('restore refuses unmarked Memory identities absent from the current independent source',t=>{
+ for(const governed of [false,true]){
+  const f=fixture(t),other=fixture(t);if(governed)governedRecord(f);else f.personal.remember(f.input());const backup=f.snapshot();
+  assert.throws(()=>governed?new AuthorityStore(backup,{restoreFromBackup:true,erasureSourceDb:other.db}):new PersonalMemory({db:backup,restoreFromBackup:true,erasureSourceDb:other.db}),/current authoritative memory identity/);
+ }
+});
+test('current supersession cannot legitimize a copied record with changed scope',t=>{
+ const f=fixture(t),old=f.personal.remember(f.input()),backup=f.snapshot();f.personal.update(old.memoryId,{content:'Current synthetic amber'});backup.prepare('UPDATE personal_memories SET project_id=? WHERE memory_id=?').run('different-project',old.memoryId);
+ assert.throws(()=>new PersonalMemory({db:backup,restoreFromBackup:true,erasureSourceDb:f.db}),/supersession scope mismatch/);
+});
+test('restore rejects changed payloads even when a copied stored hash is unchanged',t=>{
+ for(const governed of [false,true]){
+  const f=fixture(t),item=governed?governedRecord(f).memory:f.personal.remember(f.input()),backup=f.snapshot();
+  if(governed){for(const row of backup.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='authority_memories'").all())backup.exec('DROP TRIGGER '+JSON.stringify(row.name));backup.prepare('UPDATE authority_memories SET value_json=? WHERE id=?').run(JSON.stringify('Tampered synthetic payload'),item.id);}
+  else backup.prepare('UPDATE personal_memories SET content=? WHERE memory_id=?').run('Tampered synthetic payload',item.memoryId);
+  assert.throws(()=>governed?new AuthorityStore(backup,{restoreFromBackup:true,erasureSourceDb:f.db}):new PersonalMemory({db:backup,restoreFromBackup:true,erasureSourceDb:f.db}),/identity content mismatch/);
+ }
+});
+test('restore cannot downgrade sensitivity or increase governed eligibility from copied policy fields',t=>{
+ for(const governed of [false,true]){
+  const f=fixture(t),item=governed?governedRecord(f).memory:f.personal.remember(f.input({sensitivity:'private'})),backup=f.snapshot();
+  if(governed){for(const row of backup.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='authority_memories'").all())backup.exec('DROP TRIGGER '+JSON.stringify(row.name));backup.prepare('UPDATE authority_memories SET privacy=?,assurance=? WHERE id=?').run('public',3,item.id);}
+  else backup.prepare('UPDATE personal_memories SET sensitivity=? WHERE memory_id=?').run('normal',item.memoryId);
+  assert.throws(()=>governed?new AuthorityStore(backup,{restoreFromBackup:true,erasureSourceDb:f.db}):new PersonalMemory({db:backup,restoreFromBackup:true,erasureSourceDb:f.db}),/identity content mismatch/);
+ }
+});

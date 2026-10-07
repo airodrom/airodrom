@@ -1,23 +1,49 @@
 # Airodrom
 
-> [!CAUTION]
-> 🚧 **PROJECT STATUS: PRE-RELEASE — DEVELOPMENT PAUSED FOR RUNTIME MIGRATION**
->
-> ⏸️ Airodrom is temporarily paused while the runtime layer is being migrated and re-qualified.
->
-> ❌ **Not recommended for installation or production use.**
->
-> 🔬 The repository is public for architecture review, development visibility, and ongoing engineering work.
->
-> ✅ Core control-plane, Memory V2, verification, Acceptance/Settlement, and public hardening work are preserved.
->
-> 🔄 Current focus: OpenCode is the default primary execution runtime. Pi is removed completely; Airodrom retains control-plane authority.
->
-> 📦 No supported production release has been published yet.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/airodrom-logo-horizontal-dark.svg">
+    <img src="public/brand/airodrom-logo-horizontal-light.svg" alt="Airodrom" width="480">
+  </picture>
+</p>
 
-Airodrom coordinates bounded local work through a durable Airodrom control plane. Missions carry immutable scope, budgets and verification criteria. Agent results enter an untrusted inbox; independent verification and Acceptance precede local Settlement. Memory supplies authorized reference context and never grants permissions.
+**AI operating platform · PRE-RELEASE · 1.0.0-rc.1**
 
-**Status: Pre-release / development paused for runtime migration. Not recommended for installation or production use.** The **1.0.0-rc.1 source candidate** remains unactivated; package publication, daemon installation and production activation require separate owner decisions.
+Airodrom turns bounded local work into accountable Missions. OpenCode executes; Airodrom owns authority, Memory V2, Capability Broker, independent verification, Acceptance, Settlement, leases and audit. The dimensional terminal, live Control Center and native macOS menu expose safe real state throughout that lifecycle.
+
+No supported production release has been published. This source candidate is for development, architecture review and isolated qualification. Package publication and production activation require separate owner decisions.
+
+## Local quickstart
+
+On the qualified macOS platform, use Node 22.23.3 or later in the 22.x line, Xcode command-line tools, qualified OpenCode 2.0.20 and local Ollama with qwen3-coder:30b. Read [installation](docs/INSTALLATION.md) before startup.
+
+```sh
+npm ci --ignore-scripts
+npm run install:local
+airodrom
+```
+
+`airodrom help`, `airodrom doctor`, `airodrom open` and `airodrom menu` provide command guidance, safe diagnostics, live operations and the native menu. No-argument startup runs real bounded qualification before saving private pins. Each question gets fresh local authority; scoped coding requires a declared Mission. See [Product Experience V2](docs/PRODUCT-EXPERIENCE-V2.md).
+
+```mermaid
+flowchart LR
+    Request[Operator request] --> Mission[Airodrom Mission authority]
+    Memory[Canonical Memory V2] -->|bounded reference context| Mission
+    Mission --> Worker[OpenCode bounded worker]
+    Worker --> Inbox[Untrusted Result Inbox]
+    Inbox --> Verification[Independent host verification]
+    Verification --> Acceptance[Operator Acceptance]
+    Acceptance --> Settlement[Local Settlement]
+    Mission --> Cockpit[Safe CLI / Control Center / native menu]
+```
+
+## Product surfaces
+
+![Airodrom terminal, captured real truecolor output](docs/images/terminal-v2.png)
+
+![Airodrom Control Center, live synthetic local instance](docs/images/control-center-v2.png)
+
+These images come from actual local output with synthetic data. The [observed Mission lifecycle](docs/images/mission-lifecycle-v2.png) shows independent verification, operator Acceptance and local Settlement separately.
 
 ## Runtime support
 

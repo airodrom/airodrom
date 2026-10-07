@@ -65,6 +65,7 @@ class MissionProgram {
  if(work&&decision==='accept')this.bridge.workExecution.assertEvidence(id);
  if(work)this.db.prepare("INSERT OR IGNORE INTO cp_mission_settlements VALUES(?,NULL,'waiting_acceptance','Work evidence requires Acceptance',?)").run(id,this.now());
  this.db.prepare('UPDATE cp_mission_settlements SET state=?,recommendation=?,updated_at=? WHERE mission_id=?').run(decision==='accept'?'settled':'needs_rework',decision==='accept'?'Accepted locally; no merge or deployment performed':'Operator requested rework',this.now(),id);
+ this.store.event('mission.settled',id,{state:decision==='accept'?'settled':'needs_rework'});
  }
  dependencyReady(id,state,target){
  const work=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='cp_work_bindings'").get()&&this.db.prepare('SELECT 1 FROM cp_work_bindings WHERE mission_id=?').get(id);

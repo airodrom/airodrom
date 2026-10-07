@@ -240,7 +240,7 @@ class MissionService {
     const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),plan=fallback.fallback_policy.native_actions;
     if(workspaceSnapshot(m.envelope.workspace).hash!==m.envelope.baseline.hash)throw Error('Workspace changed before native fallback');
     transaction(this.db,()=>{
-      this.store.startRun({id:runId,taskId:task.id,missionId:m.id,agentId:'host'});
+      this.store.startRun({id:runId,taskId:task.id,missionId:m.id,agentId:'host',role:'worker'});
       this.store.acquireLease({resource:m.envelope.workspace,runId,missionId:m.id,baseline:m.envelope.baseline});
       const pack=this.bridge.controlContext.build(m,runId);const governedRoute=JSON.parse(this.db.prepare('SELECT route FROM cp_dispatches WHERE id=?').get(dispatch.id).route);this.bridge.authorityRuntime?.assertDispatch(m,governedRoute,pack);this.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,task.id);task.contextPackId=pack.id;
       this.store.updateRun(runId,{state:'running',processState:'not_started'});
@@ -309,7 +309,7 @@ class MissionService {
     });
     if(this.store.getMission(m.id).state==='verifying'){
       // Exclude another writer while independent checks run and evidence is captured.
-      const verifyId=randomUUID();this.store.startRun({id:verifyId,taskId:run.task_id,missionId:m.id,agentId:'host'});
+      const verifyId=randomUUID();this.store.startRun({id:verifyId,taskId:run.task_id,missionId:m.id,agentId:'host',role:'verifier'});
       try {this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id});const verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);}
       catch(error){if(this.store.getMission(m.id).state==='verifying')this.store.state(m.id,'blocked','Independent verification unavailable');}
       finally{this.store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
@@ -324,7 +324,7 @@ class MissionService {
       if(!['needs_rework','awaiting_acceptance'].includes(m.state)||m.envelope.baseline.version!==2)throw Error('V2 failed verification required');
       const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode') AND state='completed' AND termination_verified=1 ORDER BY ended_at DESC LIMIT 1").get(id);
       if(!run||!this.db.prepare("SELECT 1 FROM cp_verifications WHERE mission_id=? AND run_id=? AND result='failed'").get(id,run.id))throw Error('Settled implementation with failed verification required');
-      const verificationRun=randomUUID();this.store.startRun({id:verificationRun,taskId:run.task_id,missionId:id,agentId:'host'});
+      const verificationRun=randomUUID();this.store.startRun({id:verificationRun,taskId:run.task_id,missionId:id,agentId:'host',role:'verifier'});
       this.store.acquireLease({resource:m.envelope.workspace,runId:verificationRun,missionId:id});
       this.store.state(id,'verifying','Explicit independent verification retry');
       this.store.event('verification.started',id,{retry:true},{runId:run.id});
@@ -357,7 +357,7 @@ class MissionService {
       const acceptanceId=randomUUID();
       if(this.bridge.authorityRuntime?.active&&this.bridge.authorityRuntime.store.one('verification_records',v.id))this.bridge.authorityRuntime.store.accept({id:acceptanceId,mission_id:id,mission_revision:m.revision,verification_id:v.id,decision:input.decision==='accept'?'accepted':'rework_requested',reason:input.rationale,review_evidence:input.evidence?[input.evidence]:[]},this.bridge.authorityRuntime.store.operator,{transition:false});
       this.db.prepare('INSERT INTO cp_acceptances VALUES(?,?,?,?,?,?,?)').run(acceptanceId,id,v.id,input.decision,owner,JSON.stringify({rationale:input.rationale,evidence:input.evidence||null}),Date.now());
-      this.store.state(id,input.decision==='accept'?'completed':'needs_rework');this.program.settle(id,input.decision);if(input.decision==='accept'&&this.bridge.authorityRuntime?.active&&this.bridge.authorityRuntime.store.one('acceptance_records',acceptanceId))this.bridge.authorityRuntime.memory.distill(acceptanceId);return this.detail(id,owner);
+      this.store.event('mission.accepted',id,{decision:input.decision});this.store.state(id,input.decision==='accept'?'completed':'needs_rework');this.program.settle(id,input.decision);if(input.decision==='accept'&&this.bridge.authorityRuntime?.active&&this.bridge.authorityRuntime.store.one('acceptance_records',acceptanceId))this.bridge.authorityRuntime.memory.distill(acceptanceId);return this.detail(id,owner);
     });
   }
   cancel(id,{request_id},owner='operator'){

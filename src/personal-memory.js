@@ -138,6 +138,16 @@ class PersonalMemory {
     for (const row of this.db.prepare("SELECT * FROM personal_memories WHERE status IN ('forgotten','expired')").all()) if (!erasure.marker(this.db, 'personal', row.memory_id)) erasure.mark(this.db, {store:'personal',identity:row.memory_id,scope_hash:this._erasureScope(row),action:row.status==='expired'?'expiry':'forget',erased_at:row.updated_at});
     if (this.restoreSource) {
       erasure.reconcile(this.db, this.restoreSource);
+      // Current correction history is authoritative even when its replacement
+      // was created after this backup and therefore has no row in the copy.
+      for (const restored of this.db.prepare("SELECT * FROM personal_memories WHERE status='active'").all()) {
+        if(erasure.marker(this.db,'personal',restored.memory_id))continue;
+        const prior=this.restoreSource.prepare('SELECT * FROM personal_memories WHERE memory_id=?').get(restored.memory_id);
+        if(!prior)throw Error('Restore requires current authoritative memory identity');
+        if(this._erasureScope(restored)!==this._erasureScope(prior))throw Error('Restore supersession scope mismatch');
+        if(['type','subject','content','content_hash','source','source_event_id','sensitivity','confidence'].some(key=>restored[key]!==prior[key]))throw Error('Restore memory identity content mismatch');
+        if(prior.status==='superseded')this.db.prepare("UPDATE personal_memories SET status='superseded',superseded_by=?,updated_at=? WHERE memory_id=? AND status='active'").run(prior.superseded_by,prior.updated_at,prior.memory_id);
+      }
       // Retention tightening after a backup cannot be undone by restore.
       for (const prior of this.restoreSource.prepare('SELECT * FROM personal_memories WHERE expires_at IS NOT NULL').all()) {
         const restored = this.db.prepare('SELECT * FROM personal_memories WHERE memory_id=?').get(prior.memory_id);
