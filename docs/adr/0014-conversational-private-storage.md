@@ -1,8 +1,8 @@
 # ADR 0014 — Conversational private storage repair
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-07
-- Review: Independent privacy and authority reviews pending
+- Review: Independent privacy/security and runtime/authority reviews passed on implementation `f24f84a4f5e702395f0ce0055d8e9cbcf4bade43`; owner approved normal merge and local reinstall after required gates pass
 - Related: [ADR 0011](0011-conversation-engine-and-intent-routing.md), [ADR 0010](0010-personal-assistant-and-qualified-routing.md), [privacy contract](../PRIVACY-ERASURE.md)
 - Components: Operator intent ingress, native terminal guide, Sensitive Memory, Secret Vault, Conversation Engine
 
@@ -18,7 +18,7 @@ Sensitive identifiers use the existing canonical PersonalMemory store with sensi
 
 Vault entries retain opaque Keychain references and purpose binding. The existing named Vault contract supplies non-sensitive labels and the `private_identifier` kind; this repair reuses that reviewed implementation and keeps values in Keychain. Native reveal requires fresh operator confirmation, current operator-purpose dispositions before and after resolution, and a numeric value. Credential entries and connector tokens cannot be revealed by this operation. Revocation removes labels and kind metadata before Keychain cleanup. Restored views remain read-only and subordinate to independent current dispositions.
 
-The terminal detaches ordinary readline before any choice or reveal, drops queued pasted input and restores input on cancellation. Non-interactive input cannot save or reveal. Save receipts and lookup metadata contain no value. Reveal is printed only in the operator terminal, never returned as conversation prose. An ambiguous match across backends requires an entry selection before reveal. Duplicate names within a backend require reviewing or forgetting the existing entry; no implicit overwrite occurs.
+The terminal detaches ordinary readline before any choice or reveal, drops queued pasted input before every prompt and before restoring ordinary input, and restores input on cancellation. Confirmations visibly offer Yes / No; No and Enter cancel, and only fixed Yes or No feedback is echoed. Non-interactive input cannot save or reveal. Save receipts and lookup metadata contain no value. Reveal is printed only in the operator terminal, never returned as conversation prose. An ambiguous match across backends requires an entry selection before reveal. Duplicate names within a backend require reviewing or forgetting the existing entry; no implicit overwrite occurs.
 
 Explicit Missions, immutable scope, leases, qualification, Acceptance and Settlement retain their existing contracts. Conversation model responses that claim persistence, disclaim the host's storage capability, or expose named private identifiers fail closed.
 
@@ -30,7 +30,7 @@ No database schema, Kernel version or SDK export changes are introduced. Legacy 
 
 Synthetic focused checks cover the exact reported phrase, greeting/nickname/polite variants, quoted text, negation, ambiguity, credential refusal, operator authentication, secure input, cancellation, Memory exclusion, name-bound reveal, fresh-store persistence, Vault purpose/revocation and model bypass. Existing conversation, secure-entry, Memory/privacy and authority regressions plus type checks and source/package gates remain required. Fixture checks do not qualify a live model or Keychain backend; report isolated live evidence separately.
 
-Two independent boundary reviews and maintainer disposition are integration gates under [project governance](../../GOVERNANCE.md). Keep this decision Proposed until those gates are recorded. Merge and local reinstall follow normal governance; release and deployment require separate owner authorization.
+Two independent boundary reviews and maintainer disposition are integration gates under [project governance](../../GOVERNANCE.md). Both boundary reviews passed the implementation revision recorded above, and the owner explicitly instructed normal merge and local reinstall once required gates pass. This disposition grants no release or deployment authority. Checks run locally; automatic GitHub Actions remain disabled.
 
 ## Rollback
 
@@ -38,4 +38,8 @@ Revert the source repair through a reviewed change. Preserve canonical Memory re
 
 ## Outcome
 
-Pending independent reviews and maintainer disposition.
+Privacy/security and runtime/authority reviews passed independently on the recorded implementation revision with no unresolved findings. Review findings were repaired: the terminal now reads the persisted nickname before local intent parsing; every hidden prompt and ordinary-input handoff rejects previously queued input; confirmations visibly show Yes / No and default to No. A regression assertion now compares bounded synthetic values and structured metadata instead of matching digits inside random opaque IDs.
+
+Integration preserves the browser work from PR #24, including its scoped research dispatch and account credential boundaries. A deterministic incoming research failure was repaired without relaxing credential screening: a host-generated request UUID uses an injective alphabetic suffix in the unique Mission display name, while canonical request identity and replay protection retain the UUID. User objectives and descriptions still pass the same credential checks.
+
+Local evidence: the private-routing and secure-guide remediation checks passed 56/56; the integration suite passed 89 checks, with its sole generated-name failure subsequently repaired and all 9 research Mission checks passing. Independent reviewers also passed 26 privacy integration checks and 41 runtime integration checks. Both type checks, source/syntax/link verification, package sanity, dependency/license audits and source/history secret scans passed locally. Earlier isolated live synthetic Memory/Keychain and service restart evidence remains separate from fixture qualification; the installed version is verified after merge.
