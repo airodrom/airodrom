@@ -406,6 +406,7 @@ class CapabilityBroker extends EventEmitter {
     if (!task || !this.policy.tasks.has(taskId)) return this._deny(taskId, request, 'Unknown or revoked task', 'unknown_task');
     if (removed(task)) return this._deny(taskId, request, 'Historical runtime removed; capabilities and context delivery are denied', 'runtime_removed');
     if (task.reasoningMode === 'reasoning_only') return this._deny(taskId, request, 'Reasoning admission grants no execution authority', 'reasoning_execution_denied');
+    if(task.mission?.capabilityProfile==='governed-browser-research-v1'&&(request.toolName!=='capability'||input.name!=='browser_research'))return this._deny(taskId,request,'Research Missions expose only the scoped browser port','mission_grant_denied');
     if (task.mission?.level === 1 || task.mission?.capabilityProfile === LEVEL1_PROFILE_ID) {
       if (!assertReadOnlyMission(task.mission) || task.workspace !== WORKSPACE || request.toolName !== 'read' || !exactKeys(input, ['path'])) return this._deny(taskId, request, 'Level 1 exposes only one exact brokered fixture read path', 'mission_grant_denied');
       try {

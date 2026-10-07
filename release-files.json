@@ -507,5 +507,22 @@
   "tests/worker-preflight.test.js",
   "tests/zero-click-routing.test.js",
   "tsconfig.authority.json",
-  "tsconfig.sdk.json"
+  "tsconfig.sdk.json",
+  "src/research-account-guide.js",
+  "src/research-baseline.js",
+  "src/research-browser.js",
+  "src/research-capability.js",
+  "src/research-credentials.js",
+  "src/research-mission.js",
+  "src/research-network.js",
+  "src/research-profile.js",
+  "src/research-report.js",
+  "config/research-profile-v1.json",
+  "docs/BROWSER-RESEARCH-V1.md",
+  "docs/adr/0013-governed-browser-product-research.md",
+  "tests/research-browser.test.js",
+  "tests/research-capability.test.js",
+  "tests/research-credentials.test.js",
+  "tests/research-mission.test.js",
+  "tests/research-report.test.js"
 ]

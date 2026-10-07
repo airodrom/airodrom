@@ -5,7 +5,7 @@
   "precedence": { "rule": "most_restrictive_wins", "order": ["deny", "approval_required", "auto_allow"] },
   "riskClasses": ["READ_ONLY", "ROUTINE_WRITE", "EXTERNAL_WRITE", "DESTRUCTIVE", "PRIVILEGED", "SECURITY", "FINANCIAL"],
   "neverAutomaticClasses": ["DESTRUCTIVE", "PRIVILEGED", "SECURITY", "FINANCIAL"],
-  "taskScopes": ["repo", "developer_environment", "personal", "mac_local", "communications", "calendar", "system_readonly"],
+  "taskScopes": ["repo", "developer_environment", "personal", "mac_local", "communications", "calendar", "system_readonly", "web_read"],
   "defaultTaskScopes": ["repo", "system_readonly"],
   "bulkRecipientThreshold": 5,
   "humanGates": {
@@ -39,6 +39,7 @@
     "capability": "READ_ONLY"
   },
   "capabilities": {
+    "browser_research": { "group": "research", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["web_read"], "reason": "Host-scoped public browser research; restricted operations require exact owner approval" },
     "capability_list": { "group": "discovery", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["*"], "reason": "Capability inventory read" },
     "capability_status": { "group": "discovery", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["*"], "reason": "Capability status read" },
     "command_classify": { "group": "discovery", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["*"], "reason": "Classify a command without executing it" },
