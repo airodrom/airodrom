@@ -97,7 +97,7 @@ async function scopedTask(home, file,preferences={}) {
 async function interactive(home, { input = process.stdin, output = process.stdout, env = process.env } = {}) {
   output.write(intro({ mode: terminalBrand.colorMode({tty:!!output.isTTY,env}), graphics:terminalBrand.imageProtocol({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
   const s = await local.start(home, env);
-  output.write('\nType a question, or /help for commands.\n');
+  output.write('\nType a question, or /help for commands. Input appears after Enter once checked for credentials.\n');
   const address=require('./conversation-address');
   let userName=null,nameOffered=false;
   const refreshName=async()=>{
@@ -136,7 +136,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       input.once('end', readerEndListener);
       input.resume();
     } else readerInput = input;
-    rl = readline.createInterface({ input: readerInput, output, terminal: !!input.isTTY && !!output.isTTY });
+    // Preserve readline keyboard editing, but keep its output and history private.
+    // A complete line must pass credential screening before terminal disclosure.
+    const editorOutput = input.isTTY && output.isTTY ? new (require('node:stream').Writable)({write(_chunk,_encoding,done){done();}}) : output;
+    if(editorOutput!==output){editorOutput.isTTY=true;editorOutput.columns=output.columns||80;}
+    rl = readline.createInterface({ input: readerInput, output:editorOutput, historySize:0, terminal: !!input.isTTY && !!output.isTTY });
     lines = rl[Symbol.asyncIterator]();
     readerDataListeners = input.listeners('data').filter(listener => !previous.has(listener));
     rl.on('SIGINT', interrupt);
@@ -159,13 +163,13 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   const secureGuide = async () => {
     if (!input.isTTY || !output.isTTY || !input.setRawMode) throw Error('Secure Vault requires an interactive operator terminal. Use /vault in Terminal.');
     await detachReader();
-    try { await require('./secure-vault-guide').guide({ input, output, home, signal: active?.signal }); }
+    try { output.write('\nAiro\n');await require('./secure-vault-guide').guide({ input, output, home, signal: active?.signal }); }
     finally { if (!quitting && !input.readableEnded) attachReader(); }
   };
   const privateGuide = async message => {
     if (!input.isTTY || !output.isTTY || !input.setRawMode) throw Error('Private Vault requires an interactive operator terminal.');
     await detachReader();
-    try { await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal}); }
+    try { output.write('\nAiro\n');await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal}); }
     finally { if (!quitting && !input.readableEnded) attachReader(); }
   };
   const accountGuide = async entry_url => {
@@ -228,7 +232,15 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       if (quitting) break;
       const {value,command,arg,json}=parseLine(line); if (!value) { nameOffered=false;await refreshName();readerLocked=false;if (output.isTTY) output.write(prompt()); continue; }
       try {
+        if(input.isTTY&&output.isTTY&&!require('./assistant-intent').secret(value))output.write(terminalText(value)+'\n');
         if(require('./private-vault-intent').parse(value)){nameOffered=false;active=new AbortController();await privateGuide(value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(require('./assistant-intent').secret(value)){
+          nameOffered=false;
+          const route=require('./assistant-intent').parse(value);
+          if(route.kind==='vault'){active=new AbortController();try{await secureGuide();}finally{active=null;}}
+          else output.write('\nAiro\nSecret content is refused. Use /vault for secure entry; values never pass through chat.\n');
+          await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;
+        }
         if(nameOffered&&/^(?:no|skip|no thanks|no name|prefer not to say)[.!]?$/i.test(value)){
           nameOffered=false;await refreshName();output.write('\nAiro\nOf course. I’ll use You.\n');readerLocked=false;if(output.isTTY)output.write(prompt());continue;
         }

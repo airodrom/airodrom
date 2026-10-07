@@ -129,3 +129,7 @@ work or rewrite a live service's owning configuration.
 Maintainer disposition is pending. After review, record the accepting review,
 date and unresolved conditions. Do not mark the prior ADRs wholly Superseded:
 this proposal replaces only their ordinary authenticated chat semantics.
+
+## Compatible Vault UX repair — V1.1
+
+The no-echo requirement applies to credential capture; bounded nonsecret choices and confirmations are now visible. Ordinary terminal input keeps readline editing with a private output sink and no readline history, then screens a complete line before operator display or service dispatch. Recognized credentials refuse locally. This prevents token-prefix disclosure and leaves chat/session, provider, Mission and canonical Memory authority unchanged. The [Vault UX V1.1 audit](../NATURAL-PRIVATE-VAULT-V1.md#vault-ux-v11) records the operator journey and its terminal-display limits.

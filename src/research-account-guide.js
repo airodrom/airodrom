@@ -9,12 +9,15 @@ async function guide({entry_url,input,output,home,signal,vault,request}={}){
  if(rows.length<2){output.write('Save your account username and password as separate credentials with /vault secure entry, then label them with /secret rename. Values stay in Keychain.\n');return {kind:'clarify',message:'Two stored account credentials are required.'};}
  output.write('ACCOUNT RESEARCH AUTHORIZATION\n'+u.origin+'\nOnly the selected account credentials may be used for this research Mission. Screenshots of account pages are disabled. MFA or CAPTCHA stops this Mission for manual inspection. Live handoff and bypass are unavailable.\n');
  rows.forEach((r,i)=>output.write(`${i+1}. ${r.name}\n`));
- const choose=prompt=>require('./vault-cli').hidden(input,output,{prompt,maximum:64,signal});
+ const terminal=require('./vault-cli');
+ const choose=prompt=>terminal.visible(input,output,{prompt,choices:['0',...rows.map((_,i)=>String(i+1))],signal});
  const select=async prompt=>{const v=await choose(prompt);if(!/^[1-9]\d{0,3}$/.test(v)||!rows[Number(v)-1])throw Error('Account authorization cancelled');return rows[Number(v)-1];};
- const user=await select('Choose stored username (hidden number): '),password=await select('Choose stored password (hidden number): ');
+ const user=await select('Username entry number · 0 or Ctrl+C cancels: '),password=await select('Password entry number · 0 or Ctrl+C cancels: ');
  if(user.reference===password.reference||!['password','credential'].includes(password.kind))throw Error('Choose two distinct account credentials');
- output.write('Authorize a single existing-account login to '+u.origin+' for competitor product research using these two references?\n');
- if(!/^(?:yes|y)$/i.test(await choose('Yes or no (hidden): '))||signal?.aborted)return {kind:'clarify',message:'Account authorization cancelled.'};
+ output.write(`Username: ${user.name}\nPassword: ${password.name}\n`);
+ if(!await terminal.confirm(input,output,{prompt:'Authorize one existing-account login to '+u.origin+' for competitor product research?',signal}))return {kind:'clarify',message:'Account authorization cancelled.'};
+ const current=vault.search('');
+ if(![user,password].every(selected=>current.some(row=>row.reference===selected.reference&&row.name===selected.name&&row.kind===selected.kind)))throw Error('Account credential selection changed; list current Vault labels and retry.');
  return (request||local.request)(home,'/api/assistant/research/account',{entry_url:u.href,username_reference:user.reference,password_reference:password.reference,confirmed:true,request_id:randomUUID()});
 }
 module.exports={guide};

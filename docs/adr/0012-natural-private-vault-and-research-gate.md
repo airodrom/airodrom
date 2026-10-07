@@ -19,3 +19,7 @@ Existing credential references, OAuth purpose binding, revocation markers, perso
 ## Evidence
 
 Targeted tests cover routing redaction, confirmed save/restart/reveal, refusal and competing readers, collisions, ambiguity, immutable classification, rename, purpose binding, revocation/current-source restore and sanitized failures. Existing conversation, connector-authority, canonical erasure and Mission escalation checks plus both typechecks and package/public sanity remain the focused validation. Independent reviewers assess the changed authority/privacy boundaries; live accounts, public/account navigation and feature-gap reports remain explicitly untested.
+
+## Compatible UX repair — V1.1
+
+Nonsecret choices and fresh Yes/No decisions use a visible bounded reader. Credentials remain hidden and purpose-bound. A private-identifier save previews its readable label, numeric value and classification only in the operator terminal; optional valueless requests use hidden numeric capture before that preview. Operator preview/disclosure may remain in unmanaged terminal scrollback, while application transcripts, models, service requests, events and operation receipts remain value-free. Credential capture uses predefined contextual labels and a separate visible save confirmation. Named selection is rechecked after confirmation; no migration, second store or authority/classification change is introduced. See the [journey and audit](../NATURAL-PRIVATE-VAULT-V1.md#vault-ux-v11).
