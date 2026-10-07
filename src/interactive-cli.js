@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /research account <HTTPS login URL>\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -36,13 +36,14 @@ Privacy    Local inference · scoped Memory · credentials stay private
 `;
 }
 function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  menu         Open the native macOS menu helper\n  help         Show full command guidance\n  doctor       Inspect safe readiness and pin categories\n  requalify    Fresh confined qualification while stopped\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
-async function waitResult(home, id, { signal, onProgress } = {}) {
-  const deadline = Date.now() + 130000; let lastState=null;
+async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
+  const deadline = Date.now() + timeoutMs; let lastState=null;
   while (Date.now() < deadline) {
     if (signal?.aborted) { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); throw Error('Task cancelled.'); }
     const r = await local.request(home, '/api/interactive/task?mission_id=' + encodeURIComponent(id));
     if(r.state!==lastState){lastState=r.state;onProgress?.(r);}
     if (['awaiting_acceptance', 'completed'].includes(r.state)) return r;
+    if(r.state==='waiting_for_operator')return r;
     if (['blocked', 'needs_rework', 'cancelled'].includes(r.state)) throw Error(r.reason || 'Mission stopped; inspect its status.');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -167,6 +168,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     try { await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal}); }
     finally { if (!quitting && !input.readableEnded) attachReader(); }
   };
+  const accountGuide = async entry_url => {
+    await detachReader();
+    try { return await require('./research-account-guide').guide({entry_url,input,output,home,signal:active?.signal}); }
+    finally { if (!quitting && !input.readableEnded) attachReader(); }
+  };
   const session = async () => {
     if (!conversationId) conversationId = (await local.request(home, '/api/assistant/conversation/session', {})).conversation_id;
     if (!conversationId) throw Error('Conversation session is unavailable.');
@@ -177,9 +183,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     indicator=render.waiting(output,{env,signal:active.signal});
   };
   const stopAnswer=()=>{indicator?.stop();indicator=null;};
-  const answer=async id=>{
+  const answer=async (id,options={})=>{
     if(!indicator)startAnswer();
-    try { return await waitResult(home,id,{signal:active.signal}); }
+    try { return await waitResult(home,id,{signal:active.signal,...options}); }
     finally { stopAnswer(); }
   };
   const handleReceipt = async (receipt, json = false) => {
@@ -201,8 +207,10 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       if (receipt.mission_id || receipt.mission?.id) lastMission = receipt.mission_id || receipt.mission.id;
       show(output, receipt, missionReceipt, json);
       if (receipt.kind === 'mission' && ['dispatching', 'running', 'verifying'].includes(receipt.state)) {
-        const result = await answer(lastMission);
-        output.write(terminalText(result.summary || '') + '\n');
+        const result = await answer(lastMission,receipt.browser_research_available?{timeoutMs:200000}:{});
+        if(receipt.browser_research_available&&['awaiting_acceptance','completed'].includes(result.state)){const report=await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(lastMission));output.write(terminalText(report.markdown||'Research report is unavailable; inspect /mission status.')+'\n');}
+        else if(receipt.browser_research_available)output.write('Research needs owner intervention. Use /mission status or Control Center to review the required action. No report has been qualified.\n');
+        else output.write(terminalText(result.summary || '') + '\n');
       }
     } else {
       stopAnswer();
@@ -276,6 +284,10 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         }
         else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg);show(output,{runtime},d=>'Runtime for fresh tasks: '+render.name(d.runtime),json); }
         else if (command === 'open') { local.open(home); output.write('Control Center opened.\n'); }
+        else if(command==='research'){
+          if(!/^account\s+https:\/\/\S+$/i.test(arg))throw Error('Use /research account <HTTPS login URL> to authorize existing Vault credentials for a separate research Mission.');
+          active=new AbortController();const receipt=await accountGuide(arg.replace(/^account\s+/i,''));await handleReceipt(receipt,json);active=null;
+        }
         else if (command === 'memory') await memory(home, arg, output,json);
         else if (command === 'remember') { const item = await local.request(home, '/api/interactive/remember', { content: arg }); output.write('Remembered in Memory V2. ID: ' + item.memoryId + '\n'); }
         else if (command === 'forget') { const r = await local.request(home, '/api/interactive/forget', { selection: arg }); output.write('Forgotten. Fresh Missions cannot retrieve this record. ID: ' + r.memoryId + '\n'); }

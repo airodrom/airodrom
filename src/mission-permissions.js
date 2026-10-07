@@ -100,6 +100,7 @@ function callRequirements(call, workspace) {
   }
   if (tool === 'capability') {
     const name = input.name, args = input.input || {};
+    if(name==='browser_research')return {network:['internet'],data:['read'],...(args.action?.type==='authenticate'?{secrets:['use']}:{})};
     if (FILE_READ.has(name) || FILE_WRITE.has(name)) {
       const mode = FILE_READ.has(name) ? 'read' : 'write';
       const paths = ['path','destination','directory','root','target'].filter(k => typeof args[k] === 'string').map(k => file(args[k]));

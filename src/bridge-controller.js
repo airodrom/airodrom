@@ -197,6 +197,8 @@ class BridgeController extends EventEmitter {
       requestBridgeRestart: () => this.capabilityBroker.bridgeRestart.requestRestart({ runtimeDir: this.dataDir, repoRoot: path.resolve(__dirname, '..'), now: Date.now() }),
       webFetch: (task, input) => this.web.fetch(input, { taskId: task.id, sessionId: task.sessionId }),
       webEnabled: () => this.web.enabled === true,
+      researchAssess: (task,input) => this.missions?.research?.assess(task,input) || {dynamic:{decision:'deny',reason:'Governed research unavailable'}},
+      researchExecute: (task,input,signal) => this.missions.research.perform(task,input,signal),
       mcpConnected: () => Boolean(this.tasks?.list().some(item => item.source?.transport === 'mcp' && Date.now() - (item.updatedAt || 0) < 15 * 60_000)),
       bridgePids: () => [...this.runtimes.values()].map(runtime => runtime?.rpc?.child?.pid).filter(Number.isInteger)
     });
@@ -219,7 +221,8 @@ class BridgeController extends EventEmitter {
         this.tasks.save(task); this._recordCapabilityRequested(task, toolName, detail);
       },
       onCompleted: (task, toolName, output, request) => {
-        require('./execution-evidence').record(task, toolName, request);
+        if(task.mission?.capabilityProfile==='governed-browser-research-v1')this.missions.research.recordInvocation(task,toolName,request);
+        else require('./execution-evidence').record(task, toolName, request);
         if (['write', 'edit'].includes(toolName) && typeof request?.input?.path === 'string') this.capabilityHost.touch(task, path.resolve(task.workspace, request.input.path));
         this._recordProjectMemoryToolReceipt(task, toolName, output, request);
         this._recordCapabilityCompleted(task, toolName, output, request);
@@ -298,7 +301,7 @@ class BridgeController extends EventEmitter {
       });
       this.config = prepareControlProfile(this.dataDir, this.options.sourceProfile);
       this.tasks = new TaskSessionManager(this.dataDir, this.memory.db);
-      this.tasks.isErasureActive=id=>this.leases.has(id);
+      this.tasks.isErasureActive=id=>this.leases.has(id)||Boolean(this.missions?._research?.isActiveTask(id));
       this.projects = new ProjectMissionOrchestrator({
         db: this.memory.db, personalMemory: this.personalMemory,
         record: event => this._ledgerRecord(event),
@@ -857,7 +860,7 @@ class BridgeController extends EventEmitter {
   }
   // MEMORY_V2_LIFECYCLE_BOOTSTRAP_V6
   _projectMemoryRepositorySnapshot(task) {
-    if (!task?.workspace) return null;
+    if (task?.mission?.capabilityProfile==='governed-browser-research-v1'||!task?.workspace) return null;
 
     const directXcodeGit = '/Applications/Xcode.app/Contents/Developer/usr/bin/git';
     const gitPath = fs.existsSync(directXcodeGit) ? directXcodeGit : '/usr/bin/git';
@@ -958,7 +961,7 @@ class BridgeController extends EventEmitter {
   }
 
   _ensureProjectMemoryMission(task) {
-    if (!this.projectMemoryV2 || !task?.mission?.id || !task.mission.objectiveSet) {
+    if (task?.mission?.capabilityProfile==='governed-browser-research-v1'||!this.projectMemoryV2 || !task?.mission?.id || !task.mission.objectiveSet) {
       return { ok: true, disposition: 'not_ready' };
     }
 
@@ -1009,7 +1012,7 @@ class BridgeController extends EventEmitter {
   }
 
   _recordProjectMemoryToolReceipt(task, toolName, output, request) {
-    if (!this.projectMemoryV2 || !task?.mission?.id) return;
+    if (task?.mission?.capabilityProfile==='governed-browser-research-v1'||!this.projectMemoryV2 || !task?.mission?.id) return;
 
     const input = request?.input || {};
     const sourceChange = toolName === 'write' || toolName === 'edit';
@@ -1091,7 +1094,7 @@ class BridgeController extends EventEmitter {
   }
 
   _recordProjectMemoryBlocker(task, body, decision) {
-    if (!this.projectMemoryV2 || !task?.mission?.id) return;
+    if (task?.mission?.capabilityProfile==='governed-browser-research-v1'||!this.projectMemoryV2 || !task?.mission?.id) return;
 
     try {
       this._ensureProjectMemoryMission(task);
@@ -1117,7 +1120,7 @@ class BridgeController extends EventEmitter {
   }
 
   _recordProjectMemoryContextPressure(task, measured) {
-    if (!this.projectMemoryV2 || !task?.mission?.id || !measured) return null;
+    if (task?.mission?.capabilityProfile==='governed-browser-research-v1'||!this.projectMemoryV2 || !task?.mission?.id || !measured) return null;
 
     try {
       this._ensureProjectMemoryMission(task);
@@ -1144,7 +1147,7 @@ class BridgeController extends EventEmitter {
   }
 
   _prepareProjectMemoryRecovery(task) {
-    if (!this.projectMemoryV2 || !task?.mission?.id) {
+    if (task?.mission?.capabilityProfile==='governed-browser-research-v1'||!this.projectMemoryV2 || !task?.mission?.id) {
       return { ok: true, disposition: 'memory_disabled', serialized: null };
     }
 
@@ -1178,7 +1181,7 @@ class BridgeController extends EventEmitter {
   }
 
   _recordProjectMemoryTerminal(task) {
-    if (!this.projectMemoryV2 || !task?.mission?.id) return null;
+    if (task?.mission?.capabilityProfile==='governed-browser-research-v1'||!this.projectMemoryV2 || !task?.mission?.id) return null;
 
     let status = task.status;
     if (status === 'deadline' || status === 'interrupted') status = 'failed';
@@ -1355,6 +1358,7 @@ class BridgeController extends EventEmitter {
       used: { runtimeMs: 0, actions: 0, retries: 0 }, requireGrant: options.requireMissionGrant === true,
       ...(options.acceptanceMode ? { acceptanceMode: options.acceptanceMode } : {}), status: 'pending', attempts: 0, started: false
     };
+    if(options.capabilityProfile==='governed-browser-research-v1')task.mission.capabilityProfile=options.capabilityProfile;
     this._normalizeMission(task); task.includeSharedMemory = options.includeSharedMemory === true;
     task.reasoningMode = options.reasoningOnly ? 'reasoning_only' : null;
     task.reasoningProbe = options.reasoningProbe || null;
@@ -2017,6 +2021,9 @@ class BridgeController extends EventEmitter {
   }
   async cancel(id) {
     const task = this.tasks.get(id);
+    if(task.controlPlaneMissionId&&this.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind==='browser_research'){
+      this.missions.cancel(task.controlPlaneMissionId,{request_id:randomUUID()});return this.snapshotTask(task);
+    }
     task.cancelRequested = true;
     if (task.mission?.authority) task.mission.authorityRevoked = true;
 
@@ -2065,6 +2072,7 @@ class BridgeController extends EventEmitter {
   }
   async pause(id) {
     const task = this.tasks.get(id);
+    if(task.controlPlaneMissionId&&['conversation','browser_research'].includes(this.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind))throw Error('Bounded conversation and research Missions cannot use legacy pause/resume.');
     if (task.status === 'cancelled' || task.mission?.status === 'cancelled') throw new Error('Cancelled missions cannot be paused or resumed');
     if (task.safetyStop?.latched) throw new Error('Safety stop is latched; resolve it explicitly before changing mission state');
     task.pauseRequested = true; task.stopReason = 'paused'; task.mission.status = 'paused'; task.pausedAt = Date.now();
@@ -2074,6 +2082,7 @@ class BridgeController extends EventEmitter {
   }
   async resume(id) {
     const task = this.tasks.get(id); require('./removed-runtime').assertExecutable(task);
+    if(task.controlPlaneMissionId&&['conversation','browser_research'].includes(this.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind))throw Error('Bounded conversation and research Missions cannot use legacy pause/resume.');
     if (task.safetyStop?.latched || this.policy.safetyStops.has(id)) throw new Error('Safety stop is latched; an operator must resolve it before resume');
     if (task.status === 'cancelled' || task.mission?.status === 'cancelled') throw new Error('Cancelled missions cannot be restarted');
     if (task.status !== 'paused' && task.mission?.status !== 'paused') throw new Error('Mission is not paused');
@@ -2161,6 +2170,7 @@ class BridgeController extends EventEmitter {
     if (task.safetyStop?.latched || this.policy.safetyStops.has(task.id)) {
       throw new Error('Safety stop is latched; an authenticated local operator must resolve it before continuing');
     }
+    if(task.mission?.capabilityProfile==='governed-browser-research-v1')return this.missions.research.resumeApproved(approval);
     // Prefer direct execution of the already-captured approved capability.
     // The model must not reconstruct the tool call after approval; that path
     // previously lost Local Ollama / mission authorization on resume.
