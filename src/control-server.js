@@ -90,7 +90,7 @@ class ControlServer {
   rememberInteractive(content) {
     require('./control-plane-store').text(content, 'memory content', 2000);
     if(require('./assistant-intent').secret(content))throw Error('Secret content requires the Secret Vault secure input path.');
-    if(require('./assistant-intent').sensitive(content))throw Error('Explicit Sensitive Memory command required.');
+    if(require('./assistant-intent').sensitive(content)||require('./personal-storage-intent').containsPrivate(content))throw Error('Explicit Sensitive Memory command required.');
     const subject = require('./conversation-mission').subjectFor(content);
     const same = this.interactiveMemory(subject).items.filter(m => m.subject === subject);
     if (same.length > 1) throw Error('Memory subject is ambiguous; correct an explicit memory ID.');
@@ -293,6 +293,9 @@ class ControlServer {
         return this.json(res,202,receipt);
       }
       if(url.pathname==='/api/assistant/handoff')return this.json(res,202,await require('./mission-handoff').submit(this.bridge,body,'operator'));
+      if(url.pathname==='/api/assistant/private-memory'){
+        return this.json(res,200,require('./personal-storage-service').operate(this.bridge,body));
+      }
       if(url.pathname==='/api/assistant/sensitive'){
         require('./control-plane-store').object(body,['content','id']);const m=require('./assistant-service').sensitiveRecord(this.bridge,body.content,body.id);return this.json(res,201,{memoryId:m.memoryId,stored:true,operator_only:true});
       }

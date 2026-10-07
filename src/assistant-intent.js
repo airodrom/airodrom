@@ -1,6 +1,6 @@
 'use strict';
 // Operator ingress only. Retrieved/worker text must never call this parser.
-const secret = value => require('./personal-memory').containsSecret(value) || /\b(?:password|passphrase|passcode|one.time (?:code|password)|otp|authentication code|api[ _-]?key|private key|seed phrase|recovery codes?|backup codes?|mfa codes?|pin|oauth token|access token|refresh token|banking login)\b/i.test(value);
+const secret = value => require('./personal-memory').containsSecret(value) || /\b(?:secret|credential|password|passphrase|passcode|one.time (?:code|password)|otp|authentication code|api[ _-]?key|private key|seed phrase|recovery codes?|backup codes?|mfa codes?|pin|oauth token|access token|refresh token|banking login)\b/i.test(value);
 const sensitive = value => /\b(?:health|diagnosis|diagnosed|disease|condition|asthma|bipolar|diabetes|cancer|allergy|allergies|medication|medical|bank|checking|savings|balance|debt|loan|account number|private|routing number|identifier|ssn|social security|salary|financial|passport)\b/i.test(value);
 // Automatic durable classification is deliberately small. Unknown facts require
 // an operator choice rather than treating the absence of a keyword as evidence.
@@ -16,15 +16,17 @@ function workCapabilities(value) {
  if(/\b(?:repository|repo|feature|file|code|script)\b/i.test(value)||/^(?:fix|implement|edit|modify|build|create|write|delete|remove|install|run|execute|commit|push|change)\b/i.test(value)||!classes.size){classes.add('repo');classes.add('developer_environment');}
  return [...classes];
 }
-function parse(value) {
+function parse(value, {nickname:assistantNickname} = {}) {
  if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');value=value.trim();
  // A pasted control command cannot be silently embedded in a model prompt.
  if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
- const request=value.replace(/^(?:(?:please|can you|could you|would you|i want you to|i would like you to|i want to|i need to|i would like to|help me)\s+)+/i,'').replace(/[.!?]+$/,'').trim();
+ const storage=require('./personal-storage-intent');
+ const request=storage.normalize(value,assistantNickname);
  // Only a valueless request opens secure entry. Credentials supplied in chat
  // still hit the secret refusal below and never reach a model or memory.
  if(/^\/vault$/i.test(request)||/^(?:(?:let['’]s|let us|i want to)\s+)?(?:save|store|add)\s+(?:a|an|my)\s+(?:password|api[ _-]?key|secret)$/i.test(request)||/^(?:open|show)\s+(?:the\s+)?(?:secret\s+)?vault$/i.test(request)||/^(?:view|show|list)\s+(?:my\s+)?saved secret names$/i.test(request)||/^remove a secret$/i.test(request))return route('VAULT',{kind:'vault',action:'menu'});
- if(secret(value))return route('VAULT',{kind:'secret',message:'Secret content is refused. Use /vault for secure entry; values never pass through chat.'});
+ if(secret(value))return route('VAULT',{kind:'secret',message:'Credentials typed in chat are not secure input. Use /vault and enter the value only in the native hidden prompt.'});
+ const privateRequest=storage.parse(request);if(privateRequest)return privateRequest;
  const missionCommand=/^\/mission(?:\s+(new|list|status|cancel))?(?:\s+(.+))?$/i.exec(request);
  if(missionCommand){const action=(missionCommand[1]||'list').toLowerCase(),argument=missionCommand[2];if(action==='list'&&argument)return route('EXPLICIT MISSION',{kind:'clarify',message:'Use /mission list, /mission status [id], /mission cancel [id] or /mission new <objective>.'});return route('EXPLICIT MISSION',{kind:'mission',action,...(action==='new'?{objective:argument||null}:{mission_id:argument||null})});}
  if(/^\/(?:mission)\b/i.test(request))return route('EXPLICIT MISSION',{kind:'clarify',message:'Use /mission new, /mission list, /mission status or /mission cancel.'});
@@ -35,7 +37,8 @@ function parse(value) {
  if(/^cancel\s+(?:the\s+)?(?:current\s+)?mission$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'cancel',mission_id:null});
  const nickname=/^(?:your nickname is|i(?:['’]ll| will) call you)\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{0,39})$/iu.exec(request);
  if(nickname)return route('CONVERSATION',{kind:'preference',nickname:nickname[1].trim()});
- const remember=/^remember\s+(?:that\s+)?([\s\S]+)$/i.exec(request);
+ if(/^(?:save|store|remember)$/i.test(request))return route('MEMORY',{kind:'clarify',message:'What would you like to save? Private facts require a storage choice; credentials require /vault.'});
+ const remember=/^(?:remember|save|store)\s+(?:that\s+)?([\s\S]+)$/i.exec(request);
  if(remember){const content=remember[1];return route('MEMORY',sensitive(content)?{kind:'sensitive',content}:ordinary(content)?{kind:'remember',content}:/^my preference\.?$/i.test(content)?{kind:'clarify',message:'What preference should I remember? For example: Remember I prefer concise answers.'}:{kind:'clarify',message:'Choose the data class explicitly: /remember <ordinary fact> or /remember-sensitive <private fact>. Credentials require /vault.'});}
  const forget=/^forget\s+(?:that\s+)?(?:my\s+)?([\s\S]+?)\.?$/i.exec(request);
  if(forget)return route('MEMORY',{kind:'forget',selection:forget[1]});

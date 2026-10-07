@@ -142,10 +142,10 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     // Discard pasted/queued ordinary input at the secure-entry boundary.
     if (input.isTTY) while (input.read() !== null) {}
   };
-  const secureGuide = async () => {
+  const secureGuide = async (plan = null, message = null) => {
     if (!input.isTTY || !output.isTTY || !input.setRawMode) throw Error('Secure Vault requires an interactive operator terminal. Use /vault in Terminal.');
     await detachReader();
-    try { await require('./secure-vault-guide').guide({ input, output, home, signal: active?.signal }); }
+    try { if(plan)await require('./personal-storage-guide').guide({input,output,home,signal:active?.signal,plan,message});else await require('./secure-vault-guide').guide({ input, output, home, signal: active?.signal }); }
     finally { if (!quitting && !input.readableEnded) attachReader(); }
   };
   const session = async () => {
@@ -163,7 +163,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     try { return await waitResult(home,id,{signal:active.signal}); }
     finally { stopAnswer(); }
   };
-  const handleReceipt = async (receipt, json = false) => {
+  const handleReceipt = async (receipt, json = false, message = null) => {
     if (receipt.kind === 'chat') {
       if (!indicator) startAnswer();
       const result = await waitConversation(home, receipt, { signal: active?.signal });
@@ -174,6 +174,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       lastMission = receipt.mission_id;
       const result = await answer(lastMission);
       output.write(terminalText(result.summary || '') + '\n');
+    } else if (receipt.kind === 'private_storage') {
+      stopAnswer();
+      await secureGuide(receipt,message);
     } else if (receipt.kind === 'vault') {
       stopAnswer();
       await secureGuide();
@@ -265,11 +268,13 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           await local.request(home, '/api/control-v2/accept-mission', { id: lastMission, request_id: randomUUID(), verification_id: r.verification_id, decision: 'accept', rationale: 'Authenticated local operator reviewed the result.', evidence: arg || 'Operator reviewed the conversation response.' }); output.write('Accepted and settled locally.\n');
         } else if (command) throw Error('Unknown command. Use /help.');
         else {
-          if(!output.isTTY)output.write('\nYou › '+terminalText(value)+'\n');
+          const localIntent=require('./assistant-intent').parse(value);
+          if(!output.isTTY)output.write('\nYou › '+(localIntent.kind==='secret'||require('./personal-storage-intent').containsPrivate(value)?'[private input withheld]':terminalText(value))+'\n');
+          if(localIntent.kind==='secret'){output.write(localIntent.message+'\n');readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
           active = new AbortController();
           startAnswer();
           const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker,conversation_id:await session(),workspace:fs.realpathSync(process.cwd()) });
-          await handleReceipt(created);active=null;
+          await handleReceipt(created,false,value);active=null;
         }
       } catch (error) { stopAnswer();active = null; output.write('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
       readerLocked=false;

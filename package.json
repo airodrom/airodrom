@@ -342,6 +342,10 @@
     "src/conversation-engine.js",
     "src/secure-vault-guide.js",
     "docs/CONVERSATION-ENGINE-V1.md",
-    "docs/adr/0011-conversation-engine-and-intent-routing.md"
+    "docs/adr/0011-conversation-engine-and-intent-routing.md",
+    "src/personal-storage-intent.js",
+    "src/personal-storage-service.js",
+    "src/personal-storage-guide.js",
+    "docs/adr/0013-conversational-private-storage.md"
   ]
 }

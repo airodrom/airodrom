@@ -129,3 +129,24 @@ test('live terminal Control-C cancels direct inference and cleans the existing f
   assert.doesNotMatch(JSON.stringify(f.calls), /interactive\/cancel/);
   assert.equal(input.isRaw, false);
 });
+
+test('private save detaches ordinary input, discards pasted text and forwards only host plan to native guide', async t => {
+ const phrase="Hi Airo, let's save my mailbox number 818.";
+ const f=fixture(t,route=>route==='/api/assistant/conversation/session'?{conversation_id:'host-session'}:{kind:'private_storage',action:'save',label:'Mailbox number',value_present:true});
+ const input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=value=>{input.isRaw=value;};f.output.isTTY=true;
+ let observed;
+ t.mock.method(require('../src/personal-storage-guide'),'guide',async options=>{
+  observed={data:input.listenerCount('data'),readable:input.listenerCount('readable'),message:options.message,plan:options.plan};
+  setImmediate(()=>input.write('/quit\n'));return {state:'cancelled'};
+ });
+ const running=interactive('synthetic',{input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});
+ setImmediate(()=>input.write(phrase+'\npasted-private-canary\n'));await running;
+ assert.equal(observed.data,0);assert.equal(observed.readable,0);assert.equal(observed.message,phrase);assert.doesNotMatch(JSON.stringify(observed.plan),/818/);
+ assert.doesNotMatch(f.text()+JSON.stringify(f.calls),/pasted-private-canary/);assert.equal(input.listenerCount('data'),0);assert.equal(input.isRaw,false);
+});
+
+test('non-interactive credentials are redacted and refused locally before any backend request', async t => {
+ const f=fixture(t,()=>{throw Error('Credential must never leave the terminal');});
+ await interactive('synthetic',{input:Readable.from(['Hi Airo, save my password synthetic-private-canary\n/quit\n']),output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});
+ assert.deepEqual(f.calls,[]);assert.doesNotMatch(f.text(),/synthetic-private-canary/);assert.match(f.text(),/not secure input/);
+});
