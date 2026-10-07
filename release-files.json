@@ -507,5 +507,6 @@
   "tests/worker-preflight.test.js",
   "tests/zero-click-routing.test.js",
   "tsconfig.authority.json",
-  "tsconfig.sdk.json"
+  "tsconfig.sdk.json",
+  "tests/inline-vault-cli.test.js"
 ]

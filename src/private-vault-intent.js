@@ -12,7 +12,7 @@ const key=value=>String(value).trim().replace(/\s+/g,' ').toLocaleLowerCase('en-
 function parse(value,{capture=false}={}) {
  if(typeof value!=='string')return null;
  if(Buffer.byteLength(value)>4000||/[\r\n\0]/.test(value))return containsPrivate(value)?{kind:'private_vault',route:'VAULT',action:'clarify'}:null;
- const request=value.normalize('NFKC').trim().replace(/\s+/g,' ').replace(/^(?:hi|hey|hello)[ ,]+(?:airo|airodrom)[ ,]+/i,'').replace(/^(?:airo|airodrom)[ ,]+/i,'').replace(/^(?:please|can you|could you)\s+/i,'').replace(/[.!?]+$/,'');
+ const request=value.normalize('NFKC').trim().replace(/\s+/g,' ').replace(/^(?:hi|hey|hello)[ ,]+(?:airo|airodrom)[ ,]+/i,'').replace(/^(?:airo|airodrom)[ ,]+/i,'').replace(/^(?:(?:please|can you|could you|let['’]s|let us)\s+)+/i,'').replace(/[.!?]+$/,'');
  const command=/^\/secret(?:\s+(list|search|reveal|remove|rename))?(?:\s+(.+))?$/i.exec(request);
  if(command){
   const action=(command[1]||'list').toLowerCase(),arg=command[2]||'';
