@@ -1,6 +1,6 @@
 # ADR 0012 — Natural named private identifiers and browser research gate
 
-Status: Proposed; independent boundary review and maintainer disposition required before integration.
+Status: Accepted. Two independent privacy/authority boundary reviews completed with no unresolved material findings. Owner explicitly approved reviewed PR #20 for normal merge and local installation on 2026-10-07.
 
 ## Decision
 

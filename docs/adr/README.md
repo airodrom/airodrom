@@ -21,4 +21,4 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0010 personal assistant and qualified routing](0010-personal-assistant-and-qualified-routing.md): Proposed; host-owned intent, data boundaries, handoff and read-only connector foundation.
 - [0011 Conversation Engine and intent routing](0011-conversation-engine-and-intent-routing.md): Proposed; replaces ordinary authenticated chat/Mission semantics of ADRs 0007 and 0010 only, preserving governed work and explicit Mission contracts.
 
-- [0012 named private identifiers and research gate](0012-natural-private-vault-and-research-gate.md): Proposed; deterministic terminal-only identifiers and unavailable browser research.
+- [0012 named private identifiers and research gate](0012-natural-private-vault-and-research-gate.md): Accepted after two independent boundary reviews and owner approval of PR #20; deterministic terminal-only identifiers and unavailable browser research.
