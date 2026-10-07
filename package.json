@@ -360,6 +360,7 @@
     "src/research-report.js",
     "config/research-profile-v1.json",
     "docs/BROWSER-RESEARCH-V1.md",
-    "docs/adr/0013-governed-browser-product-research.md"
+    "docs/adr/0013-governed-browser-product-research.md",
+    "src/conversation-address.js"
   ]
 }
