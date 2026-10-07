@@ -98,3 +98,19 @@ test('non-TTY output denies every capture and both guides before any Vault write
  await assert.rejects(require('../src/natural-private-vault').guide({message:'Save my mailbox number 818',input,output:out,vault:f.vault}),/interactive/);
  assert.equal(out.text(),'');assert.deepEqual(f.calls,[]);clean(input);
 });
+
+test('account capability authorization uses visible named choices and fresh confirmation without credential reads',async t=>{
+ const f=fixture(t);f.vault.put('synthetic-user-canary','operator',{kind:'password',name:'Personal login'});f.vault.put(CANARY,'operator',{kind:'password',name:'Work login'});f.calls.length=0;
+ const guideAccount=require('../src/research-account-guide').guide;
+ for(const decision of ['no\r','\r','\x03','yes\r'+CANARY+'\r']){
+  const out=output(),input=new Terminal(['1\r','2\r',decision]);let sent=0;
+  const promise=guideAccount({entry_url:'https://account.example.invalid/login',input,output:out,vault:f.vault,request:async()=>{sent++;}});
+  if(decision==='\x03'||decision.startsWith('yes'))await assert.rejects(promise,/cancelled/);else assert.equal((await promise).kind,'clarify');
+  assert.equal(sent,0);assert.deepEqual(f.calls,[]);assert.doesNotMatch(out.text(),new RegExp(CANARY+'|synthetic-user-canary'));assert.match(out.text(),/Username: Personal login\nPassword: Work login/);clean(input);
+ }
+ const out=output(),input=new Terminal(['1\r','2\r','yes\r']);let payload;
+ await guideAccount({entry_url:'https://account.example.invalid/login',input,output:out,vault:f.vault,request:async(_home,_route,body)=>{payload=body;return {kind:'mission'};}});
+ assert.equal(payload.confirmed,true);assert.doesNotMatch(JSON.stringify(payload),new RegExp(CANARY+'|synthetic-user-canary'));assert.deepEqual(f.calls,[]);clean(input);
+ const stale=new Terminal(['1\r','2\r',stream=>{f.vault.rename(f.vault.search('Work login')[0].reference,'Service login');stream.emit('data',Buffer.from('yes\r'));}]);
+ await assert.rejects(guideAccount({entry_url:'https://account.example.invalid/login',input:stale,output:output(),vault:f.vault,request:async()=>{throw Error('Stale choice must not dispatch');}}),/selection changed/);assert.deepEqual(f.calls,[]);clean(stale);
+});
