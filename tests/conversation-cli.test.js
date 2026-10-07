@@ -12,6 +12,15 @@ function fixture(t, request) {
   t.mock.method(local, 'request', async (home, route, body) => { calls.push({ route, body }); return request(route, body); });
   return { calls, output, text: () => text };
 }
+test('natural private identifier stays in detached operator ingress with zero service calls',async t=>{
+ const f=fixture(t,()=>{throw Error('Private data must not reach service');}),input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=v=>{input.isRaw=v;};f.output.isTTY=true;
+ let seen=false;t.mock.method(require('../src/natural-private-vault'),'guide',async options=>{assert.equal(options.message,'Hi Airo, save my mailbox number 818');assert.equal(input.listenerCount('data'),0);assert.equal(input.listenerCount('readable'),0);seen=true;options.output.write('Saved as Mailbox number.\n');setImmediate(()=>input.write('/quit\n'));return {state:'saved'};});
+ const running=interactive('synthetic',{input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});setImmediate(()=>input.write('Hi Airo, save my mailbox number 818\npasted-private-canary\n'));await running;
+ assert.equal(seen,true);assert.equal(f.calls.length,0);assert.doesNotMatch(f.text(),/pasted-private-canary/);assert.equal(input.isRaw,false);assert.equal(input.listenerCount('data'),0);
+});
+test('noninteractive private input is refused without value echo or service forwarding',async t=>{
+ const f=fixture(t,()=>{throw Error('Private data must not reach service');});await interactive('synthetic',{input:Readable.from(['Save my mailbox number 818\n/quit\n']),output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});assert.equal(f.calls.length,0);assert.doesNotMatch(f.text(),/818/);assert.match(f.text(),/interactive operator terminal/);
+});
 
 test('direct terminal conversation reuses host session and prints prose without Mission UI', async t => {
   let turn = 0;

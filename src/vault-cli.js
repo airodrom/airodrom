@@ -45,7 +45,7 @@ async function run(home,args,input,output){
   const r=spawnSync('/usr/bin/xcrun',['clang','-isysroot','/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk','-Wno-deprecated-declarations',path.join(__dirname,'../scripts/macos/vault-keychain-helper.c'),'-framework','Security','-framework','CoreFoundation','-o',helper],{stdio:'ignore',timeout:30000});if(r.status!==0)throw Error('Keychain helper compilation unavailable');fs.chmodSync(helper,0o700);output.write('Private Keychain helper prepared.\n');return;
  }
  if(args[0]==='put'){if(args.length>2)throw Error('Secret values must use hidden input, never command arguments');if(args[1]&&!['operator','gmail','whatsapp'].includes(args[1]))throw Error('Use secret put [operator|gmail|whatsapp]');let value=await hidden(input,output);try{output.write('Secret stored. Reference: '+vault.put(value,args[1]||'operator').reference+'\n');}finally{value='';}return;}
- if(args[0]==='forget'){output.write('Secret revoked. Reference: '+vault.forget(args[1]).reference+'\n');return;}
+ if(args[0]==='forget'){if(args.length!==2)throw Error('Use secret forget <reference>; confirm in the operator terminal.');const confirmed=await hidden(input,output,{prompt:'Revoke this reference permanently? Type yes (hidden): ',maximum:3});if(confirmed!=='yes'){output.write('Revocation cancelled.\n');return;}output.write('Secret revoked. Reference: '+vault.forget(args[1]).reference+'\n');return;}
  if(args.some((v,i)=>!(i===0&&v==='status'||v==='--json')))throw Error('Use secret prepare|put [operator|gmail|whatsapp]|forget <ref>|status');
  output.write(args.includes('--json')?JSON.stringify(vault.status())+'\n':require('./assistant-render').vault(vault.status()));
 }

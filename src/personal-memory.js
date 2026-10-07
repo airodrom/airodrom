@@ -70,6 +70,7 @@ function luhnCandidate(value) {
   return sum % 10 === 0;
 }
 function containsSecret(value) {
+  value=String(value).normalize('NFKC');
   if(/\b(?:password|passphrase|api[ _-]?key|private key|seed phrase|recovery codes?|backup codes?|mfa codes?|pin|oauth token|access token|refresh token|banking login)\s+(?:is|are|equals)\s+\S+/i.test(value))return true;
   if (/\b(?:crsr_|xox[baprs]-|xapp-|sk-ant-|sk-proj-|sk-)[A-Za-z0-9_-]{8,}\b/.test(value) || /--(?:api-key|auth-token|token|password)(?:=|\s+)\S+/i.test(value)) return true;
   for (const [candidate] of value.matchAll(/(?:https?|wss?|codex):\/\/[^\s<>"']+/gi)) {

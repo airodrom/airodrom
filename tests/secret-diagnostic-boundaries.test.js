@@ -64,3 +64,9 @@ test('bounded diagnostic log reads sanitize the outward file boundary',t=>{
 });
 
 test('relative opaque hex path is secret-safe',()=>{const value='a'.repeat(64);assert.ok(!redactText(`/download/${value}`).includes(value));});
+
+test('Unicode credential object keys are denied by provider and safe observation boundaries',()=>{
+ const record={ＰＡＳＳＷＯＲＤ:'synthetic-unicode-key-canary'},policy=require('../src/provider-policy'),observation=require('../src/secret-observation');
+ assert.equal(policy.secretLike(record),true);assert.doesNotMatch(JSON.stringify(observation.safeValue(record)),/synthetic-unicode-key-canary/);
+ assert.equal(policy.dataPolicy({data_class:'public',messages:[record]}, {id:'local',locality:'local'}).allow,false);
+});
