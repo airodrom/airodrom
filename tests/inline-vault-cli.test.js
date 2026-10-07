@@ -12,6 +12,7 @@ function fixture(t,{credentialRefusal=false}={}){
  t.mock.method(vaultModule,'SecretVault',function(directory){return new CanonicalVault(directory,port);});
  t.mock.method(local,'start',async()=>({default_runtime:'opencode'}));
  t.mock.method(local,'request',async(...args)=>{
+  if(args[1]==='/api/interactive/memory?query=name')return {items:[]};
   serviceCalls.push(args);
   if(args[1]==='/api/assistant/private-memory'&&args[2]?.action==='lookup')return {items:[]};
   if(credentialRefusal){

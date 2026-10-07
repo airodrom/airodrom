@@ -351,6 +351,7 @@
     "src/personal-storage-intent.js",
     "src/personal-storage-service.js",
     "src/personal-storage-guide.js",
-    "docs/adr/0013-conversational-private-storage.md"
+    "docs/adr/0013-conversational-private-storage.md",
+    "src/conversation-address.js"
   ]
 }

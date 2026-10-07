@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -97,6 +97,19 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   output.write(intro({ mode: terminalBrand.colorMode({tty:!!output.isTTY,env}), graphics:terminalBrand.imageProtocol({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
   const s = await local.start(home, env);
   output.write('\nType a question, or /help for commands.\n');
+  const address=require('./conversation-address');
+  let userName=null,nameOffered=false;
+  const refreshName=async()=>{
+    if(!input.isTTY||!output.isTTY)return;
+    try { const row=address.saved((await local.request(home,'/api/interactive/memory?query=name')).items);userName=row?address.contentName(row.content):null; }
+    catch { userName=null; }
+  };
+  await refreshName();
+  if(input.isTTY&&output.isTTY){
+    nameOffered=!userName;
+    output.write(userName?`\nAiro\nHello, ${userName}.\n`:'\nAiro\nMay I ask what you’d like me to call you? You can reply “Call me …”. If you share a name here, I’ll remember it for future conversations. Press Enter to continue as You.\n');
+  }
+  const prompt=()=>`\n${userName||'You'} › `;
   let rl, lines, readerDataListeners = [], readerInput = input, readerEndListener = null, readerLocked = false;
   let model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, conversationId = null, active = null, indicator = null, quitting = false;
   const interrupt = () => { if (active) active.abort(); else { quitting = true; rl?.close(); } };
@@ -160,7 +173,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     return conversationId;
   };
   const startAnswer=()=>{
-    output.write('\nAirodrom\n');
+    output.write('\nAiro\n');
     indicator=render.waiting(output,{env,signal:active.signal});
   };
   const stopAnswer=()=>{indicator?.stop();indicator=null;};
@@ -202,19 +215,30 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   };
   attachReader(); process.on('SIGINT', interrupt);
   try {
-    if (output.isTTY) output.write('\nYou › ');
+    if (output.isTTY) output.write(prompt());
     while (lines) {
       const next = await lines.next();
       if (next.done) break;
       const line = next.value;
       if (quitting) break;
-      const {value,command,arg,json}=parseLine(line); if (!value) { readerLocked=false;if (output.isTTY) output.write('You › '); continue; }
+      const {value,command,arg,json}=parseLine(line); if (!value) { nameOffered=false;await refreshName();readerLocked=false;if (output.isTTY) output.write(prompt()); continue; }
       try {
         const ingress=require('./assistant-intent').parse(value);
-        if(ingress.kind==='secret'&&!command){output.write(ingress.message+'\n');readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
-        if(ingress.kind==='private_storage'){active=new AbortController();await secureGuide(ingress,value);active=null;readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
-        if(ingress.kind==='clarify'&&require('./personal-storage-intent').containsPrivate(value)){output.write(ingress.message+'\n');readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
-        if(ingress.kind==='private_vault'){active=new AbortController();await privateGuide(value);active=null;readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
+        if(ingress.kind==='secret'&&!command){nameOffered=false;output.write(ingress.message+'\n');await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='private_storage'){nameOffered=false;active=new AbortController();await secureGuide(ingress,value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='clarify'&&require('./personal-storage-intent').containsPrivate(value)){nameOffered=false;output.write(ingress.message+'\n');await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='private_vault'){nameOffered=false;active=new AbortController();await privateGuide(value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(nameOffered&&/^(?:no|skip|no thanks|no name|prefer not to say)[.!]?$/i.test(value)){
+          nameOffered=false;await refreshName();output.write('\nAiro\nOf course. I’ll use You.\n');readerLocked=false;if(output.isTTY)output.write(prompt());continue;
+        }
+        const offered=address.answer(value,{bare:nameOffered});nameOffered=false;
+        if(offered){
+          await local.request(home,'/api/interactive/remember',{content:`My name is ${offered}.`});
+          await refreshName();output.write(`\nAiro\nThank you, ${offered}. I’ll call you ${offered}.\n`);
+          readerLocked=false;if(output.isTTY)output.write(prompt());continue;
+        }
+        if(command==='name')throw Error('Use /name followed by the name you’d like me to use. Credentials require /vault.');
+        await refreshName();
         if(command)output.write('\n');
         if(['help','about','version','mcp','status','details','doctor','connectors'].includes(command)&&arg)throw Error('Submit this command on its own, or use --json for read-only details.');
         if (command === 'quit') {if(arg)throw Error('Submit /quit on its own.');break;}
@@ -279,15 +303,16 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           await local.request(home, '/api/control-v2/accept-mission', { id: lastMission, request_id: randomUUID(), verification_id: r.verification_id, decision: 'accept', rationale: 'Authenticated local operator reviewed the result.', evidence: arg || 'Operator reviewed the conversation response.' }); output.write('Accepted and settled locally.\n');
         } else if (command) throw Error('Unknown command. Use /help.');
         else {
-          if(!output.isTTY)output.write('\nYou › '+terminalText(value)+'\n');
+          if(!output.isTTY)output.write(`\n${userName||'You'} › `+terminalText(value)+'\n');
           active = new AbortController();
           startAnswer();
           const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker,conversation_id:await session(),workspace:fs.realpathSync(process.cwd()) });
           await handleReceipt(created,false,value);active=null;
         }
-      } catch (error) { stopAnswer();active = null; output.write('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
+      } catch (error) { stopAnswer();active = null; output.write('Airo: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
       readerLocked=false;
-      if (output.isTTY) output.write('\nYou › ');
+      await refreshName();
+      if (output.isTTY) output.write(prompt());
     }
   } finally { indicator?.stop();process.removeListener('SIGINT', interrupt); await detachReader(); }
   output.write('Local service remains available. Use airodrom stop to stop it.\n');

@@ -7,6 +7,17 @@ Acceptance or Settlement. The terminal shows the visible answer with the existin
 wave/fish waiting animation. `/status`, `/details` and Control Center retain
 technical information; Mission progress appears for actual work.
 
+The terminal labels assistant answers as `Airo`. Before a first conversation it
+politely asks what to call the operator, explaining that a shared name will be
+remembered for future conversations. Enter, `No thanks` or `Skip` keeps `You` and
+creates no name Memory or inference turn. `Call me Taylor`, `My name is Taylor`
+or `/name Taylor` saves an ordinary name through existing canonical Memory.
+A current saved name replaces `You` in the prompt and is available to ordinary
+local conversation. `/forget name` removes it. Missing, ambiguous, sensitive,
+credential-like or unavailable names fall back to `You`; there is no second name
+store. Terminal prompts refresh current name data after commands, blank input and
+private Vault operations. The Vault parser still runs before name capture.
+
 ## Host-owned routing
 
 The deterministic router handles authenticated operator input before inference and again before delivering a completed response.
@@ -41,7 +52,8 @@ selects no execution worker and cannot dispatch work. Inference stays on the fix
 loopback provider, with no tools, external inference or capability fallback.
 Tool requests and secret-like output are refused.
 
-Current ordinary Memory V2 references are selected only when relevant; Sensitive
+Current ordinary Memory V2 references are selected when relevant, including the
+single current ordinary operator name for conversational address; Sensitive
 Memory and Vault values are excluded. Context includes at most six bounded
 ordinary references and six prior completed turns, trimming older history to the
 24,000-byte request bound. Prior messages and retrieved content remain untrusted
@@ -49,6 +61,9 @@ reference data. Context records retain canonical Memory IDs and transitive links
 from earlier turns. Canonical correction/erasure invalidates affected history and
 derived answers, and current eligibility is rechecked before reuse and delivery.
 Unrelated Memory changes do not automatically erase completed conversation.
+Name references retain the same canonical IDs and erasure rules as other Memory.
+Connector previews and conversations with Memory disabled receive no name
+reference or prior history.
 
 Visible prompts/responses persist in the existing private SQLite store under the
 content-erasure registry. Audit events contain opaque identities, model identity,
