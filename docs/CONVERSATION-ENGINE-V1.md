@@ -109,8 +109,8 @@ account or worker qualification. Revision-specific local smoke results belong in
 the implementation report.
 
 This is a pre-release candidate. [ADR 0011](adr/0011-conversation-engine-and-intent-routing.md)
-is Proposed; competent independent review and explicit maintainer approval remain
-integration gates. Local installation must respect the owning checkout, existing
+is Accepted after two independent boundary source reviews and explicit owner
+approval of reviewed PR #19 on 2026-10-07. Local installation must respect the owning checkout, existing
 command/source guards and active work. No release, publication, deployment or
 production activation is authorized by this document.
 
@@ -140,8 +140,8 @@ These reviews are source review evidence and do not represent maintainer
 approval. Both declared typechecks, public/source checks and package sanity
 passed; dependencies and the lockfile are unchanged.
 
-The owning local main checkout and service remain on the previously approved
-fish revision until normal integration is authorized. Existing Gmail work,
+At qualification, the owning local main checkout and service stayed on the
+previously approved fish revision while normal integration awaited approval. Existing Gmail work,
 private homes, Memory and Vault data were preserved. No release, deployment,
 registry publication or production activation was performed. ADR 0011 remains
-Proposed pending maintainer disposition.
+Accepted following the owner’s explicit PR #19 review disposition.

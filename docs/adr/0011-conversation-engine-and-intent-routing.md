@@ -1,8 +1,8 @@
 # ADR 0011 — Conversation Engine and intelligent intent routing
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-07
-- Review: Pending independent boundary review and explicit maintainer disposition
+- Review: Two independent boundary source reviews completed; owner explicitly approved reviewed PR #19 for normal merge and local installation on 2026-10-07.
 - Supersedes: Ordinary authenticated chat/Mission semantics only in
   [ADR 0007](0007-local-interactive-missions.md) and
   [ADR 0010](0010-personal-assistant-and-qualified-routing.md)
