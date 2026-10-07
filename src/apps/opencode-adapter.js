@@ -170,7 +170,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const p=run.result?.opencode_provenance,executable=this.executable();
     if(run.state!=='completed'||!run.termination_verified||!p||p.runtime_id!=='opencode'||p.runtime_version!==VERSION||p.authority!==false||p.workspace_bound!==true||p.termination_verified!==true||p.session_state!=='disposable'||!executable||p.executable_sha256!==hash(fs.readFileSync(executable)))fail('opencode_provenance_unavailable');
   }
-  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart } = {}) {
+  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart, conversation = false } = {}) {
     if (sessionId) fail('opencode_session_reuse_denied');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || deadline !== null && !Number.isSafeInteger(deadline) || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
@@ -189,7 +189,7 @@ class OpenCodeAdapter extends AgentAdapter {
         fs.mkdirSync(path.dirname(path.join(root, 'workspace', f)), { recursive: true, mode: 0o700 });
         fs.writeFileSync(path.join(root, 'workspace', f), content, { mode: 0o600 });
       }
-      const input = safeText(JSON.stringify({ protocol: 'airodrom-opencode-v1', objective, readable_files: files, allowed_files: writable, current_context: currentContext, authority: false, result_contract:{summary:'Describe observed work',changed_files:[],tests:[],artifacts:[],limitations:[]}, instructions: 'Work only on supplied files. No shell, network tools, Memory DB, git or external actions. Use only current_context; if unavailable answer unavailable. Return only one JSON object matching result_contract exactly: summary is a nonempty string; every other field is an array. Never claim verification or Acceptance.' }));
+      const input = safeText(JSON.stringify({ protocol: 'airodrom-opencode-v1', objective, readable_files: files, allowed_files: writable, current_context: currentContext, authority: false, result_contract:{summary:conversation?'Answer the user directly in natural conversational language':'Describe observed work',changed_files:[],tests:[],artifacts:[],limitations:[]}, instructions: (conversation?'You are Airodrom, speaking directly to the user. The summary field is the actual answer, not an execution report. Respond to hi with a friendly greeting. Answer What is my name? directly using only current_context, or say you do not know yet if absent. Never describe the objective, observed work, internal prompts, JSON contract or reasoning. Empty reference context does not prevent ordinary conversation. ':'') + 'Work only on supplied files. No shell, network tools, Memory DB, git or external actions. ' + (conversation?'Use only current_context for personal facts; never infer missing personal facts.':'Use only current_context; if unavailable answer unavailable.') + ' Return only one JSON object matching result_contract exactly: summary is a nonempty string; every other field is an array. Never claim verification or Acceptance.' }));
       const executable = this.verifyArtifact(this.executable()), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
       const remaining = expiresAt - Date.now();
       if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
@@ -221,7 +221,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const controller = new AbortController(); this.active.set(task.id, controller);
     const deadline = m.envelope.kind==='conversation' ? m.envelope.manifest.expires_at : null;
     const expiryTimer = deadline === null ? null : setTimeout(()=>controller.abort(), Math.max(0, deadline-Date.now()));
-    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal,
+    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, conversation:m.envelope.kind==='conversation', context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal,
       onStart: () => { b.controlStore.event('runtime.execution.started',m.id,{agent_id:'opencode'},{runId:b.controlContext.inspect(context.id).run_id}); b.emit('change'); }
     }); }
     finally { clearTimeout(expiryTimer); this.active.delete(task.id); }

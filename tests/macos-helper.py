@@ -50,6 +50,27 @@ with (contents/'Info.plist').open('wb') as f: plistlib.dump(info,f)
 p=run('--inspect-menu');assert p.returncode==0
 native={item['title']:item for item in rows(json.loads(p.stdout)['items'])}
 assert native['Open Mission']['enabled'] is True and native['Cancel Mission']['enabled'] is True
+status['product']['approvals']=0
+status['product']['active_missions']=1
+status['product']['status']='Ready'
+control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
+animation=json.loads(run('--inspect-menu').stdout)
+assert animation['animation_state']=='busy'
+assert animation['stopped_on_idle'] is True
+if not animation['reduced_motion']:
+ assert animation['animation_running'] and animation['animation_ticks']>=2 and animation['frame_changed']
+else:
+ assert not animation['animation_running'] and not animation['frame_changed']
+status['product']['active_missions']=0
+status['product']['mission']['state']='awaiting_acceptance'
+control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
+waiting=json.loads(run('--inspect-menu').stdout)
+assert waiting['animation_state']=='waiting' and not waiting['animation_running']
+status['product']['mission']=None
+control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
+idle=json.loads(run('--inspect-menu').stdout)
+assert idle['animation_state']=='idle' and not idle['animation_running'] and not idle['frame_changed']
+print('PASS: cached native busy frames advance, stop immediately on idle, stay static for review, and respect reduced motion')
 print('PASS: task-bound Mission open/cancel controls are enabled only for the supported local operator helper')
 control.write_text('console.error("SECRET_FROM_STDERR"); process.stdout.write("invalid"); process.exit(1);')
 p=run('--action','status')
