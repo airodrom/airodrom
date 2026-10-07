@@ -1,5 +1,5 @@
 'use strict';
-// ADR 0014: browser-owned session storage; no cookie/header/body/storage export.
+// ADR 0015: browser-owned session storage; no cookie/header/body/storage export.
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),net=require('node:net'),dns=require('node:dns/promises');
 const {randomUUID,createHash}=require('node:crypto');
 const {ResearchBrowser,restrictPage}=require('./research-browser');

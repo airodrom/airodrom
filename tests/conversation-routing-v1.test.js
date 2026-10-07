@@ -83,7 +83,7 @@ test('authorized Gmail uses only canonical read-only GETs; previews get minimum 
 
 test('private ingress and invalid research scope return no model authority or execution',async t=>{
  const f=await fixture(t),server={bridge:f.bridge,conversationEngine:{start(){throw Error('No model allowed');}}};
- for(const message of ['Save my mailbox number 818','Save my mailbox number 818\nThanks',"What's my mailbox number?"]){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,'private_vault');assert.doesNotMatch(JSON.stringify(r),/818/);}
+ for(const [message,kind] of [['Save my mailbox number 818','private_storage'],['Save my mailbox number 818\nThanks','clarify'],["What's my mailbox number?",'private_storage']]){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,kind);assert.doesNotMatch(JSON.stringify(r),/\b818\b/);}
  for(const message of ['Research https://example.invalid','Could you please research https://example.invalid','I would like you to research https://example.invalid']){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,'mission');assert.equal(r.state,'draft');assert.equal(r.browser_research_available,false);assert.deepEqual(r.evidence,[]);assert.deepEqual(f.bridge.missions.require(r.mission_id).envelope.capability_scopes,[]);assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);}
 });
 test('invalid explicit and direct research scopes cannot dispatch even with a matching web template',async t=>{

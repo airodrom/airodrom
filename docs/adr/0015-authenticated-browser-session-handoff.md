@@ -1,4 +1,4 @@
-# ADR 0014 — Authenticated browser session handoff
+# ADR 0015 — Authenticated browser session handoff
 
 Status: Proposed. Independent privacy/authority review and maintainer merge disposition are pending. No deployment or publication decision is included.
 

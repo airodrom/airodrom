@@ -112,7 +112,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   }
   const prompt=()=>`\n${userName||'You'} › `;
   let rl, lines, readerDataListeners = [], readerInput = input, readerEndListener = null, readerLocked = false;
-  let model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, conversationId = null, active = null, indicator = null, quitting = false;
+  let assistantNickname=s.nickname,model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, conversationId = null, active = null, indicator = null, quitting = false;
   const interrupt = () => { if (active) active.abort(); else { quitting = true; rl?.close(); } };
   const attachReader = () => {
     const previous = new Set(input.listeners('data'));
@@ -160,22 +160,22 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     // Discard pasted/queued ordinary input at the secure-entry boundary.
     if (input.isTTY) while (input.read() !== null) {}
   };
-  const secureGuide = async () => {
+  const secureGuide = async (plan = null, message = null) => {
     if (!input.isTTY || !output.isTTY || !input.setRawMode) throw Error('Secure Vault requires an interactive operator terminal. Use /vault in Terminal.');
     await detachReader();
-    try { output.write('\nAiro\n');await require('./secure-vault-guide').guide({ input, output, home, signal: active?.signal }); }
-    finally { if (!quitting && !input.readableEnded) attachReader(); }
+    try { output.write('\nAiro\n');if(plan)await require('./personal-storage-guide').guide({input,output,home,signal:active?.signal,plan,message});else await require('./secure-vault-guide').guide({ input, output, home, signal: active?.signal }); }
+    finally { if (!quitting && !input.readableEnded) {while(input.read()!==null){};attachReader();} }
   };
   const privateGuide = async message => {
     if (!input.isTTY || !output.isTTY || !input.setRawMode) throw Error('Private Vault requires an interactive operator terminal.');
     await detachReader();
-    try { output.write('\nAiro\n');await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal}); }
-    finally { if (!quitting && !input.readableEnded) attachReader(); }
+    try { output.write('\nAiro\n');await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal,nickname:assistantNickname}); }
+    finally { if (!quitting && !input.readableEnded) {while(input.read()!==null){};attachReader();} }
   };
   const accountGuide = async entry_url => {
     await detachReader();
     try { return await require('./research-account-guide').guide({entry_url,input,output,home,signal:active?.signal}); }
-    finally { if (!quitting && !input.readableEnded) attachReader(); }
+    finally { if (!quitting && !input.readableEnded) {while(input.read()!==null){};attachReader();} }
   };
   const sessionGuide = async entry_url => {
     await detachReader();try{return await require('./research-session-guide').guide({entry_url,input,output,home,signal:active?.signal});}
@@ -200,8 +200,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     try { return await waitResult(home,id,{signal:active.signal,...options}); }
     finally { stopAnswer(); }
   };
-  const handleReceipt = async (receipt, json = false) => {
-    if(receipt.kind==='research_session'){stopAnswer();await handleReceipt(await sessionGuide(receipt.entry_url),json);return;}
+  const handleReceipt = async (receipt, json = false, message = null) => {
+    if (receipt.kind === 'preference') assistantNickname=receipt.nickname;
+    if(receipt.kind==='research_session'){stopAnswer();await handleReceipt(await sessionGuide(receipt.entry_url),json,message);return;}
     if (receipt.kind === 'chat') {
       if (!indicator) startAnswer();
       const result = await waitConversation(home, receipt, { signal: active?.signal });
@@ -212,6 +213,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       lastMission = receipt.mission_id;
       const result = await answer(lastMission);
       output.write(terminalText(result.summary || '') + '\n');
+    } else if (receipt.kind === 'private_storage') {
+      stopAnswer();
+      await secureGuide(receipt,message);
     } else if (receipt.kind === 'vault') {
       stopAnswer();
       await secureGuide();
@@ -246,15 +250,13 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       if (quitting) break;
       const {value,command,arg,json}=parseLine(line); if (!value) { nameOffered=false;await refreshName();readerLocked=false;if (output.isTTY) output.write(prompt()); continue; }
       try {
-        if(input.isTTY&&output.isTTY&&!require('./assistant-intent').secret(value))output.write(terminalText(value)+'\n');
-        if(require('./private-vault-intent').parse(value)){nameOffered=false;active=new AbortController();await privateGuide(value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
-        if(require('./assistant-intent').secret(value)){
-          nameOffered=false;
-          const route=require('./assistant-intent').parse(value);
-          if(route.kind==='vault'){active=new AbortController();try{await secureGuide();}finally{active=null;}}
-          else output.write('\nAiro\nSecret content is refused. Use /vault for secure entry; values never pass through chat.\n');
-          await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;
-        }
+        const ingress=require('./assistant-intent').parse(value,{nickname:assistantNickname});
+        if(input.isTTY&&output.isTTY&&!require('./assistant-intent').secret(value)&&ingress.kind!=='secret')output.write(terminalText(value)+'\n');
+        if(ingress.kind==='secret'){nameOffered=false;output.write('\nAiro\n'+ingress.message+'\n');await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='vault'&&!command){nameOffered=false;active=new AbortController();try{await secureGuide();}finally{active=null;}await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='private_storage'){nameOffered=false;active=new AbortController();await secureGuide(ingress,value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='clarify'&&require('./personal-storage-intent').containsPrivate(value)){nameOffered=false;output.write(ingress.message+'\n');await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='private_vault'){nameOffered=false;active=new AbortController();await privateGuide(value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
         if(nameOffered&&/^(?:no|skip|no thanks|no name|prefer not to say)[.!]?$/i.test(value)){
           nameOffered=false;await refreshName();output.write('\nAiro\nOf course. I’ll use You.\n');readerLocked=false;if(output.isTTY)output.write(prompt());continue;
         }
@@ -338,7 +340,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           active = new AbortController();
           startAnswer();
           const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker,conversation_id:await session(),workspace:fs.realpathSync(process.cwd()) });
-          await handleReceipt(created);active=null;
+          await handleReceipt(created,false,value);active=null;
         }
       } catch (error) { stopAnswer();active = null; output.write('Airo: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
       readerLocked=false;

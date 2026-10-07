@@ -12,7 +12,7 @@ test('V2 forgetting is an authenticated operator control; MCP cannot invoke it',
   t.after(() => db.close());
   const adapter = new ProjectMemoryV2Adapter({ db });
   adapter.initializeMission({ missionId: 'privacy-fixture', taskId: 'task-fixture', objective: 'Harmless memory fixture', workspace: '/private/tmp/privacy-fixture', scope: {} });
-  const bridge = { projectMemoryV2: adapter };
+  const bridge = { projectMemoryV2: adapter, conversationEngine: { close: async () => {}, start: () => { throw Error('Privacy fixture cannot call inference'); } } };
   const ControlServer = require('../src/control-server');
   const server = new ControlServer(bridge, { port: 0, token: 'operator-dummy', mcpToken: 'mcp-dummy' });
   await server.start(); t.after(() => server.close());

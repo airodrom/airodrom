@@ -25,4 +25,5 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 
 - [0012 named private identifiers and research gate](0012-natural-private-vault-and-research-gate.md): Accepted after two independent boundary reviews and owner approval of PR #20; deterministic terminal-only identifiers and unavailable browser research.
 
-- [0014 authenticated browser session handoff](0014-authenticated-browser-session-handoff.md): Proposed; explicit dedicated-profile login, sanitized navigation evidence and canonical operator hand-back.
+- [0014 conversational private storage](0014-conversational-private-storage.md): Accepted after independent privacy/security and runtime/authority reviews and owner approval of PR #22; greeting-safe host routing, confirmed native storage choice and name-bound operator reveal.
+- [0015 authenticated browser session handoff](0015-authenticated-browser-session-handoff.md): Proposed; explicit dedicated-profile login, sanitized navigation evidence and canonical operator hand-back.
