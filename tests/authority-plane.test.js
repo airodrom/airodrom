@@ -41,3 +41,23 @@ test('runtime health, capability and privacy cannot be asserted through memory',
 test('nonce consumption survives process/database reopen and a second connection cannot replay',t=>{const fs=require('node:fs'),path=require('node:path'),dir=fs.mkdtempSync('/private/tmp/authority-nonce-'),file=path.join(dir,'memory.sqlite');t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));let db=new DatabaseSync(file),s=new AuthorityStore(db,{now:()=>1000});const m=s.createMission({envelope:{objective:'nonce fixture'}}),r=s.startRun({mission_id:m.id,mission_revision:1,agent_id:'host'}),g=s.issueGrant({mission_id:m.id,mission_revision:1,run_id:r.id,policy_version:'fixture',expires_at:2000,signature_reference:'broker:fixture',capabilities:[{capability:'read',scope:{path:'fixture.txt'}}]}),n={grant_id:g.id,run_id:r.id,nonce:'once',request_hash:canonicalHash('read')};s.consumeNonce(n);db.close();db=new DatabaseSync(file);s=new AuthorityStore(db,{now:()=>1000});const other=new DatabaseSync(file),s2=new AuthorityStore(other,{now:()=>1000});assert.throws(()=>s2.consumeNonce(n));assert.equal(s.integrity().ok,true);other.close();db.close();});
 test('failed legacy import rolls back records and succeeds on a clean replay',t=>{const {s,db}=fixture(t);db.exec('CREATE TABLE projects(project_id TEXT PRIMARY KEY,name TEXT,status TEXT,created_at INTEGER,updated_at INTEGER); CREATE TABLE cp_missions(id TEXT,project_id TEXT,goal_id TEXT,task_id TEXT,owner TEXT,revision INTEGER,state TEXT,acceptance_strength TEXT,created_at INTEGER,updated_at INTEGER,envelope TEXT);');db.prepare('INSERT INTO projects VALUES(?,?,?,?,?)').run('p','legacy','active',1,1);db.prepare('INSERT INTO cp_missions VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('m','missing',null,null,'operator',9,'awaiting_acceptance','criteria',1,1,JSON.stringify({objective:'historical',criteria:[]}));const before=inventory(db);assert.throws(()=>migrateLegacy(s));assert.deepEqual(inventory(db),before);assert.equal(db.prepare('SELECT count(*) n FROM authority_legacy_records').get().n,0);db.prepare("UPDATE cp_missions SET project_id='p'").run();assert.equal(migrateLegacy(s).migrated,true);assert.equal(s.getCurrentMissionProjection('m').current_revision,9);assert.equal(migrateLegacy(s).migrated,false);assert.equal(s.integrity().ok,true);});
 test('grant revocation and ledger tail removal fail closed',t=>{const f=accepted(t),g=f.s.issueGrant({mission_id:f.mission.id,mission_revision:1,run_id:f.run.id,policy_version:'fixture',expires_at:2000,signature_reference:'broker:fixture',capabilities:[{capability:'read',scope:{path:'fixture'}}]});f.s.revokeGrant(g.id,'operator stop');assert.throws(()=>f.s.consumeNonce({grant_id:g.id,run_id:f.run.id,nonce:'new',request_hash:canonicalHash('request')}));assert.equal(f.s.integrity().ok,true);f.db.exec('DROP TRIGGER authority_ledger_entries_delete');f.db.prepare('DELETE FROM authority_ledger_entries WHERE entry_id=(SELECT entry_id FROM authority_ledger_entries ORDER BY rowid DESC LIMIT 1)').run();assert.equal(f.s.integrity().ok,false);});
+
+test('typed Git revision digits never masquerade as card text; secret content stays denied', t => {
+ const { s } = fixture(t), { safe } = require('../src/authority-store');
+ const head = 'a4111111111111111' + 'b'.repeat(23);
+ assert.equal(require('../src/personal-memory').containsSecret(head), true);
+ for (const revision of [head, head + 'c'.repeat(24)]) {
+  const envelope = { objective: 'Typed repository coordinate', verification_manifest: { version: 2, repository: { head: revision } } };
+  const mission = s.createMission({ envelope });
+  assert.equal(s.getMissionRevision(mission.id, 1).envelope.verification_manifest.repository.head, revision);
+ }
+ for (const value of [
+  { envelope: { objective: head } },
+  { envelope: { repository: { head } } },
+  { envelope: { verification_manifest: { repository: { description: head } } } },
+  { envelope: { verification_manifest: { repository: { head: '4111111111111111' } } } },
+  { envelope: { verification_manifest: { repository: [{ head }] } } },
+  { envelope: { verification_manifest: { repository: { head } }, objective: 'sk-fixtureprivatecredential' } }
+ ]) assert.throws(() => safe(value), /Sensitive authority data rejected/);
+ assert.equal(s.integrity().ok, true);
+});
