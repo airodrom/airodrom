@@ -12,6 +12,32 @@ function fixture(t, request, {nickname}={}) {
   t.mock.method(local, 'request', async (home, route, body) => { if(route==='/api/interactive/memory?query=name')return {items:[]};calls.push({ route, body }); return request(route, body); });
   return { calls, output, text: () => text };
 }
+test('ordinary typing echoes before Enter, edits the submitted line and does not duplicate it', async t => {
+ const previousTerm=process.env.TERM;process.env.TERM='xterm';t.after(()=>{if(previousTerm===undefined)delete process.env.TERM;else process.env.TERM=previousTerm;});
+ const f=fixture(t,(route,body)=>{
+  if(route==='/api/assistant/conversation/session')return {conversation_id:'session'};
+  if(route==='/api/assistant/input'){assert.equal(body.message,'Explain stars');return {kind:'chat',conversation_id:'session',turn_id:'turn'};}
+  return {state:'completed',summary:'Synthetic answer.'};
+ });
+ const input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=v=>input.isRaw=v;f.output.isTTY=true;f.output.columns=32;
+ t.after(()=>input.end());
+ const wait=needle=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{f.output.off('data',check);reject(Error('Expected synthetic output unavailable'));},2000);const check=()=>{if(f.text().includes(needle)){clearTimeout(timer);f.output.off('data',check);resolve();}};f.output.on('data',check);check();});
+ const running=interactive('synthetic',{input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});
+ await wait('You › ');input.write('\r');await new Promise(resolve=>setImmediate(resolve));input.write('Explain starx');
+ assert.match(f.text(),/Explain starx/);assert.deepEqual(f.calls,[]);
+ input.write('\x7fs');assert.deepEqual(f.calls,[]);input.write('\r');
+ await wait('Synthetic answer.');await new Promise(resolve=>setImmediate(resolve));input.write('/quit\r');await running;
+ assert.equal(f.calls.filter(c=>c.route==='/api/assistant/input').length,1);
+ assert.doesNotMatch(f.text(),/Input appears after Enter|\u001b\[(?:3\d|9\d)m/);
+ assert.equal(input.isRaw,false);assert.equal(input.listenerCount('data'),0);
+});
+test('natural Vault lists and malformed identifiers remain entirely in local operator ingress', async t => {
+ const f=fixture(t,()=>{throw Error('Vault text must not leave ingress');}),input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=v=>input.isRaw=v;f.output.isTTY=true;
+ let observed=false;t.mock.method(require('../src/natural-private-vault'),'guide',async options=>{assert.equal(options.message,'Show my saved secrets.');assert.equal(input.listenerCount('data'),0);observed=true;setImmediate(()=>input.write('Airo, save my mailbox number 818.sdfasfdassdafsdf\r'));return {state:'listed'};});
+ f.output.on('data',chunk=>{if(String(chunk).includes('Quoted, negated or ambiguous'))setImmediate(()=>input.write('/quit\r'));});
+ const running=interactive('synthetic',{input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});setImmediate(()=>input.write('Show my saved secrets.\r'));await running;
+ assert.equal(observed,true);assert.deepEqual(f.calls,[]);assert.equal(input.isRaw,false);
+});
 test('natural private identifier stays in detached operator ingress with zero service calls',async t=>{
  const f=fixture(t,()=>{throw Error('Private data must not reach service');}),input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=v=>{input.isRaw=v;};f.output.isTTY=true;
  let seen=false;t.mock.method(require('../src/personal-storage-guide'),'guide',async options=>{assert.equal(options.message,'Hi Airo, save my mailbox number 818');assert.equal(input.listenerCount('data'),0);assert.equal(input.listenerCount('readable'),0);seen=true;options.output.write('Saved as Mailbox number.\n');setImmediate(()=>input.write('/quit\n'));return {state:'saved'};});

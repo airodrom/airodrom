@@ -27,10 +27,11 @@ function parse(value, {nickname:assistantNickname} = {}) {
  const privateIntent=require('./private-vault-intent').parse(request);
  // Explicit named operations accept label metadata, never credential values.
  if(/^\/secret\b/i.test(request)&&privateIntent)return {...privateIntent,message:'Use the native /secret workflow.'};
+ if(privateIntent?.action==='list')return {...privateIntent,message:'Airodrom lists saved Vault labels in the operator terminal. Values stay hidden.'};
  // Only a valueless request opens secure entry. Credentials supplied in chat
  // still hit the secret refusal below and never reach a model or memory.
  if(/^\/vault$/i.test(request)||/^(?:(?:let['’]s|let us|i want to)\s+)?(?:save|store|add)\s+(?:a|an|my)\s+(?:password|api[ _-]?key|secret)$/i.test(request)||/^(?:open|show)\s+(?:the\s+)?(?:secret\s+)?vault$/i.test(request)||/^(?:view|show|list)\s+(?:my\s+)?saved secret names$/i.test(request)||/^remove a secret$/i.test(request))return route('VAULT',{kind:'vault',action:'menu'});
- if(secret(value)||/\b(?:my|a) (?:secret|credential)\s+\S+/i.test(value))return route('VAULT',{kind:'secret',message:'Credentials typed in chat are not secure input. Use /vault and enter the value only in the native hidden prompt.'});
+ if(secret(value)||/\b(?:my|a) (?:secret|credential)\s+\S+/i.test(value))return route('VAULT',{kind:'secret',message:'Credentials typed in chat are not secure input. This submission was not sent or saved. Already echoed text may remain in terminal scrollback. Use /vault and enter the value only in the native hidden prompt. Screening cannot detect every secret.'});
  if(privateIntent?.action==='save'&&privateIntent.value_present===false)return {...privateIntent,message:'Enter the private identifier in the native hidden prompt.'};
  const privateRequest=storage.parse(request);if(privateRequest)return privateRequest;
  if(privateIntent)return {...privateIntent,message:'Use the operator terminal /secret workflow. Private values never enter conversation.'};

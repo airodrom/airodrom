@@ -6,6 +6,16 @@ const {fixture}=require('./fixtures/mission-fixture.cjs');
 const {runtime,manifest,qualifyCanonical}=require('./fixtures/opencode-fixture.cjs');
 const ControlServer=require('../src/control-server');
 const id=()=>crypto.randomUUID();
+test('valueless natural Vault listing is host-owned and never invokes the Conversation Engine',async()=>{
+ const server={conversationEngine:{start(){throw Error('No model access to Vault');}}};
+ for(const message of ['Show my saved secrets.','List my saved secrets','What secrets have I saved?','Show my vault','Please show me my vault entries.','Airo, list all my saved secrets.','What secrets do I have?']){
+  const parsed=intent.parse(message);assert.equal(parsed.kind,'private_vault',message);assert.equal(parsed.action,'list',message);
+  const receipt=await service.submit(server,{message,request_id:id()});assert.equal(receipt.action,'list');assert.equal('value' in receipt,false);
+ }
+ for(const message of ['List my saved secrets password=synthetic-canary','Show my vault sk-proj-syntheticcanary'])assert.equal(intent.parse(message).kind,'secret');
+ const malformed='Airo, save my mailbox number 818.sdfasfdassdafsdf';
+ assert.equal(intent.parse(malformed).kind,'clarify');assert.doesNotMatch(JSON.stringify(await service.submit(server,{message:malformed,request_id:id()})),/818|sdfas/);
+});
 for(const message of ['Hi','Who are you?','How are you?','Explain this concept','Help me think about something','Write a poem about the sea'])test('conversation intent has no work authority: '+message,()=>assert.deepEqual(intent.parse(message),{route:'CONVERSATION',kind:'conversation',message}));
 test('host intent parser keeps memory, Vault, connector and explicit Mission boundaries',()=>{
  for(const [message,route,kind]of [['Remember I prefer concise answers','MEMORY','remember'],['Remember my preference','MEMORY','clarify'],["Let’s save a password",'VAULT','vault'],['Save a password','VAULT','vault'],['Save a password synthetic-value','VAULT','secret'],['Check my Gmail.','CONNECTOR','connector'],['Can you check my Gmail?','CONNECTOR','connector'],['Fix this repository.','WORK','work'],['Implement this feature','WORK','work'],['Audit this website','WORK','clarify'],['Create a Mission to explain this concept','EXPLICIT MISSION','mission'],['Create a Mission','EXPLICIT MISSION','mission'],['/mission new','EXPLICIT MISSION','mission'],['/mission list','EXPLICIT MISSION','mission'],['/mission status','EXPLICIT MISSION','mission'],['/mission cancel','EXPLICIT MISSION','mission'],['Show my active Missions','EXPLICIT MISSION','mission'],['Cancel the current Mission','EXPLICIT MISSION','mission']]){const parsed=intent.parse(message);assert.equal(parsed.route,route,message);assert.equal(parsed.kind,kind,message);}

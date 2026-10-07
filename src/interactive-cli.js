@@ -97,7 +97,7 @@ async function scopedTask(home, file,preferences={}) {
 async function interactive(home, { input = process.stdin, output = process.stdout, env = process.env } = {}) {
   output.write(intro({ mode: terminalBrand.colorMode({tty:!!output.isTTY,env}), graphics:terminalBrand.imageProtocol({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
   const s = await local.start(home, env);
-  output.write('\nType a question, or /help for commands. Input appears after Enter once checked for credentials.\n');
+  output.write('\nType a question, or /help for commands. Chat is visible while you type.\nPasswords and API keys belong only in /vault’s hidden prompt. Screening after Enter cannot hide echoed text or detect every secret.\n');
   const address=require('./conversation-address');
   let userName=null,nameOffered=false;
   const refreshName=async()=>{
@@ -111,6 +111,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     output.write(userName?`\nAiro\nHello, ${userName}.\n`:'\nAiro\nMay I ask what you’d like me to call you? You can reply “Call me …”. If you share a name here, I’ll remember it for future conversations. Press Enter to continue as You.\n');
   }
   const prompt=()=>`\n${userName||'You'} › `;
+  const showPrompt=()=>{ if(output.isTTY){rl.setPrompt(prompt());rl.prompt();} };
   let rl, lines, readerDataListeners = [], readerInput = input, readerEndListener = null, readerLocked = false;
   let assistantNickname=s.nickname,model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, conversationId = null, active = null, indicator = null, quitting = false;
   const interrupt = () => { if (active) active.abort(); else { quitting = true; rl?.close(); } };
@@ -136,11 +137,10 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       input.once('end', readerEndListener);
       input.resume();
     } else readerInput = input;
-    // Preserve readline keyboard editing, but keep its output and history private.
-    // A complete line must pass credential screening before terminal disclosure.
-    const editorOutput = input.isTTY && output.isTTY ? new (require('node:stream').Writable)({write(_chunk,_encoding,done){done();}}) : output;
-    if(editorOutput!==output){editorOutput.isTTY=true;editorOutput.columns=output.columns||80;}
-    rl = readline.createInterface({ input: readerInput, output:editorOutput, historySize:0, terminal: !!input.isTTY && !!output.isTTY });
+    // Ordinary chat uses visible readline editing, with history disabled.
+    // Screening before dispatch cannot undo echo; credential capture is a
+    // separate detached raw no-echo workflow, never this reader.
+    rl = readline.createInterface({ input: readerInput, output, historySize:0, terminal: !!input.isTTY && !!output.isTTY });
     lines = rl[Symbol.asyncIterator]();
     readerDataListeners = input.listeners('data').filter(listener => !previous.has(listener));
     rl.on('SIGINT', interrupt);
@@ -242,29 +242,28 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   };
   attachReader(); process.on('SIGINT', interrupt);
   try {
-    if (output.isTTY) output.write(prompt());
+    showPrompt();
     while (lines) {
       const next = await lines.next();
       if (next.done) break;
       const line = next.value;
       if (quitting) break;
-      const {value,command,arg,json}=parseLine(line); if (!value) { nameOffered=false;await refreshName();readerLocked=false;if (output.isTTY) output.write(prompt()); continue; }
+      const {value,command,arg,json}=parseLine(line); if (!value) { nameOffered=false;await refreshName();readerLocked=false;showPrompt(); continue; }
       try {
         const ingress=require('./assistant-intent').parse(value,{nickname:assistantNickname});
-        if(input.isTTY&&output.isTTY&&!require('./assistant-intent').secret(value)&&ingress.kind!=='secret')output.write(terminalText(value)+'\n');
-        if(ingress.kind==='secret'){nameOffered=false;output.write('\nAiro\n'+ingress.message+'\n');await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
-        if(ingress.kind==='vault'&&!command){nameOffered=false;active=new AbortController();try{await secureGuide();}finally{active=null;}await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
-        if(ingress.kind==='private_storage'){nameOffered=false;active=new AbortController();await secureGuide(ingress,value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
-        if(ingress.kind==='clarify'&&require('./personal-storage-intent').containsPrivate(value)){nameOffered=false;output.write(ingress.message+'\n');await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
-        if(ingress.kind==='private_vault'){nameOffered=false;active=new AbortController();await privateGuide(value);active=null;await refreshName();readerLocked=false;if(output.isTTY)output.write(prompt());continue;}
+        if(ingress.kind==='secret'){nameOffered=false;output.write('\nAiro\n'+ingress.message+'\n');await refreshName();readerLocked=false;showPrompt();continue;}
+        if(ingress.kind==='vault'&&!command){nameOffered=false;active=new AbortController();try{await secureGuide();}finally{active=null;}await refreshName();readerLocked=false;showPrompt();continue;}
+        if(ingress.kind==='private_storage'){nameOffered=false;active=new AbortController();await secureGuide(ingress,value);active=null;await refreshName();readerLocked=false;showPrompt();continue;}
+        if(ingress.kind==='clarify'&&require('./personal-storage-intent').containsPrivate(value)){nameOffered=false;output.write(ingress.message+'\n');await refreshName();readerLocked=false;showPrompt();continue;}
+        if(ingress.kind==='private_vault'){nameOffered=false;active=new AbortController();await privateGuide(value);active=null;await refreshName();readerLocked=false;showPrompt();continue;}
         if(nameOffered&&/^(?:no|skip|no thanks|no name|prefer not to say)[.!]?$/i.test(value)){
-          nameOffered=false;await refreshName();output.write('\nAiro\nOf course. I’ll use You.\n');readerLocked=false;if(output.isTTY)output.write(prompt());continue;
+          nameOffered=false;await refreshName();output.write('\nAiro\nOf course. I’ll use You.\n');readerLocked=false;showPrompt();continue;
         }
         const offered=address.answer(value,{bare:nameOffered});nameOffered=false;
         if(offered){
           await local.request(home,'/api/interactive/remember',{content:`My name is ${offered}.`});
           await refreshName();output.write(`\nAiro\nThank you, ${offered}. I’ll call you ${offered}.\n`);
-          readerLocked=false;if(output.isTTY)output.write(prompt());continue;
+          readerLocked=false;showPrompt();continue;
         }
         if(command==='name')throw Error('Use /name followed by the name you’d like me to use. Credentials require /vault.');
         await refreshName();
@@ -345,7 +344,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       } catch (error) { stopAnswer();active = null; output.write('Airo: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
       readerLocked=false;
       await refreshName();
-      if (output.isTTY) output.write(prompt());
+      showPrompt();
     }
   } finally { indicator?.stop();process.removeListener('SIGINT', interrupt); await detachReader(); }
   output.write('Local service remains available. Use airodrom stop to stop it.\n');

@@ -1,6 +1,6 @@
 'use strict';
 // Detached native operator terminal; values never enter inference or receipts.
-const {hidden} = require('./vault-cli');
+const {visible} = require('./vault-cli');
 const storage = require('./personal-storage-intent');
 async function guide({input, output, home, plan, message, signal, vault, request} = {}) {
  if (!input?.isTTY || !output?.isTTY || typeof input.setRawMode !== 'function') throw Error('Private storage requires an interactive operator terminal.');
@@ -12,11 +12,11 @@ async function guide({input, output, home, plan, message, signal, vault, request
   const local = require('./local-bootstrap'), path = require('node:path');
   vault = new (require('./secret-vault').SecretVault)(local.privateDirectory(path.join(home, 'data'), true));
  }
- const choose = prompt => hidden(input, output, {prompt, maximum:16, signal});
+ const choose = (prompt, choices) => visible(input, output, {prompt, choices, maximum:16, signal});
  const confirm = async prompt => {
   output.write('Yes / No — No cancels; pressing Enter chooses No.\n');
-  const approved = (await choose(prompt)).toLowerCase() === 'yes' && !signal?.aborted;
-  // Only a fixed decision label is echoed. Private or unexpected input stays hidden.
+  const approved = /^(?:y|yes)$/i.test(await choose(prompt, ['y','yes','n','no'])) && !signal?.aborted;
+  // Only bounded decisions are echoed. Unexpected pasted values fail closed.
   output.write(approved ? 'Yes\n' : 'No\n');
   return approved;
  };
@@ -27,14 +27,14 @@ async function guide({input, output, home, plan, message, signal, vault, request
    if (typeof message !== 'string' || require('./assistant-intent').secret(message) || /[\r\n\0]/.test(message)) throw Error('Private number unavailable.');
    value = /\b(\d{1,12})[.!?]*\s*$/.exec(message)?.[1] || '';
    if (!value) throw Error('Private number unavailable.');
-   output.write(`I can save ${name.toLowerCase()} locally. Its value stays hidden.\n1. Sensitive Memory (private local SQLite; operator-only)\n2. Named Vault entry (macOS Keychain)\n3. Cancel\n`);
-   const target = await choose('Choose 1–3 (hidden): ');
+   output.write(`I can save ${name.toLowerCase()} locally. The number stays out of conversation storage and model context.\n1. Sensitive Memory (private local SQLite; operator-only)\n2. Named Vault entry (macOS Keychain)\n3. Cancel\n`);
+   const target = await choose('Choose 1–3 · Enter or Ctrl+C cancels: ', ['1','2','3']);
    if (!['1', '2'].includes(target) || signal?.aborted) return cancelled();
    if (target === '2' && !vault.status().configured) {output.write('Keychain is unavailable. Prepare secure entry with airodrom secret prepare.\n'); return {state:'unavailable'};}
    const backend = target === '1' ? 'Sensitive Memory' : 'Vault';
    if(target==='2'&&vault.search(name).some(item=>item.name.toLowerCase()===name.toLowerCase())){output.write('That label already exists in Vault. Review or remove it first.\n');return {state:'collision'};}
    output.write(`Save ${name.toLowerCase()} in ${backend}?\n`);
-   if (!await confirm('Type yes to confirm (hidden): ')) return cancelled();
+   if (!await confirm('Confirm [y/N] · Enter or Ctrl+C cancels: ')) return cancelled();
    const receipt = target === '1' ? await request({action:'save', label:name, value, confirmed:true}) : vault.put(value, 'operator', {kind:'private_identifier', name});
    output.write(`${name} saved in ${backend}.\n`);
    return {state:'saved', backend, ...(target === '1' ? {memoryId:receipt.memoryId} : {reference:receipt.reference})};
@@ -47,12 +47,12 @@ async function guide({input, output, home, plan, message, signal, vault, request
   let selected = choices[0];
   if (choices.length > 1) {
    choices.forEach((item, i) => output.write(`${i + 1}. ${item.label} · ${item.backend}\n`));
-   const index = await choose('Choose an entry number, or 0 to cancel (hidden): ');
+   const index = await choose('Choose an entry number · 0, Enter or Ctrl+C cancels: ', ['0',...choices.map((_,i)=>String(i+1))]);
    selected = /^[1-9]\d*$/.test(index) ? choices[Number(index) - 1] : null;
    if (!selected || signal?.aborted) return cancelled();
   }
   output.write(`Reveal ${selected.label.toLowerCase()} from ${selected.backend} in this terminal?\n`);
-  if (!await confirm('Type yes to reveal (hidden): ')) return cancelled();
+  if (!await confirm('Confirm [y/N] · Enter or Ctrl+C cancels: ')) return cancelled();
   const vaultSelectionCurrent = () => vault.search(selected.label).some(item => item.reference === selected.id && item.kind === 'private_identifier' && item.name.toLowerCase() === selected.label.toLowerCase());
   if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
   value = selected.backend === 'Vault' ? vault.revealPrivate(selected.id, {confirmed:true}) : (await request({action:'reveal', label:name, id:selected.id, confirmed:true})).value;
