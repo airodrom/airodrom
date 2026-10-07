@@ -14,6 +14,7 @@ test('terminal mark uses canonical cutouts and portable color/width modes',()=>{
   const output=brand.intro({mode,columns:width,unicode});for(const row of strip(output).trimEnd().split('\n'))assert.ok(row.length<=width,'intro fits '+width+' columns');
   if(!unicode)assert.doesNotMatch(output,/[▀▄█▓░]/,'ASCII fallback uses no block glyphs');
  }
+ for(const rows of [20,24,28,36])assert.ok(strip(brand.intro({mode:'truecolor',columns:80,rows})).trimEnd().split('\n').length<=rows-12,'intro leaves room for readiness and composer');
 });
 test('timeline deduplicates canonical identities, preserves order and excludes untrusted content',()=>{
  const first={event_id:randomUUID(),sequence:1,timestamp_ms:1,event_type:'mission.created',metadata:{prompt:'PRIVATE_PROMPT',reasoning:'PRIVATE_REASONING',token:'PRIVATE_TOKEN'}};

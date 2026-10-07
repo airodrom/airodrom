@@ -58,12 +58,12 @@ function sgr(value, mode, background = false) {
   return `\x1b[${background ? ansi + 10 : ansi}m`;
 }
 const cache = new Map();
-function mark({ mode = 'none', compact = false, unicode = true } = {}) {
+function mark({ mode = 'none', compact = false, small = false, unicode = true } = {}) {
   mode = ['truecolor', '256', '16'].includes(mode) ? mode : 'none';
-  compact = !!compact; unicode = !!unicode;
-  const key = `${mode}:${compact}:${unicode}`;
+  compact = !!compact; small = !!small; unicode = !!unicode;
+  const key = `${mode}:${compact}:${small}:${unicode}`;
   if (cache.has(key)) return [...cache.get(key)];
-  const width = compact ? 26 : 44, height = compact ? 22 : 36, lines = [];
+  const width = small ? 20 : compact ? 26 : 44, height = small ? 16 : compact ? 22 : 36, lines = [];
   for (let y = 0; y < height; y += 2) {
     let row = '';
     for (let x = 0; x < width; x++) {
@@ -90,13 +90,15 @@ function wrap(text, width) {
   if (line) lines.push(line);
   return lines.join('\n');
 }
-function intro({ color = false, mode, unicode = true, columns = 80 } = {}) {
+function intro({ color = false, mode, unicode = true, columns = 80, rows = 40 } = {}) {
   mode = mode || (color ? 'truecolor' : 'none');
-  const compact = columns < 78, version = require('../package.json').version + ' · PRE-RELEASE';
+  const compact = columns < 78 || rows < 36, small = rows < 28;
+  const version = require('../package.json').version + ' · PRE-RELEASE';
   const title = (mode === 'none' ? 'AIRODROM' : '\x1b[96mAIRODROM\x1b[0m') + '\n'
     + wrap('MANY AGENTS. ONE CONTROL PLANE.', columns) + '\n';
   if (columns < 28) return title + 'PRE-RELEASE\n';
-  const art = mark({ mode, compact, unicode });
+  if (rows < 24) return title + wrap(version, columns) + '\n';
+  const art = mark({ mode, compact, small, unicode });
   if (compact) return title + '\n' + art.join('\n') + '\n' + wrap(version, columns) + '\n';
   const info = [version, '', 'Personal assistant.', 'Many agents. One authority.', 'Local. Private. Governed.'];
   const start = Math.floor((art.length - info.length) / 2);

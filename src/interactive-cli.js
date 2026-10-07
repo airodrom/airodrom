@@ -41,7 +41,7 @@ async function scopedTask(home, file,preferences={}) {
   return mission.id;
 }
 async function interactive(home, { input = process.stdin, output = process.stdout, env = process.env } = {}) {
-  output.write(intro({ mode: require('./terminal-brand').colorMode({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80 }));
+  output.write(intro({ mode: require('./terminal-brand').colorMode({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
   const s = await local.start(home, env); output.write(rows(s));
   output.write('\nType a question, or /help for commands. Each question gets a fresh bounded Mission.\n');
   const rl = readline.createInterface({ input, output, terminal: !!input.isTTY && !!output.isTTY });
