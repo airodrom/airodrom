@@ -1,5 +1,5 @@
 'use strict';
-// Sample the canonical even-odd SVG directly. No image protocol, fonts or network.
+// Canonical SVG artwork: bundled image when supported, sampled text otherwise.
 const fs = require('node:fs'), path = require('node:path');
 const geometry = fs.readFileSync(path.join(__dirname, '../public/brand/airodrom-mark.svg'), 'utf8')
   .match(/<path d="([^"]+)"/)[1].split(' M')
@@ -21,6 +21,39 @@ function colorMode({ tty = false, env = process.env } = {}) {
   if (!tty || env.NO_COLOR !== undefined || env.TERM === 'dumb') return 'none';
   if (/truecolor|24bit/i.test(env.COLORTERM || '')) return 'truecolor';
   return /256color/.test(env.TERM || '') ? '256' : '16';
+}
+function imageProtocol({ tty = false, env = process.env } = {}) {
+  if (!tty || env.NO_COLOR !== undefined || env.TERM === 'dumb' || env.TMUX || env.STY
+    || /^(?:screen|tmux)/.test(env.TERM || '') || env.AIRODROM_INTRO_GRAPHICS === 'off') return '';
+  if (env.TERM_PROGRAM === 'iTerm.app' || env.TERM_PROGRAM === 'WezTerm') return 'iterm2';
+  if (env.KITTY_WINDOW_ID || env.TERM === 'xterm-kitty') return 'kitty';
+  return '';
+}
+let png;
+function inlineImage(protocol, columns, rows) {
+  if (!['kitty', 'iterm2'].includes(protocol)) return '';
+  try {
+    if (!png) {
+      const file = path.join(__dirname, '../public/brand/airodrom-terminal-mark.png');
+      const stat = fs.lstatSync(file);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 256 * 1024) return '';
+      const data = fs.readFileSync(file);
+      if (!data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) return '';
+      png = data;
+    }
+    const payload = png.toString('base64');
+    if (protocol === 'iterm2') {
+      // Keep the cursor at the logo origin; subsequent lines reserve its space.
+      return `\x1b7\x1b]1337;File=inline=1;size=${png.length};width=${columns};height=${rows};preserveAspectRatio=1:${payload}\x07\x1b8`;
+    }
+    let result = '';
+    for (let i = 0; i < payload.length; i += 4096) {
+      const metadata = i === 0 ? `a=T,f=100,c=${columns},r=${rows},C=1,` : '';
+      // Quiet mode prevents terminal replies from entering the conversation input.
+      result += `\x1b_G${metadata}q=2,m=${i + 4096 < payload.length ? 1 : 0};${payload.slice(i, i + 4096)}\x1b\\`;
+    }
+    return result;
+  } catch { return ''; }
 }
 const blend = (a, b, amount) => a.map((v, i) => Math.round(v + (b[i] - v) * amount));
 function pixel(x, y, width, height) {
@@ -96,7 +129,7 @@ function wrap(text, width) {
   if (line) lines.push(line);
   return lines.join('\n');
 }
-function intro({ color = false, mode, unicode = true, columns = 80, rows = 40 } = {}) {
+function intro({ color = false, mode, unicode = true, columns = 80, rows = 40, graphics = '' } = {}) {
   mode = mode || (color ? 'truecolor' : 'none');
   const compact = columns < 64 || rows < 28, small = rows < 28;
   const version = require('../package.json').version + ' · PRE-RELEASE';
@@ -104,10 +137,19 @@ function intro({ color = false, mode, unicode = true, columns = 80, rows = 40 } 
     + wrap('MANY AGENTS. ONE CONTROL PLANE.', columns) + '\n';
   if (columns < 28) return title + 'PRE-RELEASE\n';
   if (rows < 24) return title + wrap(version, columns) + '\n';
+  const width = small ? 16 : compact ? 18 : 20, height = small ? 6 : compact ? 7 : 8;
+  const graphic = mode !== 'none' && unicode ? inlineImage(graphics, width, height) : '';
+  const info = [version, '', 'Personal assistant.', 'Local. Private. Governed.'];
+  if (graphic) {
+    if (compact) return title + '\r\n' + graphic + '\r\n'.repeat(height) + wrap(version, columns) + '\n';
+    const start = Math.floor((height - info.length) / 2);
+    // Move across the image without writing spaces over its anchor cell.
+    return title + '\r\n' + graphic + Array.from({length:height}, (_, i) =>
+      `\x1b[${width + 3}C${info[i - start] || ''}\r\n`).join('');
+  }
   const art = mark({ mode, compact, small, unicode });
   if (compact) return title + '\n' + art.join('\n') + '\n' + wrap(version, columns) + '\n';
-  const info = [version, '', 'Personal assistant.', 'Local. Private. Governed.'];
   const start = Math.floor((art.length - info.length) / 2);
   return title + '\n' + art.map((line, i) => line + '   ' + (info[i - start] || '')).join('\n') + '\n';
 }
-module.exports = { colorMode, mark, intro, inside };
+module.exports = { colorMode, imageProtocol, mark, intro, inside };
