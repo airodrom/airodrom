@@ -35,13 +35,14 @@ function pixel(x, y, width, height) {
   };
   const face = coverage();
   if (face >= .5) {
-    // Subdued blue face with a directional bevel; signature slots remain open.
-    const light = Math.max(0, Math.min(1, (px * .25 + py * .75 - 24) / 190));
-    let color = blend([78, 123, 181], [54, 77, 124], light);
+    // Muted teal-to-blue-to-violet face; signature slots remain open.
+    const light = Math.max(0, Math.min(1, (px * .6 + py * .4 - 32) / 192));
+    let color = light < .5 ? blend([46, 140, 145], [69, 111, 187], light * 2)
+      : blend([69, 111, 187], [123, 78, 162], (light - .5) * 2);
     const rim = !inside(px - 1.5, py - 2);
-    if (rim) color = blend(color, [116, 153, 195], .14);
+    if (rim) color = blend(color, [134, 155, 193], .08);
     else if (!inside(px + 2, py + 2)) color = blend(color, [35, 49, 82], .25);
-    return { type: rim ? 'highlight' : 'front', color };
+    return { type: rim ? 'highlight' : 'front', color, ansi: light < .3 ? 36 : light > .7 ? 35 : 34 };
   }
   // Extrude only outside the outer silhouette, so depth never fills the cutouts.
   if (!inPolygon(px, py, geometry[0])) {
@@ -59,7 +60,7 @@ function sgr(value, mode, background = false) {
   const channel = background ? 48 : 38, c = value.color;
   if (mode === 'truecolor') return `\x1b[${channel};2;${c.join(';')}m`;
   if (mode === '256') return `\x1b[${channel};5;${16 + 36 * Math.round(c[0] / 51) + 6 * Math.round(c[1] / 51) + Math.round(c[2] / 51)}m`;
-  const ansi = { front: 34, highlight: 94, depth: 90 }[value.type];
+  const ansi = value.ansi || { front: 34, highlight: 94, depth: 90 }[value.type];
   return `\x1b[${background ? ansi + 10 : ansi}m`;
 }
 const cache = new Map();
@@ -68,7 +69,7 @@ function mark({ mode = 'none', compact = false, small = false, unicode = true } 
   compact = !!compact; small = !!small; unicode = !!unicode;
   const key = `${mode}:${compact}:${small}:${unicode}`;
   if (cache.has(key)) return [...cache.get(key)];
-  const width = small ? 18 : compact ? 24 : 30, height = small ? 14 : compact ? 20 : 24, lines = [];
+  const width = small ? 16 : compact ? 18 : 20, height = small ? 12 : compact ? 14 : 16, lines = [];
   for (let y = 0; y < height; y += 2) {
     let row = '';
     for (let x = 0; x < width; x++) {
