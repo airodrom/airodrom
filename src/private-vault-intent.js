@@ -28,6 +28,8 @@ function parse(value,{capture=false}={}) {
  const labels=PRIVATE_LABELS.join('|');
  const save=new RegExp('^(?:save|store|remember)\\s+(?:(?:secret of|the secret of)\\s+)?(?:my\\s+)?('+labels+')\\s*(?:is|:|=|-)?\\s*(\\d{1,12})$','i').exec(request);
  if(save)return {kind:'private_vault',route:'VAULT',action:'save',label:normalizeLabel(save[1]),classification:'private_identifier',...(capture?{value:save[2]}:{value_present:true})};
+ const entry=new RegExp('^(?:save|store|remember)\\s+(?:my\\s+)?('+labels+')$','i').exec(request);
+ if(entry)return {kind:'private_vault',route:'VAULT',action:'save',label:normalizeLabel(entry[1]),classification:'private_identifier',value_present:false};
  const lookup=new RegExp("^(?:what(?:['’]s| is)|give me|show|reveal|tell me)\\s+(?:my\\s+)?("+labels+")\\s*-?$",'i').exec(request);
   if(lookup)return {kind:'private_vault',route:'VAULT',action:'reveal',label:normalizeLabel(lookup[1])};
  if(containsPrivate(request))return {kind:'private_vault',route:'VAULT',action:'clarify'};
