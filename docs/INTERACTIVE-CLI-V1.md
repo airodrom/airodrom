@@ -20,12 +20,16 @@ synthetic sandbox probe. No provider credentials are copied or printed. First
 startup can take longer while the local model warms. Failed prerequisites give an
 actionable error rather than enable another provider.
 
-The startup logo uses a bundled transparent PNG derived from the canonical SVG
-in Kitty, iTerm2 and WezTerm. It preserves the signature cutouts, subdued gradient
-and fine 3D depth at a compact size. Unknown terminals, tmux/screen, redirected
-output, `TERM=dumb` and `NO_COLOR` retain the existing text or monochrome fallback.
-Set `AIRODROM_INTRO_GRAPHICS=off` to keep the text logo. Startup does not download
-images, invoke an image converter or query the terminal through conversation input.
+The startup logo defaults to colored terminal text with the canonical geometry,
+subdued gradient and fine 3D depth. Its geometry is bundled in application code:
+default startup does not open a logo asset or emit an image/file-transfer request.
+This avoids terminal-owned inline-image approval dialogs during ordinary startup.
+
+Set `AIRODROM_INTRO_GRAPHICS=image` to opt into the sharper transparent PNG in
+Kitty, iTerm2 or WezTerm. The terminal's image permission policy still applies.
+Unknown terminals, tmux/screen, redirected output, `TERM=dumb` and `NO_COLOR`
+retain text or monochrome output. Startup does not download images, invoke an
+image converter or query the terminal through conversation input.
 
 Private persistent state is under `~/.airodrom`, with directories mode 0700 and
 configuration/discovery files mode 0600. `AIRODROM_HOME` selects a dedicated
