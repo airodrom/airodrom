@@ -90,7 +90,7 @@ class ControlServer {
   rememberInteractive(content) {
     require('./control-plane-store').text(content, 'memory content', 2000);
     if(require('./assistant-intent').secret(content))throw Error('Secret content requires the Secret Vault secure input path.');
-    if(require('./assistant-intent').sensitive(content)||require('./personal-storage-intent').containsPrivate(content))throw Error('Explicit Sensitive Memory command required.');
+    if(require('./assistant-intent').sensitive(content))throw Error('Explicit Sensitive Memory command required.');
     const subject = require('./conversation-mission').subjectFor(content);
     const same = this.interactiveMemory(subject).items.filter(m => m.subject === subject);
     if (same.length > 1) throw Error('Memory subject is ambiguous; correct an explicit memory ID.');

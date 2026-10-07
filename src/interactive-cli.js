@@ -210,7 +210,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       if (quitting) break;
       const {value,command,arg,json}=parseLine(line); if (!value) { readerLocked=false;if (output.isTTY) output.write('You › '); continue; }
       try {
-        if(require('./private-vault-intent').parse(value)){active=new AbortController();await privateGuide(value);active=null;readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
+        const ingress=require('./assistant-intent').parse(value);
+        if(ingress.kind==='secret'&&!command){output.write(ingress.message+'\n');readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
+        if(ingress.kind==='private_storage'){active=new AbortController();await secureGuide(ingress,value);active=null;readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
+        if(ingress.kind==='clarify'&&require('./personal-storage-intent').containsPrivate(value)){output.write(ingress.message+'\n');readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
+        if(ingress.kind==='private_vault'){active=new AbortController();await privateGuide(value);active=null;readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
         if(command)output.write('\n');
         if(['help','about','version','mcp','status','details','doctor','connectors'].includes(command)&&arg)throw Error('Submit this command on its own, or use --json for read-only details.');
         if (command === 'quit') {if(arg)throw Error('Submit /quit on its own.');break;}
@@ -275,9 +279,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           await local.request(home, '/api/control-v2/accept-mission', { id: lastMission, request_id: randomUUID(), verification_id: r.verification_id, decision: 'accept', rationale: 'Authenticated local operator reviewed the result.', evidence: arg || 'Operator reviewed the conversation response.' }); output.write('Accepted and settled locally.\n');
         } else if (command) throw Error('Unknown command. Use /help.');
         else {
-          const localIntent=require('./assistant-intent').parse(value);
-          if(!output.isTTY)output.write('\nYou › '+(localIntent.kind==='secret'||require('./personal-storage-intent').containsPrivate(value)?'[private input withheld]':terminalText(value))+'\n');
-          if(localIntent.kind==='secret'){output.write(localIntent.message+'\n');readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
+          if(!output.isTTY)output.write('\nYou › '+terminalText(value)+'\n');
           active = new AbortController();
           startAnswer();
           const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker,conversation_id:await session(),workspace:fs.realpathSync(process.cwd()) });

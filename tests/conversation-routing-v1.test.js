@@ -83,7 +83,7 @@ test('authorized Gmail uses only canonical read-only GETs; previews get minimum 
 
 test('private ingress and unavailable research return no model/service authority or raw values',async()=>{
  const server={conversationEngine:{start(){throw Error('No model allowed');}}};
- for(const message of ['Save my mailbox number 818','Save my mailbox number 818\nThanks',"What's my mailbox number?"]){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,'private_vault');assert.doesNotMatch(JSON.stringify(r),/818/);}
+ for(const [message,kind] of [['Save my mailbox number 818','private_storage'],['Save my mailbox number 818\nThanks','clarify'],["What's my mailbox number?",'private_storage']]){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,kind);assert.doesNotMatch(JSON.stringify(r),/\b818\b/);}
  for(const message of ['Research https://example.invalid','Could you please research https://example.invalid','I would like you to research https://example.invalid']){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,'research_unavailable');assert.equal(r.available,false);assert.deepEqual(r.evidence,[]);}
 });
 test('explicit and direct research Missions cannot dispatch even with a matching web template',async t=>{

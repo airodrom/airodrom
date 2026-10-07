@@ -6,14 +6,11 @@ function label(value) {
  if (!found) throw Error('Choose a supported private identifier name.');
  return found;
 }
-function containsPrivate(value) {
- if (typeof value === 'string') return /\b(?:mailbox|locker|parking\s+space)\s+number\b/i.test(value.normalize('NFKC'));
- if (Array.isArray(value)) return value.some(containsPrivate);
- return !!value && typeof value === 'object' && Object.values(value).some(containsPrivate);
-}
+const containsPrivate=value=>require('./private-vault-intent').containsPrivate(value);
 function normalize(value, nickname) {
  let request = value.normalize('NFKC').trim();
- const names = ['Airodrom', 'Airo', ...(typeof nickname === 'string' && /^[\p{L}\p{N} .'-]{1,32}$/u.test(nickname) ? [nickname] : [])];
+ const vocative = /^(?:hi|hey|hello)\s+([\p{L}][\p{L}\p{N} .'-]{0,31})[,!:]\s*(?=(?:let['’]s|save|store|remember|please|can you|could you|would you|i['’]d|i would|what['’]s)\b)/iu.exec(request);
+ const names = ['Airodrom', 'Airo', ...(vocative ? [vocative[1]] : []), ...(typeof nickname === 'string' && /^[\p{L}\p{N} .'-]{1,32}$/u.test(nickname) ? [nickname] : [])];
  const address = names.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
  for (let i = 0; i < 8; i++) {
   const before = request;

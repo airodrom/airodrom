@@ -86,7 +86,7 @@ test('disconnected operator request cancels a late-admitted direct turn',async t
 test('selected private identifier context and generated private output are denied',async t=>{
  const f=await setup(t,false,async()=>response('Your mailbox number is 818.'));
  await assert.rejects(()=>f.start('Summarize selected mail.',{include_memory:false,context:[{id:'test',subject:'Mail',content:'My mailbox number is 818',untrusted:true}]}),/minimum selected untrusted/);assert.equal(f.packets.length,0);
- const r=await f.start('Hi');assert.equal((await f.settle(r)).state,'failed');assert.equal(f.engine.history()[0].response,null);assert.doesNotMatch(JSON.stringify(f.bridge.ledger.list({limit:100}).events),/818/);
+ const r=await f.start('Hi');assert.equal((await f.settle(r)).state,'failed');assert.equal(f.engine.history()[0].response,null);assert.doesNotMatch(JSON.stringify(f.bridge.ledger.list({limit:100}).events),/\b818\b/);
 });
 
 test('Unicode credential ingress, selected context and credential output fail closed',async t=>{

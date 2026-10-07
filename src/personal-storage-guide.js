@@ -43,7 +43,10 @@ async function guide({input, output, home, plan, message, signal, vault, request
   }
   output.write(`Reveal ${name.toLowerCase()} from ${selected.backend} in this terminal?\n`);
   if ((await choose('Type yes to reveal (hidden): ')).toLowerCase() !== 'yes' || signal?.aborted) return cancelled();
+  const vaultSelectionCurrent = () => vault.search(name).some(item => item.reference === selected.id && item.kind === 'private_identifier' && item.name.toLowerCase() === name.toLowerCase());
+  if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
   value = selected.backend === 'Vault' ? vault.revealPrivate(selected.id, {confirmed:true}) : (await request({action:'reveal', label:name, id:selected.id, confirmed:true})).value;
+  if (selected.backend === 'Vault' && !vaultSelectionCurrent()) throw Error('Named selection changed.');
   if (signal?.aborted) return cancelled();
   if (typeof value !== 'string' || !/^\d{1,12}$/.test(value)) throw Error('Private number unavailable.');
   output.write(`Your ${name.toLowerCase()} is ${value}.\n`);

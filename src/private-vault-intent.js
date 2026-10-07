@@ -9,10 +9,10 @@ function normalizeLabel(value) {
 }
 function containsPrivate(value,depth=0){if(depth>20)return true;if(typeof value==='string')return /\b(?:mailbox|locker|parking\s+space)\s+number\b/i.test(value.normalize('NFKC'));if(Array.isArray(value))return value.some(v=>containsPrivate(v,depth+1));return !!value&&typeof value==='object'&&Object.values(value).some(v=>containsPrivate(v,depth+1));}
 const key=value=>String(value).trim().replace(/\s+/g,' ').toLocaleLowerCase('en-US');
-function parse(value,{capture=false}={}) {
+function parse(value,{capture=false,nickname}={}) {
  if(typeof value!=='string')return null;
  if(Buffer.byteLength(value)>4000||/[\r\n\0]/.test(value))return containsPrivate(value)?{kind:'private_vault',route:'VAULT',action:'clarify'}:null;
- const request=value.normalize('NFKC').trim().replace(/\s+/g,' ').replace(/^(?:hi|hey|hello)[ ,]+(?:airo|airodrom)[ ,]+/i,'').replace(/^(?:airo|airodrom)[ ,]+/i,'').replace(/^(?:please|can you|could you)\s+/i,'').replace(/[.!?]+$/,'');
+ const request=require('./personal-storage-intent').normalize(value,nickname).replace(/\s+/g,' ');
  const command=/^\/secret(?:\s+(list|search|reveal|remove|rename))?(?:\s+(.+))?$/i.exec(request);
  if(command){
   const action=(command[1]||'list').toLowerCase(),arg=command[2]||'';

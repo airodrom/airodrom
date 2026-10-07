@@ -22,7 +22,7 @@ test('legacy discovery adoption rejects public files and symlinks without persis
 test('private legacy adoption preserves fixture credential and private permissions',t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'credential-fixture-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  fs.writeFileSync(path.join(root,'ui.json'),JSON.stringify({url:'http://127.0.0.1:1234/#token='+ 'a'.repeat(64)}),{mode:0o600});
- const server=new ControlServer({dataDir:root});assert.equal(server.token,'a'.repeat(64));
+ const server=new ControlServer({dataDir:root,conversationEngine:{close:async()=>{},start:()=>{throw Error('Credential fixture cannot call inference');}}});assert.equal(server.token,'a'.repeat(64));
  assert.equal(fs.statSync(path.join(root,'control-credential.json')).mode&0o077,0);
 });
 test('Memory V2 removes credential URL values before durable registration',t=>{
@@ -80,7 +80,7 @@ test('credential dangling symlinks fail closed instead of generating replacement
  assert.throws(()=>new ControlServer({dataDir:root}),/private JSON/);assert.ok(fs.lstatSync(path.join(root,'control-credential.json')).isSymbolicLink());
 });
 test('retention operator endpoint denies MCP credentials and invalid payloads',async t=>{
- const {m}=fixture(t),server=new ControlServer({projectMemoryV2:{memory:m}},{port:0,token:'operator-fixture',mcpToken:'mcp-fixture'});
+ const {m}=fixture(t),server=new ControlServer({projectMemoryV2:{memory:m},conversationEngine:{close:async()=>{},start:()=>{throw Error('Retention fixture cannot call inference');}}},{port:0,token:'operator-fixture',mcpToken:'mcp-fixture'});
  await server.start();t.after(()=>server.close());
  const post=(token,body)=>fetch(server.origin+'/api/control-v2/project-memory-retention',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
  assert.equal((await post('mcp-fixture',{mission_id:'mission',expires_at:200})).status,401);

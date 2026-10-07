@@ -22,6 +22,8 @@ function parse(value, {nickname:assistantNickname} = {}) {
  if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
  const storage=require('./personal-storage-intent');
  const request=storage.normalize(value,assistantNickname);
+ const forgetId=/^forget\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.exec(request);
+ if(forgetId)return route('MEMORY',{kind:'forget',selection:forgetId[1]});
  // Only a valueless request opens secure entry. Credentials supplied in chat
  // still hit the secret refusal below and never reach a model or memory.
  if(/^\/vault$/i.test(request)||/^(?:(?:let['’]s|let us|i want to)\s+)?(?:save|store|add)\s+(?:a|an|my)\s+(?:password|api[ _-]?key|secret)$/i.test(request)||/^(?:open|show)\s+(?:the\s+)?(?:secret\s+)?vault$/i.test(request)||/^(?:view|show|list)\s+(?:my\s+)?saved secret names$/i.test(request)||/^remove a secret$/i.test(request))return route('VAULT',{kind:'vault',action:'menu'});

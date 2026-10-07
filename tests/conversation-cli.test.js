@@ -14,7 +14,7 @@ function fixture(t, request) {
 }
 test('natural private identifier stays in detached operator ingress with zero service calls',async t=>{
  const f=fixture(t,()=>{throw Error('Private data must not reach service');}),input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=v=>{input.isRaw=v;};f.output.isTTY=true;
- let seen=false;t.mock.method(require('../src/natural-private-vault'),'guide',async options=>{assert.equal(options.message,'Hi Airo, save my mailbox number 818');assert.equal(input.listenerCount('data'),0);assert.equal(input.listenerCount('readable'),0);seen=true;options.output.write('Saved as Mailbox number.\n');setImmediate(()=>input.write('/quit\n'));return {state:'saved'};});
+ let seen=false;t.mock.method(require('../src/personal-storage-guide'),'guide',async options=>{assert.equal(options.message,'Hi Airo, save my mailbox number 818');assert.equal(input.listenerCount('data'),0);assert.equal(input.listenerCount('readable'),0);seen=true;options.output.write('Saved as Mailbox number.\n');setImmediate(()=>input.write('/quit\n'));return {state:'saved'};});
  const running=interactive('synthetic',{input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});setImmediate(()=>input.write('Hi Airo, save my mailbox number 818\npasted-private-canary\n'));await running;
  assert.equal(seen,true);assert.equal(f.calls.length,0);assert.doesNotMatch(f.text(),/pasted-private-canary/);assert.equal(input.isRaw,false);assert.equal(input.listenerCount('data'),0);
 });
@@ -151,7 +151,7 @@ test('private save detaches ordinary input, discards pasted text and forwards on
  const running=interactive('synthetic',{input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});
  setImmediate(()=>input.write(phrase+'\npasted-private-canary\n'));await running;
  assert.equal(observed.data,0);assert.equal(observed.readable,0);assert.equal(observed.message,phrase);assert.doesNotMatch(JSON.stringify(observed.plan),/818/);
- assert.doesNotMatch(f.text()+JSON.stringify(f.calls),/pasted-private-canary/);assert.equal(input.listenerCount('data'),0);assert.equal(input.isRaw,false);
+ assert.deepEqual(f.calls,[]);assert.doesNotMatch(f.text()+JSON.stringify(f.calls),/pasted-private-canary/);assert.equal(input.listenerCount('data'),0);assert.equal(input.isRaw,false);
 });
 
 test('non-interactive credentials are redacted and refused locally before any backend request', async t => {

@@ -16,9 +16,10 @@ function vaultFixture(t,root){
 }
 test('greetings, contractions, polite preambles, nickname and punctuation route explicit saves without values',()=>{
  for(const message of [PHRASE,PHRASE.slice(0,-1),"Hello Airodrom! Could you please store my mailbox number: 818?","Hey, let’s remember that my mailbox number is 818.",'Please store my mailbox number 818',"Hello Airo, I’d like to save my mailbox number 818.",'Airo please save my mailbox number 818','Can you remember my mailbox number 818?','Airo, please save my mailbox number = 818!','Hi Nova, would you please save my mailbox number 818.']){
-  const parsed=intent.parse(message,{nickname:'Nova'});assert.equal(parsed.kind,'private_storage',message);assert.equal(parsed.action,'save');assert.equal(parsed.label,'Mailbox number');assert.doesNotMatch(JSON.stringify(parsed),/818/);
+  const parsed=intent.parse(message,{nickname:'Nova'});assert.equal(parsed.kind,'private_storage',message);assert.equal(parsed.action,'save');assert.equal(parsed.label,'Mailbox number');assert.doesNotMatch(JSON.stringify(parsed),/\b818\b/);
  }
- assert.equal(intent.parse("What's my mailbox number?").action,'reveal');
+ assert.equal(intent.parse("What's my mailbox number?").action,'reveal');assert.equal(intent.parse('Hi Nova, please save my mailbox number 818.').kind,'private_storage');
+ assert.equal(intent.parse('Hi Airo, please forget 12345678-1234-4123-8123-123456789012').kind,'forget');
 });
 test('quoted, negated, incomplete, multiline and ambiguous input cannot authorize a save',()=>{
  for(const message of ['Please store','Can you remember?',"Don't save my mailbox number 818",'Do not remember my mailbox number 818','Explain the text "save my mailbox number 818"','"Save my mailbox number 818"','Save my mailbox number','Maybe save my mailbox number 818','Hi Airo, save my mailbox number 818\nThanks','Please store my mailbox number 818 and send it']){
@@ -38,19 +39,19 @@ for(const canonical of [false,true])test('named Sensitive Memory confirms, survi
  const server=Object.create(ControlServer.prototype);server.bridge=f.bridge;server.conversationEngine={start(){throw Error('No inference');},nickname(){return 'Airo';}};
  const plan=await service.submit(server,{message:PHRASE,request_id:randomUUID()});assert.equal(plan.kind,'private_storage');assert.equal(f.bridge.personalMemory.stats().count,0);
  const receipt=await guide({input:new Terminal(['1\r','yes\r']),output:out,plan,message:PHRASE,vault:v.vault,request:body=>privateMemory.operate(f.bridge,body)});
- assert.equal(receipt.state,'saved');assert.doesNotMatch(out.text()+JSON.stringify(receipt),/818/);const item=f.bridge.personalMemory.get(receipt.memoryId);assert.equal(item.content,'818');assert.equal(item.sensitivity,'sensitive');assert.match(item.subject,/^sensitive\.[a-f0-9-]+$/);
- assert.doesNotMatch(JSON.stringify(server.interactiveMemory('mailbox')),/818/);assert.throws(()=>server.rememberInteractive('My mailbox number is 818'),/Sensitive/);
+ assert.equal(receipt.state,'saved');assert.doesNotMatch(out.text()+JSON.stringify(receipt),/\b818\b/);const item=f.bridge.personalMemory.get(receipt.memoryId);assert.equal(item.content,'818');assert.equal(item.sensitivity,'sensitive');assert.match(item.subject,/^sensitive\.[a-f0-9-]+$/);
+ assert.doesNotMatch(JSON.stringify(server.interactiveMemory('mailbox')),/\b818\b/);assert.throws(()=>server.rememberInteractive('My mailbox number is 818'),/Sensitive/);
  const packets=[],engine=new ConversationEngine(f.bridge,{qualify:async()=>({state:'READY',model:'ollama/qwen3-coder:30b'}),request:async(_url,options)=>{packets.push(JSON.parse(options.body));return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{role:'assistant',content:'Hello.'}}]}));}});
- const chat=await engine.start({message:'Hi',request_id:randomUUID()});await engine.active.get(chat.turn_id)?.promise;assert.doesNotMatch(JSON.stringify(packets),/818/);await engine.close();
+ const chat=await engine.start({message:'Hi',request_id:randomUUID()});await engine.active.get(chat.turn_id)?.promise;assert.doesNotMatch(JSON.stringify(packets),/\b818\b/);await engine.close();
  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);assert.equal(f.calls(),0);
- await f.reopen();const lookup=privateMemory.operate(f.bridge,{action:'lookup',label:'Mailbox number'});assert.equal(lookup.items[0].memoryId,receipt.memoryId);assert.doesNotMatch(JSON.stringify(lookup),/818/);
+ await f.reopen();const lookup=privateMemory.operate(f.bridge,{action:'lookup',label:'Mailbox number'});assert.equal(lookup.items[0].memoryId,receipt.memoryId);assert.doesNotMatch(JSON.stringify(lookup),/\b818\b/);
  const reveal=output();assert.equal((await guide({input:new Terminal(['yes\r']),output:reveal,plan:intent.parse("What's my mailbox number?"),vault:v.vault,request:body=>privateMemory.operate(f.bridge,body)})).state,'revealed');assert.match(reveal.text(),/mailbox number is 818/);
  f.bridge.personalMemory.forget(receipt.memoryId);assert.equal(privateMemory.operate(f.bridge,{action:'lookup',label:'Mailbox number'}).items.length,0);assert.throws(()=>privateMemory.operate(f.bridge,{action:'reveal',label:'Mailbox number',id:receipt.memoryId,confirmed:true}));
 });
 test('named Vault save requires choice and confirmation; fresh lookup uses current purpose and disposition',async t=>{
  const f=await fixture(t),v=vaultFixture(t,f.root),request=body=>privateMemory.operate(f.bridge,body),out=output();
  const saved=await guide({input:new Terminal(['2\r','yes\r']),output:out,plan:intent.parse(PHRASE),message:PHRASE,vault:v.vault,request});assert.equal(saved.state,'saved');assert.equal(v.values.get(saved.reference),'818');
- assert.doesNotMatch(out.text()+JSON.stringify(saved)+fs.readFileSync(path.join(v.home,'vault-dispositions.json'),'utf8'),/818/);
+ assert.doesNotMatch(out.text()+JSON.stringify(saved)+fs.readFileSync(path.join(v.home,'vault-dispositions.json'),'utf8'),/\b818\b/);
  const restarted=new SecretVault(v.home,v.port),reveal=output();assert.equal((await guide({input:new Terminal(['yes\r']),output:reveal,plan:intent.parse("What's my mailbox number?"),vault:restarted,request})).state,'revealed');assert.match(reveal.text(),/is 818/);
  assert.throws(()=>restarted.revealPrivate(saved.reference));assert.throws(()=>restarted.resolve(saved.reference,'gmail'));assert.throws(()=>restarted.put('999','operator',{kind:'private_identifier',name:'Mailbox number'}));
  const credential=restarted.put('synthetic-password','operator',{kind:'password'}),gmail=restarted.put('synthetic-oauth','gmail');for(const id of [credential.reference,gmail.reference])assert.throws(()=>restarted.revealPrivate(id,{confirmed:true}));
@@ -63,14 +64,14 @@ test('cancellation, competing readers, stale confirmation and ambiguous backends
  for(const input of [Object.assign(new Terminal(),{isTTY:false}),new Terminal()]){if(input.isTTY)input.on('data',()=>{});await assert.rejects(guide({input,output:output(),plan,message:PHRASE,vault:v.vault,request}));}
  const m=privateMemory.operate(f.bridge,{action:'save',label:plan.label,value:'818',confirmed:true});v.vault.put('999','operator',{kind:'private_identifier',name:plan.label});
  const out=output();assert.equal((await guide({input:new Terminal(['0\r']),output:out,plan:intent.parse("What's my mailbox number?"),vault:v.vault,request})).state,'cancelled');assert.doesNotMatch(out.text(),/818|999/);
- const stale=output();assert.equal((await guide({input:new Terminal([stream=>{f.bridge.personalMemory.forget(m.memoryId);stream.emit('data',Buffer.from('yes\r'));}]),output:stale,plan:intent.parse('What is my locker number?'),vault:v.vault,request:body=>body.action==='lookup'?{items:[{memoryId:m.memoryId}]}:request(body)})).state,'unavailable');assert.doesNotMatch(stale.text(),/818/);
+ const stale=output();assert.equal((await guide({input:new Terminal([stream=>{f.bridge.personalMemory.forget(m.memoryId);stream.emit('data',Buffer.from('yes\r'));}]),output:stale,plan:intent.parse('What is my locker number?'),vault:v.vault,request:body=>body.action==='lookup'?{items:[{memoryId:m.memoryId}]}:request(body)})).state,'unavailable');assert.doesNotMatch(stale.text(),/\b818\b/);
 });
 test('operator endpoint denies anonymous callers, credentials, missing confirmation, wrong name and stale IDs',async t=>{
  const f=await fixture(t),server=new ControlServer(f.bridge,{port:0});await server.start();t.after(()=>server.close());
  const post=async(body,authorized=true)=>{const r=await fetch(server.origin+'/api/assistant/private-memory',{method:'POST',headers:{'Content-Type':'application/json',...(authorized?{Authorization:'Bearer '+server.token}:{})},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
  assert.equal((await post({action:'lookup',label:'Mailbox number'},false)).status,401);
  for(const body of [{action:'save',label:'Mailbox number',value:'818'},{action:'save',label:'Mailbox number',value:'synthetic-password',confirmed:true},{action:'save',label:'Password',value:'818',confirmed:true}])assert.equal((await post(body)).status,400);
- const saved=await post({action:'save',label:'Mailbox number',value:'818',confirmed:true});assert.equal(saved.status,200);assert.doesNotMatch(JSON.stringify(saved),/818/);
+ const saved=await post({action:'save',label:'Mailbox number',value:'818',confirmed:true});assert.equal(saved.status,200);assert.doesNotMatch(JSON.stringify(saved),/\b818\b/);
  assert.equal((await post({action:'reveal',label:'Locker number',id:saved.body.memoryId,confirmed:true})).status,400);
  assert.equal((await post({action:'reveal',label:'Mailbox number',id:saved.body.memoryId})).status,400);
  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);
@@ -79,4 +80,10 @@ test('direct model bypass and unsolicited model persistence claims fail closed',
  const f=await fixture(t);let content='I have saved your information.',calls=0;const engine=new ConversationEngine(f.bridge,{qualify:async()=>({state:'READY',model:'ollama/qwen3-coder:30b'}),request:async()=>{calls++;return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{role:'assistant',content}}]}));}});t.after(()=>engine.close());
  await assert.rejects(engine.start({message:PHRASE,request_id:randomUUID()}),/deterministic host workflow/);assert.equal(calls,0);
  for(content of ['I have saved your information.',"I don't have the ability to store personal information.",'Your mailbox number is 818.']){const receipt=await engine.start({message:'Hi',request_id:randomUUID()});await engine.active.get(receipt.turn_id)?.promise;assert.equal(engine.result({conversation_id:receipt.conversation_id,turn_id:receipt.turn_id}).state,'failed');assert.equal(engine.db.prepare('SELECT response FROM cp_conversation_turns WHERE id=?').get(receipt.turn_id).response,null);}
+});
+test('a Vault rename during resolution invalidates the confirmed name before disclosure',async t=>{
+ const f=await fixture(t),v=vaultFixture(t,f.root),saved=v.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'}),out=output();
+ const changing=new SecretVault(v.home,(op,id,value)=>{if(op==='read')v.vault.rename(saved.reference,'Locker number');return v.port(op,id,value);});
+ const receipt=await guide({input:new Terminal(['yes\r']),output:out,plan:intent.parse("What's my mailbox number?"),vault:changing,request:()=>({items:[]})});
+ assert.equal(receipt.state,'unavailable');assert.doesNotMatch(out.text(),/\b818\b/);
 });

@@ -15,7 +15,7 @@ test('interactive V2 renders human views, rejects unsafe selection and keeps the
  t.after(async()=>{await server.close();b.dataDir=old;});
  const output=new PassThrough();let text='';output.on('data',c=>text+=c);
  await interactive(home,{input:Readable.from(['/models\n/model ollama/qwen3-coder:30b\n/model auto\n/model local\n/model unknown\n/model auto\n/workers\n/worker codex\n/worker claude_code\n/worker cursor\n/connectors\n/sensitive\n/vault\n/runtime --json\nYou › --version\n/mcp\n/connectorsAirodrom\nRemember that my name is Aurora.\nWhat do you remember about my name?\nForget my name\nExplain a synthetic greeting\n/details\n/quit\n']),output,env:{NO_COLOR:'1',TERM:'dumb'}});
- for(const expected of ['MODELS','Qwen3 Coder 30B','MANUAL','Routing: AUTO','WORKERS','NOT QUALIFIED','DENIED','CONNECTORS','Gmail','WhatsApp','SENSITIVE MEMORY','Secure Vault requires an interactive operator terminal','Remembered in Personal Memory V2.','Aurora','Forgotten.','shell transport','No Mission is selected.'])assert.ok(text.includes(expected),expected);
+ for(const expected of ['MODELS','Qwen3 Coder 30B','MANUAL','Routing: AUTO','WORKERS','NOT QUALIFIED','DENIED','CONNECTORS','Gmail','WhatsApp','SENSITIVE MEMORY','Secure Vault requires an interactive operator terminal','Remembered.','Aurora','Forgotten.','shell transport','No Mission is selected.'])assert.ok(text.includes(expected),expected);
  assert.equal((text.match(/Selection unavailable/g)||[]).length,4);
  assert.doesNotMatch(text,/"qualification"|"data_classes"|"active_refs"|\x1b|Bearer |token=/);
  assert.match(text,/"runtime": "opencode"/); // JSON is explicit only.
