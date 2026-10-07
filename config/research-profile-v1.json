@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "project": "Arecibo",
+  "workspace_sibling": "arecibo-core",
+  "maxPages": 12,
+  "maxActions": 90,
+  "timeoutMs": 180000
+}

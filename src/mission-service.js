@@ -12,6 +12,8 @@ function relative(value){text(value,'file path',300);if(path.isAbsolute(value)||
 class MissionService {
   constructor(bridge){this.bridge=bridge;this.store=bridge.controlStore;this.db=this.store.db;this.db.exec('CREATE TABLE IF NOT EXISTS cp_continuity_checks(run_id TEXT PRIMARY KEY,mission_id TEXT NOT NULL,status TEXT NOT NULL,evidence TEXT NOT NULL,checked_at INTEGER NOT NULL)');this.program=new (require('./mission-program').MissionProgram)(this);this.codingAdapter=new (require('./qualified-coding-adapter').QualifiedCodingAdapter)(this);this.acceptanceEngine=new (require('./deterministic-acceptance').DeterministicAcceptance)(this);this.agents=new MissionAgents(bridge,this.store);this.verifier=new MissionVerifier(bridge,this.store);this.busy=false;this.stopped=false;}
   createConversation(input,owner='operator'){return require('./conversation-mission').create(this,input,owner);}
+  get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
+  createResearch(input,owner='operator'){return this.research.create(input,owner);}
   create(input,owner='operator'){
     object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','model','worker']);
     if(input.continuity!==undefined&&!['prior_context','current_prompt'].includes(input.continuity))throw Error('Invalid continuity mode');
@@ -67,7 +69,7 @@ class MissionService {
     });
   }
   newTask(missionId,projectId,envelope,owner,ordinal){
-    const created=this.bridge.createTask(envelope.objective.slice(0,450),{workspace:envelope.workspace,projectId,executionAgent:envelope.preferred_agent,capabilityScopes:envelope.capability_scopes,missionObjective:envelope.objective,...(envelope.authority?{missionAuthority:{level:envelope.authority.level,permissions:envelope.authority.permissions,filesystem:envelope.authority.filesystem,expiresAt:envelope.authority.expiresAt},authorityOperator:owner==='operator'}:{})});
+    const created=this.bridge.createTask(envelope.objective.slice(0,450),{workspace:envelope.workspace,projectId,executionAgent:envelope.preferred_agent,capabilityScopes:envelope.capability_scopes,missionObjective:envelope.objective,...(envelope.kind==='browser_research'?{capabilityProfile:'governed-browser-research-v1'}:{}),...(envelope.authority?{missionAuthority:{level:envelope.authority.level,permissions:envelope.authority.permissions,filesystem:envelope.authority.filesystem,expiresAt:envelope.authority.expiresAt},authorityOperator:owner==='operator'}:{})});
     const task=this.bridge.tasks.get(created.id);task.controlPlaneMissionId=missionId;task.mission.manifest=envelope.manifest||null;task.controlPlaneOrdinal=ordinal;task.source={transport:owner==='mcp'?'mcp':'operator',principal:owner};task.orchestrator={mode:'direct'};task.mission.budget.maxRetries=0;task.status='queued';this.bridge.tasks.save(task);this.bridge.policy.registerTask(task);return task;
   }
   require(id,owner){return this.store.requireMission(id,owner==='operator'?null:owner);}
@@ -100,7 +102,7 @@ class MissionService {
   queue(id,decisionId=null){
     const m=this.store.requireMission(id);this.assertAuthority(m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
     if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
-    if(m.envelope.kind==='conversation'&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('Conversation Missions admit one turn only; create a fresh Mission.');
+    if(['conversation','browser_research'].includes(m.envelope.kind)&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('Bounded Missions admit one run only; create a fresh Mission.');
     if(m.state==='waiting_for_operator'&&!decisionId)throw Error('Mission requires its Decision answer');
     if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','dispatching','running','unknown')").get(id))throw Error('Mission has an active or uncertain dispatch; reconcile it first');
     if(m.state!=='ready')this.store.state(id,'ready');
@@ -158,6 +160,7 @@ class MissionService {
     if(m.state==='cancelled')return;
     try{
       if(m.envelope.kind==='conversation')return await require('./conversation-mission').launch(this,dispatch,m);
+      if(m.envelope.kind==='browser_research')return await this.research.launch(dispatch,m);
       const project=this.bridge.projects.getProject(m.project_id);if(project.status==='archived')throw Error('Project is archived');
       const unresolved=this.db.prepare("SELECT 1 FROM project_dependencies d LEFT JOIN project_missions p ON d.depends_on_type='mission' AND p.mission_id=d.depends_on_id WHERE d.owner_id=? AND d.status='active' AND (d.depends_on_type<>'mission' OR p.status<>'completed')").get(m.id);if(unresolved)throw Error('Mission dependency is unresolved');
       const task=this.bridge.tasks.get(dispatch.task_id);if(task.safetyStop?.latched)throw Error('Task safety stop is latched');
@@ -317,10 +320,10 @@ class MissionService {
     if(this.store.getMission(m.id).state==='verifying'){
       // Exclude another writer while independent checks run and evidence is captured.
       const verifyId=randomUUID();this.store.startRun({id:verifyId,taskId:run.task_id,missionId:m.id,agentId:'host',role:'verifier'});
-      try {this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id});const verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);}
+      try {this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id,mode:m.envelope.kind==='browser_research'?'read':'write'});const verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);}
       catch(error){if(this.store.getMission(m.id).state==='verifying')this.store.state(m.id,'blocked','Independent verification unavailable');}
       finally{this.store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
-      if(m.envelope.automatic_acceptance)this.acceptanceEngine.attempt(m.id);
+      if(m.envelope.kind!=='browser_research'&&m.envelope.automatic_acceptance)this.acceptanceEngine.attempt(m.id);
       if(m.envelope.fixture_auto_acceptance?.authorized)this.bridge.fixtureAcceptance.attempt(m.id);
     }
   }
@@ -354,7 +357,7 @@ class MissionService {
       if(m.state!=='awaiting_acceptance')throw Error('Mission is not awaiting acceptance');
       if(input.decision==='accept')this.program.assertAcceptance(m,input.verification_id);
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
-      if(!v||v.revision!==m.revision||workspaceSnapshot(m.envelope.workspace).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
+      if(!v||v.revision!==m.revision||(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
       if(input.decision==='accept')this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');
@@ -376,11 +379,11 @@ class MissionService {
       for(const h of this.db.prepare("SELECT h.run_id FROM cp_codex_handoffs h JOIN cp_runs r ON r.id=h.run_id WHERE r.mission_id=? AND h.state<>'settled'").all(id))this.bridge.codexAdapter.cancelTask(h.run_id);
       this.store.event('mission.stop_requested',id,{});return{mission_id:id,state:'cancelled'};
     });
-    afterCommit(this.db,()=>{for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id))this.bridge.opencodeAdapter?.cancel({task:this.bridge.tasks.get(row.task_id)});for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
+    afterCommit(this.db,()=>{if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id))this.bridge.opencodeAdapter?.cancel({task:this.bridge.tasks.get(row.task_id)});for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
     return result;
   }
   decisionDetails(id){const d=this.store.decision(id);if(!d)throw Error('Decision not found');const m=this.detail(d.mission_id);return{decision:d,mission_objective:m.objective,result:this.db.prepare('SELECT normalized FROM cp_run_results WHERE run_id=?').get(d.run_id)?.normalized||null,verification:m.verifications,risks:['Worker rationale is untrusted; protected approvals are separate.']};}
-  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.schedule();}
-  async close(){this.stopped=true;await this.bridge.opencodeAdapter?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
+  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.schedule();}
+  async close(){this.stopped=true;await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
 }
 module.exports={MissionService,relative};

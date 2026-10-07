@@ -10,7 +10,7 @@ const requestIdentity=value=>{identifier(value);if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[
 const workMission=m=>m.owner==='operator'&&m.envelope.kind!=='conversation';
 function projection(server,m){
  const draft=m.envelope.kind==='work_request';
- return {id:m.id,objective:m.envelope.objective,state:m.state,created_at:m.created_at,scope_registered:!draft,...(draft?{execution_authorized:false,message:m.reason||'Choose a bounded workspace, allowed files and registered verification before execution.',requested_capabilities:m.envelope.requested_capabilities||[],capability_classes:[],authority:false}:{verification:require('./product-observability').missionView(server.bridge,m).verification})};
+ return {id:m.id,objective:m.envelope.objective,state:m.state,created_at:m.created_at,scope_registered:!draft,...(m.envelope.kind==='browser_research'?{research:server.bridge.missions.research.progress(m)}:{}),...(draft?{execution_authorized:false,message:m.reason||'Choose a bounded workspace, allowed files and registered verification before execution.',requested_capabilities:m.envelope.requested_capabilities||[],capability_classes:[],authority:false}:{verification:require('./product-observability').missionView(server.bridge,m).verification})};
 }
 function list(server,{active=false}={}){
  if(typeof active!=='boolean')throw Error('Invalid Mission list filter');
@@ -68,7 +68,18 @@ async function newMission(server,input){
  const capabilities=[...new Set([...intent.workCapabilities(input.objective||''),...requested])];
  const request={...input,capability_classes:capabilities};
  if(!input.objective)return draft(server,request,'What should this Mission accomplish? Then choose its bounded workspace, allowed files and registered checks.');
- if(require('./browser-research').parse(input.objective))return {...draft(server,request,require('./browser-research').MESSAGE),browser_research_available:false,evidence:[],comparison:'unverified'};
+ const research=require('./browser-research').parse(input.objective);
+ if(research){
+  if(research.kind!=='research')return research;
+  if(input.worker&&!['auto','host'].includes(input.worker))return {kind:'clarify',message:'Browser research uses the governed host browser. Choose /worker auto or /worker host.'};
+  if(!server.bridge.missions.research)return {...draft(server,request,require('./browser-research').MESSAGE),browser_research_available:false,evidence:[],comparison:'unverified'};
+  let created;
+  try{created=server.bridge.missions.createResearch({request_id:input.request_id,objective:input.objective,entry_url:research.entry_url},'operator');}
+  catch{return {...draft(server,request,'Research needs a valid approved public HTTPS domain and the current host-registered Arecibo repository. Review the scope before execution; no website has been investigated.'),browser_research_available:false,evidence:[],comparison:'unverified'};}
+  const missionId=created.mission_id||created.id;
+  if(created.state==='ready')server.bridge.missions.dispatch(missionId,{request_id:'assistant-research-dispatch:'+input.request_id},'operator');
+  return {kind:'mission',route:input.explicit?'EXPLICIT MISSION':'WORK',mission_id:missionId,state:server.bridge.missions.require(missionId,'operator').state,browser_research_available:true,message:'Research Mission created. Beginning public website investigation within the approved domain. Account-only features require separate owner authorization.',authority:false};
+ }
  const templates=matchingTemplates(server.bridge,input.workspace);
  if(templates.length!==1)return draft(server,request,templates.length?'Several approved scopes match this workspace. Choose one host-registered Mission template.':'Mission created as a draft. Choose an owner-registered workspace template with allowed files and checks before execution.');
  const template=templates[0];

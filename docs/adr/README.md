@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+- [0013 governed browser product research](0013-governed-browser-product-research.md): Proposed; replaces ADR 0012's unavailable browser gate with a scoped host research capability, preserving its Vault boundaries.
+
 Every Kernel change references an ADR. Compatible repairs may cite an accepted record; authority, lifecycle, boundary and public-contract changes require a new or superseding decision. Use the [template](TEMPLATE.md) or [supersession template](SUPERSESSION-TEMPLATE.md), describe alternatives, evidence, compatibility and migration, and keep decisions Proposed until maintainer review records disposition.
 
 Status vocabulary: Proposed, Accepted, Rejected, Deprecated, Superseded. Architectural acceptance is distinct from Mission Acceptance, deployment and publication. Preserve previous private decision/evidence history separately.
@@ -23,4 +25,4 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 
 - [0012 named private identifiers and research gate](0012-natural-private-vault-and-research-gate.md): Accepted after two independent boundary reviews and owner approval of PR #20; deterministic terminal-only identifiers and unavailable browser research.
 
-- [0013 conversational private storage](0013-conversational-private-storage.md): Proposed; greeting-safe host routing, confirmed native storage choice and name-bound operator reveal.
+- [0014 conversational private storage](0014-conversational-private-storage.md): Proposed; greeting-safe host routing, confirmed native storage choice and name-bound operator reveal.

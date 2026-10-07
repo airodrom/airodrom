@@ -1,4 +1,4 @@
-# ADR 0013 — Conversational private storage repair
+# ADR 0014 — Conversational private storage repair
 
 - Status: Proposed
 - Date: 2026-10-07

@@ -177,6 +177,15 @@ class ControlServer {
         const result=this.interactiveMemory(query);
         return this.json(res,200,{generation:require('./product-observability').memoryStatus(this.bridge).generation,items:result.items.map(m=>({id:require('./product-observability').id(m.memoryId),subject:require('./secret-observation').safeValue(m.subject),content:require('./secret-observation').safeValue(m.content),status:'active',source:'Explicit operator reference; not authority'}))});
       }
+      if(req.method==='GET'&&url.pathname==='/api/assistant/research/report'){
+        const id=url.searchParams.get('mission_id'),mission=this.bridge.missions.require(id,'operator'),report=await this.bridge.missions.research.report(id,'operator');
+        const projected=require('./research-report').projectResearchResponse(report,{scope:mission.envelope.manifest.scope});
+        res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(JSON.stringify(projected));
+      }
+      if(req.method==='GET'&&url.pathname==='/api/assistant/research/evidence'){
+        const evidence=await this.bridge.missions.research.evidence(url.searchParams.get('mission_id'),url.searchParams.get('evidence_id'),'operator');
+        res.writeHead(200,{'Content-Type':evidence.mime,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(evidence.buffer);
+      }
       if (req.method === 'GET' && url.pathname === '/api/product/overview') return this.json(res, 200, await require('./product-observability').overview(this.bridge,{currentOffset:Number(url.searchParams.get('current_offset')||0)}));
       if (req.method === 'GET' && url.pathname === '/api/product/events') return this.json(res, 200, require('./product-observability').events(this.bridge, url));
       if (req.method === 'GET' && url.pathname === '/api/product/mission') return this.json(res, 200, require('./product-observability').missionView(this.bridge, this.bridge.missions.require(url.searchParams.get('id'))));
@@ -276,6 +285,19 @@ class ControlServer {
       }
       if(url.pathname==='/api/assistant/conversation/session')return this.json(res,201,this.conversationEngine.session(body));
       if(url.pathname==='/api/assistant/conversation/cancel')return this.json(res,200,this.conversationEngine.cancel(body));
+      if(url.pathname==='/api/assistant/research/download'){
+        require('./control-plane-store').object(body,['mission_id','url','request_id']);
+        return this.json(res,202,this.bridge.missions.research.download(body.mission_id,{url:body.url,request_id:body.request_id},'operator'));
+      }
+      if(url.pathname==='/api/assistant/research/account'){
+        require('./control-plane-store').object(body,['entry_url','username_reference','password_reference','confirmed','request_id']);
+        if(body.confirmed!==true)throw Error('Explicit purpose-bound owner authorization is required');
+        const research=this.bridge.missions.research;research.credentials.validateReferences(body.username_reference,body.password_reference);
+        const created=research.create({request_id:body.request_id,objective:'Research the explicitly authorized competitor account and compare its safe navigation evidence with Arecibo.',entry_url:body.entry_url,account_authorization:{username_reference:body.username_reference,password_reference:body.password_reference,confirmed:true}},'operator');
+        const missionId=created.mission_id||created.id;
+        if(created.state==='ready')this.bridge.missions.dispatch(missionId,{request_id:'account-dispatch:'+body.request_id},'operator');
+        return this.json(res,202,{kind:'mission',mission_id:missionId,state:this.bridge.missions.require(missionId,'operator').state,browser_research_available:true,message:'Purpose-bound account research Mission created. Credential values remain in the secure host path; account screenshots are disabled.',authority:false});
+      }
       if(url.pathname==='/api/assistant/mission'){
         require('./control-plane-store').object(body,['action','objective','mission_id','request_id','workspace','model','worker']);const missions=require('./assistant-missions');
         if(body.action==='new')return this.json(res,202,await missions.newMission(this,{objective:body.objective||null,request_id:body.request_id,workspace:body.workspace,model:body.model,worker:body.worker,explicit:true}));
@@ -414,13 +436,13 @@ class ControlServer {
         }
         if (action === 'cancel') {
           for (const controller of this.webRequests.get(id) || []) controller.abort();
-          if (task.controlPlaneMissionId && this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind === 'conversation') {
+          if (task.controlPlaneMissionId && ['conversation','browser_research'].includes(this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind)) {
             this.bridge.missions.cancel(task.controlPlaneMissionId, { request_id: randomUUID() });
             return this.json(res, 200, this.bridge.snapshotTask(task));
           }
           return this.json(res, 200, await this.bridge.cancel(id));
         }
-        if (['pause', 'resume'].includes(action) && task.controlPlaneMissionId && this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind === 'conversation') throw Error('Bounded conversation Missions cannot use legacy pause/resume. Cancel and submit a fresh question.');
+        if (['pause', 'resume'].includes(action) && task.controlPlaneMissionId && ['conversation','browser_research'].includes(this.bridge.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind)) throw Error('Bounded conversation and research Missions cannot use legacy pause/resume. Cancel and submit a fresh request.');
         if (action === 'pause') return this.json(res, 200, await this.bridge.pause(id));
         if (action === 'resume') { await this.bridge.resume(id); return this.json(res, 202, { accepted: true, taskId: id, status: 'resuming' }); }
         if (action === 'resolve-stop') {
