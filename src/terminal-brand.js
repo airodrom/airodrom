@@ -23,30 +23,24 @@ function colorMode({ tty = false, env = process.env } = {}) {
 }
 const blend = (a, b, amount) => a.map((v, i) => Math.round(v + (b[i] - v) * amount));
 function pixel(x, y, width, height) {
-  const px = (x + .5) / width * 280 - 2, py = 24 + (y + .5) / height * 232;
-  const coverage = (dx, dy) => {
+  const px = 4 + (x + .5) / width * 248, py = 24 + (y + .5) / height * 208;
+  const coverage = () => {
     let count = 0;
     // Subpixel sampling retains the narrow signature slots and smooths the face.
     for (const ox of [-.25, .25]) for (const oy of [-.25, .25]) {
-      if (inside(px + ox * 280 / width - dx, py + oy * 232 / height - dy)) count++;
+      if (inside(px + ox * 248 / width, py + oy * 208 / height)) count++;
     }
     return count / 4;
   };
-  const face = coverage(0, 0);
+  const face = coverage();
   if (face >= .5) {
-    const light = Math.max(0, Math.min(1, (px + py * .4 - 40) / 260));
-    let color = light < .55 ? blend([184, 242, 255], [80, 145, 255], light / .55)
-      : blend([80, 145, 255], [104, 95, 217], (light - .55) / .45);
+    // A bright, quiet face keeps the canonical slots readable at terminal resolution.
+    const light = Math.max(0, Math.min(1, (py - 32) / 192));
+    let color = blend([143, 222, 255], [80, 145, 255], light);
     const rim = !inside(px - 1.5, py - 2);
-    if (rim) color = blend(color, [153, 255, 226], .55);
-    // Keep the glass reflection inside the original face.
-    const reflection = Math.max(0, 1 - Math.abs(px * .65 + py * .35 - 123) / 12);
-    color = blend(color, [219, 252, 255], reflection * .32);
-    if (face < 1) color = color.map(v => Math.round(v * (.55 + .45 * face)));
+    if (rim) color = blend(color, [153, 255, 226], .22);
     return { type: rim ? 'highlight' : 'front', color };
   }
-  if (coverage(6, 5) >= .5) return { type: 'depth', color: blend([73, 71, 177], [42, 52, 117], y / height) };
-  if (coverage(12, 10) >= .5) return { type: 'shadow', color: [27, 41, 68] };
   return null;
 }
 function sgr(value, mode, background = false) {
@@ -54,7 +48,7 @@ function sgr(value, mode, background = false) {
   const channel = background ? 48 : 38, c = value.color;
   if (mode === 'truecolor') return `\x1b[${channel};2;${c.join(';')}m`;
   if (mode === '256') return `\x1b[${channel};5;${16 + 36 * Math.round(c[0] / 51) + 6 * Math.round(c[1] / 51) + Math.round(c[2] / 51)}m`;
-  const ansi = { front: 94, highlight: 96, depth: 34, shadow: 90 }[value.type];
+  const ansi = { front: 94, highlight: 96 }[value.type];
   return `\x1b[${background ? ansi + 10 : ansi}m`;
 }
 const cache = new Map();
@@ -69,8 +63,8 @@ function mark({ mode = 'none', compact = false, small = false, unicode = true } 
     for (let x = 0; x < width; x++) {
       const top = pixel(x, y, width, height), bottom = pixel(x, y + 1, width, height), value = top || bottom;
       if (mode === 'none' || !unicode) {
-        const character = !value ? ' ' : !unicode ? ({ front: '#', highlight: '#', depth: '+', shadow: '.' }[value.type])
-          : value.type === 'shadow' ? '░' : value.type === 'depth' ? '▓' : top && bottom ? '█' : top ? '▀' : '▄';
+        const character = !value ? ' ' : !unicode ? '#'
+          : top && bottom ? '█' : top ? '▀' : '▄';
         row += (mode === 'none' ? '' : sgr(value, mode)) + character;
       } else if (top) row += sgr(top, mode) + sgr(bottom, mode, true) + '▀';
       else if (bottom) row += sgr(bottom, mode) + sgr(null, mode, true) + '▄';
