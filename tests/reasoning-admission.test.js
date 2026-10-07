@@ -4,14 +4,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
-const Bridge = require('../src/bridge-controller');
+const Bridge = require('./fixtures/test-bridge.cjs');
 const { McpTools } = require('../src/mcp-tools');
 const { LOCAL_OLLAMA } = require('../src/local-ollama-broker');
 async function fixture(t) {
   const root = fs.mkdtempSync('/private/tmp/reasoning-admission-');
   const profile = path.join(root,'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile,'settings.json'), JSON.stringify({ defaultProvider:'fixture', defaultModel:'fixture' }));
-  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir:path.join(root,'data'), sourceProfile:profile, allowFixtureWorker:true, executable:path.join(__dirname,'fixtures/fake-pi.cjs') }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'host', dataDir:path.join(root,'data'), sourceProfile:profile, allowFixtureWorker:true, executable:path.join(__dirname,'fixtures/host-worker.cjs') }).initialize();
   bridge.config.provider = 'ollama'; bridge.config.model = LOCAL_OLLAMA.model;
   t.after(async()=>{await bridge.shutdown();fs.rmSync(root,{recursive:true,force:true});});
   const task = bridge.tasks.get(bridge.createTask('bounded inference',{reasoningOnly:true}).id);

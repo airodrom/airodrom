@@ -23,7 +23,7 @@ async function screen(taskOverrides = {}) {
     AirodromBranding: require('../src/branding'),
     document: { getElementById: id => { assert(elements[id], `missing element ${id}`); return elements[id]; }, createElement: () => new Element(), createTextNode: text => ({ textContent: text }), addEventListener() {} },
     window: { location: { hash: '', pathname: '/', search: '' }, addEventListener() {} },
-    sessionStorage: { getItem: key => key === 'piBridgeToken' ? 'a'.repeat(64) : current.id, setItem() {} },
+    sessionStorage: { getItem: key => key === 'airodromToken' ? 'a'.repeat(64) : current.id, setItem() {} },
     URLSearchParams, AbortController, setTimeout: () => 1, clearTimeout() {}, setInterval() {},
     fetch: async (route, options) => { requests.push({ route, method: options.method }); return { ok: true, text: async () => JSON.stringify(snapshot) }; }
   });
@@ -68,3 +68,5 @@ test('active turn shows current activity instead of its previous result; complet
  assert.equal(elements['heartbeat-value'].textContent,'Possibly Stalled · 60%');
  assert.match(elements['heartbeat-detail'].textContent,/Process: alive · Lease: held/);
  });
+
+test('historical runtime is visible for provenance and never offers execution or retired smoke controls',async()=>{const {elements,requests}=await screen({runtimeRemoved:true,status:'paused',lastResult:'Historical result'});assert.equal(elements['send-prompt'].disabled,true);assert.equal(elements['resume-task'].hidden,true);assert.match(elements['prompt-hint'].textContent,/Historical runtime removed/);assert.equal(elements['active-chat-operator'],undefined);assert(requests.every(r=>r.method==='GET'));});

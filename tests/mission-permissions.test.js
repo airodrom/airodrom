@@ -54,20 +54,20 @@ test('typed call mappings preserve runtime and network limits and deny unknown o
 });
 test('network and private data restrictions apply independently to otherwise trusted operations',t=>{
  const {workspace}=isolated(t),a=authority(workspace,'development',{permissions:{network:[]}});
- const {authorizeLocalOllamaInference}=require('../src/bridge-controller');
+ const {authorizeLocalOllamaInference}=require('./fixtures/test-bridge.cjs');
  assert.equal(authorizeLocalOllamaInference({}, {mission:{authority:a}}, null, null).allow,false);
  assert.equal(checkAuthority(a,callRequirements({toolName:'personal_memory_get',input:{}},workspace)).allow,false);
 });
 const native={max_attempts:1,fallback_after_attempts:1,privacy:'local_only',billing_classes:['local'],providers:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]};
 test('operator Mission ceiling persists across restart, native work verifies, STOP revokes task authority',async t=>{
- const f=await fixture(t),m=f.create({authority:{level:'development',expiresAt:Date.now()+60000},task_type:'local_files',preferred_agent:'pi',fallback_agents:[],dispatch_policy:native});
+ const f=await fixture(t),m=f.create({authority:{level:'development',expiresAt:Date.now()+60000},task_type:'local_files',preferred_agent:'host',fallback_agents:[],dispatch_policy:native});
  assert.equal(f.bridge.missions.detail(m.id).envelope.authority.level,'development');await f.reopen();
  assert.equal(f.bridge.snapshotTask(f.bridge.tasks.get(m.task_id)).missionAuthority.level,'development');
  f.bridge.missions.dispatch(m.id,{request_id:'authority-dispatch'});await f.settle(m.id);assert.equal(f.calls(),0);assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'beta\n');
  f.bridge.missions.cancel(m.id,{request_id:'authority-stop'});assert.equal(f.bridge.snapshotTask(f.bridge.tasks.get(m.task_id)).missionAuthority.status,'revoked');assert.equal(f.bridge.policy.tasks.has(m.task_id),false);
 });
 test('Read Only native write and unqualified external handoff stop before execution',async t=>{
- const f=await fixture(t),m=f.create({authority:{level:'read_only',expiresAt:Date.now()+60000},task_type:'local_files',preferred_agent:'pi',fallback_agents:[],dispatch_policy:native});
+ const f=await fixture(t),m=f.create({authority:{level:'read_only',expiresAt:Date.now()+60000},task_type:'local_files',preferred_agent:'host',fallback_agents:[],dispatch_policy:native});
  f.bridge.missions.dispatch(m.id,{request_id:'readonly-dispatch'});await f.settle(m.id,'blocked');assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');assert.ok(f.bridge.tasks.get(m.task_id).safetyStop.latched);assert.equal(f.calls(),0);
  const other=f.create({objective:'Separate explicit handoff',authority:{level:'development',expiresAt:Date.now()+60000},preferred_agent:'codex'});assert.throws(()=>f.bridge.codexAdapter.startTask(other.id,'authority-handoff'),/qualified/);
 });

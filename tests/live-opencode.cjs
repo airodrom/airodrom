@@ -12,7 +12,7 @@ test('LIVE OpenCode read-only, one-file edit, artifact return, registered verifi
  assert.equal((await a.readiness()).version,'2.0.20');assert.equal((await a.readiness()).auth_state,'local_not_required');
  const read=await a.execute({workspace:f.repo,files:['fixture.txt'],objective:'Read fixture.txt and return JSON with summary equal to its trimmed content, changed_files:[],tests:[],artifacts:[],limitations:[]',timeoutMs:90000});
  assert.equal(read.result.summary,'alpha');assert.equal(read.changes.length,0);
- const m=f.create({preferred_agent:undefined,manifest:manifest(f.repo)});
+ const m=f.create({preferred_agent:undefined,manifest:manifest(f.repo),objective:'In fixture.txt use the edit tool to replace only the literal text alpha with beta. Preserve the existing single LF byte exactly. Do not add or remove newline bytes. Return the exact result_contract JSON. The Airodrom host runs tests independently; do not invoke tests or shell tools.'});
  f.bridge.missions.dispatch(m.id,{request_id:'live-opencode-default-fixture'});
  const deadline=Date.now()+120000;let done;
  while(Date.now()<deadline){await f.bridge.missions.tick();done=f.bridge.missions.detail(m.id);if(['awaiting_acceptance','needs_rework','blocked'].includes(done.state))break;await new Promise(r=>setTimeout(r,100));}

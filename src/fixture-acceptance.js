@@ -33,12 +33,12 @@ class FixtureAcceptance{
   if(this.store.decisions(id).some(d=>d.state==='waiting_for_operator'))return deny('waiting_decision');
   if(this.bridge.policy.list().some(p=>p.status==='pending'&&this.store.missionForTask(p.taskId)?.id===id))return deny('pending_approval');
   const v=this.db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id);
-  if(!v||v.result!=='passed'||v.checker!=='pi:typed-capabilities'||v.revision!==m.revision)return deny('independent_verification_required');
+  if(!v||v.result!=='passed'||v.checker!=='airodrom:host-verifier'||v.revision!==m.revision)return deny('independent_verification_required');
   const run=this.store.run(v.run_id),checks=JSON.parse(v.evidence);
   if(!require('./execution-evidence').runSatisfied(run))return deny('native_tool_required');
   if(!run||run.mission_id!==id||run.task_id!==m.task_id||run.state!=='completed'||!run.termination_verified)return deny('run_correlation');
   if(m.envelope.criteria.some(c=>!checks.some(x=>x.id===c.id&&x.status==='passed'))||checks.some(c=>c.status!=='passed'))return deny('missing_or_failed_checker');
-  this.bridge.missions.accept(id,{request_id:`fixture-accept:${v.id}`,verification_id:v.id,decision:'accept',rationale:'Immutable isolated fixture policy; all independent Pi checkers passed'});
+  this.bridge.missions.accept(id,{request_id:`fixture-accept:${v.id}`,verification_id:v.id,decision:'accept',rationale:'Immutable isolated fixture policy; all independent Airodrom host checkers passed'});
   this.store.event('fixture.auto_acceptance.completed',id,{verification_id:v.id,run_id:v.run_id});return{accepted:true};
  });}
  reconcile(){for(const {id} of this.db.prepare("SELECT id FROM cp_missions WHERE state='awaiting_acceptance'").all())if(this.store.getMission(id).envelope.fixture_auto_acceptance?.authorized)this.attempt(id);}

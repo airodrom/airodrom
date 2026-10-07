@@ -16,10 +16,10 @@ const TRUSTED_WORKSPACE_PATHS = [
   'src/capability-broker.js',
   'src/active-chat-mission.js',
   'src/mission-permissions.js', 'src/safety-policy.js', 'src/mission-authority.js', 'src/mission-coordinator.js',
-  'src/worker-sandbox.js', 'src/sandbox-runner.js', 'src/mission-provider.js', 'src/bridge-controller.js',
+  'src/sandbox-policy.js', 'src/sandbox-runner.js', 'src/mission-provider.js', 'src/bridge-controller.js',
   'src/control-server.js', 'src/config.js', 'src/safe-diagnostics.js',
-  'src/safety-extension.mjs', 'src/rpc-supervisor.js', 'src/mission-supervisor.js',
-  'src/mcp-tools.js', 'src/chatgpt-events.js', 'src/chatgpt-event-extension.mjs',
+  'src/host-worker-adapter.js', 'src/mission-supervisor.js',
+  'src/mcp-tools.js', 'src/chatgpt-events.js',
   'src/web-reader.js', 'src/memory-store.js', 'src/task-session-model.js',
   'scripts/run.cjs', 'scripts/macos', 'macos', 'package.json', 'package-lock.json',
   'config/safe-autonomy-manifest.json', 'wire.log'
@@ -27,7 +27,7 @@ const TRUSTED_WORKSPACE_PATHS = [
 const SECRET_COMPONENT_PATTERN = String.raw`(^|/)(?:\.git|\.pi|\.codex|\.bridge|\.ssh|\.aws|\.gnupg|\.config|\.npmrc|\.netrc|\.pypirc|\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|auth\.json|id_(?:rsa|ed25519|ecdsa)|[^/]+\.(?:pem|key|p12|pfx))(/|$)`;
 const PROBE_OUTPUT_LIMIT = 4096;
 const FORBIDDEN_RUNTIME_SELECTION_ENV = Object.freeze(['NODE_OPTIONS', 'OPENSSL_CONF', 'OPENSSL_CONF_INCLUDE', 'OPENSSL_MODULES', 'OPENSSL_ENGINES']);
-const TRUSTED_DEV_MODE_ENV = 'PI_TRUSTED_DEV_MODE';
+const TRUSTED_DEV_MODE_ENV = 'AIRODROM_TRUSTED_DEV_MODE';
 
 function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 function sbplPath(value) {
@@ -91,7 +91,7 @@ function assertProbeSuccess(diagnostics, prefix, allDiagnostics = {}) {
 }
 
 function createPreflightCanaries(parent = os.tmpdir()) {
-  const root = fs.mkdtempSync(path.join(parent, 'pi-bridge-sandbox-canary-'));
+  const root = fs.mkdtempSync(path.join(parent, 'airodrom-sandbox-canary-'));
   fs.chmodSync(root, 0o700);
   const readFile = path.join(root, 'read.canary');
   const writeFile = path.join(root, 'write.canary');
@@ -253,9 +253,9 @@ function verifyRuntimeLibraries(items) {
   return verified;
 }
 
-// Provider-runtime pins must not vary with the process locale or ICU data.
+// Host module-integrity pins must not vary with the process locale or ICU data.
 // The manifest format orders path names by their UTF-8 bytes.
-function compareProviderRuntimeNames(left, right) {
+function comparePathNames(left, right) {
   return Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'));
 }
 
@@ -264,7 +264,7 @@ function sha256Tree(root, label = 'runtime') {
   if (!fs.statSync(canonicalRoot).isDirectory()) throw new Error(`Pinned ${label} root is not a directory`);
   const digest = crypto.createHash('sha256');
   const walk = (directory, relative = '') => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => compareProviderRuntimeNames(a.name, b.name))) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => comparePathNames(a.name, b.name))) {
       const child = path.join(directory, entry.name);
       const name = relative ? `${relative}/${entry.name}` : entry.name;
       if (entry.isSymbolicLink()) throw new Error(`Unpinned symbolic link in ${label}: ${name}`);
@@ -278,25 +278,6 @@ function sha256Tree(root, label = 'runtime') {
   };
   walk(canonicalRoot);
   return { root: canonicalRoot, sha256: digest.digest('hex') };
-}
-
-function verifyProviderRuntime(providerRuntime) {
-  if (!providerRuntime || !path.isAbsolute(providerRuntime.entrypoint) ||
-      !Array.isArray(providerRuntime.roots) || providerRuntime.roots.length < 1) {
-    throw new Error('Pinned local Ollama provider runtime is required');
-  }
-  const roots = providerRuntime.roots.map(item => {
-    if (!item || !path.isAbsolute(item.path) || !/^[a-f0-9]{64}$/.test(item.sha256)) throw new Error('Invalid pinned provider runtime root');
-    const verified = sha256Tree(item.path, 'provider runtime');
-    if (verified.sha256 !== item.sha256) throw new Error(`Pinned provider runtime hash mismatch: ${item.path}`);
-    return verified.root;
-  });
-  const entrypoint = real(providerRuntime.entrypoint);
-  if (!fs.statSync(entrypoint).isFile() || !roots.some(root => entrypoint.startsWith(`${root}${path.sep}`))) {
-    throw new Error('Local Ollama provider entrypoint is outside the pinned runtime');
-  }
-  if (providerRuntime.entrypointSha256 !== sha256(entrypoint)) throw new Error('Pinned local Ollama provider entrypoint hash mismatch');
-  return { roots, entrypoint, entrypointUrl: pathToFileURL(entrypoint).href };
 }
 
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
@@ -407,8 +388,8 @@ function staticModuleSpecifiers(file) {
   return specifiers;
 }
 
-function verifyWorkerRuntimeClosure(worker) {
-  const closure = worker?.runtimeClosure;
+function verifyModuleClosure(modulePins) {
+  const closure = modulePins?.runtimeClosure;
   if (!closure || !Array.isArray(closure.roots) || closure.roots.length < 1 || !Array.isArray(closure.entrypoints) || closure.entrypoints.length < 1) {
     throw new Error('Pinned worker runtime dependency closure is required');
   }
@@ -439,85 +420,13 @@ function verifyWorkerRuntimeClosure(worker) {
   return { roots: roots.map(root => root.root), entrypoints: [...new Set(closure.entrypoints.map(entry => `${entry.package}/${entry.path}`))], files: [...visited] };
 }
 
-function verifyWorkerPackage(worker) {
-  if (!worker || !path.isAbsolute(worker.bundleRoot) || !Array.isArray(worker.files) || !worker.files.length) throw new Error('Pinned Pi runtime bundle is required');
-  const bundleRoot = real(worker.bundleRoot);
-  if (!fs.statSync(bundleRoot).isDirectory()) throw new Error('Pinned Pi runtime bundle is not a directory');
-  const expected = new Map();
-  for (const item of worker.files) {
-    if (!item || typeof item.path !== 'string' || path.isAbsolute(item.path) || item.path.split(/[\\/]/).some(part => !part || part === '.' || part === '..') || !/^[a-f0-9]{64}$/.test(item.sha256)) throw new Error('Invalid pinned Pi runtime file');
-    const lexical = path.resolve(bundleRoot, item.path);
-    if (!lexical.startsWith(`${bundleRoot}${path.sep}`) || expected.has(item.path)) throw new Error('Pinned Pi runtime file escapes or duplicates the bundle');
-    let cursor = lexical;
-    while (cursor !== bundleRoot) {
-      if (fs.lstatSync(cursor).isSymbolicLink()) throw new Error(`Pinned Pi runtime traverses a symbolic link: ${item.path}`);
-      cursor = path.dirname(cursor);
-    }
-    const stat = fs.lstatSync(lexical);
-    if (!stat.isFile() || stat.isSymbolicLink() || sha256(lexical) !== item.sha256) throw new Error(`Pinned Pi runtime verification failed: ${item.path}`);
-    expected.set(item.path, item.sha256);
-  }
-  const actual = [];
-  const walk = (dir, relative = '') => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const name = relative ? `${relative}/${entry.name}` : entry.name;
-      const file = path.join(dir, entry.name);
-      if (entry.isSymbolicLink()) throw new Error(`Unpinned symbolic link in Pi runtime bundle: ${name}`);
-      if (entry.isDirectory()) walk(file, name);
-      else if (entry.isFile()) actual.push(name);
-      else throw new Error(`Unsupported file in Pi runtime bundle: ${name}`);
-    }
-  };
-  walk(bundleRoot);
-  if (actual.length !== expected.size || actual.some(item => !expected.has(item))) throw new Error('Pi runtime bundle contents differ from the pinned file inventory');
-  if (!worker.packageMetadata || !path.isAbsolute(worker.packageMetadata.path) || !/^[a-f0-9]{64}$/.test(worker.packageMetadata.sha256)) throw new Error('Pinned Pi package metadata is required');
-  const packageMetadata = real(worker.packageMetadata.path);
-  if (!fs.statSync(packageMetadata).isFile() || sha256(packageMetadata) !== worker.packageMetadata.sha256) throw new Error('Pinned Pi package metadata verification failed');
-  if (typeof worker.entrypoint !== 'string' || !expected.has(worker.entrypoint) || expected.get(worker.entrypoint) !== worker.entrypointSha256) throw new Error('Pi entrypoint is not covered by the pinned bundle inventory');
-  return { bundleRoot, packageMetadata };
-}
-
-const PI_BUILTIN_THEME_FILENAMES = Object.freeze(['dark.json', 'light.json']);
-
-// Pi initializes its terminal theme before entering RPC mode. The bundled
-// loader resolves these two exact files relative to the verified bundle; do
-// not turn the package directory or its theme directory into a read root.
-function verifyBuiltinThemeAssets(worker, pinnedPi) {
-  if (!worker || !Array.isArray(worker.builtinThemeAssets) || worker.builtinThemeAssets.length !== PI_BUILTIN_THEME_FILENAMES.length) {
-    throw new Error('Pinned Pi built-in theme assets are required');
-  }
-  const bundleRoot = pinnedPi?.bundleRoot;
-  const distRoot = typeof bundleRoot === 'string' ? path.dirname(bundleRoot) : null;
-  if (!distRoot || path.basename(bundleRoot) !== 'bundle' || path.basename(distRoot) !== 'dist') {
-    throw new Error('Pinned Pi bundle has an unsupported layout for built-in themes');
-  }
-  const themeRoot = path.join(path.dirname(distRoot), 'dist', 'modes', 'interactive', 'theme');
-  const expected = new Set(PI_BUILTIN_THEME_FILENAMES.map(name => path.join(themeRoot, name)));
-  const verified = [];
-  for (const item of worker.builtinThemeAssets) {
-    if (item?.aliases !== undefined && (!Array.isArray(item.aliases) || item.aliases.length !== 0)) {
-      throw new Error('Pi built-in theme assets cannot use aliases');
-    }
-    if (!item || typeof item.path !== 'string' || !expected.delete(path.resolve(item.path))) {
-      throw new Error('Pi built-in theme asset is not an approved bundled theme');
-    }
-    const asset = verifyPinnedRuntimeFile(item, 'Pi built-in theme asset');
-    if (asset.paths.length !== 1 || asset.canonical !== path.resolve(item.path)) {
-      throw new Error('Pi built-in theme asset must be a canonical regular file');
-    }
-    verified.push(asset.canonical);
-  }
-  if (expected.size) throw new Error('Pinned Pi built-in theme asset is missing');
-  return { paths: verified.sort((left, right) => left.localeCompare(right)) };
-}
-
 function verifyManifest(root, manifest, jobName) {
   const job = manifest.jobs.find(entry => entry.name === jobName);
   if (!job) throw new Error(`Sandbox job is not approved: ${jobName}`);
   if (!['test', 'build'].includes(job.kind) || !Array.isArray(job.inputs) || !Array.isArray(job.steps) || job.steps.length < 1 || job.steps.length > 64) throw new Error('Invalid sandbox job');
+  if (job.requiresProviderRuntime === true || job.requiresWorkerRuntimeClosure === true || manifest.worker?.bundleRoot) throw Error('Removed worker runtime dependency in sandbox policy; register a fresh host-only job');
   if (job.requiresProviderRuntime !== undefined && typeof job.requiresProviderRuntime !== 'boolean') throw new Error('Sandbox provider runtime option is invalid');
   if (job.requiresWorkerRuntimeClosure !== undefined && typeof job.requiresWorkerRuntimeClosure !== 'boolean') throw new Error('Sandbox worker runtime option is invalid');
-  if (job.requiresWorkerRuntimeClosure === true && (jobName !== 'safe-autonomy-regression' || job.kind !== 'test')) throw new Error('Sandbox worker runtime capability is limited to the canonical regression job');
   if (job.allowPinnedChildProcesses !== undefined && typeof job.allowPinnedChildProcesses !== 'boolean') throw new Error('Sandbox child-process option is invalid');
   if (job.allowPinnedChildProcesses === true && (jobName !== 'safe-autonomy-regression' || job.kind !== 'test')) throw new Error('Sandbox child-process capability is limited to the canonical regression job');
   verifyRuntimeLibraries(manifest.runtimeLibraries);
@@ -689,7 +598,7 @@ async function main(){
 main().catch(e=>{process.stderr.write(e.message);process.exitCode=41});
 `;
 
-// Uses the same enforced worker policy as active Pi. It proves that the
+// Uses the same enforced worker policy as bounded execution. It proves that the
 // worker cannot read the currently assigned fixture directly, cannot create
 // a subprocess, can use only the broker socket, and cannot open direct TCP.
 const ACTIVE_CHAT_PREFLIGHT = LEVEL1_PREFLIGHT
@@ -697,179 +606,4 @@ const ACTIVE_CHAT_PREFLIGHT = LEVEL1_PREFLIGHT
   .replaceAll('Level 1 fixture', 'Active Chat fixture')
   .replaceAll('direct fixture read', 'direct Active Chat fixture read');
 
-class WorkerSandbox {
-  constructor({ repoRoot, dataDir, manifestPath = MANIFEST_PATH, sandboxExec = '/usr/bin/sandbox-exec', trustedDeveloperMode = false, trustedDeveloperRoot = path.join(os.homedir(), 'code') }) {
-    this.repoRoot = real(repoRoot); this.dataDir = path.resolve(dataDir); this.manifestPath = manifestPath; this.sandboxExec = sandboxExec;
-    this.trustedDeveloperMode = trustedDeveloperMode === true; this.trustedDeveloperRoot = path.resolve(trustedDeveloperRoot);
-  }
-
-  /**
-   * Isolated fake-pi harness for unit/lifecycle tests only. Never used by the
-   * managed daemon path; refuses anything other than tests/fixtures/fake-pi.cjs.
-   */
-  prepareFixture(task, { executable, socketPath }) {
-    const resolved = real(executable);
-    const expected = real(path.join(this.repoRoot, 'tests/fixtures/fake-pi.cjs'));
-    if (resolved !== expected) throw new Error('Fixture worker requires tests/fixtures/fake-pi.cjs');
-    const workspace = real(task.workspace);
-    const sessionDir = real(task.sessionDir);
-    const workerHome = path.join(sessionDir, 'home');
-    const tempDir = path.join(sessionDir, 'tmp');
-    fs.mkdirSync(workerHome, { recursive: true, mode: 0o700 });
-    fs.mkdirSync(tempDir, { recursive: true, mode: 0o700 });
-    const reviewEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('BRIDGE_REVIEW_')));
-    const nodeDir = path.dirname(real(process.execPath));
-    return {
-      sandboxExec: null,
-      profilePath: null,
-      cwd: workspace,
-      preflightDiagnostics: { fixture: true },
-      trustedDeveloperMode: false,
-      env: {
-        ...reviewEnv,
-        HOME: workerHome,
-        PATH: `${nodeDir}:/usr/bin:/bin`,
-        TMPDIR: tempDir,
-        LANG: 'C',
-        TERM: 'dumb',
-        BRIDGE_POLICY_SOCKET: socketPath,
-        BRIDGE_TASK_TOKEN: task.workerToken
-      }
-    };
-  }
-
-  prepare(task, { executable, socketPath }) {
-    if (process.platform !== 'darwin') throw new Error('OS worker sandbox is unavailable on this platform');
-    const manifest = readManifest(this.manifestPath);
-    const pins = Object.fromEntries(manifest.executables.map(item => [item.id, verifyExecutable(item)]));
-    const runtimeLibraries = verifyRuntimeLibraries(manifest.runtimeLibraries);
-    const runtimeConfigs = verifyRuntimeConfigInputs(manifest.runtimeConfig);
-    let runtimeReadFiles = [...runtimeLibraries, ...runtimeConfigs].flatMap(input => input.paths);
-    const sandboxPin = manifest.executables.find(item => item.id === 'sandbox-exec');
-    if (!sandboxPin || pins['sandbox-exec'] !== real(this.sandboxExec)) throw new Error('Pinned macOS sandbox executable mismatch');
-    const nodePin = manifest.executables.find(item => item.id === 'node');
-    if (!nodePin || pins.node !== real(process.execPath)) throw new Error('Pinned Node executable mismatch');
-    const envPin = manifest.executables.find(item => item.id === 'env');
-    if (!envPin || pins.env !== real('/usr/bin/env')) throw new Error('Pinned env executable mismatch');
-    const piPin = manifest.worker;
-    const pinnedPi = verifyWorkerPackage(piPin);
-    const builtinThemeAssets = verifyBuiltinThemeAssets(piPin, pinnedPi);
-    const workerRuntime = verifyWorkerRuntimeClosure(piPin);
-    const providerRuntime = task.localOllamaTransport === true ? verifyProviderRuntime(manifest.providerRuntime) : null;
-    if (real(executable) !== real(piPin.launcher) || sha256(executable) !== piPin.launcherSha256 || path.dirname(real(executable)) !== pinnedPi.bundleRoot || piPin.entrypointSha256 !== sha256(path.join(pinnedPi.bundleRoot, piPin.entrypoint))) throw new Error('Pinned Pi worker executable mismatch');
-    const workspace = real(task.workspace), sessionDir = real(task.sessionDir);
-    if (workspace === this.repoRoot && task.mission?.requireGrant) throw new Error('Grant-bound Pi workers must use a disposable task workspace');
-    const restrictedProfile = task.mission?.capabilityProfile === LEVEL1_PROFILE_ID || task.mission?.capabilityProfile === ACTIVE_CHAT_PROFILE_ID;
-    const trustedDeveloperMode = this.trustedDeveloperMode && !restrictedProfile && isApprovedTrustedDeveloperWorkspace(workspace, this.trustedDeveloperRoot);
-    const workerHome = path.join(sessionDir, 'home');
-    const tempDir = path.join(sessionDir, 'tmp');
-    fs.mkdirSync(workerHome, { recursive: true, mode: 0o700 });
-    fs.mkdirSync(tempDir, { recursive: true, mode: 0o700 });
-    const profilePath = path.join(this.dataDir, 'sandboxes', `${task.id}-${crypto.randomUUID()}.sb`);
-    const preflightProfilePath = `${profilePath}.preflight`;
-    fs.mkdirSync(path.dirname(profilePath), { recursive: true, mode: 0o700 });
-    const runtimeRoot = real(this.dataDir);
-    const piRoot = pinnedPi.bundleRoot;
-    const piPackageRoot = real(path.dirname(pinnedPi.packageMetadata));
-    const piPackage = JSON.parse(fs.readFileSync(pinnedPi.packageMetadata, 'utf8'));
-    if (piPackage.name !== '@earendil-works/pi-coding-agent' || piPackage.version !== '1.0.2') throw new Error('Trusted developer mode requires pinned Pi 1.0.2');
-    const nodeRoot = path.dirname(real(process.execPath));
-    // Hardened workers receive only the static extension import closure. The
-    // explicit development mode instead receives the bridge source tree and
-    // the verified Pi package tree so normal package-owned startup assets and
-    // local extension dependencies cannot fail one file at a time.
-    runtimeReadFiles = [...runtimeReadFiles, pinnedPi.packageMetadata, ...builtinThemeAssets.paths];
-    const bridgeRuntimeReads = trustedDeveloperMode ? [this.repoRoot, piPackageRoot] : [
-      path.join(this.repoRoot, 'src/safety-extension.mjs'), path.join(this.repoRoot, 'src/chatgpt-event-extension.mjs'), path.join(this.repoRoot, 'src/chatgpt-events.js')
-    ];
-    const developmentToolReads = trustedDeveloperMode ? ['/opt/homebrew', '/usr/local', '/Library/Developer'] : [];
-    const readRoots = [workspace, sessionDir, workerHome, piRoot, ...bridgeRuntimeReads,
-      nodeRoot, ...workerRuntime.roots, ...(providerRuntime?.roots || []), ...developmentToolReads, '/System', '/usr/lib', '/usr/share', '/usr/bin/env', '/bin', '/sbin', '/Library/Apple', '/dev'];
-    const writeRoots = [workspace, sessionDir];
-    const protectedRead = [path.join(os.homedir(), '.pi'), path.join(os.homedir(), '.ssh'), path.join(os.homedir(), '.aws'), path.join(os.homedir(), '.gnupg'), path.join(os.homedir(), '.config'), path.join(os.homedir(), '.npmrc'), path.join(os.homedir(), '.netrc'), path.join(os.homedir(), '.pypirc'), path.join(os.homedir(), 'Library/Keychains'), path.join(this.repoRoot, 'wire.log')];
-    const protectedWrite = [...(trustedDeveloperMode ? [] : TRUSTED_WORKSPACE_PATHS.map(item => path.join(this.repoRoot, item))), path.join(os.homedir(), '.pi'), path.join(os.homedir(), '.ssh'), path.join(os.homedir(), '.aws'), path.join(os.homedir(), '.gnupg'), path.join(os.homedir(), '.config'), path.join(os.homedir(), '.npmrc'), path.join(os.homedir(), '.netrc'), path.join(os.homedir(), '.pypirc'), path.join(os.homedir(), 'Library/Keychains')];
-    // The only carve-outs under private bridge runtime are the selected task's
-    // workspace and session directory. A bridge-root workspace does not exempt
-    // its nested runtime directory.
-    const runtimeDeny = makeRuntimeDeny({ runtimeRoot, sessionDir, workspace });
-    const canaries = createPreflightCanaries();
-    const writableCanary = createWritableSessionCanary(sessionDir);
-    const level1WritableCanary = restrictedProfile ? createWritableSessionCanary(sessionDir) : null;
-    const preflightDiagnostics = {};
-    try {
-      const existingProtectedRead = protectedRead.filter(item => fs.existsSync(item));
-      const existingProtectedWrite = protectedWrite.filter(item => fs.existsSync(item));
-      const denialCanaries = verifyPreflightCanaries(canaries);
-      const protectedCanaryRead = [...existingProtectedRead, denialCanaries.root];
-      const protectedCanaryWrite = [...existingProtectedWrite, denialCanaries.root];
-      const workerProfile = `${makeWorkerProfile({ task, workspace, sessionDir, readRoots, writeRoots, exactReadFiles: runtimeReadFiles, protectedRead: protectedCanaryRead, protectedWrite: protectedCanaryWrite, protectedReadPatterns: [SECRET_COMPONENT_PATTERN], protectedWritePatterns: [SECRET_COMPONENT_PATTERN], socketPath, trustedDeveloperMode, executable: real(executable), nodePath: pins.node, envPath: pins.env })}${runtimeDeny}\n`;
-      const preflightProfile = `${makeProfile({ readRoots, writeRoots, exactReadFiles: runtimeReadFiles, protectedRead: protectedCanaryRead, protectedWrite: protectedCanaryWrite, protectedReadPatterns: [SECRET_COMPONENT_PATTERN], protectedWritePatterns: [SECRET_COMPONENT_PATTERN], socketPath, allowLoopbackNetwork: trustedDeveloperMode })}${runtimeDeny}\n`;
-      assertCanaryCoverage(workerProfile, denialCanaries);
-      assertCanaryCoverage(preflightProfile, denialCanaries);
-      fs.writeFileSync(profilePath, workerProfile, { mode: 0o600, flag: 'wx' });
-      fs.writeFileSync(preflightProfilePath, preflightProfile, { mode: 0o600, flag: 'wx' });
-      const probeConfig = {
-        writableCanary, socketPath, allowLoopback: trustedDeveloperMode,
-        denialCanaries
-      };
-      preflightDiagnostics.level1 = { stage: 'level1-seatbelt-probes', childStatus: null, signal: null, errorCode: null, timedOut: false, nodeReachedJavaScript: false, expectedMarker: 'level1-seatbelt-probes-passed', markerPresent: false, stdout: '', stderr: '', success: false, skipped: true, reason: 'not attempted: canonical sandbox probe did not complete' };
-      preflightDiagnostics.activeChat = { stage: 'active-chat-seatbelt-probes', childStatus: null, signal: null, errorCode: null, timedOut: false, nodeReachedJavaScript: false, expectedMarker: 'active-chat-seatbelt-probes-passed', markerPresent: false, stdout: '', stderr: '', success: false, skipped: true, reason: 'not attempted: canonical sandbox probe did not complete' };
-      const preflightEnv = sanitizedRuntimeEnv({ PATH: trustedDeveloperMode ? `${nodeRoot}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin` : `${nodeRoot}:/usr/bin:/bin`, HOME: workerHome, TMPDIR: tempDir, LANG: 'C' });
-      const canonicalChild = spawnSync(this.sandboxExec, ['-f', preflightProfilePath, process.execPath, '-e', PREFLIGHT, JSON.stringify(probeConfig)], {
-        cwd: sessionDir, env: preflightEnv, encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024
-      });
-      preflightDiagnostics.canonical = inspectProbe('canonical-seatbelt-probes', canonicalChild, 'seatbelt-probes-passed');
-      assertProbeSuccess(preflightDiagnostics.canonical, 'Pi OS sandbox verification failed closed', preflightDiagnostics);
-      if (restrictedProfile) {
-        const activeChat = task.mission?.capabilityProfile === ACTIVE_CHAT_PROFILE_ID;
-        const activePath = activeChat ? task.activeChat?.phase === 'task_a_running' ? task.mission.scope.readOnlyPaths[0] : task.activeChat?.phase === 'task_b_running' ? task.mission.scope.readOnlyPaths[1] : null : task.mission.readOnlyPaths[0];
-        const stage = activeChat ? 'active-chat-seatbelt-probes' : 'level1-seatbelt-probes';
-        const marker = activeChat ? 'active-chat-seatbelt-probes-passed' : 'level1-seatbelt-probes-passed';
-        const profileName = activeChat ? 'Active Chat' : 'Level 1';
-        const diagnosticsKey = activeChat ? 'activeChat' : 'level1';
-        const fixturePath = typeof activePath === 'string' ? path.join(workspace, activePath) : null;
-        let fixture;
-        try { fixture = fs.lstatSync(fixturePath); } catch (error) {
-          preflightDiagnostics[diagnosticsKey] = { stage, childStatus: null, signal: null, errorCode: error.code || null, timedOut: false, nodeReachedJavaScript: false, expectedMarker: marker, markerPresent: false, stdout: '', stderr: '', success: false, skipped: false, reason: `inconclusive: ${profileName} fixture preflight target is unavailable (${error.code || 'unknown error'})` };
-          const failure = new Error(preflightDiagnostics[diagnosticsKey].reason); failure.probeDiagnostics = preflightDiagnostics; throw failure;
-        }
-        if (!fixture.isFile() || fixture.isSymbolicLink()) {
-          preflightDiagnostics[diagnosticsKey] = { stage, childStatus: null, signal: null, errorCode: null, timedOut: false, nodeReachedJavaScript: false, expectedMarker: marker, markerPresent: false, stdout: '', stderr: '', success: false, skipped: false, reason: `inconclusive: ${profileName} fixture preflight target is invalid` };
-          const failure = new Error(preflightDiagnostics[diagnosticsKey].reason); failure.probeDiagnostics = preflightDiagnostics; throw failure;
-        }
-        const level1ProbeConfig = {
-          fixturePath,
-          writableCanary: level1WritableCanary,
-          socketPath,
-          denialCanaries
-        };
-        const level1Child = spawnSync(this.sandboxExec, ['-f', profilePath, process.execPath, '-e', activeChat ? ACTIVE_CHAT_PREFLIGHT : LEVEL1_PREFLIGHT, JSON.stringify(level1ProbeConfig)], {
-          cwd: sessionDir, env: preflightEnv, encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024
-        });
-        preflightDiagnostics[diagnosticsKey] = inspectProbe(stage, level1Child, marker);
-        assertProbeSuccess(preflightDiagnostics[diagnosticsKey], `${profileName} read-only process sandbox verification failed closed`, preflightDiagnostics);
-      } else {
-        preflightDiagnostics.level1 = { stage: 'level1-seatbelt-probes', childStatus: null, signal: null, errorCode: null, timedOut: false, nodeReachedJavaScript: false, expectedMarker: 'level1-seatbelt-probes-passed', markerPresent: false, stdout: '', stderr: '', success: false, skipped: true, reason: 'not attempted: task is not a Level 1 mission' };
-        preflightDiagnostics.activeChat = { stage: 'active-chat-seatbelt-probes', childStatus: null, signal: null, errorCode: null, timedOut: false, nodeReachedJavaScript: false, expectedMarker: 'active-chat-seatbelt-probes-passed', markerPresent: false, stdout: '', stderr: '', success: false, skipped: true, reason: 'not attempted: task is not an Active Chat mission' };
-      }
-    } finally {
-      for (const file of [preflightProfilePath]) try { fs.unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      for (const file of [writableCanary, level1WritableCanary]) if (file) try { fs.unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      fs.rmSync(canaries.root, { recursive: true, force: true });
-    }
-    return {
-      sandboxExec: this.sandboxExec,
-      profilePath,
-      cwd: workspace,
-      preflightDiagnostics,
-      trustedDeveloperMode,
-      env: sanitizedRuntimeEnv({ HOME: workerHome, PATH: trustedDeveloperMode ? `${nodeRoot}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin` : `${nodeRoot}:/usr/bin:/bin`, TMPDIR: tempDir, LANG: 'C', TERM: 'dumb', PI_CODING_AGENT_DIR: task.workerProfile, PI_OFFLINE: '1', PI_TELEMETRY: '0', BRIDGE_POLICY_SOCKET: socketPath, BRIDGE_TASK_TOKEN: task.workerToken,
-        ...(trustedDeveloperMode ? { BRIDGE_TRUSTED_DEV_MODE: '1', npm_config_cache: path.join(tempDir, 'npm-cache') } : {}),
-        ...(providerRuntime ? { BRIDGE_LOCAL_OLLAMA_TRANSPORT: '1', BRIDGE_PI_OPENAI_COMPLETIONS_MODULE: providerRuntime.entrypointUrl } : {}),
-        ...(task.mission?.capabilityProfile === 'safe-autonomy-level1-read-only-v1' ? { BRIDGE_CAPABILITY_PROFILE: 'safe-autonomy-level1-read-only-v1' } : {}),
-        ...(task.mission?.capabilityProfile === ACTIVE_CHAT_PROFILE_ID ? { BRIDGE_CAPABILITY_PROFILE: ACTIVE_CHAT_PROFILE_ID } : {}) })
-    };
-  }
-}
-
-module.exports = { WorkerSandbox, MANIFEST_PATH, TRUSTED_WORKSPACE_PATHS, SECRET_COMPONENT_PATTERN, PROBE_OUTPUT_LIMIT, FORBIDDEN_RUNTIME_SELECTION_ENV, TRUSTED_DEV_MODE_ENV, isTrustedDeveloperModeEnabled, isApprovedTrustedDeveloperWorkspace, readManifest, verifyManifest, verifyExecutable, verifyRuntimeLibrary, verifyRuntimeLibraries, verifyOpenSslConfig, verifyRuntimeConfigInputs, sanitizedRuntimeEnv, verifyWorkerPackage, verifyBuiltinThemeAssets, verifyWorkerRuntimeClosure, resolvePinnedRuntimeImport, verifyProviderRuntime, sha256Tree, compareProviderRuntimeNames, makeProfile, makeWorkerProfile, makeRuntimeDeny, runtimeDenyMatches, normalizeProbeText, inspectProbe, assertProbeSuccess, createPreflightCanaries, verifyPreflightCanaries, createWritableSessionCanary, assertCanaryCoverage, PREFLIGHT, LEVEL1_PREFLIGHT, ACTIVE_CHAT_PREFLIGHT };
+module.exports = { MANIFEST_PATH, TRUSTED_WORKSPACE_PATHS, SECRET_COMPONENT_PATTERN, PROBE_OUTPUT_LIMIT, FORBIDDEN_RUNTIME_SELECTION_ENV, TRUSTED_DEV_MODE_ENV, isTrustedDeveloperModeEnabled, isApprovedTrustedDeveloperWorkspace, readManifest, verifyManifest, verifyExecutable, verifyRuntimeLibrary, verifyRuntimeLibraries, verifyOpenSslConfig, verifyRuntimeConfigInputs, sanitizedRuntimeEnv, verifyModuleClosure, resolvePinnedRuntimeImport, sha256Tree, comparePathNames, makeProfile, makeWorkerProfile, makeRuntimeDeny, runtimeDenyMatches, normalizeProbeText, inspectProbe, assertProbeSuccess, createPreflightCanaries, verifyPreflightCanaries, createWritableSessionCanary, assertCanaryCoverage, PREFLIGHT, LEVEL1_PREFLIGHT, ACTIVE_CHAT_PREFLIGHT };

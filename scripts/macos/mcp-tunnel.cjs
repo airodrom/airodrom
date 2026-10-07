@@ -79,7 +79,7 @@ function buildPlan(options) {
   const support=path.join(home,'Library/Application Support/Pi Bridge/MCP Tunnel');
   const agent=path.join(home,'Library/LaunchAgents',LABEL+'.plist');
   const configPath=path.join(support,'profile.yaml');
-  const environment={HOME:home,PATH:[path.dirname(node),'/usr/bin','/bin','/usr/sbin','/sbin'].join(':'),PI_BRIDGE_DATA_DIR:dataDir};
+  const environment={HOME:home,PATH:[path.dirname(node),'/usr/bin','/bin','/usr/sbin','/sbin'].join(':'),AIRODROM_DATA_DIR:dataDir};
   const config={config_version:1,admin_ui:{open_browser:false},control_plane:{api_key:'file:'+path.join(support,'runtime-api-key'),base_url:'https://api.openai.com',tunnel_id:cp.tunnel_id},health:{listen_addr:'127.0.0.1:0',url_file:path.join(support,'health.url')},log:{file:path.join(support,'tunnel.log'),format:'json',level:'warn'},mcp:{commands:[{channel:'main',command:[node,path.join(root,'src/mcp.js')].map(quote).join(' ')}],stdio_send_initialized_notification:true}};
   const launchAgent={Label:LABEL,ProgramArguments:['/usr/bin/env','-i',...Object.entries(environment).map(([key,value])=>key+'='+value),path.join(support,'bin/tunnel-client'),'run','--config',configPath],EnvironmentVariables:environment,WorkingDirectory:root,RunAtLoad:true,KeepAlive:true,ThrottleInterval:15,ProcessType:'Background',Umask:63,StandardOutPath:'/dev/null',StandardErrorPath:path.join(support,'launcher.stderr.log'),ExitTimeOut:20};
   return {version:1,label:LABEL,home,project:root,sourceDir:source,node,dataDir,support,agent,configPath,assets,config,launchAgent};

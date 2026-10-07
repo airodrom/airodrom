@@ -2,11 +2,11 @@
 
 Capability Broker, SafetyPolicy, immutable scopes and protected approvals authorize execution. Bounded reasoning admission authorizes inference only.
 
-ChatGPT chooses strategy and reviews outcomes; it is not a runtime single point of failure. Pi owns durable operational reconciliation.
+ChatGPT chooses strategy and reviews outcomes; it is not a runtime single point of failure. Airodrom owns durable operational reconciliation.
 
-Pi Control Plane and Pi Worker have separate roles and access. Agents perform work; providers supply inference. Neither model selection nor agent text grants permissions.
+Airodrom Control Plane and its workers have separate roles and access. Agents perform work; providers supply inference. Neither model selection nor agent text grants permissions.
 
-Result Inbox is untrusted evidence. Pi verifies independently; Acceptance precedes Next Action. A historical completed Task or model assertion is insufficient.
+Result Inbox is untrusted evidence. Airodrom verifies independently; Acceptance precedes Next Action. A historical completed Task or model assertion is insufficient.
 
 Slack Decision records operator direction; it never satisfies a protected Approval.
 

@@ -141,7 +141,7 @@ class AgentDispatch {
    if(!a||a.available!==true)reason='agent_unavailable';
    else if(agent==='claude_code'){
     if(p.privacy!=='cloud_allowed')reason='privacy_policy';else if(!p.providers.includes('anthropic_subscription')||!p.billing_classes.includes('subscription'))reason='cost_or_provider_policy';else if(!a.capabilities?.includes('coding')||a.auth_mode!=='subscription')reason='semantic_or_billing_mismatch';
-   }else if(agent==='pi'){
+   }else if(agent==='host'){
     if(p.task_category!=='deterministic_files'||!p.native_actions.length)reason='native_plan_required';else if(!p.providers.includes('local')||!p.billing_classes.includes('local'))reason='cost_or_provider_policy';else if(p.native_actions.some(a=>!m.envelope.allowed_files.includes(a.path)))reason='action_outside_scope';
    }else reason='fallback_adapter_unimplemented';
    if(!reason)return{selected:agent,reason:'immutable_compatible_fallback',skipped};skipped.push({agent,reason});

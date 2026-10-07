@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const Bridge = require('../src/bridge-controller');
+const Bridge = require('./fixtures/test-bridge.cjs');
 const { McpTools, validate } = require('../src/mcp-tools');
 const TaskSessionManager = require('../src/task-session-model');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
@@ -12,7 +12,7 @@ async function isolated(t) {
   const root = fs.mkdtempSync('/private/tmp/native-router-');
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs') }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'host', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/host-worker.cjs') }).initialize();
   let inference = 0;
   bridge.localOllamaBroker.proxy = () => { inference++; throw Error('Ollama unavailable'); };
   bridge.ensureRuntime = async () => { throw Error('Local Ollama inference is unavailable for this task'); };
@@ -52,10 +52,10 @@ test('native broker file, memory and bridge status retain policy, approval and r
   assert.equal(f.bridge.personalMemory.stats().count,0);
   assert.equal((await call('personal_memory_forget', { memoryId: memory.result.candidateId }, 'forget-one')).status, 'failed');
   assert.equal((await call('run_job', { jobName: 'bridge_restart_status' }, 'restart-status')).status, 'completed');
-  const write = await call('project_create', { name: 'Native gated Project', nextAction: 'Inspect fixture', preferredAgents: ['pi'] }, 'write-one');
+  const write = await call('project_create', { name: 'Native gated Project', nextAction: 'Inspect fixture', preferredAgents: ['host'] }, 'write-one');
   assert.equal(write.status, 'approval_required');
   assert.equal(fs.existsSync(path.join(f.task.workspace, 'new.txt')), false);
-  assert.equal((await call('project_create', { name: 'Native gated Project', nextAction: 'Inspect fixture', preferredAgents: ['pi'] }, 'write-one')).duplicate, true);
+  assert.equal((await call('project_create', { name: 'Native gated Project', nextAction: 'Inspect fixture', preferredAgents: ['host'] }, 'write-one')).duplicate, true);
   await assert.rejects(call('write', { path: 'different.txt', content: 'conflict' }, 'write-one'), /conflict/i);
   f.bridge.approve(write.approval.approval_id);
   await f.bridge.resumeApproved(f.bridge.policy.approvals.get(write.approval.approval_id));
@@ -78,7 +78,7 @@ test('true reasoning failure durably waits for Ollama, releases lease, survives 
   assert.equal(recovered.providerWait.reason, 'ollama_unavailable');
   const policyTask = { id: task.id };
   assert.equal(f.bridge.nativeExecution.providerFailure(policyTask, Error('Mission grant does not authorize local inference')), false);
-  assert.equal(f.bridge.nativeExecution.providerFailure(policyTask, Error('Pi exited before the task settled')), false);
+  assert.equal(f.bridge.nativeExecution.providerFailure(policyTask, Error('Worker exited before the task settled')), false);
 });
 
 test('Claude Mission, Decision exact continuation and verification/acceptance bypass unavailable Ollama', async t => {
@@ -162,10 +162,15 @@ test('typed Git, file and status operations bypass Ollama; protected paths remai
   assert.equal(f.inference(), 0);
 });
 
-test('Pi deterministic acceptance settles with unavailable Ollama and no runtime startup', async t => {
+test('Host deterministic acceptance settles with unavailable Ollama and no runtime startup', async t => {
   const f = await isolated(t); f.bridge.config.provider = 'ollama';
-  const task = f.bridge.tasks.get(f.bridge.createTask('native acceptance', { acceptanceMode: 'incomplete_once', acceptanceCriteria: ['runtime:fresh-session-continuation'] }).id);
-  await f.bridge.prompt(task.id, 'Run deterministic acceptance');
+  f.bridge.defaultRuntime = 'opencode';
+  const created = await f.mcp.call('create_task', { description: 'native acceptance', message: 'Run deterministic acceptance', request_id: 'native-acceptance-create', acceptance_mode: 'incomplete_once', acceptance_criterion: 'runtime:fresh-session-continuation' });
+  const task = f.bridge.tasks.get(created.task_id);
+  for (let n=0;n<100 && f.bridge.leases.size;n++) await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(task.executionAgent,'host');
+  assert.equal(task.mission.runtimeEvidence.initial.outcome,'incomplete');
+  assert.throws(()=>f.bridge.createTask('wrong runtime', { executionAgent:'opencode', acceptanceMode:'incomplete_once', acceptanceCriteria:['runtime:fresh-session-continuation'] }), /requires Airodrom host primitives/);
   assert.equal(f.inference(), 0);
   assert.equal(f.bridge.runtimes.size, 0);
   assert.ok(f.bridge.ledger.listTaskEvents(task.id, { limit: 500 }).events.some(e => e.metadata?.dispatch_path === 'verification_native'));

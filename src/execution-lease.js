@@ -81,7 +81,7 @@ class LeaseRegistry {
     return this.leases.get(taskId) || null;
   }
 
-  acquire(taskId, { agentId = 'pi' } = {}) {
+  acquire(taskId, { agentId = 'host' } = {}) {
     if (this.leases.has(taskId)) throw new Error('Task already running');
     const lease = new ExecutionLease({
       runId: randomUUID(),

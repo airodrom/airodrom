@@ -182,7 +182,7 @@ class WebReader {
     const pinned = addresses[0];
     const options = {
       protocol: 'https:', hostname: url.hostname, port: 443, path: url.pathname, method,
-      headers: { Accept: 'text/html, text/plain, text/markdown, application/json', 'Accept-Encoding': 'identity', 'User-Agent': 'Pi-Bridge/1.0' },
+      headers: { Accept: 'text/html, text/plain, text/markdown, application/json', 'Accept-Encoding': 'identity', 'User-Agent': 'Airodrom/1.0' },
       agent: false, family: pinned.family, autoSelectFamily: false,
       servername: url.hostname, rejectUnauthorized: true, checkServerIdentity: tls.checkServerIdentity,
       maxHeaderSize: 16384, signal,

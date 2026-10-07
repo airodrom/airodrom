@@ -27,9 +27,9 @@ class DeterministicAcceptance {
     if(this.bridge.policy.list().some(a=>a.status==='pending'&&this.store.missionForTask(a.taskId)?.id===id))return deny('pending_approval');
     if(this.db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND state IN ('held','quarantined') AND mode='write'").get(m.envelope.workspace))return deny('workspace_writer');
     const v=this.db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id);
-    if(!v || v.result!=='passed' || v.checker!=='pi:typed-capabilities' || v.revision!==m.revision)return deny('independent_verification_required');
+    if(!v || v.result!=='passed' || v.checker!=='airodrom:host-verifier' || v.revision!==m.revision)return deny('independent_verification_required');
     const run=this.store.run(v.run_id),checks=JSON.parse(v.evidence);
-    if(!run || run.mission_id!==id || run.task_id!==m.task_id || run.agent_id!=='pi' || run.state!=='completed' || !run.termination_verified || !require('./execution-evidence').runSatisfied(run))return deny('execution_not_qualified');
+    if(!run || run.mission_id!==id || run.task_id!==m.task_id || run.agent_id!=='host' || run.state!=='completed' || !run.termination_verified || !require('./execution-evidence').runSatisfied(run))return deny('execution_not_qualified');
     if(run.result?.coding_adapter?.descriptor_hash!==m.envelope.coding_plan.adapter.descriptor_hash || run.result?.coding_plan_hash!==fingerprint(m.envelope.coding_plan))return deny('adapter_evidence_mismatch');
     const execution=run.result.native_execution_evidence;
     if(execution.completed_invocations!==m.envelope.coding_plan.operations.length || !Array.isArray(execution.receipt_refs) || execution.receipt_refs.length!==execution.completed_invocations)return deny('coding_receipts_incomplete');

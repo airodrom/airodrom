@@ -16,8 +16,8 @@ const { OpenAIResponsesDecisionAdapter, Level1DecisionVerifier, ENDPOINT, MODEL,
 const { Level1MissionFlow, hash } = require('../src/level1-mission');
 const { config, WORKSPACE, MISSION_OBJECTIVE, ACCEPTANCE_CRITERIA, ALL_READ_PATHS, createMissionFields } = require('../src/level1-profile');
 const { canonical } = require('../src/mission-provider');
-const { makeWorkerProfile } = require('../src/worker-sandbox');
-const { prepareWorkerProfile } = require('../src/config');
+const { makeWorkerProfile } = require('../src/sandbox-policy');
+
 
 function fixtureAuthority() {
   const authority = new MissionAuthority({ fixtureOnly: true });
@@ -120,20 +120,11 @@ test('Level 1 Seatbelt source policy denies direct fixture reads, fixture writes
   assert.match(profile, /\(allow network-outbound \(remote unix-socket/);
 });
 
-test('SIMULATION: Level 1 worker profile excludes auth and custom model catalogs from its private profile', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'level1-worker-profile-fixture-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const source = path.join(root, 'source'), destination = path.join(root, 'worker');
-  fs.mkdirSync(source);
-  fs.writeFileSync(path.join(source, 'settings.json'), JSON.stringify({ defaultProvider: 'ollama', defaultModel: 'fixture-only-model' }));
-  fs.writeFileSync(path.join(source, 'models.json'), JSON.stringify({ providers: [{ apiKey: 'fixture-only-secret', headers: { Authorization: 'fixture-only-secret' } }] }));
-  fs.writeFileSync(path.join(source, 'auth.json'), JSON.stringify({ apiKey: 'fixture-only-secret' }));
-  prepareWorkerProfile(source, destination, { includeModelCatalog: false });
-  const settings = JSON.parse(fs.readFileSync(path.join(destination, 'settings.json'), 'utf8'));
-  assert.equal(settings.defaultProvider, 'ollama');
-  assert.equal(settings.defaultModel, 'fixture-only-model');
-  assert.equal(fs.existsSync(path.join(destination, 'models.json')), false);
-  assert.equal(fs.existsSync(path.join(destination, 'auth.json')), false);
+test('control profile selects inference without copying credentials or model catalogs', t => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'control-profile-')),source=path.join(root,'source'),data=path.join(root,'data');fs.mkdirSync(source);
+ fs.writeFileSync(path.join(source,'settings.json'),JSON.stringify({defaultProvider:'ollama',defaultModel:'qwen3-coder:30b'}));fs.writeFileSync(path.join(source,'auth.json'),'synthetic credential');
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ assert.deepEqual(require('../src/config').prepareControlProfile(data,source),{provider:'ollama',model:'qwen3-coder:30b'});assert.equal(fs.existsSync(data),false);
 });
 
 test('SIMULATION: Task B remains unset until signed provider reasoning over Task A, then only that result-bound candidate dispatches', async t => {

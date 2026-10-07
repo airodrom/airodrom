@@ -83,7 +83,7 @@ for (const s of stores) {
 }
 test('erasure removes provider/budget personal labels and input digests while opaque replay identities survive', async t => {
   const db = dbFixture(t), p = budget(db), f = provider(db), mission = randomUUID(), run = randomUUID(), task = randomUUID();
-  db.prepare("INSERT INTO cp_runs(id,mission_id,task_id,agent_id,generation,state,process_state,liveness_state,created_at,updated_at) VALUES(?,?,?,'pi',1,'starting','not_started','unknown',1,1)").run(run, mission, task);
+  db.prepare("INSERT INTO cp_runs(id,mission_id,task_id,agent_id,generation,state,process_state,liveness_state,created_at,updated_at) VALUES(?,?,?,'host',1,'starting','not_started','unknown',1,1)").run(run, mission, task);
   const labels = ['private-provider-erasure-one', 'private-provider-erasure-two', 'private-budget-erasure-one', digest('private-budget-source')];
   for (const label of labels.slice(0, 2)) await f.g.execute(request(run, label));
   for (const label of labels.slice(2)) p.reserve(mission, 'external_reasoning', label, 1, { input: 'fixture erased budget input' });

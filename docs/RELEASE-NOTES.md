@@ -1,5 +1,7 @@
 # Airodrom 1.0.0 rc.1 candidate notes
 
+Historical evidence: these counts and runtime references describe earlier revisions. The removal contract is [ADR 0008](adr/0008-remove-worker-runtime.md).
+
 Prepared October 5, 2026. Repository publication completed October 5, 2026: [airodrom/airodrom](https://github.com/airodrom/airodrom) is public, and GitHub Private Vulnerability Reporting is enabled and verified. GitHub releases, tags and package registry publication remain separate steps; production remains unactivated.
 
 **AIRODROM PUBLICATION GATE COMPLETE — REPOSITORY PUBLIC; PRIVATE VULNERABILITY REPORTING VERIFIED.**

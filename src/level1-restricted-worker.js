@@ -10,7 +10,7 @@ function exactArray(value, expected) {
 }
 
 /**
- * Deterministic Level 1 transport worker. It is deliberately not Pi and has
+ * Deterministic Level 1 transport worker. It has
  * no model, child-process, filesystem, network, credential, or service API.
  * Its only authority is the opaque broker-read callback supplied by the host.
  */
@@ -28,7 +28,7 @@ class Level1RestrictedWorker extends EventEmitter {
 
   _readPath() {
     const mission = this.task.mission;
-    if (config.restrictedWorker?.evidenceLabel !== EVIDENCE_LABEL || config.restrictedWorker?.piWorkerEnabled !== false || config.restrictedWorker?.allowedCapability !== 'read' || config.restrictedWorker?.allowedOperationsPerTask !== 1 || !mission || mission.level !== 1 || mission.capabilityProfile !== LEVEL1_PROFILE_ID || mission.executionWorker !== EVIDENCE_LABEL || mission.requireGrant !== true || this.task.workspace !== WORKSPACE || !assertReadOnlyMission(mission)) {
+    if (config.restrictedWorker?.evidenceLabel !== EVIDENCE_LABEL || config.restrictedWorker?.agentWorkerEnabled !== false || config.restrictedWorker?.allowedCapability !== 'read' || config.restrictedWorker?.allowedOperationsPerTask !== 1 || !mission || mission.level !== 1 || mission.capabilityProfile !== LEVEL1_PROFILE_ID || mission.executionWorker !== EVIDENCE_LABEL || mission.requireGrant !== true || this.task.workspace !== WORKSPACE || !assertReadOnlyMission(mission)) {
       throw new Error('Invalid restricted-worker Level 1 task binding');
     }
     const definition = taskDefinition(mission.level1Phase, mission.level1Phase === 'task_b' ? mission.selectedTaskBId : null);

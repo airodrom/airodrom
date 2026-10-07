@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { MANIFEST_PATH, readManifest, verifyManifest, verifyExecutable, verifyRuntimeLibraries, verifyRuntimeConfigInputs, verifyProviderRuntime, verifyWorkerRuntimeClosure, sanitizedRuntimeEnv, makeProfile } = require('./worker-sandbox');
+const { MANIFEST_PATH, readManifest, verifyManifest, verifyExecutable, verifyRuntimeLibraries, verifyRuntimeConfigInputs, sanitizedRuntimeEnv, makeProfile } = require('./sandbox-policy');
 
 const MANIFEST_SNAPSHOT_PATH = 'config/safe-autonomy-manifest.json';
 function hashBytes(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
@@ -182,7 +182,7 @@ class SandboxRunner {
     const executablePins = new Map(manifest.executables.map(entry => [entry.id, entry]));
     const sandboxExecPin = executablePins.get('sandbox-exec');
     if (!sandboxExecPin || fs.realpathSync(sandboxExecPin.path) !== fs.realpathSync(this.sandboxExec)) throw new Error('Pinned sandbox launcher mismatch');
-    const runRoot = fs.mkdtempSync(path.join(this.tempRoot, 'pi-sandbox-run-'));
+    const runRoot = fs.mkdtempSync(path.join(this.tempRoot, 'airodrom-sandbox-run-'));
     const stageRoot = path.join(runRoot, 'input');
     const scratchRoot = path.join(runRoot, 'scratch');
     const tmpDir = path.join(scratchRoot, 'tmp');
@@ -196,11 +196,6 @@ class SandboxRunner {
       const nodePath = verifyExecutable(nodeExe);
       const nodeRoot = path.dirname(nodePath);
       const runtimeReadFiles = [...verifyRuntimeLibraries(manifest.runtimeLibraries), ...verifyRuntimeConfigInputs(manifest.runtimeConfig)].flatMap(input => input.paths);
-      const providerRuntime = verified.job.requiresProviderRuntime ? verifyProviderRuntime(manifest.providerRuntime) : null;
-      // The canonical regression can inspect the real worker closure only after
-      // every declared package root and transitive static import is verified.
-      // This is a read-only job capability; it never grants the parent npm tree.
-      const workerRuntime = verified.job.requiresWorkerRuntimeClosure ? verifyWorkerRuntimeClosure(manifest.worker) : null;
       const shellPin = manifest.executables.find(item => item.id === 'sh');
       if (!shellPin) throw new Error('Pinned resource-limit shell is missing');
       const shellPath = verifyExecutable(shellPin);
@@ -208,7 +203,7 @@ class SandboxRunner {
       if (!bashPin) throw new Error('Pinned sh execution variant is missing');
       const bashPath = verifyExecutable(bashPin);
       if (bashPath !== fs.realpathSync('/bin/bash')) throw new Error('Pinned sh execution variant mismatch');
-      const profile = makeProfile({ readRoots: [stageRoot, nodeRoot, ...(providerRuntime?.roots || []), ...(workerRuntime?.roots || []), '/System', '/usr/lib', '/usr/share', '/usr/bin/env', '/bin', '/sbin', '/Library/Apple', '/dev'], exactReadFiles: runtimeReadFiles, writeRoots: [scratchRoot], denyFork: true, allowForkWithExactExec: verified.job.allowPinnedChildProcesses === true, execPaths: [nodePath, shellPath, bashPath] });
+      const profile = makeProfile({ readRoots: [stageRoot, nodeRoot, '/System', '/usr/lib', '/usr/share', '/usr/bin/env', '/bin', '/sbin', '/Library/Apple', '/dev'], exactReadFiles: runtimeReadFiles, writeRoots: [scratchRoot], denyFork: true, allowForkWithExactExec: verified.job.allowPinnedChildProcesses === true, execPaths: [nodePath, shellPath, bashPath] });
       fs.writeFileSync(profilePath, profile, { mode: 0o600, flag: 'wx' });
       const output = [];
       const jobStartedAt = Date.now();

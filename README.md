@@ -11,7 +11,7 @@
 >
 > ✅ Core control-plane, Memory V2, verification, Acceptance/Settlement, and public hardening work are preserved.
 >
-> 🔄 Current focus: OpenCode is the default primary execution runtime; Pi remains compatibility/rollback while Airodrom retains authority.
+> 🔄 Current focus: OpenCode is the default primary execution runtime. Pi is removed completely; Airodrom retains control-plane authority.
 >
 > 📦 No supported production release has been published yet.
 
@@ -23,15 +23,14 @@ Airodrom coordinates bounded local work through a durable Airodrom control plane
 
 | Runtime | Tier | Candidate boundary |
 | --- | --- | --- |
-| Pi local control and typed execution | REQUIRED | Core source and synthetic regression coverage; host pins required for sandboxed execution |
+| Airodrom host primitives | REQUIRED CONTROL PLANE | Typed broker operations and independent host verification; never a model runtime |
 | OpenCode | SUPPORTED / DEFAULT PRIMARY | CLI 2.0.20, macOS and local Ollama; isolated live synthetic Mission and Memory V2 qualification; bounded default route |
-| Pi agentic runtime | COMPATIBILITY / ROLLBACK | Retained for rollback; local control and verification remain required |
 | Claude Code | SUPPORTED / OPTIONAL FALLBACK | Adapter contract; operator authentication and runtime qualification required |
 | Work/Codex | OPTIONAL EXTERNAL / LIVE UNQUALIFIED | External transport contract tested with stubs; configured live port unqualified |
 | Cursor | EXPERIMENTAL | Observation only; governed execution denied |
 | Generic Cloud | UNSUPPORTED | No dispatch or context transfer |
 
-Agents perform work; reasoning providers supply inference. Model selection and agent text cannot change execution policy. DeepSeek remains disabled/auth_required. See the [runtime matrix](docs/RUNTIME-SUPPORT-MATRIX.md).
+Agents perform work; reasoning providers supply inference. Model selection and agent text cannot change execution policy. DeepSeek remains disabled/auth_required. See the [runtime matrix](docs/RUNTIME-SUPPORT-MATRIX.md) and [Pi removal migration](docs/PI-REMOVAL.md).
 
 ## Source review and development validation
 
@@ -47,9 +46,9 @@ npm run typecheck:sdk
 node scripts/airodrom.cjs --help
 ```
 
-The source regression suite needs Xcode and a local Git checkout with an initial commit. For an archive, prepare a disposable validation checkout as described in [development](docs/DEVELOPMENT.md). The helper build only compiles local code; it does not read credentials or install a service. These commands validate source and disposable fixtures. Tests requiring a separately reviewed installed Pi runtime or operator pins are explicitly skipped when absent. They do not qualify a live provider or grant execution authority.
+The source regression suite needs Xcode and a local Git checkout with an initial commit. For an archive, prepare a disposable validation checkout as described in [development](docs/DEVELOPMENT.md). The helper build only compiles local code; it does not read credentials or install a service. These commands validate source and disposable fixtures. Host sandbox qualification tests requiring private operator pins are explicitly skipped when absent. Synthetic transport fixtures require no installed agent. They do not qualify a live provider or grant execution authority.
 
-Foreground startup requires a separately prepared private source profile and reviewed local runtime pins. See [installation](docs/INSTALLATION.md) before running `npm start`. Service installation is opt-in. Keep credentials out of command arguments, patches, issue reports and repository files.
+Interactive startup qualifies installed OpenCode and generates private host pins. Optional host operations require separately reviewed exact pins. See [installation](docs/INSTALLATION.md) before running `npm start`. Service installation is opt-in. Keep credentials out of command arguments, patches, issue reports and repository files.
 
 ## Privacy and operation
 

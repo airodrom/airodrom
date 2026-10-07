@@ -26,12 +26,12 @@ class MissionService {
     if(input.authority!==undefined&&owner!=='operator')throw Error('Only operator may set mission authority');
     const authority=input.authority===undefined?require('./mission-permissions').trustedDefault(workspace,this.bridge.options.trustedRepositoryDefaults||[]):require('./mission-permissions').normalizeAuthority(input.authority,{workspace,operator:owner==='operator'});
     const scopes=this.bridge.capabilityHost.policy.normalizeTaskScopes(input.capability_scopes||['repo','developer_environment']);
-    if(input.coding_plan!==undefined){if(owner!=='operator'||input.dispatch_policy!==undefined||input.preferred_agent!==undefined||input.fallback_agents!==undefined||input.task_type!==undefined)throw Error('Coding plan requires operator registration and its fixed local route');input={...input,task_type:'local_files',preferred_agent:'pi',fallback_agents:[],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:input.coding_plan.operations?.map(({name,path,content})=>({name,path,content}))}};}
+    if(input.coding_plan!==undefined){if(owner!=='operator'||input.dispatch_policy!==undefined||input.preferred_agent!==undefined||input.fallback_agents!==undefined||input.task_type!==undefined)throw Error('Coding plan requires operator registration and its fixed local route');input={...input,task_type:'local_files',preferred_agent:'host',fallback_agents:[],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:input.coding_plan.operations?.map(({name,path,content})=>({name,path,content}))}};}
     const taskType=input.task_type||'focused_refactor';
     if(!['focused_refactor','broad_investigation','large_multi_file_coding','ide_diagnostics','local_files'].includes(taskType))throw Error('Invalid agent task taxonomy');
     const automatic=input.preferred_agent===undefined;
-    const preferred=input.preferred_agent||(taskType==='local_files'?'pi':this.bridge.defaultRuntime),fallbacks=input.fallback_agents||[];
-    if(!['claude_code','codex','cursor','pi','opencode'].includes(preferred)||!Array.isArray(fallbacks)||fallbacks.length>3||fallbacks.some(a=>!['claude_code','codex','cursor','pi','opencode'].includes(a)))throw Error('Invalid declared agent route');
+    const preferred=input.preferred_agent||(taskType==='local_files'?'host':this.bridge.defaultRuntime),fallbacks=input.fallback_agents||[];
+    if(!['claude_code','codex','cursor','host','opencode'].includes(preferred)||!Array.isArray(fallbacks)||fallbacks.length>3||fallbacks.some(a=>!['claude_code','codex','cursor','host','opencode'].includes(a)))throw Error('Invalid declared agent route');
     const criteria=input.criteria||[];if(!Array.isArray(criteria)||!criteria.length||criteria.length>10)throw Error('Acceptance criteria required');
     const ids=new Set();for(const c of criteria){object(c,['id','type','path','content','description']);identifier(c.id);if(ids.has(c.id))throw Error('Duplicate criterion');ids.add(c.id);if(c.type==='exact_file'){relative(c.path);if(!input.allowed_files.includes(c.path))throw Error('Expected file is outside declared changes');if(typeof c.content!=='string'||Buffer.byteLength(c.content)>12000)throw Error('Invalid expected content');text(c.content,'expected content',12000);}else{text(c.description,'criterion',1000);}}
     const verification=input.verification||{diff_check:'',tests:[],syntax:[]};object(verification,['diff_check','tests','syntax','typecheck','lint','benchmark']);text(verification.diff_check,'diff-check task',100);
@@ -69,6 +69,7 @@ class MissionService {
   require(id,owner){return this.store.requireMission(id,owner==='operator'?null:owner);}
   detail(id,owner='operator'){
     const m=this.require(id,owner);const view={...m,program_contract:this.program.detail(id),objective:m.envelope.objective,priority:m.envelope.priority,next_action:({ready:'dispatch',waiting_for_operator:'answer_decision',awaiting_acceptance:'accept_or_rework',needs_rework:'explicit_dispatch',blocked:'review_then_dispatch'})[m.state]||'inspect',tasks:this.db.prepare('SELECT * FROM cp_mission_tasks WHERE mission_id=? ORDER BY ordinal').all(id),runs:this.db.prepare('SELECT id FROM cp_runs WHERE mission_id=? ORDER BY created_at').all(id).map(r=>this.store.run(r.id)),decisions:this.store.decisions(id),verifications:this.db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC').all(id).map(v=>({...v,evidence:JSON.parse(v.evidence)})),acceptance:this.db.prepare('SELECT * FROM cp_acceptances WHERE mission_id=? ORDER BY created_at DESC').all(id),artifacts:this.db.prepare('SELECT * FROM cp_artifacts WHERE mission_id=?').all(id),timeline:this.bridge.ledger.list({missionId:id,limit:100,order:'desc'}).events,results:this.db.prepare('SELECT run_id,normalized FROM cp_run_results WHERE mission_id=?').all(id).map(r=>({run_id:r.run_id,result:{...JSON.parse(r.normalized),continuity:JSON.parse(this.db.prepare('SELECT evidence FROM cp_continuity_checks WHERE run_id=?').get(r.run_id)?.evidence||'null')}})),dispatches:this.db.prepare('SELECT * FROM cp_dispatches WHERE mission_id=? ORDER BY created_at').all(id).map(d=>({...d,route:d.route?JSON.parse(d.route):null}))};
+    if(require('./removed-runtime').removed(m)){view.runtimeRemoved=true;view.runtimeLabel='Historical runtime removed';view.next_action='inspect';}
     view.results=view.results.map(r=>({...r,result:require('./conversation-mission').projectRead(this.bridge,m.task_id,r.result,m.id)}));
     view.timeline=view.timeline.map(e=>require('./conversation-mission').projectEvent(this.bridge,e));
     return view;
@@ -80,6 +81,7 @@ class MissionService {
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
   assertAuthority(mission, requirements={}){
+    require('./removed-runtime').assertExecutable(mission);
     this.program.assert(mission);
     const result=require('./mission-permissions').checkAuthority(mission.envelope.authority,requirements);
     if(!result.allow) {
@@ -107,12 +109,22 @@ class MissionService {
     this.store.state(id,'dispatching');return{mission_id:id,task_id:task.id,dispatch_id:dispatch,status:'queued'};
   }
   schedule(){if(this.stopped||this.pending)return;this.pending=true;queueMicrotask(()=>{this.pending=false;this.tick().catch(()=>{});});}
+  retireRemovedRuntime(m){
+    // Retire only work that never started. Uncertain/running invocations and
+    // writer leases retain their existing reconciliation requirements.
+    return transaction(this.db,()=>{
+      const dispatches=this.db.prepare("UPDATE cp_dispatches SET state='blocked',updated_at=? WHERE mission_id=? AND state='queued'").run(Date.now(),m.id).changes;
+      const continuations=this.db.prepare("UPDATE cp_continuations SET state='cancelled' WHERE mission_id=? AND state='queued'").run(m.id).changes;
+      if(require('./mission-lifecycle').TRANSITIONS[m.state]?.includes('blocked'))this.store.state(m.id,'blocked','Historical runtime removed');
+      if(dispatches||continuations)this.store.event('mission.historical_runtime_removed',m.id,{dispatches,continuations,authority:false});
+    });
+  }
   async tick(){
     if(this.busy||this.stopped||this.bridge.closed)return;this.busy=true;
     try{
       this.store.expireDecisions();this.acceptanceEngine.reconcile();this.program.tick();
       for(const c of this.db.prepare("SELECT * FROM cp_continuations WHERE state='queued'").all()){
-        const m=this.store.getMission(c.mission_id);if(m?.envelope.control_version!==2)continue;
+        const m=this.store.getMission(c.mission_id);if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);continue;}if(m?.envelope.control_version!==2)continue;
         const chains=this.db.prepare('SELECT c.* FROM cp_autonomy_claims a JOIN cp_autonomy_chains c ON c.id=a.chain_id WHERE a.mission_id=?').all(m.id);
         if(chains.some(chain=>{if(Date.now()-chain.started_at>=chain.max_runtime_ms){this.bridge.boundedNextActions.pause(chain.id,'runtime_budget');return true;}return chain.state==='paused';}))continue;
         if(m.state==='cancelled'){this.db.prepare("UPDATE cp_continuations SET state='cancelled' WHERE id=?").run(c.id);continue;}
@@ -134,7 +146,9 @@ class MissionService {
     }finally{this.busy=false;}
   }
   async launch(dispatch){
-    let m=this.store.getMission(dispatch.mission_id);if(m.state==='cancelled')return;
+    let m=this.store.getMission(dispatch.mission_id);
+    if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);return;}
+    if(m.state==='cancelled')return;
     try{
       if(m.envelope.kind==='conversation')return await require('./conversation-mission').launch(this,dispatch,m);
       const project=this.bridge.projects.getProject(m.project_id);if(project.status==='archived')throw Error('Project is archived');
@@ -153,13 +167,13 @@ class MissionService {
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
       if(m.envelope.coding_plan)this.codingAdapter.assert(m);
-      if(m.envelope.manifest&&!['pi','opencode'].includes(route.selected))throw Error('Mission Manifest requires a qualified bounded native adapter');
+      if(m.envelope.manifest&&!['host','opencode'].includes(route.selected))throw Error('Mission Manifest requires a qualified bounded native adapter');
       // Existing external adapters do not enforce all six permission dimensions.
-      if(m.envelope.authority && !['pi','opencode'].includes(route.selected))throw Error('Mission authority requires a qualified bounded native adapter');
+      if(m.envelope.authority && !['host','opencode'].includes(route.selected))throw Error('Mission authority requires a qualified bounded native adapter');
       if(m.envelope.authority && m.envelope.dispatch_policy?.native_actions.length)this.assertAuthority(m,{repository:['write'],data:['workspace_write'],filesystem:{write:m.envelope.dispatch_policy.native_actions.map(a=>path.resolve(m.envelope.workspace,a.path))}});
       this.bridge.authorityRuntime?.assertDispatch(m,route);
       if(route.selected==='opencode')return await this.launchOpenCode(dispatch,m,route);
-      if(route.selected==='pi'&&(fallback||m.envelope.task_type==='local_files'))return await this.launchNative(dispatch,m,fallback||{fallback_policy:m.envelope.dispatch_policy});
+      if(route.selected==='host'&&(fallback||m.envelope.task_type==='local_files'))return await this.launchNative(dispatch,m,fallback||{fallback_policy:m.envelope.dispatch_policy});
       if(route.selected==='codex'&&route.transport==='handoff'){
         this.bridge.codexAdapter.startTask(m.id,`automatic-handoff:${dispatch.id}`,dispatch.decision_id,dispatch.id,route);this.bridge.agentDispatch.schedule();return;
       }
@@ -216,7 +230,8 @@ class MissionService {
       if(!started)throw error;
       // Uncertain process/invocation termination retains a quarantined writer.
       const uncertain=['opencode_termination_unverified','opencode_spawn_failed','opencode_apply_not_completed'].includes(error.code||error.message);
-      this.store.updateRun(runId,{state:uncertain?'termination_unverified':task.cancelRequested?'cancelled':'failed',processState:uncertain?'unknown':'exited',verified:!uncertain,resolution:'opencode_execution_stopped'});
+      const errorClass=/^opencode_[a-z_]{1,80}$/.test(error.code||error.message)?(error.code||error.message):'opencode_execution_stopped';
+      this.store.updateRun(runId,{state:uncertain?'termination_unverified':task.cancelRequested?'cancelled':'failed',processState:uncertain?'unknown':'exited',verified:!uncertain,resolution:errorClass,result:{runtime_id:'opencode',error_class:errorClass}});
       if(uncertain){this.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(runId);this.db.prepare("UPDATE cp_dispatches SET state='unknown' WHERE id=?").run(dispatch.id);if(this.store.getMission(m.id).state!=='cancelled')this.store.state(m.id,'blocked','opencode_termination_unverified');}
       else this.captureResult(runId,{status:task.cancelRequested?'cancelled':'failed',result:{text:JSON.stringify({summary:'OpenCode execution stopped safely',changed_files:[],tests:[],artifacts:[],limitations:[]})}});
     }
@@ -225,13 +240,13 @@ class MissionService {
     const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),plan=fallback.fallback_policy.native_actions;
     if(workspaceSnapshot(m.envelope.workspace).hash!==m.envelope.baseline.hash)throw Error('Workspace changed before native fallback');
     transaction(this.db,()=>{
-      this.store.startRun({id:runId,taskId:task.id,missionId:m.id,agentId:'pi'});
+      this.store.startRun({id:runId,taskId:task.id,missionId:m.id,agentId:'host'});
       this.store.acquireLease({resource:m.envelope.workspace,runId,missionId:m.id,baseline:m.envelope.baseline});
       const pack=this.bridge.controlContext.build(m,runId);const governedRoute=JSON.parse(this.db.prepare('SELECT route FROM cp_dispatches WHERE id=?').get(dispatch.id).route);this.bridge.authorityRuntime?.assertDispatch(m,governedRoute,pack);this.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,task.id);task.contextPackId=pack.id;
       this.store.updateRun(runId,{state:'running',processState:'not_started'});
-      this.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,route=?,updated_at=? WHERE id=? AND state='queued'").run(runId,JSON.stringify({...governedRoute,selected:'pi',selected_agent:'pi',provider:null,selected_provider:null,reason:'immutable_native_plan',rejected:[],fallback_plan:[],wait_reason:null}),Date.now(),dispatch.id);
+      this.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,route=?,updated_at=? WHERE id=? AND state='queued'").run(runId,JSON.stringify({...governedRoute,selected:'host',selected_agent:'host',provider:null,selected_provider:null,reason:'immutable_native_plan',rejected:[],fallback_plan:[],wait_reason:null}),Date.now(),dispatch.id);
       if(this.store.getMission(m.id).state==='dispatching')this.store.state(m.id,'running');
-      task.assignedAgent='pi';this.bridge.tasks.save(task);
+      task.assignedAgent='host';this.bridge.tasks.save(task);
     });
     const receipts=[];let failed=false;
     try{
@@ -294,7 +309,7 @@ class MissionService {
     });
     if(this.store.getMission(m.id).state==='verifying'){
       // Exclude another writer while independent checks run and evidence is captured.
-      const verifyId=randomUUID();this.store.startRun({id:verifyId,taskId:run.task_id,missionId:m.id,agentId:'pi'});
+      const verifyId=randomUUID();this.store.startRun({id:verifyId,taskId:run.task_id,missionId:m.id,agentId:'host'});
       try {this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id});const verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);}
       catch(error){if(this.store.getMission(m.id).state==='verifying')this.store.state(m.id,'blocked','Independent verification unavailable');}
       finally{this.store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
@@ -304,12 +319,12 @@ class MissionService {
   }
   async reverify(id,input,owner='operator'){
     object(input,['id','request_id']);identifier(input.request_id);
-    const m=this.require(id,owner);
+    const m=this.require(id,owner);require('./removed-runtime').assertExecutable(m);
     const receipt=this.store.request(owner,input.request_id,{op:'reverify',id},()=>{
       if(!['needs_rework','awaiting_acceptance'].includes(m.state)||m.envelope.baseline.version!==2)throw Error('V2 failed verification required');
       const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode') AND state='completed' AND termination_verified=1 ORDER BY ended_at DESC LIMIT 1").get(id);
       if(!run||!this.db.prepare("SELECT 1 FROM cp_verifications WHERE mission_id=? AND run_id=? AND result='failed'").get(id,run.id))throw Error('Settled implementation with failed verification required');
-      const verificationRun=randomUUID();this.store.startRun({id:verificationRun,taskId:run.task_id,missionId:id,agentId:'pi'});
+      const verificationRun=randomUUID();this.store.startRun({id:verificationRun,taskId:run.task_id,missionId:id,agentId:'host'});
       this.store.acquireLease({resource:m.envelope.workspace,runId:verificationRun,missionId:id});
       this.store.state(id,'verifying','Explicit independent verification retry');
       this.store.event('verification.started',id,{retry:true},{runId:run.id});
@@ -319,7 +334,7 @@ class MissionService {
     try{const result=await this.verifier.verify(this.store.getMission(id),this.store.run(receipt.implementation_run));
       if(this.store.getMission(id).state==='verifying')this.verifier.persist(m,this.store.run(receipt.implementation_run),result);
       this.store.updateRun(receipt.verification_run,{state:result.status==='failed'||result.status==='unavailable'?'failed':'completed',processState:'not_started',verified:true,deferAudit:true});
-      this.bridge.resultInbox.publish({run_id:receipt.verification_run,mission_id:id,task_id:this.store.run(receipt.verification_run).task_id,agent_id:'pi',request_id:input.request_id,result:{status:result.status==='failed'||result.status==='unavailable'?'failed':'completed',summary:`Independent registered Pi verification: ${result.status}. Completion and verification do not grant Acceptance.`,changed_files:[],tests:result.checks.filter(c=>c.id.startsWith('task:')).map(c=>({name:c.id,status:c.status,exit_code:c.evidence.exit_code})),artifacts:[],limitations:['Real-project Acceptance remains operator review; original implementation result and failure evidence retained.']}});
+      this.bridge.resultInbox.publish({run_id:receipt.verification_run,mission_id:id,task_id:this.store.run(receipt.verification_run).task_id,agent_id:'host',request_id:input.request_id,result:{status:result.status==='failed'||result.status==='unavailable'?'failed':'completed',summary:`Independent registered Airodrom host verification: ${result.status}. Completion and verification do not grant Acceptance.`,changed_files:[],tests:result.checks.filter(c=>c.id.startsWith('task:')).map(c=>({name:c.id,status:c.status,exit_code:c.evidence.exit_code})),artifacts:[],limitations:['Real-project Acceptance remains operator review; original implementation result and failure evidence retained.']}});
       return{...receipt,result:result.status,accepted:false};
     }finally{if(!['completed','failed'].includes(this.store.run(receipt.verification_run).state))this.store.updateRun(receipt.verification_run,{state:'failed',processState:'not_started',verified:true,deferAudit:true});}
   }
@@ -327,7 +342,7 @@ class MissionService {
     const result=this.store.request(actor,input.request_id,{op:'answer',id,...input},()=>this.store.answerDecision(id,{option_id:input.option_id??null,free_text:input.free_text??null,actor,surface}));this.schedule();return result;
   }
   accept(id,input,owner='operator'){
-    const m=this.require(id,owner);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
+    const m=this.require(id,owner);require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
     return this.store.request(owner,input.request_id,{op:'accept',id,...input},()=>{
       if(m.state!=='awaiting_acceptance')throw Error('Mission is not awaiting acceptance');
       if(input.decision==='accept')this.program.assertAcceptance(m,input.verification_id);

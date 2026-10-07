@@ -3,14 +3,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const Controller = require('../src/bridge-controller');
+const Controller = require('./fixtures/test-bridge.cjs');
 const { McpTools, TOOLS } = require('../src/mcp-tools');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 async function until(check) { for (let i = 0; i < 300; i++) { if (check()) return; await wait(10); } throw new Error('Fixture did not settle'); }
 async function setup(t, options = {}) {
   const root = fs.mkdtempSync('/private/tmp/br-sup-'), profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const b = new Controller({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), ...options });
+  const b = new Controller({ defaultRuntime: 'host', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker: true, executable: path.join(__dirname, 'fixtures/host-worker.cjs'), ...options });
   await b.initialize();
   const createTask=b.createTask.bind(b);b.createTask=(...args)=>{const task=createTask(...args);require('./fixtures/git-baseline.cjs')(task.workspace);return task;};
   t.after(async () => { await until(() => !b.inFlight.size); await b.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });

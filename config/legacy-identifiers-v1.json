@@ -1,0 +1,276 @@
+{
+  "version": 1,
+  "documentation": "docs/PI-REMOVAL.md",
+  "lines": [
+    {
+      "file": "src/fs-scopes.js",
+      "sha256": "274a211d9e220eef9936ac02c669e6af333c425a3182a56128570f703be00916",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/removed-runtime.js",
+      "sha256": "a23183b696295abcdb23cdc370f2e68997c565d37a36e387adf0db1d4dae544f",
+      "count": 1,
+      "classification": "historical provenance or erasure read compatibility"
+    },
+    {
+      "file": "src/safety-policy.js",
+      "sha256": "b823fc45cc3082c3f618280dec545cf9385517f2e48231b8c50d48b70dae453b",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/safety-policy.js",
+      "sha256": "6c3e7aeb81a62dd8c574ac823cc5d40b993dd98eff30eef05bdc94033279b1b2",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/safety-policy.js",
+      "sha256": "ea8ba12547b905dacefca55a2a0a4ee919410412368502e4c6e795383ef781b2",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/task-session-model.js",
+      "sha256": "4738538b2b179cd9a2fc946e838e8965702fb9706dc4b6950ecc063b1c1b1888",
+      "count": 1,
+      "classification": "historical provenance or erasure read compatibility"
+    },
+    {
+      "file": "src/memory-content-erasure.js",
+      "sha256": "554115a1476828ff3e13e050982aefca9620e4aa9b626374554ba56a2c3ebf8a",
+      "count": 1,
+      "classification": "historical provenance or erasure read compatibility"
+    },
+    {
+      "file": "src/sandbox-policy.js",
+      "sha256": "743fcf9390e81bf5152ba9efd39c930f348270733bb495189981b55edfc6fb08",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/chatgpt-events.js",
+      "sha256": "ae3a99b411808f00baae24630ff1b661a649785f976d70a0c69e5650744e1347",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/chatgpt-events.js",
+      "sha256": "5e3c912aa8d0a617af04640aba78229aac8b19b1337d8bf3ace4fca173ac5dbd",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/capability-mac.js",
+      "sha256": "44bfa95a57ce5f25ac8d8f59e7815acf05326c2d81d44dc1eebbda88e6387233",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/capability-mac.js",
+      "sha256": "951cc3b878e0825dcc6372f09b5614c2c57998940bddf3f6a63b48dd0a983368",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/capability-mac.js",
+      "sha256": "443a7620895fd47a6b6f1d4944c82e0945ab9bd707288ad499557e07bc724a17",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/chatgpt-connection.js",
+      "sha256": "881cddaa8d36a74a678e5363638f29758743b134c865cb3a149889bfef453fb2",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "src/memory-identity.js",
+      "sha256": "ddcaf4bc828bfcda57fd7c9311c8e02172cd7985e7ab63073d5c194dad1037bc",
+      "count": 1,
+      "classification": "explicit runtime removal statement"
+    },
+    {
+      "file": "src/mission-provider.js",
+      "sha256": "5a546fb7d12da4657a9a0f048c6b16517ee004048ac7018f607a26582ad4b723",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/mission-provider.js",
+      "sha256": "a52cdc8fd40008fa3ad10bf15e7014598b7a8590110c0b30bfaaa5f4a47f9a24",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/bridge-controller.js",
+      "sha256": "28452abda3d4cd227e71a7f95cc4850b67e3fb67343cbe2fc13b2a1ec93cd562",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/level1-provider.js",
+      "sha256": "220d1287e0a74d8efa3984f75d4a460538dfefbf6f9814bb4ad4dc1edbcedb6f",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/level1-provider.js",
+      "sha256": "3c19fb78ed1c3fe9d9377c758b92d140634d5b46bc7540957a2641e71aaa6d73",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/trusted-dev-runner.js",
+      "sha256": "f4100a6ae6de89ff17cf9a28ec79d3887cccd2ea76ef15f50bd71c9159e140c3",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/trusted-dev-runner.js",
+      "sha256": "cc2944d40e121b26e6a2183e7d924877b74c3baf413c85afea11f184478839dd",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/event-ledger.js",
+      "sha256": "b786489f3622611f574d3319435bc9af8483df5847290f9e068878b864b540e4",
+      "count": 1,
+      "classification": "historical provenance or erasure read compatibility"
+    },
+    {
+      "file": "src/control-context.js",
+      "sha256": "1fe9648e334ff374eb885391eff55567d444d33abce73ada463f433ff094d4ea",
+      "count": 1,
+      "classification": "historical credential directory denial"
+    },
+    {
+      "file": "src/sdk/index.d.ts",
+      "sha256": "f9ece389e06f46583f9d53de8d689e42ecdaf2b9cbbd19a4360c185d2473e9ab",
+      "count": 1,
+      "classification": "deprecated SDK type alias"
+    },
+    {
+      "file": "src/apps/slack-credentials.js",
+      "sha256": "fbcca2a34f96e9167ab2f5073f94f7923581768e5cca71279c55ef6fdef00f57",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/uninstall.cjs",
+      "sha256": "f36d72e667a2ffc140b1c95364fb209dfb4d4cd547a2c8dd99e3ff75721207c9",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/uninstall.cjs",
+      "sha256": "75468e6c63e4852e97744ceec75c86fc671423fe953a4c6edad7b240b9e863ad",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/build-slack-keychain-helper.cjs",
+      "sha256": "24f57d458ba1eca95215a1fbaa24d58b5f05af638acdcf359393899a196f5b75",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/install.cjs",
+      "sha256": "ad9647848fa248f596d8dbaadd528769793f15e86d1e78e46e70fd7a78bad989",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/install.cjs",
+      "sha256": "4427442db625c104f6d82f21ada635dd25d59af88e96b34fed7169b232c1531e",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/install.cjs",
+      "sha256": "4b08fa4b361e072e0d64aa152e1d77107207ed4367ebfd2cc5b1ea22aaf1d199",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/install.cjs",
+      "sha256": "ad8342a453cc3a0e6dad0e3ca9bc94658de37b70cf9ddbd1dba8eec107453c4b",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/install.cjs",
+      "sha256": "ff1453f0b6a755fffc34949ee31d61f404812e0fc0956e2c5134f61073e5021f",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/install.cjs",
+      "sha256": "2088121b6a770d96c3db1acf405001468848ef39a7fa2b2e95ae5e24c1a38aab",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/control.cjs",
+      "sha256": "02fa3750c602d7ac92c27e95f32f0c010a033ea704d05255120f17ab7a0d6acf",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/control.cjs",
+      "sha256": "8aaa05484f8fa3f7e161f89bf6eba2862c3be5095ad380af50e9c60421285b31",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/mcp-tunnel.cjs",
+      "sha256": "cf605338c7c2bdfcfb797b7f75519ef9dd5e85deed84673ad8494f126f415ca3",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/mcp-tunnel.cjs",
+      "sha256": "c70649497e09a3f4485c6556463c3ed16b5d28f3e8e389e0b8808779d07c3bfe",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "scripts/macos/mcp-tunnel.cjs",
+      "sha256": "a9103b473e36c28cdce8420d01a5d330505f32147888bab898ef2a1e8201cb33",
+      "count": 1,
+      "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/slack-keychain-helper.c",
+      "sha256": "25e71409494a9f8c34db741a2a2e4eb96d772de8d43e70bb4e45b87f7639c43b",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "config/safe-autonomy-level1.json",
+      "sha256": "98b433a9404e54aa66e57a3f05c2e5457226c81c277de39bd6f7588c255bd34a",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "config/safe-autonomy-level1.json",
+      "sha256": "d6ff646e6aa943d10025f07079079f4ab393f0a2c68fc44468aab624b0c60fca",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "config/architecture-memory-sources-v1.json",
+      "sha256": "6619f554c2bcf35c936e3b5e7aecb51aada462707ac0360cd5a98e30bf53f148",
+      "count": 1,
+      "classification": "explicit runtime removal statement"
+    },
+    {
+      "file": "public/branding.js",
+      "sha256": "e47dfb609319efc92a9c90771be9d96e07173bf8d1bb115bcf6d436b6688db33",
+      "count": 1,
+      "classification": "stable external protocol/integration identity"
+    }
+  ]
+}

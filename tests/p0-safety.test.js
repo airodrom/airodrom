@@ -6,7 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const SafetyPolicy = require('../src/safety-policy');
 const { SafeDiagnostics, classify } = require('../src/safe-diagnostics');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 const ControlServer = require('../src/control-server');
 const { McpTools } = require('../src/mcp-tools');
 const root = path.resolve(__dirname, '..');
@@ -94,7 +94,7 @@ test('broker denial survives a settled MCP_OK narrative with no execution receip
   const { EventEmitter } = require('node:events');
   const bridge = new BridgeController();
   const db=new (require('node:sqlite').DatabaseSync)(':memory:');t.after(()=>db.close());bridge.ledger=new (require('../src/event-ledger').EventLedger)(db);
-  const task = { ...bridge.policy.registerTask({ id: 'a', sessionId: 's', workspace: root }), executionAgent:'pi', safetyLoaded: true, events: [], compactions: 0 };
+  const task = { ...bridge.policy.registerTask({ id: 'a', sessionId: 's', workspace: root }), executionAgent:'host', safetyLoaded: true, events: [], compactions: 0 };
   bridge.tasks = { transitions: () => [], get: () => task, save: () => {} };
   bridge.memory = { search: () => ({ items: [] }), latestCheckpoint: () => null, saveCheckpoint: () => ({ id: 'checkpoint', createdAt: 1 }) };
   bridge.diagnostics = { execute: async () => '' };
@@ -110,8 +110,8 @@ test('broker denial survives a settled MCP_OK narrative with no execution receip
     let decision;
     await bridge.handlePolicy(req, { writeHead: () => {}, end: value => { decision = JSON.parse(value); } });
     assert.equal(decision.allow, false); assert.equal(decision.executionStatus, 'NOT EXECUTED');
-    bridge.onPiEvent(task, { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'MCP_OK' }], stopReason: 'stop' } });
-    bridge.onPiEvent(task, { type: 'agent_settled' });
+    bridge.onWorkerEvent(task, { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'MCP_OK' }], stopReason: 'stop' } });
+    bridge.onWorkerEvent(task, { type: 'agent_settled' });
     return {};
   };
   await bridge.prompt('a', 'Check blocked execution evidence');
@@ -193,7 +193,7 @@ test('Control Center credential and complete task index survive restart with tru
   const active = tasks.create('Active fixture'); active.status = 'thinking'; tasks.save(active);
   let token;
   for (let restart = 0; restart < 2; restart++) {
-    const bridge = new BridgeController({ defaultRuntime: 'pi', dataDir: dir });
+    const bridge = new BridgeController({ defaultRuntime: 'host', dataDir: dir });
     bridge.tasks = restart ? new Manager(dir) : tasks;
     bridge.snapshot = () => ({ bridge: { healthy: true }, tasks: bridge.tasks.list().map(task => bridge.snapshotTask(task)) });
     const ui = new ControlServer(bridge, { port: 0 }); await ui.start();
@@ -220,66 +220,12 @@ test('Control Center credential and complete task index survive restart with tru
   assert.throws(() => new ControlServer({ dataDir: dir }), /Invalid Control Center credential/);
 });
 
-test('Pi extension capability tools execute through the host broker without local listener or direct shell', async t => {
-  const http = require('node:http');
-  const { EventEmitter } = require('node:events');
-  const dir = fs.mkdtempSync('/private/tmp/p0-route-');
-  const bridge = new BridgeController();
-  bridge.ledger = { record: input => input }; // Isolated extension transport records classification.
-  const workspace = path.join(dir, 'workspace'); fs.mkdirSync(workspace);
-  fs.writeFileSync(path.join(workspace, 'input.txt'), 'brokered read fixture\n');
-  const task = { id: 'route', sessionId: 's', workspace: fs.realpathSync(workspace), events: [], source: { transport: 'fixture' }, status: 'thinking', safetyLoaded: false, mission: { id: 'route-mission', objective: 'Use broker fixtures', criteria: [], scope: { workspace: fs.realpathSync(workspace) }, workspace: fs.realpathSync(workspace), used: { runtimeMs: 0, actions: 0, retries: 0 }, budget: { maxRuntimeMs: 60_000, maxActions: 20, maxRetries: 0, maxSpendMicros: 0 }, requireGrant: false } };
-  bridge.tasks = { transitions: () => [], get: () => task, save: () => {} };
-  bridge.refreshTask = async () => {};
-  bridge.tokens.set('fixture-token', task.id);
-  bridge.runtimes.set(task.id, { readyResolve() {} });
-  bridge.policy.registerTask(task);
-  const previous = { socket: process.env.BRIDGE_POLICY_SOCKET, token: process.env.BRIDGE_TASK_TOKEN };
-  process.env.BRIDGE_POLICY_SOCKET = path.join(dir, 'fixture-only-not-a-socket'); process.env.BRIDGE_TASK_TOKEN = 'fixture-token';
-  const requests = [];
-  const originalRequest = http.request;
-  http.request = (options, onResponse) => {
-    const client = new EventEmitter();
-    client.setTimeout = () => client;
-    client.destroy = error => { if (error) client.emit('error', error); return client; };
-    client.end = rawBody => {
-      requests.push(options.path);
-      const req = { method: options.method, url: options.path, headers: options.headers, async *[Symbol.asyncIterator]() { if (rawBody) yield Buffer.from(rawBody); } };
-      const response = new EventEmitter();
-      response.statusCode = 200; response.writableEnded = false; response.setEncoding = () => {};
-      response.writeHead = status => { response.statusCode = status; };
-      response.end = body => {
-        response.writableEnded = true;
-        queueMicrotask(() => { onResponse(response); if (body) response.emit('data', String(body)); response.emit('end'); });
-      };
-      void bridge.handlePolicy(req, response).catch(error => client.emit('error', error));
-      return client;
-    };
-    return client;
-  };
-  const hooks = new Map(), registered = new Map();
-  const extension = (await import('../src/safety-extension.mjs')).default;
-  await extension({ on: (name, fn) => hooks.set(name, fn), registerTool: spec => registered.set(spec.name, spec) });
-  t.after(async () => {
-    await hooks.get('session_shutdown')();
-    http.request = originalRequest;
-    for (const [key, value] of [['BRIDGE_POLICY_SOCKET', previous.socket], ['BRIDGE_TASK_TOKEN', previous.token]]) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-  await hooks.get('session_start')({}, { cwd: task.workspace, sessionManager: { getSessionId: () => 's' } });
-  assert.equal(registered.has('bash'), false, 'the shell is removed from the Pi tool surface');
-  assert.equal(await hooks.get('tool_call')({ toolName: 'read', input: { path: 'input.txt' } }), undefined);
-  const read = await registered.get('read').execute('read-fixture', { path: 'input.txt' });
-  assert.match(read.content[0].text, /brokered read fixture/);
-  const write = await registered.get('write').execute('write-fixture', { path: 'output.txt', content: 'brokered write fixture' });
-  assert.match(write.content[0].text, /sha256/);
-  assert.equal(fs.readFileSync(path.join(task.workspace, 'output.txt'), 'utf8'), 'brokered write fixture');
-  const blocked = await hooks.get('tool_call')({ toolName: 'bash', input: { command: 'touch escaped' }, toolCallId: 'shell-attempt' });
-  assert.equal(blocked.block, true); assert.match(blocked.reason, /NOT EXECUTED/);
-  assert.equal(fs.existsSync(path.join(task.workspace, 'escaped')), false);
-  assert.deepEqual(requests, ['/ready', '/capability', '/capability', '/capability']);
-  assert.equal(task.safetyStop.latched, true);
-  assert.deepEqual(bridge.policy.list(task.id), []);
+test('host broker refuses direct shell without a worker or model', async t => {
+ const root=fs.mkdtempSync('/private/tmp/host-broker-');
+ const bridge=await new BridgeController({dataDir:root}).initialize();
+ t.after(async()=>{await bridge.shutdown();fs.rmSync(root,{recursive:true,force:true});});
+ const task=bridge.tasks.get(bridge.createTask('Host boundary').id);
+ const result=await bridge.capabilityBroker.execute(task.id,{toolName:'bash',input:{command:'touch escaped'},toolCallId:'direct-shell'});
+ assert.equal(result.allow,false);assert.equal(fs.existsSync(path.join(task.workspace,'escaped')),false);
+ assert.equal(bridge.runtimes.size,0);
 });

@@ -41,3 +41,30 @@ test('canonical Memory V2 remember, bounded retrieve, correct, forget and restar
  const payload=JSON.stringify(a.memory.build({operator_id:a.store.operatorId,include_personal:true,domains:['fixture'],privacy:'internal',max_items:1,max_bytes:2000}));assert.doesNotMatch(payload,/azure|amber/);
  await f.reopen();assert.equal(f.bridge.authorityRuntime.active,true);assert.equal((await f.bridge.opencodeAdapter.execute({...r.request,objective:'memory'})).result.summary,'unavailable');assert.doesNotMatch(JSON.stringify(f.bridge.personalMemoryContext({projectId:null},'fixture color')),/azure|amber/);
 });
+
+test('pre-erasure canonical snapshot cannot replay personal context through fresh OpenCode delivery',async t=>{
+ const fs=require('node:fs'),path=require('node:path'),{DatabaseSync}=require('node:sqlite');
+ const {RestrictedMemoryVault}=require('../src/restricted-memory-vault'),{prepareMemoryRestore}=require('../src/memory-restore');
+ const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,a=b.authorityRuntime,by=a.store.operator;
+ require('./fixtures/opencode-fixture.cjs').qualifyCanonical(b);
+ const remembered=b.rememberPersonalMemory({domain:'personal',type:'preference',subject:'fixture.color',content:'Synthetic fixture color is azure.',source:'user_explicit',confidence:95,sensitivity:'normal'}),id=remembered.id||remembered.memoryId;
+ const input={operator_id:a.store.operatorId,include_personal:true,domains:['fixture'],privacy:'internal',max_items:1,max_bytes:2000},old=a.memory.build(input);
+ assert.equal(old.items[0].memory_id,id);
+ const backupFile=path.join(f.root,'before-erasure.sqlite');b.controlStore.db.prepare('VACUUM INTO ?').run(backupFile);
+ const backup=new DatabaseSync(backupFile);t.after(()=>backup.close());
+ const currentVaultDir=path.join(f.root,'current-vault'),restoredVaultDir=path.join(f.root,'restored-vault');fs.mkdirSync(currentVaultDir,{mode:0o700});
+ const vault=new RestrictedMemoryVault(currentVaultDir);vault.prepare();fs.cpSync(currentVaultDir,restoredVaultDir,{recursive:true});
+ const privateDirectories=dir=>{fs.chmodSync(dir,0o700);for(const child of fs.readdirSync(dir,{withFileTypes:true}))if(child.isDirectory())privateDirectories(path.join(dir,child.name));};privateDirectories(restoredVaultDir);
+ b.forgetPersonalMemory(id);a.memory.erase(id,by);
+ const restored=prepareMemoryRestore({db:backup,erasureSourceDb:b.controlStore.db,vaultDirectory:restoredVaultDir,erasureSourceVault:vault});
+ assert.equal(restored.authorityRestored,false);assert.equal(restored.governed.get(id).value,undefined);
+ assert.equal(restored.governed.validatePack(old.id,input).valid,false);
+ // Read-only delivery facade selects the governed-memory reader; it grants no
+ // Mission, runtime, lease or Acceptance authority from the old snapshot.
+ r.adapter.bridge={controlStore:{db:backup},authorityRuntime:{active:true,store:restored.authority,memory:restored.governed}};
+ const stale={id:old.id,records:[{subject:'fixture.color',content:'Synthetic fixture color is azure.'}],authority:false};
+ await assert.rejects(r.adapter.execute({...r.request,objective:'memory',context:stale}),/context|erased|invalid|unavailable/i);
+ const fresh=restored.governed.build(input);assert(fresh.items.every(item=>item.memory_id!==id));assert.doesNotMatch(JSON.stringify(fresh),/azure/);
+ assert.equal((await r.adapter.execute({...r.request,objective:'memory',context:{id:fresh.id,records:stale.records,authority:false}})).result.summary,'unavailable');
+ assert.equal((await r.adapter.execute({...r.request,objective:'memory'})).result.summary,'unavailable');
+});

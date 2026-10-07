@@ -29,7 +29,7 @@ test('restart consumes pending artifact once, preserves immutable result, repeat
 });
 test('unknown run, wrong correlation, nonce, transport, hash, authority injection and unsafe references fail closed',async t=>{
  const f=await fixture(t),m=f.create(),h=f.bridge.codexAdapter.startTask(m.id,'deny-relay');
- const changes=[{run_id:'unknown'},{mission_id:'wrong'},{task_id:'wrong'},{request_id:'wrong'},{relay_nonce:'wrong'},{agent_id:'pi'},{transport:'native'},{schema_version:'wrong'},{scopes:['all']},{accepted:true},{result:{...envelope(h).result,changed_files:['../outside']}},{result:{...envelope(h).result,artifacts:['/etc/passwd']}}];
+ const changes=[{run_id:'unknown'},{mission_id:'wrong'},{task_id:'wrong'},{request_id:'wrong'},{relay_nonce:'wrong'},{agent_id:'host'},{transport:'native'},{schema_version:'wrong'},{scopes:['all']},{accepted:true},{result:{...envelope(h).result,changed_files:['../outside']}},{result:{...envelope(h).result,artifacts:['/etc/passwd']}}];
  for(const delta of changes)assert.throws(()=>stage(f,h,seal({...envelope(h),...delta})));
  assert.throws(()=>stage(f,h,{...envelope(h),content_hash:'wrong'}));assert.equal(count(f,'cp_result_inbox'),0);assert.equal(count(f,'cp_acceptances'),0);
 });
@@ -73,7 +73,7 @@ test('publish rollback is atomic and retry creates one inbox/intent; independent
  f.bridge.codexAdapter.reconcile({run_id:h.run_id,termination_verified:true});await f.settle(m.id,'needs_rework');assert.equal(count(f,'cp_acceptances'),0);
  assert.throws(()=>f.bridge.missions.accept(m.id,{request_id:'try-forged',decision:'accept',verification_id:'not-real',rationale:'Agent claims success'}),/not awaiting/);
 });
-test('isolated simulated Work child invokes exact injected command, automatic relay/read surface, independent Pi verification and fixture Acceptance',async t=>{
+test('isolated simulated Work child invokes exact injected command, automatic relay/read surface, independent host verification and fixture Acceptance',async t=>{
  const f=await fixture(t),p=f.bridge.projects.listProjects()[0];f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});
  const m=f.create({preferred_agent:'codex',fixture_auto_acceptance:true}),h=f.bridge.codexAdapter.startTask(m.id,'smoke-relay'),pub=h.contract.result_publication;
  const childFile=path.join(f.root,'simulated-work.cjs');fs.writeFileSync(path.join(f.root,'RESULT.json'),JSON.stringify(envelope(h)),{mode:0o600});

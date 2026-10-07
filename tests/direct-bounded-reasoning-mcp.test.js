@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {randomUUID,createHash}=require('node:crypto');
-const Bridge=require('../src/bridge-controller');
+const Bridge=require('./fixtures/test-bridge.cjs');
 const SafetyPolicy=require('../src/safety-policy');
 const {McpTools,TOOLS,validate}=require('../src/mcp-tools');
 

@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { SandboxRunner, LIMITS, SCRATCH_DIAGNOSTIC_LIMITS, MANIFEST_SNAPSHOT_PATH, summarizeScratch } = require('../src/sandbox-runner');
-const { makeProfile, sha256Tree, verifyManifest, verifyWorkerPackage, verifyWorkerRuntimeClosure } = require('../src/worker-sandbox');
+const { makeProfile, sha256Tree, verifyManifest, verifyModuleClosure } = require('../src/sandbox-policy');
 
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const fileHash = file => digest(fs.readFileSync(file));
@@ -26,7 +26,7 @@ function setup(t) {
   fs.mkdirSync(path.dirname(providerEntrypoint), { recursive: true });
   fs.writeFileSync(providerEntrypoint, 'export const providerRuntime = true;\n');
   const workerRuntimeParent = path.join(root, 'worker-runtime');
-  const workerCoreRoot = path.join(workerRuntimeParent, 'pi-agent-core');
+  const workerCoreRoot = path.join(workerRuntimeParent, 'module-core');
   const workerChordRoot = path.join(workerRuntimeParent, 'chord');
   const unrelatedWorkerSibling = path.join(workerRuntimeParent, 'unrelated');
   const workerCoreEntrypoint = path.join(workerCoreRoot, 'dist', 'index.js');
@@ -35,13 +35,13 @@ function setup(t) {
   fs.mkdirSync(path.dirname(workerContextEntrypoint), { recursive: true });
   fs.mkdirSync(path.dirname(workerChordEntrypoint), { recursive: true });
   fs.mkdirSync(unrelatedWorkerSibling, { recursive: true });
-  fs.writeFileSync(path.join(workerCoreRoot, 'package.json'), JSON.stringify({ name: '@fixture/pi-agent-core', version: '1.0.0', exports: { '.': { import: './dist/index.js' }, './harness/context': { import: './dist/harness/context.js' } } }));
+  fs.writeFileSync(path.join(workerCoreRoot, 'package.json'), JSON.stringify({ name: '@fixture/module-core', version: '1.0.0', exports: { '.': { import: './dist/index.js' }, './harness/context': { import: './dist/harness/context.js' } } }));
   fs.writeFileSync(workerCoreEntrypoint, "import { chord } from '@fixture/chord'; export const core = chord;\n");
   fs.writeFileSync(workerContextEntrypoint, "export { core } from '../index.js';\n");
   fs.writeFileSync(path.join(workerChordRoot, 'package.json'), JSON.stringify({ name: '@fixture/chord', version: '1.0.0', exports: { '.': { import: './dist/index.js' } } }));
   fs.writeFileSync(workerChordEntrypoint, 'export const chord = true;\n');
   const manifestPath = path.join(root, 'manifest.json');
-  const manifest = { version: 1, platform: 'darwin', executables: [structuredClone(nodeEntry), structuredClone(sandboxEntry), structuredClone(shellEntry), structuredClone(bashEntry)], runtimeLibraries: [{ path: nodeEntry.path, sha256: nodeEntry.sha256 }], runtimeConfig: [{ kind: 'openssl', path: opensslConfig, sha256: fileHash(opensslConfig), aliases: [], includes: [] }], providerRuntime: { entrypoint: providerEntrypoint, entrypointSha256: fileHash(providerEntrypoint), roots: [{ path: providerRoot, sha256: sha256Tree(providerRoot, 'provider runtime').sha256 }] }, worker: { runtimeClosure: { roots: [{ package: '@fixture/pi-agent-core', version: '1.0.0', path: workerCoreRoot, sha256: sha256Tree(workerCoreRoot, 'worker runtime').sha256 }, { package: '@fixture/chord', version: '1.0.0', path: workerChordRoot, sha256: sha256Tree(workerChordRoot, 'worker runtime').sha256 }], entrypoints: [{ package: '@fixture/pi-agent-core', path: 'dist/index.js' }, { package: '@fixture/pi-agent-core', path: 'dist/harness/context.js' }] } }, jobs: [{ name: 'fixture-check', kind: 'test', inputs: [{ path: 'check.cjs', sha256: fileHash(script) }], steps: [{ executable: 'node', args: ['check.cjs'] }], timeoutMs: 3000, maxOutputBytes: 4096, maxConcurrentProcesses: 1, network: 'disabled' }] };
+  const manifest = { version: 1, platform: 'darwin', executables: [structuredClone(nodeEntry), structuredClone(sandboxEntry), structuredClone(shellEntry), structuredClone(bashEntry)], runtimeLibraries: [{ path: nodeEntry.path, sha256: nodeEntry.sha256 }], runtimeConfig: [{ kind: 'openssl', path: opensslConfig, sha256: fileHash(opensslConfig), aliases: [], includes: [] }], providerRuntime: { entrypoint: providerEntrypoint, entrypointSha256: fileHash(providerEntrypoint), roots: [{ path: providerRoot, sha256: sha256Tree(providerRoot, 'provider runtime').sha256 }] }, worker: { runtimeClosure: { roots: [{ package: '@fixture/module-core', version: '1.0.0', path: workerCoreRoot, sha256: sha256Tree(workerCoreRoot, 'worker runtime').sha256 }, { package: '@fixture/chord', version: '1.0.0', path: workerChordRoot, sha256: sha256Tree(workerChordRoot, 'worker runtime').sha256 }], entrypoints: [{ package: '@fixture/module-core', path: 'dist/index.js' }, { package: '@fixture/module-core', path: 'dist/harness/context.js' }] } }, jobs: [{ name: 'fixture-check', kind: 'test', inputs: [{ path: 'check.cjs', sha256: fileHash(script) }], steps: [{ executable: 'node', args: ['check.cjs'] }], timeoutMs: 3000, maxOutputBytes: 4096, maxConcurrentProcesses: 1, network: 'disabled' }] };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, script, providerRoot, providerEntrypoint, workerRuntimeParent, workerCoreRoot, workerChordRoot, workerCoreEntrypoint, unrelatedWorkerSibling, manifest, manifestPath };
@@ -130,68 +130,13 @@ test('permits fork only for the canonical regression job while retaining exact e
 });
 
 
-test('allows only a hash-verified provider runtime root for jobs that explicitly require it', async t => {
-  const s = setup(t); const captured = {};
-  s.manifest.jobs[0].requiresProviderRuntime = true;
-  fs.writeFileSync(s.manifestPath, JSON.stringify(s.manifest), { mode: 0o600 });
-  const runner = new SandboxRunner({
-    repoRoot: s.root,
-    manifestPath: s.manifestPath,
-    spawnImpl(command, args) {
-      captured.command = command; captured.profile = fs.readFileSync(args[1], 'utf8');
-      const child = new EventEmitter(); child.pid = 12345; child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => true;
-      process.nextTick(() => child.emit('close', 0, null));
-      return child;
-    }
-  });
-  const result = await runner.run('fixture-check');
-  assert.equal(result.exitCode, 0);
-  const providerRoot = s.providerRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  assert.match(captured.profile, new RegExp(`\\(allow file-read\\* file-test-existence \\(subpath "${providerRoot}"\\)\\)`));
-  assert.doesNotMatch(captured.profile, new RegExp(`\\(allow [^\\n]*file-write[^\\n]*\\(subpath "${providerRoot}"\\)`));
-
-  fs.writeFileSync(s.providerEntrypoint, 'export const providerRuntime = false;\n');
-  let launched = 0;
-  const tamperedRunner = new SandboxRunner({ repoRoot: s.root, manifestPath: s.manifestPath, spawnImpl() { launched++; throw new Error('must not spawn'); } });
-  await assert.rejects(tamperedRunner.run('fixture-check'), /Pinned provider runtime hash mismatch/);
-  assert.equal(launched, 0);
+test('allows only a hash-verified provider runtime root for jobs that explicitly require it',()=>{
+ const policy=require('../src/sandbox-policy');assert.equal(policy.verifyWorkerPackage,undefined);assert.equal(policy.verifyProviderRuntime,undefined);assert.equal(policy.WorkerSandbox,undefined);
 });
 
-test('allows only the hash-verified worker runtime closure for the explicit canonical regression capability', async t => {
-  const s = setup(t); const captured = {};
-  s.manifest.jobs[0].name = 'safe-autonomy-regression';
-  s.manifest.jobs[0].requiresWorkerRuntimeClosure = true;
-  fs.writeFileSync(s.manifestPath, JSON.stringify(s.manifest), { mode: 0o600 });
-  const runner = new SandboxRunner({
-    repoRoot: s.root,
-    manifestPath: s.manifestPath,
-    spawnImpl(command, args) {
-      captured.profile = fs.readFileSync(args[1], 'utf8');
-      const child = new EventEmitter(); child.pid = 12345; child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => true;
-      process.nextTick(() => child.emit('close', 0, null));
-      return child;
-    }
-  });
-  const result = await runner.run('safe-autonomy-regression');
-  assert.equal(result.exitCode, 0);
-  assert.deepEqual(verifyWorkerRuntimeClosure(s.manifest.worker).roots.sort(), [s.workerCoreRoot, s.workerChordRoot].sort());
-  for (const root of [s.workerCoreRoot, s.workerChordRoot]) {
-    const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    assert.match(captured.profile, new RegExp(`\\(allow file-read\\* file-test-existence \\(subpath "${escaped}"\\)\\)`));
-    assert.doesNotMatch(captured.profile, new RegExp(`\\(allow [^\\n]*file-write[^\\n]*\\(subpath "${escaped}"\\)`));
-  }
-  for (const unavailable of [s.workerRuntimeParent, s.unrelatedWorkerSibling, s.providerRoot]) {
-    const escaped = unavailable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    assert.doesNotMatch(captured.profile, new RegExp(`\\(subpath "${escaped}"\\)`));
-  }
-
-  fs.writeFileSync(s.workerCoreEntrypoint, 'export const core = false;\n');
-  let launched = 0;
-  const tamperedRunner = new SandboxRunner({ repoRoot: s.root, manifestPath: s.manifestPath, spawnImpl() { launched++; throw new Error('must not spawn'); } });
-  await assert.rejects(tamperedRunner.run('safe-autonomy-regression'), /Pinned worker runtime hash mismatch/);
-  assert.equal(launched, 0);
+test('allows only the hash-verified worker runtime closure for the explicit canonical regression capability',()=>{
+ const policy=require('../src/sandbox-policy');assert.equal(policy.verifyWorkerPackage,undefined);assert.equal(policy.verifyProviderRuntime,undefined);assert.equal(policy.WorkerSandbox,undefined);
 });
-
 
 test('summarizes only bounded relative scratch entries with byte sizes', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-scratch-summary-'));
@@ -388,24 +333,7 @@ test('rejects manifest self-inputs before staging or spawning', async t => {
 });
 
 
-test('rejects modified or unpinned Pi runtime bundle files', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-worker-pin-'));
-  const bundleRoot = path.join(root, 'bundle'); fs.mkdirSync(path.join(bundleRoot, 'chunks'), { recursive: true });
-  const packageMetadata = path.join(root, 'package.json'); fs.writeFileSync(packageMetadata, '{"type":"module"}');
-  const entrypoint = path.join(bundleRoot, 'cli-runtime.js'); fs.writeFileSync(entrypoint, 'process.exit(0)\n');
-  const chunk = path.join(bundleRoot, 'chunks', 'main.js'); fs.writeFileSync(chunk, 'export const main = true\n');
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const worker = { bundleRoot, files: [
-    { path: 'cli-runtime.js', sha256: fileHash(entrypoint) },
-    { path: 'chunks/main.js', sha256: fileHash(chunk) }
-  ], packageMetadata: { path: packageMetadata, sha256: fileHash(packageMetadata) }, entrypoint: 'cli-runtime.js', entrypointSha256: fileHash(entrypoint) };
-  assert.equal(verifyWorkerPackage(worker).bundleRoot, fs.realpathSync(bundleRoot));
-  fs.writeFileSync(entrypoint, 'process.exit(1)\n');
-  assert.throws(() => verifyWorkerPackage(worker), /Pi runtime verification failed/);
-  fs.writeFileSync(entrypoint, 'process.exit(0)\n');
-  fs.writeFileSync(path.join(bundleRoot, 'rogue.js'), 'process.exit(9)\n');
-  assert.throws(() => verifyWorkerPackage(worker), /contents differ/);
-});
+test('removed runtime dependency requirements deny before spawning even with valid host pins', async t => { const s=setup(t); let launched=0; const runner=new SandboxRunner({repoRoot:s.root,manifestPath:s.manifestPath,spawnImpl(){launched++;throw Error('must not spawn');}}); for(const selector of ['requiresProviderRuntime','requiresWorkerRuntimeClosure']) { s.manifest.jobs[0][selector]=true; fs.writeFileSync(s.manifestPath,JSON.stringify(s.manifest),{mode:0o600}); await assert.rejects(runner.run('fixture-check'),/Removed worker runtime dependency/); delete s.manifest.jobs[0][selector]; } assert.equal(launched,0); });
 
 test('rejects unsafe manifest paths, symlinked inputs, network grants, and unbounded job settings', t => {
   const s = setup(t);
@@ -431,7 +359,7 @@ test('rejects unsafe manifest paths, symlinked inputs, network grants, and unbou
   s.manifest.jobs[0].requiresProviderRuntime = false; s.manifest.jobs[0].requiresWorkerRuntimeClosure = 'true';
   assert.throws(() => verifyManifest(s.root, s.manifest, 'fixture-check'), /worker runtime option/);
   s.manifest.jobs[0].requiresWorkerRuntimeClosure = true;
-  assert.throws(() => verifyManifest(s.root, s.manifest, 'fixture-check'), /worker runtime capability is limited/);
+  assert.throws(() => verifyManifest(s.root, s.manifest, 'fixture-check'), /Removed worker runtime dependency/);
   s.manifest.jobs[0].requiresWorkerRuntimeClosure = false; s.manifest.jobs[0].allowPinnedChildProcesses = true;
   assert.throws(() => verifyManifest(s.root, s.manifest, 'fixture-check'), /child-process capability is limited/);
 });

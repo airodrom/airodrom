@@ -7,7 +7,7 @@ const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { EventLedger, SCHEMA_VERSION, MAX_PAYLOAD_BYTES, MAX_STORED_PAYLOAD_BYTES } = require('../src/event-ledger');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 const { McpTools } = require('../src/mcp-tools');
 
 function temporary(t, prefix) {
@@ -21,7 +21,7 @@ function event(overrides = {}) {
     eventType: 'agent.instruction.sent', agent: 'chatgpt', direction: 'outgoing',
     taskId: 'task-a', runId: 'run-a', missionId: 'mission-a', sessionId: 'session-a', requestId: 'request-a', traceId: 'trace-a',
     workspace: 'bridge', repository: 'pi-chatgpt-bridge', branch: 'feature/ledger', status: 'recorded',
-    payload: 'Inspect src/example.js', metadata: { target: 'pi' }, ...overrides
+    payload: 'Inspect src/example.js', metadata: { target: 'host' }, ...overrides
   };
 }
 
@@ -29,9 +29,9 @@ function bridge(t) {
   const root = temporary(t, 'pi-event-ledger-');
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const controller = new BridgeController({ defaultRuntime: 'pi',
+  const controller = new BridgeController({ defaultRuntime: 'host',
     dataDir: path.join(root, 'data'), sourceProfile: profile,
-    executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true,
+    executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true,
     taskTimeoutMs: 10_000, maxConcurrent: 1
   });
   t.after(async () => { try { await controller.shutdown(); } catch {} });
@@ -59,7 +59,7 @@ test('fresh initialization, migration, ordering, correlation, and restart persis
   assert.equal(db.prepare('SELECT count(*) AS n FROM task_states').get().n, 1, 'existing bridge tables remain intact');
   const first = ledger.record(event({ idempotencyKey: 'instruction:one' }));
   clock += 1;
-  const second = ledger.record(event({ eventType: 'agent.result.received', agent: 'pi', direction: 'incoming', idempotencyKey: 'result:one', payload: 'done' }));
+  const second = ledger.record(event({ eventType: 'agent.result.received', agent: 'host', direction: 'incoming', idempotencyKey: 'result:one', payload: 'done' }));
   assert.equal(first.sequence + 1, second.sequence);
   assert.deepEqual(ledger.listTaskEvents('task-a').events.map(row => row.sequence), [first.sequence, second.sequence]);
   assert.equal(ledger.listTrace('trace-a').events.length, 2);
@@ -97,8 +97,8 @@ test('the live create-to-continue sequence keeps request idempotency separate fr
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
   const dataDir = path.join(root, 'data');
-  const makeController = () => new BridgeController({ defaultRuntime: 'pi',
-    dataDir, sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'),
+  const makeController = () => new BridgeController({ defaultRuntime: 'host',
+    dataDir, sourceProfile: profile, executable: path.join(__dirname, 'fixtures/host-worker.cjs'),
     allowFixtureWorker: true, taskTimeoutMs: 10_000, maxConcurrent: 1
   });
   let controller = makeController();
@@ -234,7 +234,7 @@ test('local Ollama routing events retain only safe final transport and native-re
   const event = controller.ledger.list({ taskId: task.id, eventType: 'routing.decision' }).events[0];
   assert.equal(event.payload, null, 'the final provider request and response text are never ledger payloads');
   assert.deepEqual(event.metadata, {
-    selected_agent: 'pi', provider: 'ollama', model: 'qwen3-coder:30b',
+    selected_agent: 'host', provider: 'ollama', model: 'qwen3-coder:30b',
     primary_model: 'qwen3-coder:30b', tool_model: 'qwen3-coder:30b', route_role: null,
     local: true, decision: 'allow', reason: null, input_bytes: 123, output_bytes: 456, duration_ms: 78,
     temperature: 0, tools_present: true, tool_names: ['personal_memory_search'],
@@ -282,7 +282,7 @@ test('bridge ledger records a Git baseline and keeps approvals distinct from exe
   const events = controller.ledger.listTaskEvents(task.id).events;
   assert.ok(events.some(row => row.event_type === 'git.baseline.observed'));
   assert.ok(events.some(row => row.event_type === 'agent.instruction.sent'));
-  assert.ok(events.some(row => row.event_type === 'agent.result.received' && row.agent === 'pi'));
+  assert.ok(events.some(row => row.event_type === 'agent.result.received' && row.agent === 'host'));
   controller._recordCapabilityRequested(controller.tasks.get(task.id), 'run_job', {
     request: { toolCallId: 'focused-ledger-test', input: { jobName: 'focused_test' } },
     describedJob: { kind: 'trusted-development' }

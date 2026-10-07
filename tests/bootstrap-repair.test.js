@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const Bridge = require('../src/bridge-controller');
+const Bridge = require('./fixtures/test-bridge.cjs');
 const { McpTools } = require('../src/mcp-tools');
 
 async function until(check) {
@@ -15,7 +15,7 @@ async function fixture(t, options = {}) {
   const root = fs.mkdtempSync('/private/tmp/pi-bootstrap-');
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), '{}');
-  const bridge = await new Bridge({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker:true, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), ...options }).initialize();
+  const bridge = await new Bridge({ defaultRuntime: 'host', dataDir: path.join(root, 'data'), sourceProfile: profile, allowFixtureWorker:true, executable: path.join(__dirname, 'fixtures/host-worker.cjs'), ...options }).initialize();
   t.after(async () => {
     const active = bridge.tasks.list().find(item => bridge.inFlight.has(item.id));
     if (active) await bridge.cancel(active.id).catch(() => {});

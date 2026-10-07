@@ -13,7 +13,7 @@ const frames = [
   { id: 2, method: 'ping' },
 ].map(v => JSON.stringify({ jsonrpc: '2.0', ...v })).join('\n') + '\n';
 function run(directory, enabled) {
-  const result = spawnSync(process.execPath, [entry], { input: frames, encoding: 'utf8', timeout: 5000, env: { ...process.env, PI_BRIDGE_DATA_DIR: directory, MCP_STDIO_TRACE: enabled } });
+  const result = spawnSync(process.execPath, [entry], { input: frames, encoding: 'utf8', timeout: 5000, env: { ...process.env, AIRODROM_DATA_DIR: directory, MCP_STDIO_TRACE: enabled } });
   assert.equal(result.status, 0, result.stderr);
   const replies = result.stdout.trim().split('\n').map(JSON.parse);
   assert.equal(replies.length, 3);

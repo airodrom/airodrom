@@ -3,19 +3,19 @@
   "sources": [
     {
       "path": "docs/harness/agent-model.md",
-      "source_hash": "8dfe1fd9f5daa162086df4a8415735a4aa4ba30cef834e28ffb673c4458ee30c",
+      "source_hash": "625cb044099e68ffe0407bc7626e119f975c5dfbebc229a516005b69c02692a4",
       "source_type": "canonical_doc",
       "trust": "canonical"
     },
     {
       "path": "docs/harness/architecture.md",
-      "source_hash": "f95e5e8456418b532556401d7cc3e794217f9c353d6c680481ae592bf9c743ff",
+      "source_hash": "f98877d07153071a0765c9f33c29bcbc39eb02d98688074e7687349519aed5ed",
       "source_type": "canonical_doc",
       "trust": "canonical"
     },
     {
       "path": "docs/harness/decisions.md",
-      "source_hash": "b3a6a53400cec89d08a496778cc96980d6aa4f414bda57cb757803ed1bd2c07e",
+      "source_hash": "d0938c1d12f85766d20d0c478ce8b3e74b771ccb45dac047bdf82adde4e2a7e5",
       "source_type": "canonical_doc",
       "trust": "canonical"
     }
@@ -35,7 +35,7 @@
       "key": "02-control-plane",
       "category": "architecture_decision",
       "source_ref": "docs/harness/decisions.md",
-      "content": "ChatGPT chooses strategy and reviews outcomes; it is not a runtime single point of failure. Pi owns durable operational reconciliation.",
+      "content": "ChatGPT chooses strategy and reviews outcomes; it is not a runtime single point of failure. Airodrom owns durable operational reconciliation.",
       "tags": [
         "architecture",
         "orchestration"
@@ -45,7 +45,7 @@
       "key": "03-agents-providers",
       "category": "invariant",
       "source_ref": "docs/harness/decisions.md",
-      "content": "Pi Control Plane and Pi Worker have separate roles and access. Agents perform work; providers supply inference. Neither model selection nor agent text grants permissions.",
+      "content": "Airodrom Control Plane and its workers have separate roles and access. Agents perform work; providers supply inference. Neither model selection nor agent text grants permissions.",
       "tags": [
         "architecture",
         "agents",
@@ -56,7 +56,7 @@
       "key": "04-results-acceptance",
       "category": "invariant",
       "source_ref": "docs/harness/decisions.md",
-      "content": "Result Inbox is untrusted evidence. Pi verifies independently; Acceptance precedes Next Action. A historical completed Task or model assertion is insufficient.",
+      "content": "Result Inbox is untrusted evidence. Airodrom verifies independently; Acceptance precedes Next Action. A historical completed Task or model assertion is insufficient.",
       "tags": [
         "authority",
         "results"
@@ -113,10 +113,10 @@
       ]
     },
     {
-      "key": "10-pi-rpc",
+      "key": "10-bounded-execution",
       "category": "agent_state",
       "source_ref": "docs/harness/architecture.md",
-      "content": "Pi Worker also has an existing provider-backed RPC path (`pi-adapter.js`), distinct from provider-independent native execution.",
+      "content": "General execution uses bounded OpenCode Missions. Deterministic operations use Airodrom host capabilities; local Ollama inference is a provider capability, never a compatibility runtime.",
       "tags": [
         "agents",
         "providers"
@@ -155,7 +155,7 @@
       "key": "14-candidate-policy",
       "category": "invariant",
       "source_ref": "docs/harness/architecture.md",
-      "content": "This repair does not import ChatGPT conversation history into Pi memory or enable automatic promotion.",
+      "content": "This repair does not import ChatGPT conversation history into Airodrom memory or enable automatic promotion.",
       "tags": [
         "memory",
         "security"
@@ -165,7 +165,7 @@
       "key": "13-default-runtime",
       "category": "architecture_decision",
       "source_ref": "docs/harness/agent-model.md",
-      "content": "OpenCode is the default primary execution runtime for new bounded general Missions. Pi remains explicit compatibility/rollback; typed plans and independent verification retain their Pi identity.",
+      "content": "OpenCode is the default primary execution runtime for new bounded general Missions. Airodrom owns typed plans and independent verification; Pi is removed and cannot receive or replay context.",
       "tags": [
         "agents",
         "runtime",

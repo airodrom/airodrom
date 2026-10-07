@@ -52,13 +52,16 @@ class AgentRouter {
 
   register(adapter) {
     if (!(adapter instanceof AgentAdapter)) throw new AgentAdapterError('AGENT_ADAPTER_INVALID', 'Agent adapter must implement the bridge contract');
+    require('./removed-runtime').assertExecutable(adapter.id);
     if (this.adapters.has(adapter.id)) throw new AgentAdapterError('AGENT_ADAPTER_INVALID', `Agent adapter is already registered: ${adapter.id}`);
     this.adapters.set(adapter.id, adapter);
     return adapter;
   }
 
   agentId(taskOrId = null) {
+    require('./removed-runtime').assertExecutable(taskOrId);
     const id = typeof taskOrId === 'string' ? taskOrId : taskOrId?.executionAgent || require('./default-runtime').DEFAULT_RUNTIME;
+    require('./removed-runtime').assertExecutable(id);
     return assertAgentId(id);
   }
 

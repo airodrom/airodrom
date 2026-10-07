@@ -6,7 +6,7 @@ const BridgeController = require('./bridge-controller');
 const ControlServer = require('./control-server');
 const { atomicJSON } = require('./config');
 const { createServiceLog } = require('./service-log');
-const background = process.env.PI_BRIDGE_BACKGROUND === '1';
+const background = process.env.AIRODROM_BACKGROUND === '1';
 let serviceLog;
 function reportError(error) {
   if (background) {
@@ -16,22 +16,22 @@ function reportError(error) {
   process.exitCode = 1;
 }
 async function main() {
-  if (background) { serviceLog = createServiceLog(process.env.PI_BRIDGE_LOG_FILE); serviceLog.write('starting'); }
-  const allowedHosts = process.env.PI_BRIDGE_WEB_HOSTS?.split(',').map(s => s.trim()).filter(Boolean);
-  if (process.env.PI_TRUSTED_DEV_MODE !== undefined && process.env.PI_TRUSTED_DEV_MODE !== '1') throw new Error('PI_TRUSTED_DEV_MODE must be exactly 1 when present');
-  const trustedDeveloperMode = process.env.PI_TRUSTED_DEV_MODE === '1';
+  if (background) { serviceLog = createServiceLog(process.env.AIRODROM_LOG_FILE); serviceLog.write('starting'); }
+  const allowedHosts = process.env.AIRODROM_WEB_HOSTS?.split(',').map(s => s.trim()).filter(Boolean);
+  if (process.env.AIRODROM_TRUSTED_DEV_MODE !== undefined && process.env.AIRODROM_TRUSTED_DEV_MODE !== '1') throw new Error('AIRODROM_TRUSTED_DEV_MODE must be exactly 1 when present');
+  const trustedDeveloperMode = process.env.AIRODROM_TRUSTED_DEV_MODE === '1';
   const bridge = await new BridgeController({
-    dataDir: process.env.PI_BRIDGE_DATA_DIR,
-    sourceProfile: process.env.PI_BRIDGE_SOURCE_PROFILE,
+    dataDir: process.env.AIRODROM_DATA_DIR,
+    sourceProfile: process.env.AIRODROM_SOURCE_PROFILE,
     allowedHosts,
-    webEnabled: process.env.PI_BRIDGE_WEB !== 'off',
-    level1ActivationEnabled: process.env.PI_BRIDGE_LEVEL1_ACTIVATION === '1',
-    level1RestrictedWorkerEnabled: process.env.PI_BRIDGE_LEVEL1_RESTRICTED_WORKER === '1',
+    webEnabled: process.env.AIRODROM_WEB !== 'off',
+    level1ActivationEnabled: process.env.AIRODROM_LEVEL1_ACTIVATION === '1',
+    level1RestrictedWorkerEnabled: process.env.AIRODROM_LEVEL1_RESTRICTED_WORKER === '1',
     trustedDeveloperMode,
     defaultRuntime: process.env.AIRODROM_DEFAULT_RUNTIME,
     opencode: { ...require('./default-runtime').OPENCODE_DEFAULTS, ...(process.env.AIRODROM_OPENCODE_MODEL ? {model:process.env.AIRODROM_OPENCODE_MODEL} : {}), ...(process.env.AIRODROM_OPENCODE_EXECUTABLE ? {executable:process.env.AIRODROM_OPENCODE_EXECUTABLE} : {}) }
   }).initialize();
-  const ui = new ControlServer(bridge, { port: process.env.PI_BRIDGE_PORT ? Number(process.env.PI_BRIDGE_PORT) : 43117 });
+  const ui = new ControlServer(bridge, { port: process.env.AIRODROM_PORT ? Number(process.env.AIRODROM_PORT) : 43117 });
   try {
     const address = await ui.start();
     atomicJSON(path.join(bridge.dataDir, 'ui.json'), { ...address, pid: process.pid, startedAt: new Date().toISOString() });

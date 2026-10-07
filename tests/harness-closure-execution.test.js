@@ -1,12 +1,12 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
-const Controller = require('../src/bridge-controller');
+const Controller = require('./fixtures/test-bridge.cjs');
 const evidence = require('../src/execution-evidence');
 async function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync('/private/tmp/pc-'));
   const profile = path.join(root, 'profile'); fs.mkdirSync(profile); fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new Controller({ defaultRuntime: 'pi', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true }).initialize();
+  const bridge = await new Controller({ defaultRuntime: 'host', dataDir: path.join(root, 'data'), sourceProfile: profile, executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true }).initialize();
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   return { root, bridge };
 }
@@ -53,7 +53,7 @@ test('verification rejects absent or wrong-run execution evidence before using a
   const { MissionVerifier } = require('../src/mission-verifier'); let calls = 0;
   const verifier = new MissionVerifier({ tasks: { get: () => ({ id: 'fixture' }) }, invokeCapability: () => { calls++; } }, {});
   for (const result of [null, { native_execution_evidence: { run_id: 'other', required_execution_kind: 'native', completed_invocations: 1 } }]) {
-    const checked = await verifier.verify({ envelope: {} }, { id: 'run', agent_id: 'pi', task_id: 'fixture', state: 'completed', result });
+    const checked = await verifier.verify({ envelope: {} }, { id: 'run', agent_id: 'host', task_id: 'fixture', state: 'completed', result });
     assert.equal(checked.status, 'failed'); assert.equal(checked.checks[0].evidence.reason, 'native_tool_required');
   }
   assert.equal(calls, 0);
@@ -74,7 +74,7 @@ test('Acceptance, fixture auto-acceptance and Next Action independently refuse a
   f.bridge.fixtureAcceptance.attempt = attempt;
   const v = f.bridge.missions.detail(m.id).verifications[0], db = f.bridge.memory.db;
   // Simulate a legacy/recovered Pi completion claim with no invocation record.
-  db.prepare("UPDATE cp_runs SET agent_id='pi',result=NULL WHERE id=?").run(v.run_id);
+  db.prepare("UPDATE cp_runs SET agent_id='host',result=NULL WHERE id=?").run(v.run_id);
   assert.equal(attempt(m.id).reason, 'native_tool_required');
   assert.throws(() => f.bridge.missions.accept(m.id, { request_id: randomUUID(), verification_id: v.id, decision: 'accept', rationale: 'Forged legacy completion must not pass' }), /native execution evidence/);
   const { BoundedNextAction } = require('../src/bounded-next-action');

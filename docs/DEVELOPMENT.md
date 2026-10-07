@@ -1,10 +1,10 @@
 # Local development
 
-Install the locked dependencies with `npm ci --ignore-scripts`. Use Node 22.23.3, npm 10.9.9 and macOS for the current tested platform. `npm test` runs source fixtures in disposable stores and loopback servers. `npm run test:hardening` runs focused security/privacy/runtime regression suites. Run `npm run typecheck:authority`, `npm run typecheck:sdk` and `npm run verify` before review.
+Install the locked dependencies with `npm ci --ignore-scripts`. Use Node 22.23.3, npm 10.9.9 and macOS for the current tested platform. `npm test` runs source fixtures in disposable stores and loopback servers. `npm run test:hardening` runs focused security/privacy/runtime regression suites. Run `npm run test:runtime-removal`, `npm run typecheck:authority`, `npm run typecheck:sdk` and `npm run verify` before review.
 
 The authority type check covers the declared hash/JSON/declaration contract. The SDK check covers public declarations. Neither is whole-project JavaScript typing. `verify` checks JavaScript syntax, JSON, local document links, canonical-source hashes, package policy and public-boundary rules. There is no general lint or transpilation build target.
 
-Installed Pi transport simulations and host-pin qualification are conditional on a private reviewed operator manifest. The portable suite retains negative boundary tests; a skipped installed-runtime test does not qualify that runtime. Live test targets and `macos:validate` can perform service/provider actions and must be explicitly authorized separately.
+Synthetic transport/lifecycle fixtures launch a fixed Node policy worker without any installed agent. Host-pin qualification is conditional on a private reviewed operator manifest. The portable suite retains negative boundary tests; a skipped installed-runtime test does not qualify that runtime. Live test targets and `macos:validate` can perform service/provider actions and must be explicitly authorized separately.
 
 Use `.invalid` identities and seeded data. Never read raw discovery into diagnostics. Preserve unrelated files, independent dispositions and unique history. Document fixture/live boundaries and skipped prerequisites with results.
 

@@ -1,5 +1,7 @@
 # Fresh candidate validation
 
+Historical evidence: these counts and runtime references describe earlier revisions. The removal contract is [ADR 0008](adr/0008-remove-worker-runtime.md).
+
 October 5, 2026. Candidate 1.0.0-rc.1, source-only and unactivated. All counts below are from this pass. Focused and full suites overlap and must not be added.
 
 | Check | Fresh result |

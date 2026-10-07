@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const Rpc = require('../src/rpc-supervisor');
+const Rpc = require('./fixtures/fixture-transport.cjs');
 
 function failingWorker(stderr) {
   const source = `setTimeout(() => { process.stderr.write(${JSON.stringify(stderr)}); process.exit(1); }, 60); process.stdin.resume();`;
@@ -10,20 +10,20 @@ function failingWorker(stderr) {
 async function expectWorkerExit(stderr, check) {
   const rpc = failingWorker(stderr);
   await assert.rejects(rpc.start(), error => {
-    assert.match(error.message, /^Pi exited \(1\)/);
+    assert.match(error.message, /^Fixture exited \(1\)/);
     check(error.message);
     return true;
   });
 }
 
 test('all transports reject direct bash and session reassignment before any process exists', async () => {
-  for (const Transport of [Rpc, require('../src/local-transport')]) {
+  for (const Transport of [Rpc]) {
     const rpc = new Transport();
     for (const type of ['bash','user_bash','switch_session','new_session','set_model','quit','__proto__']) await assert.rejects(rpc.sendCommand({ type, command: 'echo bypass' }), /not allowed/);
   }
 });
 
-test('Pi RPC refuses to spawn when the host OS sandbox is missing', async () => {
+test('Generic fixture transport refuses to spawn when the host OS sandbox is missing', async () => {
   const rpc = new Rpc({ executable: process.execPath, args: [] });
   await assert.rejects(rpc.start(), /sandbox is required/);
   assert.equal(rpc.running, false);
@@ -90,7 +90,7 @@ test('failed worker exit bounds long stderr', async () => {
 });
 
 test('failed worker exit with empty stderr retains the useful exit error', async () => {
-  await expectWorkerExit('', message => assert.equal(message, 'Pi exited (1)'));
+  await expectWorkerExit('', message => assert.equal(message, 'Fixture exited (1)'));
 });
 
 test('successful RPC request behavior remains unchanged', async () => {

@@ -25,7 +25,7 @@ function workspaceSnapshot(root){
 }
 class ControlContext {
   constructor(bridge,store){this.bridge=bridge;this.store=store;this.db=store.db;}
-  build(mission,runId=null){return transaction(this.db,()=>{const pack=this._build(mission,runId);if(mission.envelope.manifest){if(!mission.envelope.manifest.permissions.memory.read&&pack.refs.length)throw Error('Manifest memory retrieval denied');this.bridge.missions.program.reserve(mission.id,'memory_injections',pack.id,pack.refs.length,{context_hash:pack.context_hash});}return pack;});}
+  build(mission,runId=null){require('./removed-runtime').assertExecutable(mission);return transaction(this.db,()=>{const pack=this._build(mission,runId);if(mission.envelope.manifest){if(!mission.envelope.manifest.permissions.memory.read&&pack.refs.length)throw Error('Manifest memory retrieval denied');this.bridge.missions.program.reserve(mission.id,'memory_injections',pack.id,pack.refs.length,{context_hash:pack.context_hash});}return pack;});}
   _build(mission,runId=null){
     require('./memory-content-erasure').assertReadable(this.db);
     const memoryAllowed=!mission.envelope.manifest||(mission.envelope.manifest.permissions.memory.read&&mission.envelope.manifest.permissions.memory.search);

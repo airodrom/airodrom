@@ -11,7 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDENTIFIER = /^[A-Za-z0-9_.:-]{1,160}$/;
 const SAFE_LABEL = /^[A-Za-z0-9_.:/-]{1,160}$/;
 const EVENT_TYPE = /^[a-z][a-z0-9_.-]{0,119}$/;
-const AGENT = /^(?:chatgpt|pi|claude_code|cursor|shell|bridge|supervisor|system|slack)$/;
+const AGENT = /^(?:chatgpt|pi|host|opencode|claude_code|cursor|shell|bridge|supervisor|system|slack)$/;
 const DIRECTIONS = new Set(['incoming', 'outgoing', 'internal']);
 
 class LedgerIdempotencyConflictError extends Error {

@@ -1,5 +1,7 @@
 # Documentation closeout
 
+Historical evidence: these counts and runtime references describe earlier revisions. The removal contract is [ADR 0008](adr/0008-remove-worker-runtime.md).
+
 October 5, 2026. Same private **1.0.0-rc.1** candidate; no repository visibility change, release/package publication, deployment or production activation occurred.
 
 **PUBLIC-RELEASE HARDENING COMPLETE — READY FOR OWNER PUBLICATION DECISION**

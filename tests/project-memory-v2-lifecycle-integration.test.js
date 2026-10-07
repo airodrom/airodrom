@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const Bridge = require('../src/bridge-controller');
+const Bridge = require('./fixtures/test-bridge.cjs');
 const MemoryStore = require('../src/memory-store');
 const TaskSessionManager = require('../src/task-session-model');
 const { ProjectMemoryV2Adapter } = require('../src/project-memory-v2-adapter');
@@ -26,7 +26,7 @@ function repository(head = 'memory-head-a') {
 test('BridgeController persists Memory V2 lifecycle evidence and fails stale recovery closed', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-m2-life-'));
   const memory = new MemoryStore(path.join(root, 'memory.sqlite'));
-  const bridge = new Bridge({ defaultRuntime: 'pi', dataDir: root });
+  const bridge = new Bridge({ defaultRuntime: 'host', dataDir: root });
 
   bridge.memory = memory;
   bridge.tasks = new TaskSessionManager(root, memory.db);

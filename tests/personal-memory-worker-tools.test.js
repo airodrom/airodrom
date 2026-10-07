@@ -7,16 +7,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const BridgeController = require('../src/bridge-controller');
+const BridgeController = require('./fixtures/test-bridge.cjs');
 
 async function fixture(t) {
   const root = fs.mkdtempSync('/private/tmp/bridge-personal-memory-worker-tools-');
   const profile = path.join(root, 'profile');
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture' }));
-  const bridge = await new BridgeController({ defaultRuntime: 'pi',
+  const bridge = await new BridgeController({ defaultRuntime: 'host',
     dataDir: path.join(root, 'data'), sourceProfile: profile,
-    executable: path.join(__dirname, 'fixtures/fake-pi.cjs'), allowFixtureWorker: true
+    executable: path.join(__dirname, 'fixtures/host-worker.cjs'), allowFixtureWorker: true
   }).initialize();
   t.after(async () => { await bridge.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
   return { bridge };
@@ -110,7 +110,7 @@ test('Pi worker memory writes become candidates; approved legacy reads remain sc
   assert.equal(bridge.policy.safetyStops.has(current.id), false);
 
   const project = await approvedCall(bridge, current.id, 'project_create', {
-    name: 'Worker-scoped Project', nextAction: 'Inspect the project-specific fixture.', preferredAgents: ['pi']
+    name: 'Worker-scoped Project', nextAction: 'Inspect the project-specific fixture.', preferredAgents: ['host']
   });
   assert.equal(bridge.tasks.get(current.id).projectId, project.projectId);
   const projectCandidate = await autoCall(bridge, current.id, 'personal_memory_remember', {
@@ -135,13 +135,13 @@ test('Pi worker Project, Goal, Mission, and Next Action tools stay task-scoped a
   const { bridge } = await fixture(t);
   const current = task(bridge, 'Project worker tool fixture');
   const project = await approvedCall(bridge, current.id, 'project_create', {
-    name: 'Pi Project Tool Fixture', nextAction: 'Review durable project state.', preferredAgents: ['pi']
+    name: 'Pi Project Tool Fixture', nextAction: 'Review durable project state.', preferredAgents: ['host']
   });
   const goal = await approvedCall(bridge, current.id, 'project_create_goal', {
     projectId: project.projectId, name: 'Worker access', desiredOutcome: 'Bounded project capability access', nextAction: 'Create a mission.'
   });
   const mission = await approvedCall(bridge, current.id, 'project_create_mission', {
-    goalId: goal.goalId, name: 'Bounded Mission', acceptanceCriteria: ['Return only a suggestion'], nextAction: 'Inspect project state.', preferredAgents: ['pi']
+    goalId: goal.goalId, name: 'Bounded Mission', acceptanceCriteria: ['Return only a suggestion'], nextAction: 'Inspect project state.', preferredAgents: ['host']
   });
   const active = await approvedCall(bridge, current.id, 'project_set_mission_status', {
     missionId: mission.missionId, status: 'active', nextAction: 'Inspect project state.'
@@ -166,8 +166,6 @@ test('Pi worker Project, Goal, Mission, and Next Action tools stay task-scoped a
   assert.equal(denied.allow, false); assert.equal(denied.executionFailed, true);
   assert.equal(bridge.policy.safetyStops.has(current.id), false);
 
-  const extension = fs.readFileSync(path.join(__dirname, '../src/safety-extension.mjs'), 'utf8');
-  for (const name of ['personal_memory_get', 'personal_memory_search', 'personal_memory_recent', 'personal_memory_remember', 'personal_memory_update', 'personal_memory_forget', 'project_list', 'project_get', 'project_summary', 'project_next_action', 'project_create', 'project_create_goal', 'project_create_mission', 'project_set_mission_status', 'project_archive']) assert.match(extension, new RegExp(`name: '${name}'`));
-  const controller = fs.readFileSync(path.join(__dirname, '../src/bridge-controller.js'), 'utf8');
-  assert.match(controller, /toolAllowlist = .*personal_memory_get.*project_next_action/s);
+  const registry=require('../src/capability-broker').BROKER_TOOLS;
+  for(const name of ['personal_memory_get','personal_memory_search','personal_memory_remember','personal_memory_update','project_list','project_next_action'])assert.ok(registry.has(name));
 });

@@ -5,6 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
+const { removed } = require('./removed-runtime');
 
 const { classify } = require('./safe-diagnostics');
 const { AutonomyPolicy } = require('./autonomy-policy');
@@ -21,11 +22,11 @@ const TRUSTED_FILES = [
   'src/mission-permissions.js', 'src/safety-policy.js', 'src/mission-authority.js', 'src/mission-coordinator.js',
   'src/capability-broker.js',
   'src/bridge-controller.js', 'src/control-server.js', 'src/config.js',
-  'src/safe-diagnostics.js', 'src/safety-extension.js', 'src/safety-extension.mjs', 'src/rpc-supervisor.js',
+  'src/safe-diagnostics.js', 'src/safety-extension.js', 'src/host-worker-adapter.js',
   'src/mission-supervisor.js', 'src/supervisor-acceptance.js', 'src/memory-store.js',
   'src/task-session-model.js', 'src/index.js', 'src/mcp.js', 'src/mcp-stdio.js',
   'src/mcp-tools.js', 'src/service-log.js', 'src/chatgpt-events.js',
-  'src/chatgpt-event-extension.mjs', 'src/web-reader.js', 'src/worker-sandbox.js',
+  'src/web-reader.js', 'src/sandbox-policy.js',
   'src/sandbox-runner.js', 'src/mission-provider.js', 'scripts/run.cjs',
   'scripts/macos', 'macos', 'config/safe-autonomy-manifest.json', 'wire.log', 'package.json', 'package-lock.json'
 ];
@@ -88,10 +89,10 @@ class SafetyPolicy extends EventEmitter {
     // the enforcement boundary that is evaluating that same task.
     const trustedPaths = TRUSTED_FILES.map(file => path.join(this.bridgeRoot, file));
     this.explicitProtectedPaths = [...new Set([...protectedPaths, ...trustedPaths])].map(p => realTarget(path.resolve(p)));
-    this.protectedPaths = [...this.runtimeRoots, this.bridgeRoot, path.join(os.homedir(), '.local/npm/lib/node_modules/@earendil-works/pi-coding-agent'), path.join(os.homedir(), '.pi'), ...protectedPaths].map(p => realTarget(path.resolve(p)));
+    this.protectedPaths = [...this.runtimeRoots, this.bridgeRoot, path.join(os.homedir(), '.pi'), ...protectedPaths].map(p => realTarget(path.resolve(p)));
   }
 
-  registerTask({ id, sessionId, workspace, mission = null, reasoningMode = null }) {
+  registerTask({ id, sessionId, workspace, mission = null, reasoningMode = null, executionAgent = null }) {
     if (typeof id !== 'string' || !id || typeof sessionId !== 'string' || !sessionId || typeof workspace !== 'string' || !path.isAbsolute(workspace)) throw new Error('Invalid task registration');
     const resolved = fs.realpathSync(workspace);
     if (!fs.statSync(resolved).isDirectory()) throw new Error('Task workspace must be a directory');
@@ -99,7 +100,7 @@ class SafetyPolicy extends EventEmitter {
     if (this.runtimeRoots.some(root => contained(root, resolved)) && !this._generatedWorkspace({id, workspace: resolved})) throw new Error('Bridge state is not a task workspace');
     const current = this.tasks.get(id);
     if (current && (current.sessionId !== sessionId || current.workspace !== resolved)) this.revokeTask(id);
-    this.tasks.set(id, { id, sessionId, reasoningMode, workspace: resolved, mission: mission ? clone(mission) : null });
+    this.tasks.set(id, { id, sessionId, reasoningMode, executionAgent, workspace: resolved, mission: mission ? clone(mission) : null });
     return { id, sessionId, workspace: resolved, mission: mission ? clone(mission) : null };
   }
 
@@ -182,7 +183,7 @@ class SafetyPolicy extends EventEmitter {
       const target = realTarget(lexical);
       if (!contained(task.workspace, lexical) || !contained(task.workspace, target)) throw new Error('Path is outside the task workspace');
       if ((this._protected(task, lexical) || this._protected(task, target)) && !(call.toolName === 'read' && this._diagnosticLog(task, lexical, target))) throw new Error('Protected metadata or secret path');
-      if (['write', 'edit'].includes(call.toolName) && this._protectedWrite(task, target)) throw new Error('Bridge state and installed Pi files are protected');
+      if (['write', 'edit'].includes(call.toolName) && this._protectedWrite(task, target)) throw new Error('Bridge state and installed runtime files are protected');
       if (READ_TOOLS.has(call.toolName)) {
         const stat = fs.statSync(target);
         if (!stat.isFile() && !stat.isDirectory()) throw new Error('Only regular files and directories may be read');
@@ -215,6 +216,7 @@ class SafetyPolicy extends EventEmitter {
     this._expire();
     const task = this.tasks.get(taskId);
     if (!task) return this._record(taskId, call, { allow: false, kind: 'unknown_task', reason: 'Unknown or revoked task' });
+    if (removed(task)) return this._record(taskId, call, { allow: false, kind: 'runtime_removed', reason: 'Historical runtime removed; no execution authority' });
     const hostReasoning = task.reasoningMode === 'reasoning_only' && call?.toolName === 'host_reasoning';
     if (task.reasoningMode === 'reasoning_only' && !hostReasoning) return this._record(taskId, call, { allow: false, kind: 'reasoning_execution_denied', reason: 'Reasoning admission grants no execution authority' });
     const latched = this.safetyStops.get(taskId);

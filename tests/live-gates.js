@@ -5,13 +5,13 @@ const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const Bridge = require('../src/bridge-controller');
+const Bridge = require('./fixtures/test-bridge.cjs');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-gates-'));
 const proof = { testedAt: new Date().toISOString(), gates: {}, dataDir };
 let bridge;
 function pass(name, detail) { proof.gates[name] = { pass: true, ...detail }; console.log(`${name}=PASS ${JSON.stringify(detail)}`); }
 async function run() {
-  bridge = await new Bridge({ dataDir, sourceProfile: process.env.PI_BRIDGE_SOURCE_PROFILE || path.join(os.homedir(), '.pi/profiles/local-dev') }).initialize();
+  bridge = await new Bridge({ dataDir, sourceProfile: process.env.AIRODROM_SOURCE_PROFILE || path.join(os.homedir(), '.pi/profiles/local-dev') }).initialize();
   const a = bridge.createTask('Disposable bridge reality gates');
   const secret = `CANARY_${randomUUID().replaceAll('-','')}`;
   const first = await bridge.prompt(a.id, `Remember my task-only canary ${secret}. Reply with exactly BRIDGE_RPC_OK. Do not use any tools.`);
@@ -20,7 +20,7 @@ async function run() {
   assert.equal(live.safetyLoaded, true); assert(live.sessionFile && fs.existsSync(live.sessionFile));
   pass('REAL_RPC', { model: live.model, sessionId: live.sessionId, safetyLoaded: live.safetyLoaded });
   await bridge.shutdown();
-  bridge = await new Bridge({ dataDir, sourceProfile: process.env.PI_BRIDGE_SOURCE_PROFILE || path.join(os.homedir(), '.pi/profiles/local-dev') }).initialize();
+  bridge = await new Bridge({ dataDir, sourceProfile: process.env.AIRODROM_SOURCE_PROFILE || path.join(os.homedir(), '.pi/profiles/local-dev') }).initialize();
   const resumed = await bridge.prompt(a.id, 'Reply only with the task-only canary I gave you earlier. Do not use tools.');
   assert(resumed.text.includes(secret)); assert.equal(resumed.sessionId, a.sessionId);
   pass('SAME_TASK_RESTART_CONTINUATION', { sessionId: resumed.sessionId });
@@ -63,7 +63,7 @@ async function run() {
   const memoryCanary = `MEMORY_${randomUUID().replaceAll('-','')}`;
   const memoryEntry = bridge.saveMemory({ taskId: memoryTask.id, kind: 'fact', content: `The orchard retrieval code is ${memoryCanary}.` });
   await bridge.shutdown();
-  bridge = await new Bridge({ dataDir, sourceProfile: process.env.PI_BRIDGE_SOURCE_PROFILE || path.join(os.homedir(), '.pi/profiles/local-dev') }).initialize();
+  bridge = await new Bridge({ dataDir, sourceProfile: process.env.AIRODROM_SOURCE_PROFILE || path.join(os.homedir(), '.pi/profiles/local-dev') }).initialize();
   const memoryResult = await bridge.prompt(memoryTask.id, 'What is the orchard retrieval code? Reply with only the code from the reference memory. Do not use tools.');
   assert(memoryResult.text.includes(memoryCanary));
   const memoryState = bridge.tasks.get(memoryTask.id);

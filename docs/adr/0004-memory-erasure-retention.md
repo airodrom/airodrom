@@ -1,5 +1,7 @@
 # ADR 0004 — Immutable metadata, erasable content
 
+Historical decision: runtime references are superseded by [ADR 0008](0008-remove-worker-runtime.md). Pi is removed and historical identities cannot execute.
+
 Status: ACCEPTED. Logical erasure and opaque identity controls are part of the candidate; source is unactivated. Production migrations require separately authorized maintenance.
 
 ## Decision

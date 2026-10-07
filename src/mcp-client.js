@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 
-function discovery(dataDir = process.env.PI_BRIDGE_DATA_DIR || path.join(__dirname, '../.runtime')) {
+function discovery(dataDir = process.env.AIRODROM_DATA_DIR || path.join(__dirname, '../.runtime')) {
   const file = path.join(dataDir, 'mcp.json');
   const directory = fs.lstatSync(dataDir), stat = fs.lstatSync(file);
   if (!directory.isDirectory() || directory.isSymbolicLink() || (directory.mode & 0o077) || !stat.isFile() || stat.isSymbolicLink() || stat.size > 4096 || (stat.mode & 0o077) || stat.uid !== process.getuid() || directory.uid !== process.getuid()) throw new Error('MCP discovery must be private and owned by the current user');

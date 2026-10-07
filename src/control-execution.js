@@ -17,12 +17,12 @@ function repositoryRoot(directory) {
 // Wraps admission and settlement of the existing runner; never spawns a worker.
 class ControlExecution {
   constructor(bridge, store) { this.bridge = bridge; this.store = store; }
-  admit(lease, agentId = 'pi') {
+  admit(lease, agentId = 'host') {
     const task = this.bridge.tasks.get(lease.taskId);
     transaction(this.store.db, () => {
       this.store.startRun({ id: lease.runId, taskId: task.id, generation: lease.generation,
         agentId, nativeSessionId: task.sessionId, missionId: this.store.missionForTask(task.id)?.id });
-      if (agentId === 'pi') this.store.acquireLease({ resource: repositoryRoot(task.workspace), runId: lease.runId });
+      if (agentId === 'host') this.store.acquireLease({ resource: repositoryRoot(task.workspace), runId: lease.runId });
     });
   }
   release(lease, verified) {
@@ -34,18 +34,18 @@ class ControlExecution {
         result: { inference_only: true, task_state: task.status, failure_kind: task.failureKind || null, accepted: false } });
       return;
     }
-    // Pi sessions can remain idle between turns. Settlement proves the turn,
+    // Airodrom host sessions can remain idle between turns. Settlement proves the turn,
     // not destruction of the reusable session process.
     const task = this.bridge.tasks.get(run.task_id);
     const success = task.status === 'completed' && require('./execution-evidence').satisfied(task, lease.runId);
     this.store.updateRun(lease.runId, {
       state: verified ? (lease.cancelRequested ? 'cancelled' : success ? 'completed' : 'failed') : 'termination_unverified',
       result: { native_execution_evidence: task.nativeExecutionEvidence || null, task_state: task.status, failure_kind: task.failureKind || null },
-      processState: verified ? (run.agent_id === 'pi' ? 'idle' : 'not_started') : 'unknown',
+      processState: verified ? (run.agent_id === 'host' ? 'idle' : 'not_started') : 'unknown',
       liveness: verified ? 'settled' : 'unknown', verified,
       resolution: verified ? null : 'reconcile_process', deferAudit: true
     });
-    if(verified&&run.agent_id==='pi'&&this.bridge.resultInbox){const task=this.bridge.tasks.get(run.task_id);this.bridge.resultInbox.publish({run_id:run.id,mission_id:run.mission_id,task_id:run.task_id,agent_id:'pi',request_id:`pi:${run.id}`,result:{status:task.cancelRequested?'cancelled':success?'completed':'failed',summary:String(task.lastResult||'Pi turn settled; inspect correlated task evidence').slice(0,8000),changed_files:[],tests:[],artifacts:[],limitations:['Turn settlement is distinct from Mission acceptance']}});}
+    if(verified&&run.agent_id==='host'&&this.bridge.resultInbox){const task=this.bridge.tasks.get(run.task_id);this.bridge.resultInbox.publish({run_id:run.id,mission_id:run.mission_id,task_id:run.task_id,agent_id:'host',request_id:`host:${run.id}`,result:{status:task.cancelRequested?'cancelled':success?'completed':'failed',summary:String(task.lastResult||'Airodrom host turn settled; inspect correlated task evidence').slice(0,8000),changed_files:[],tests:[],artifacts:[],limitations:['Turn settlement is distinct from Mission acceptance']}});}
   }
   beginExternal(task, repo, jobId) {
     if(task.mission?.authority)throw Error('Mission authority requires a qualified bounded native adapter');

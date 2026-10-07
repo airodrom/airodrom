@@ -104,7 +104,7 @@ async function open(c) {
   const s=await status(c); if (s.state !== 'Connected') throw new Error('Start the bridge before opening Control Center.');
   const {ui}=uiDiscovery(c);
   // NSWorkspace opens the private URL in memory, never via command arguments.
-  const app = path.join(project, 'work/macos/Pi Bridge.app/Contents/MacOS/PiBridgeMenu');
+  const app = path.join(project, 'work/macos/Pi Bridge.app/Contents/MacOS/AirodromMenu');
   const r=spawnSync(c.helper || app, ['--open-control-center'],{stdio:'ignore',timeout:5000});
   if (r.status !== 0) throw new Error('Could not open Control Center.');
   return s;

@@ -1,5 +1,7 @@
 # Public and private file classification
 
+Historical export classification for the preceding candidate. Removed or renamed runtime files below describe that historical snapshot; current distribution is governed by release-files.json and the Pi-removal architecture gate.
+
 Only the reviewed candidate [allowlist](../release-files.json) is released. This table classifies original source artifacts; public rewrites replace internal originals without deleting them. Runtime/data/session/credential stores and transient work are excluded as entire categories. No private Git history is distributed.
 
 | Original classification | Files | Treatment |
@@ -353,7 +355,7 @@ All original worktrees, dirty/unique work and evidence remain preserved. No old 
 | `src/verification-runtime.js` | PUBLIC SAFE | keep public |
 | `src/web-reader.js` | PUBLIC SAFE | keep public |
 | `src/work-execution-adapter.js` | PUBLIC SAFE | keep public |
-| `src/worker-sandbox.js` | PUBLIC SAFE | keep public |
+| `src/sandbox-policy.js` | PUBLIC SAFE | keep public |
 | `test-empty-array-validation.js` | GENERATED/TRANSIENT | preserve original; exclude from release |
 | `tests/active-chat-mission.test.js` | PUBLIC SAFE | keep public |
 | `tests/agent-adapter.test.js` | PUBLIC SAFE | keep public |

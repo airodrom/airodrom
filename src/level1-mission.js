@@ -139,20 +139,20 @@ class Level1MissionFlow {
 
   recordTaskAStarted(missionId, { taskId, sessionId, simulation = false } = {}) {
     const mission = this._active(missionId);
-    if (simulation && process.env.NODE_ENV !== 'test') throw new Error('Simulated Pi events are restricted to isolated tests');
+    if (simulation && process.env.NODE_ENV !== 'test') throw new Error('Simulated worker events are restricted to isolated tests');
     if (taskId !== mission.task_a_id || !UUID.test(sessionId) || mission.task_a_event_id) throw new Error('Invalid or duplicate Task A start evidence');
-    if (!simulation) this.acceptance.recordPiTaskStarted(missionId, { taskId, sessionId });
+    if (!simulation) this.acceptance.recordWorkerTaskStarted(missionId, { taskId, sessionId });
   }
 
   recordTaskAResult({ missionId, taskId, sessionId, eventId, result, authenticated = false, simulation = false }) {
     const mission = this._active(missionId);
     if (authenticated !== true || taskId !== mission.task_a_id || !UUID.test(sessionId) || !UUID.test(eventId) || typeof result !== 'string' || !result.trim() || Buffer.byteLength(result) > 2048 || /[^\x00-\x7f]/.test(result)) throw new Error('Invalid or unauthenticated Level 1 Task A completion event');
-    if (simulation && process.env.NODE_ENV !== 'test') throw new Error('Simulated Pi events are restricted to isolated tests');
+    if (simulation && process.env.NODE_ENV !== 'test') throw new Error('Simulated worker events are restricted to isolated tests');
     if (mission.task_a_event_id) throw new Error('Duplicate Task A completion event');
     const resultHash = hash(result);
     this.db.prepare('UPDATE level1_missions SET task_a_event_id=?,task_a_session_id=?,task_a_result=?,task_a_result_hash=? WHERE mission_id=? AND status=? AND task_a_event_id IS NULL')
       .run(eventId, sessionId, result, resultHash, missionId, 'active');
-    if (!simulation) this.acceptance.recordPiCompletion(missionId, { taskId, sessionId, completionEventId: eventId, resultHash });
+    if (!simulation) this.acceptance.recordWorkerCompletion(missionId, { taskId, sessionId, completionEventId: eventId, resultHash });
     return { missionId, taskId, sessionId, eventId, resultHash, selectedTaskBId: null };
   }
 
@@ -192,7 +192,7 @@ class Level1MissionFlow {
       this.db.prepare("UPDATE level1_decisions SET state='dispatched' WHERE decision_id=? AND state='validated'").run(decision.decisionId);
       if (!decision.simulation) {
         this.acceptance.recordAutomaticDispatch(missionId, { dispatchId, taskId: taskB.taskId, decision });
-        this.acceptance.recordPiTaskStarted(missionId, { taskId: taskB.taskId, sessionId: receipt.sessionId });
+        this.acceptance.recordWorkerTaskStarted(missionId, { taskId: taskB.taskId, sessionId: receipt.sessionId });
       }
       return { dispatchId, missionId, taskId: taskB.taskId, sessionId: receipt.sessionId, decisionId: decision.decisionId, simulation: decision.simulation };
     } catch (error) {
@@ -226,14 +226,14 @@ class Level1MissionFlow {
 
   recordTaskBResult({ missionId, taskId, sessionId, eventId, result, authenticated = false, simulation = false }) {
     const mission = this._active(missionId);
-    if (simulation && process.env.NODE_ENV !== 'test') throw new Error('Simulated Pi events are restricted to isolated tests');
+    if (simulation && process.env.NODE_ENV !== 'test') throw new Error('Simulated worker events are restricted to isolated tests');
     const dispatch = this.db.prepare('SELECT task_b_session_id,state FROM level1_dispatches WHERE mission_id=?').get(missionId);
     if (!dispatch || dispatch.state !== 'dispatched' || taskId !== mission.selected_task_b_id || sessionId !== dispatch.task_b_session_id || !authenticated || !UUID.test(eventId) || typeof result !== 'string' || !result.trim() || Buffer.byteLength(result) > 2048 || /[^\x00-\x7f]/.test(result)) throw new Error('Invalid or unauthenticated Level 1 Task B completion event');
     if (mission.task_b_event_id) throw new Error('Duplicate Task B completion event');
     const resultHash = hash(result);
     this.db.prepare('UPDATE level1_missions SET task_b_event_id=?,task_b_session_id=?,task_b_result=?,task_b_result_hash=? WHERE mission_id=? AND status=? AND task_b_event_id IS NULL')
       .run(eventId, sessionId, result, resultHash, missionId, 'active');
-    if (!simulation) this.acceptance.recordPiCompletion(missionId, { taskId, sessionId, completionEventId: eventId, resultHash });
+    if (!simulation) this.acceptance.recordWorkerCompletion(missionId, { taskId, sessionId, completionEventId: eventId, resultHash });
 
     return { missionId, taskId, sessionId, eventId, resultHash };
   }

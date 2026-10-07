@@ -1,13 +1,13 @@
 'use strict';
 // Deterministic advice, separate from execution authority. No invented scores.
-const PROVIDERS={pi:null,opencode:'local',claude_code:'anthropic_subscription',codex:'codex_openai',cursor:'cursor_runtime'};
-function legacyOrder(taskType){return ['local_diagnostics','local_files','tests','git'].includes(taskType)?['pi']:taskType==='ide_diagnostics'?['cursor','claude_code']:['broad_investigation','large_multi_file_coding'].includes(taskType)?['codex','claude_code']:['claude_code','codex'];}
+const PROVIDERS={host:null,opencode:'local',claude_code:'anthropic_subscription',codex:'codex_openai',cursor:'cursor_runtime'};
+function legacyOrder(taskType){return ['local_diagnostics','local_files','tests','git'].includes(taskType)?['host']:taskType==='ide_diagnostics'?['cursor','claude_code']:['broad_investigation','large_multi_file_coding'].includes(taskType)?['codex','claude_code']:['claude_code','codex'];}
 function routeTask(input,agents){
  const types=['local_diagnostics','local_files','tests','git','focused_refactor','broad_investigation','large_multi_file_coding','ide_diagnostics'];
  if(!types.includes(input.task_type))return{selected:null,reason:'unknown_task_type',rejected:[],execution:'not_dispatched'};
  const deterministic=['local_diagnostics','local_files','tests','git'].includes(input.task_type);
- const order=input.candidate_order|| (deterministic?['pi']:[require('./default-runtime').DEFAULT_RUNTIME]);
- if(!Array.isArray(order)||order.some(id=>!['pi','opencode','claude_code','codex','cursor'].includes(id)))return{selected:null,reason:'invalid_agent_policy',rejected:[],execution:'not_dispatched'};
+ const order=input.candidate_order|| (deterministic?['host']:[require('./default-runtime').DEFAULT_RUNTIME]);
+ if(!Array.isArray(order)||order.some(id=>!['host','opencode','claude_code','codex','cursor'].includes(id)))return{selected:null,reason:'invalid_agent_policy',rejected:[],execution:'not_dispatched'};
  const rejected=[];
  const required=input.required_capabilities||[];
  const wait=reason=>({selected:null,selected_agent:null,provider:null,selected_provider:null,reason,wait_reason:reason,rejected,fallback_plan:[],state:'WAIT',execution:'not_dispatched'});
@@ -20,7 +20,7 @@ function routeTask(input,agents){
   if(id==='cursor')reason='cursor_execution_unqualified';
   else if(input.allowed_agents&&!input.allowed_agents.includes(id))reason='agent_policy';
   else if(input.allowed_providers&&!input.allowed_providers.includes(provider||'local'))reason='provider_policy';
-  else if(input.allowed_cost_classes&&!input.allowed_cost_classes.includes(profile?.cost_class|| (id==='pi'?'local':'subscription')))reason='cost_policy';
+  else if(input.allowed_cost_classes&&!input.allowed_cost_classes.includes(profile?.cost_class|| (id==='host'?'local':'subscription')))reason='cost_policy';
   else if(required.some(c=>!a?.capabilities?.includes(c)))reason='required_capability';
   else if(a?.operational?.circuit?.state==='open'&&a.operational.availability==='unavailable')reason='circuit_open';
   else if(input.privacy==='local_only'&&!deterministic&&id!=='opencode')reason='local_reasoning_transport_required';

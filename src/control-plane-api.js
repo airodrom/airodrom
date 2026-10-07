@@ -26,7 +26,7 @@ function controlPlaneRead(bridge, url) {
     quarantined_leases: store.db.prepare("SELECT count(*) count FROM cp_leases WHERE state='quarantined'").get().count,
     autonomy:{execution_enabled:bridge.boundedNextActions?.enabled===true,default_mode:'observe',acceptance_required:true,fixture_auto_acceptance:!!bridge.fixtureAcceptance},
     slack: bridge.slackRuntime?.status() || { implemented:true, enabled:false, connected:false, state:'disabled' }, next_action_execution: bridge.boundedNextActions?.enabled===true, cursor_agent_execution: false,
-    execution: { default_runtime: bridge.defaultRuntime, opencode: 'bounded_local_adapter', pi: 'compatibility_rollback', claude_code: 'existing_capability_runner', cursor_agent: 'acp_status_only_execution_unqualified', codex_agent: bridge.codexAdapter?.health()||'unimplemented' },
+    execution: { default_runtime: bridge.defaultRuntime, opencode: 'bounded_local_adapter', host: 'control_plane_primitives', claude_code: 'existing_capability_runner', cursor_agent: 'acp_status_only_execution_unqualified', codex_agent: bridge.codexAdapter?.health()||'unimplemented' },
     limitations: ['Ordinary projects default to observe; explicit bounded development chains can execute. Cursor Agent execution is unavailable.']
   };
   if(section==='architecture-memory'){

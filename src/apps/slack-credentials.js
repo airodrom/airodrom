@@ -5,7 +5,7 @@ const SERVICE='local.pi-chatgpt-bridge.slack.test';
 const ACCOUNTS=Object.freeze({SLACK_APP_TOKEN:'app_token',SLACK_BOT_TOKEN:'bot_token'});
 // Internal domain is selected by this subsystem, never by worker-supplied fields.
 const INTERNAL_DOMAIN='control_plane_internal';
-const HELPER=path.resolve(require('node:path').resolve(__dirname, '..'),'../.runtime/slack-keychain/pi-slack-keychain');
+const HELPER=path.resolve(require('node:path').resolve(__dirname, '..'),'../.runtime/slack-keychain/airodrom-slack-keychain');
 function helperSafe(){try{if(fs.realpathSync(HELPER)!==HELPER)return false;for(const p of [path.dirname(HELPER),HELPER]){const s=fs.lstatSync(p);if(s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&0o077))return false;}return fs.statSync(HELPER).isFile();}catch{return false;}}
 // Only this fixed executable receives allowlisted nonsecret argv. No fallback.
 function resolveSlackCredential(reference,{execute=execFile,platform=process.platform,verifyHelper=helperSafe}={}){

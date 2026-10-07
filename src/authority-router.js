@@ -8,7 +8,7 @@ const HEALTH_TTL=60000;
 const COST_ORDER=['local','free/local','low','subscription','medium','high','unknown'];
 const POLICY=Object.freeze({version:2,health_ttl_ms:HEALTH_TTL,hard_gate_order:['authority','privacy','capabilities','assurance','memory','availability','lease','auth_quota_circuit','cost'],ranking:['observed_reliability','observed_latency','personal_cost_preference','task_taxonomy','stable_identity'],unknown_cost:'WAIT',unknown_health:'WAIT',memory_authority:false});
 const candidateKey=c=>[c.agent_id,c.runtime_id,c.provider_id||'',c.model_id||''].join(':');
-function taxonomy(taskClass) { return ['local_diagnostics','local_files','tests','git'].includes(taskClass)?['pi']:['opencode','claude','codex','pi']; }
+function taxonomy(taskClass) { return ['local_diagnostics','local_files','tests','git'].includes(taskClass)?['host']:['opencode','claude','codex','host']; }
 // Pure selection. Input observations must be collected by the host service;
 // persisting or selecting a route does not authorize an execution operation.
 function evaluateRouting(input,candidates,now) {
@@ -16,7 +16,8 @@ function evaluateRouting(input,candidates,now) {
   for(const c of [...candidates].sort((a,b)=>candidateKey(a).localeCompare(candidateKey(b),'en'))){
     let gate=0,reason=null;
     const reject=(n,r)=>{gate=n;reason=r;};
-    if(input.unknown_side_effects||input.execution_started)reject(1,'reconcile_unknown_side_effects');
+    if(require('./removed-runtime').removed(c))reject(1,'runtime_removed');
+    else if(input.unknown_side_effects||input.execution_started)reject(1,'reconcile_unknown_side_effects');
     else if(c.provider_id==='deepseek'||c.agent_id==='cursor'&&!c.execution_qualified)reject(1,c.provider_id==='deepseek'?'provider_disabled_auth_required':'cursor_execution_unqualified');
     else if(c.enabled!==true||input.allowed_agents&&!input.allowed_agents.includes(c.agent_id)||c.provider_id&&input.allowed_providers&&!input.allowed_providers.includes(c.provider_id))reject(1,'authority_policy');
     else if((input.local_only||input.privacy==='restricted_security')&&(c.locality!=='local'||input.privacy==='restricted_security'&&c.isolation_verified!==true))reject(2,'privacy_isolation');

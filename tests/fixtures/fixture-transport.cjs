@@ -4,8 +4,8 @@ const { EventEmitter } = require('node:events');
 const { randomUUID } = require('node:crypto');
 const { StringDecoder } = require('node:string_decoder');
 const path = require('node:path');
-const { normalizeProbeText } = require('./worker-sandbox');
-const { redact } = require('./chatgpt-events');
+const { normalizeProbeText } = require('../../src/sandbox-policy');
+const { redact } = require('../../src/chatgpt-events');
 const ALLOWED = new Set(['prompt', 'abort', 'get_state', 'get_messages', 'get_session_stats', 'get_entries']);
 const EXIT_STDERR_LIMIT = 2000;
 const SAFE_BASENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -39,20 +39,20 @@ function missingModule(value) {
 }
 
 function exitError(code, signal, stderr) {
-  const exit = `Pi exited (${code ?? signal ?? 'unknown'})`;
+  const exit = `Fixture exited (${code ?? signal ?? 'unknown'})`;
   const module = missingModule(stderr);
   const diagnostic = redact(normalizeProbeText(redact(stderrText(stderr)), EXIT_STDERR_LIMIT));
   const bounded = diagnostic.length > EXIT_STDERR_LIMIT ? `${diagnostic.slice(0, EXIT_STDERR_LIMIT)}…[truncated]` : diagnostic;
   return new Error(`${exit}${module ? `; missingModule=${module}` : ''}${bounded.trim() ? `: ${bounded}` : ''}`);
 }
 
-class PiRpcSupervisor extends EventEmitter {
+class FixtureTransport extends EventEmitter {
   constructor({ executable, args, cwd, env, requestTimeoutMs = 15000, sandboxExec = null, sandboxProfile = null, allowUnsandboxedTestFixture = false } = {}) {
     super(); Object.assign(this, { executable, args, cwd, env, requestTimeoutMs, sandboxExec, sandboxProfile, allowUnsandboxedTestFixture });
     this.pending = new Map(); this.running = false; this.stderr = ''; this.stopping = null;
   }
   async start() {
-    if ((!this.sandboxExec || !this.sandboxProfile) && !this.allowUnsandboxedTestFixture) throw new Error('Pi worker sandbox is required; refusing an unsandboxed launch');
+    if ((!this.sandboxExec || !this.sandboxProfile) && !this.allowUnsandboxedTestFixture) throw new Error('Fixture worker sandbox is required; refusing an unsandboxed launch');
     const executable = this.sandboxExec && this.sandboxProfile ? this.sandboxExec : this.executable;
     const args = this.sandboxExec && this.sandboxProfile ? ['-f', this.sandboxProfile, this.executable, ...this.args] : this.args;
     this.child = spawn(executable, args, { cwd: this.cwd, env: this.env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -60,17 +60,17 @@ class PiRpcSupervisor extends EventEmitter {
     let buffer = ''; const decoder = new StringDecoder('utf8');
     this.child.stdout.on('data', data => {
       buffer += decoder.write(data);
-      if (Buffer.byteLength(buffer) > 16 * 1024 * 1024) return this.fail(new Error('Pi protocol record exceeded limit'));
+      if (Buffer.byteLength(buffer) > 16 * 1024 * 1024) return this.fail(new Error('Fixture protocol record exceeded limit'));
       let at;
       while ((at = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, at).replace(/\r$/, ''); buffer = buffer.slice(at + 1);
         if (!line) continue;
         let record;
-        try { record = JSON.parse(line); } catch { this.fail(new Error('Invalid Pi JSONL')); return; }
-        if (!record || typeof record !== 'object' || Array.isArray(record) || typeof record.type !== 'string') { this.fail(new Error('Invalid Pi protocol record')); return; }
+        try { record = JSON.parse(line); } catch { this.fail(new Error('Invalid Fixture JSONL')); return; }
+        if (!record || typeof record !== 'object' || Array.isArray(record) || typeof record.type !== 'string') { this.fail(new Error('Invalid Fixture protocol record')); return; }
         if (record.type === 'response') {
           const p = this.pending.get(record.id);
-          if (p) { this.pending.delete(record.id); clearTimeout(p.timer); record.success ? p.resolve(record.data ?? {}) : p.reject(new Error(record.error || 'Pi command rejected')); }
+          if (p) { this.pending.delete(record.id); clearTimeout(p.timer); record.success ? p.resolve(record.data ?? {}) : p.reject(new Error(record.error || 'Fixture command rejected')); }
         } else this.emit('event', record);
       }
     });
@@ -105,7 +105,7 @@ class PiRpcSupervisor extends EventEmitter {
   fail(error) { this.rejectPending(error); this.emit('fault', error); this._signalWorkerGroup('SIGTERM'); }
   sendCommand(command) {
     if (!command || !ALLOWED.has(command.type)) return Promise.reject(new Error(`RPC command is not allowed: ${command?.type}`));
-    if (!this.running || !this.child?.stdin.writable) return Promise.reject(new Error('Pi is not running'));
+    if (!this.running || !this.child?.stdin.writable) return Promise.reject(new Error('Fixture is not running'));
     // Never forward arbitrary command fields supplied by a caller.
     const record = { id: randomUUID(), type: command.type };
     if (command.type === 'prompt') {
@@ -113,7 +113,7 @@ class PiRpcSupervisor extends EventEmitter {
       record.message = command.message;
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(record.id); reject(new Error(`Pi ${command.type} response timed out`)); }, this.requestTimeoutMs);
+      const timer = setTimeout(() => { this.pending.delete(record.id); reject(new Error(`Fixture ${command.type} response timed out`)); }, this.requestTimeoutMs);
       this.pending.set(record.id, { resolve, reject, timer });
       this.child.stdin.write(JSON.stringify(record) + '\n', e => { if (e) { clearTimeout(timer); this.pending.delete(record.id); reject(e); } });
     });
@@ -127,7 +127,7 @@ class PiRpcSupervisor extends EventEmitter {
       // Stop admitting new RPC and immediately settle anything awaiting a
       // response, including the get_state request used by start().
       this.running = false;
-      this.rejectPending(new Error('Pi shutdown requested'));
+      this.rejectPending(new Error('Fixture shutdown requested'));
 
       if (!child?.pid) return;
 
@@ -174,7 +174,7 @@ class PiRpcSupervisor extends EventEmitter {
         // close when both the process group and direct child are proven gone.
         verifyTimer = setTimeout(() => {
           if (!this._workerStillAlive(child)) return finish();
-          fail(new Error('Pi worker termination could not be verified after SIGKILL'));
+          fail(new Error('Fixture worker termination could not be verified after SIGKILL'));
         }, 4500);
       });
     })();
@@ -186,4 +186,4 @@ class PiRpcSupervisor extends EventEmitter {
     }
   }
 }
-module.exports = PiRpcSupervisor;
+module.exports = FixtureTransport;

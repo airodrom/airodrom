@@ -131,54 +131,10 @@ test('generated task workspace permits ordinary mutations while bridge internals
   assert.equal(policy.check(id, { toolName: 'write', input: { path: '../session.jsonl', content: 'x' } }).approvalId, undefined);
 });
 
-test('extension proves readiness through broker, fails closed, and refuses direct RPC bash', async t => {
-  const { default: extension } = await import('../src/safety-extension.mjs');
-  const { EventEmitter } = require('node:events');
-  const handlers = new Map();
-  const previousSocket = process.env.BRIDGE_POLICY_SOCKET;
-  const previousToken = process.env.BRIDGE_TASK_TOKEN;
-  delete process.env.BRIDGE_POLICY_SOCKET;
-  delete process.env.BRIDGE_TASK_TOKEN;
-  await extension({ on: (name, handler) => handlers.set(name, handler), registerTool: () => {} });
-  const ctx = { cwd: '/workspace', sessionManager: { getSessionId: () => 'test-session' } };
-  const tool = call({ command: 'rm disposable.txt' });
-  t.after(async () => {
-    await handlers.get('session_shutdown')();
-    if (previousSocket === undefined) delete process.env.BRIDGE_POLICY_SOCKET; else process.env.BRIDGE_POLICY_SOCKET = previousSocket;
-    if (previousToken === undefined) delete process.env.BRIDGE_TASK_TOKEN; else process.env.BRIDGE_TASK_TOKEN = previousToken;
-  });
-  await assert.rejects(handlers.get('session_start')({}, ctx), /not configured/);
-  assert.equal((await handlers.get('tool_call')(tool)).block, true);
-  await assert.rejects(handlers.get('user_bash')({ command: 'echo bypass' }), /Direct RPC bash is disabled/);
-
-  // Source simulation: this verifies the extension's broker protocol without
-  // requiring a Unix listener from the restricted coding environment.
-  process.env.BRIDGE_POLICY_SOCKET = '/private/tmp/fixture-policy.sock';
-  process.env.BRIDGE_TASK_TOKEN = 'test-token';
-  const seen = [];
-  const originalRequest = http.request;
-  http.request = (options, onResponse) => {
-    const client = new EventEmitter();
-    client.setTimeout = () => client;
-    client.destroy = error => { if (error) queueMicrotask(() => client.emit('error', error)); return client; };
-    client.end = rawBody => {
-      seen.push({ path: options.path, authorization: options.headers.authorization, body: JSON.parse(rawBody) });
-      const response = new EventEmitter();
-      response.statusCode = 200;
-      response.setEncoding = () => {};
-      queueMicrotask(() => {
-        onResponse(response);
-        response.emit('data', JSON.stringify(options.path === '/ready' ? { ok: true } : { allow: true }));
-        response.emit('end');
-      });
-    };
-    return client;
-  };
-  t.after(() => { http.request = originalRequest; });
-  await handlers.get('session_start')({}, ctx);
-  // Unknown tools remain blocked even if a simulated broker reply claims allow.
-  assert.equal((await handlers.get('tool_call')(tool)).block, true);
-  assert.equal(seen[0].path, '/ready');
-  assert.equal(seen[0].body.sessionId, 'test-session');
-  assert.ok(seen.every(entry => entry.authorization === 'Bearer test-token'));
+test('unregistered and revoked task principals fail closed before tools', t => {
+ const {policy,workspace}=fixture(t),id='denied-principal';
+ assert.equal(policy.check(id,{toolName:'read',input:{path:'input.txt'}}).allow,false);
+ policy.registerTask({id,sessionId:'session',workspace});policy.revokeTask(id);
+ assert.equal(policy.check(id,{toolName:'read',input:{path:'input.txt'}}).allow,false);
+ assert.equal(policy.check(id,{toolName:'bash',input:{command:'touch escaped'}}).allow,false);
 });
