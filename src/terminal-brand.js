@@ -1,9 +1,7 @@
 'use strict';
 // Canonical SVG artwork: bundled image when supported, sampled text otherwise.
 const fs = require('node:fs'), path = require('node:path');
-const geometry = fs.readFileSync(path.join(__dirname, '../public/brand/airodrom-mark.svg'), 'utf8')
-  .match(/<path d="([^"]+)"/)[1].split(' M')
-  .map(s => [...s.matchAll(/(?:M|L)?\s*(-?\d+\.\d+),(-?\d+\.\d+)/g)].map(m => [+m[1], +m[2]]));
+const geometry = require('./terminal-logo-geometry');
 function inPolygon(x, y, poly) {
   let hit = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -24,7 +22,7 @@ function colorMode({ tty = false, env = process.env } = {}) {
 }
 function imageProtocol({ tty = false, env = process.env } = {}) {
   if (!tty || env.NO_COLOR !== undefined || env.TERM === 'dumb' || env.TMUX || env.STY
-    || /^(?:screen|tmux)/.test(env.TERM || '') || env.AIRODROM_INTRO_GRAPHICS === 'off') return '';
+    || /^(?:screen|tmux)/.test(env.TERM || '') || env.AIRODROM_INTRO_GRAPHICS !== 'image') return '';
   if (env.TERM_PROGRAM === 'iTerm.app' || env.TERM_PROGRAM === 'WezTerm') return 'iterm2';
   if (env.KITTY_WINDOW_ID || env.TERM === 'xterm-kitty') return 'kitty';
   return '';
