@@ -36,4 +36,30 @@ function receipt(data) {
  return 'Request handled.\n';
 }
 function rail(m) {return '────────────────────────────────────────\n'+`${m.model?.id||'Model unavailable'} · ${name(m.model?.locality||'local')} · ${name(m.runtime)}\n`+`Memory: ${m.memory?.selected_count??'Unavailable'} selected · ${m.memory?.delivery||'Unavailable'}\n`+`Response: ${['awaiting_acceptance','completed'].includes(m.state)?'ready':name(m.state)} · Verification: ${name(m.verification?.status)}\nReview: ${m.acceptance?.status==='accept'?'accepted':'/accept'} · Settlement: ${name(m.settlement?.status)}\n`+'────────────────────────────────────────\n';}
-module.exports={clean,name,models,workers,connectors,memories,sensitive,vault,receipt,rail};
+function waitingFrame({elapsed=0,columns=80,mode='none',reduced=false}={}) {
+ const seconds=(Math.max(0,elapsed)/1000).toFixed(1)+'s';
+ const width=Math.max(0,Math.floor(columns)-1); // Leave the wrap column unused.
+ const label='◈ Thinking', room=width-label.length-seconds.length-4;
+ if(room<4)return (width>=seconds.length+2?'◈ '+seconds:seconds).slice(0,width);
+ const length=Math.min(14,room), phase=reduced?0:Math.floor(elapsed/80)%(length+4);
+ const bar=Array.from({length},(_,i)=>{
+  const lit=reduced?i===Math.floor(length/2):Math.abs(i-phase)<2;
+  const char=lit?'━':'─';
+  if(mode==='none')return char;
+  const color=mode==='truecolor'?`38;2;${lit?'69;200;220':'80;145;255'}`:mode==='256'?`38;5;${lit?80:69}`:lit?'96':'34';
+  return `\x1b[${color}m${char}`;
+ }).join('')+(mode==='none'?'':'\x1b[0m');
+ return `${label}  ${bar}  ${seconds}`;
+}
+function waiting(output,{env=process.env,signal,now=()=>performance.now(),schedule=setInterval,unschedule=clearInterval}={}) {
+ if(!output.isTTY||env.TERM==='dumb'||signal?.aborted)return {stop(){}};
+ const started=now(),mode=require('./terminal-brand').colorMode({tty:true,env});
+ const reduced=/^(1|true|yes)$/i.test(env.AIRODROM_REDUCED_MOTION||env.REDUCE_MOTION||'');
+ let stopped=false,timer;
+ const draw=()=>{if(!stopped)output.write('\r'+waitingFrame({elapsed:now()-started,columns:output.columns||80,mode,reduced})+'\x1b[K');};
+ const stop=()=>{if(stopped)return;stopped=true;unschedule(timer);signal?.removeEventListener('abort',stop);output.write('\r\x1b[2K');};
+ draw();timer=schedule(draw,reduced?1000:80);timer.unref?.();
+ signal?.addEventListener('abort',stop,{once:true});
+ return {stop};
+}
+module.exports={clean,name,models,workers,connectors,memories,sensitive,vault,receipt,rail,waitingFrame,waiting};

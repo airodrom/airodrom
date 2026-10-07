@@ -3,14 +3,17 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const display=require('../src/product-observability'),brand=require('../src/terminal-brand'),local=require('../src/local-bootstrap');
 const {fixture}=require('./fixtures/mission-fixture.cjs'),{runtime}=require('./fixtures/opencode-fixture.cjs'),ControlServer=require('../src/control-server');
 test('terminal mark uses canonical cutouts and portable color/width modes',()=>{
+ const svg=fs.readFileSync(path.join(local.ROOT,'public/brand/airodrom-mark.svg'),'utf8');
+ const source=svg.match(/<path d="([^"]+)"/)[1].split(' M').map(s=>[...s.matchAll(/(?:M|L)?\s*(-?\d+\.\d+),(-?\d+\.\d+)/g)].map(m=>[+m[1],+m[2]]));
+ assert.deepEqual(require('../src/terminal-logo-geometry'),source,'terminal geometry is the existing canonical SVG');
  assert.equal(brand.inside(128,200),false);assert.equal(brand.inside(128,128),false);assert.equal(brand.inside(20,218),true);
  for(const [env,expected]of [[{TERM:'xterm-256color',COLORTERM:'truecolor'},'truecolor'],[{TERM:'xterm-256color'},'256'],[{TERM:'xterm'},'16'],[{NO_COLOR:'',TERM:'xterm'},'none'],[{TERM:'dumb'},'none']]){
  const mode=brand.colorMode({tty:true,env});assert.equal(mode,expected);const output=brand.intro({mode,columns:80});assert.match(output,/AIRODROM/);assert.match(output,/PRE-RELEASE/);if(mode==='none')assert.doesNotMatch(output,/\x1b/);else assert.match(output,/\x1b/);
  }
- assert.equal(brand.mark().length,8);assert.equal(brand.mark({compact:true}).length,7);assert.equal(brand.colorMode({tty:false,env:{COLORTERM:'truecolor'}}),'none');
+ assert.equal(brand.mark().length,7);assert.equal(brand.mark({compact:true}).length,5);assert.equal(brand.colorMode({tty:false,env:{COLORTERM:'truecolor'}}),'none');
  const strip=require('node:util').stripVTControlCharacters;
- for(const mode of ['truecolor','256','16'])assert.deepEqual(brand.mark({mode}).map(row=>strip(row).replace(/[▀▄]/g,'#')),brand.mark({unicode:false}).map(row=>row.replace(/[+.]/g,'#')),'colored empty cells and canonical cutouts remain transparent');
- for(const width of [20,28,40,77,78,80])for(const mode of ['none','16','256','truecolor'])for(const unicode of [false,true]){
+ for(const mode of ['truecolor','256','16'])assert.deepEqual(brand.mark({mode}).map(row=>strip(row).replace(/[\u2801-\u28ff]/g,'#')),brand.mark({unicode:false}).map(row=>row.replace(/[+.]/g,'#')),'colored empty cells and canonical cutouts remain transparent');
+ for(const width of [1,8,20,28,40,77,78,80])for(const mode of ['none','16','256','truecolor'])for(const unicode of [false,true]){
   const output=brand.intro({mode,columns:width,unicode});for(const row of strip(output).trimEnd().split('\n'))assert.ok(row.length<=width,'intro fits '+width+' columns');
   if(!unicode)assert.doesNotMatch(output,/[▀▄█▓░]/,'ASCII fallback uses no block glyphs');
  }

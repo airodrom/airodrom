@@ -54,38 +54,13 @@ function inlineImage(protocol, columns, rows) {
   } catch { return ''; }
 }
 const blend = (a, b, amount) => a.map((v, i) => Math.round(v + (b[i] - v) * amount));
-function pixel(x, y, width, height) {
-  const px = 4 + (x + .5) / width * 256, py = 24 + (y + .5) / height * 216;
-  const coverage = (dx = 0, dy = 0) => {
-    let count = 0;
-    // Subpixel sampling retains the narrow signature slots and smooths the face.
-    for (const ox of [-.25, .25]) for (const oy of [-.25, .25]) {
-      if (inside(px + ox * 256 / width - dx, py + oy * 216 / height - dy)) count++;
-    }
-    return count / 4;
-  };
-  const face = coverage();
-  if (face >= .5) {
-    // Ice/cyan light, canonical blue face and indigo depth; keep signature slots open.
-    const light = Math.max(0, Math.min(1, (px * .6 + py * .4 - 32) / 192));
-    let color = light < .5 ? blend([148, 225, 242], [80, 145, 255], light * 2)
-      : blend([80, 145, 255], [110, 105, 220], (light - .5) * 2);
-    const rim = !inside(px - 1.5, py - 2);
-    if (rim) color = blend(color, [85, 210, 175], .38);
-    else if (!inside(px + 2, py + 2)) color = blend(color, [110, 105, 220], .28);
-    return { type: rim ? 'highlight' : 'front', color, ansi: light < .3 ? 36 : light > .7 ? 35 : 34 };
-  }
-  // Extrude only outside the outer silhouette, so depth never fills the cutouts.
-  if (!inPolygon(px, py, geometry[0])) {
-    for (const depth of [2, 4, 6]) {
-      if (coverage(depth, depth * .75) >= .5) {
-        return { type: 'depth', color: blend([110, 105, 220], [39, 47, 92], lightDepth(py)) };
-      }
-    }
-  }
-  return null;
+function faceColor(x, y) {
+  const t = Math.max(0, Math.min(1, (x * .55 + y * .45 - 28) / 200));
+  const color = t < .5 ? blend([69, 200, 220], [80, 145, 255], t * 2)
+    : blend([80, 145, 255], [110, 105, 220], (t - .5) * 2);
+  const rim = !inside(x - 2, y - 2);
+  return {type: rim ? 'highlight' : 'front', color: rim ? blend(color, [85, 210, 175], .25) : color, ansi: t < .25 ? 36 : t > .75 ? 35 : 34};
 }
-function lightDepth(y) { return Math.max(0, Math.min(1, (y - 32) / 198)); }
 function sgr(value, mode, background = false) {
   if (!value) return `\x1b[${background ? 49 : 39}m`;
   const channel = background ? 48 : 38, c = value.color;
@@ -97,30 +72,32 @@ function sgr(value, mode, background = false) {
 const cache = new Map();
 function mark({ mode = 'none', compact = false, small = false, unicode = true } = {}) {
   mode = ['truecolor', '256', '16'].includes(mode) ? mode : 'none';
-  compact = !!compact; small = !!small; unicode = !!unicode;
-  const key = `${mode}:${compact}:${small}:${unicode}`;
+  const key = `${mode}:${!!compact}:${!!small}:${!!unicode}`;
   if (cache.has(key)) return [...cache.get(key)];
-  const width = small ? 16 : compact ? 18 : 20, height = small ? 12 : compact ? 14 : 16, lines = [];
-  for (let y = 0; y < height; y += 2) {
-    let row = '';
-    for (let x = 0; x < width; x++) {
-      const top = pixel(x, y, width, height), bottom = pixel(x, y + 1, width, height), value = top || bottom;
-      if (mode === 'none' || !unicode) {
-        const character = !value ? ' ' : !unicode ? value.type === 'depth' ? '+' : '#'
-          : mode === 'none' && value.type === 'depth' ? '▓' : top && bottom ? '█' : top ? '▀' : '▄';
-        row += (mode === 'none' ? '' : sgr(value, mode)) + character;
-      } else if (top) row += sgr(top, mode) + sgr(bottom, mode, true) + '▀';
-      else if (bottom) row += sgr(bottom, mode) + sgr(null, mode, true) + '▄';
-      else row += sgr(null, mode) + sgr(null, mode, true) + ' ';
+  const width = small ? 10 : compact ? 12 : 16, height = small ? 4 : compact ? 5 : 7;
+  const lines = [], dots = [[0,0,1],[0,1,2],[0,2,4],[1,0,8],[1,1,16],[1,2,32],[0,3,64],[1,3,128]];
+  // Each terminal cell resolves eight canonical SVG samples. Signature gaps stay open;
+  // luminous depth comes from face shading rather than expanding the silhouette.
+  for (let row = 0; row < height; row++) {
+    let line = '';
+    for (let col = 0; col < width; col++) {
+      let mask = 0, value = null;
+      for (const [dx,dy,bit] of dots) {
+        const x = 8 + (col * 2 + dx + .5) / (width * 2) * 240;
+        const y = 28 + (row * 4 + dy + .5) / (height * 4) * 200;
+        if (inside(x,y)) { mask |= bit; value ||= faceColor(x,y); }
+      }
+      const glyph = !mask ? ' ' : unicode ? String.fromCharCode(0x2800 + mask) : '#';
+      line += (mode === 'none' ? '' : sgr(value, mode)) + glyph;
     }
-    lines.push(row + (mode === 'none' ? '' : '\x1b[0m'));
+    lines.push(line + (mode === 'none' ? '' : '\x1b[0m'));
   }
   cache.set(key, lines);
   return [...lines];
 }
 function wrap(text, width) {
   const lines = []; let line = '';
-  for (const word of text.split(' ')) {
+  for (const word of text.split(' ').flatMap(word => word.match(new RegExp('.{1,' + Math.max(1, width) + '}', 'g')) || [])) {
     if (line && line.length + word.length + 1 > width) { lines.push(line); line = ''; }
     line += (line ? ' ' : '') + word;
   }
@@ -129,13 +106,13 @@ function wrap(text, width) {
 }
 function intro({ color = false, mode, unicode = true, columns = 80, rows = 40, graphics = '' } = {}) {
   mode = mode || (color ? 'truecolor' : 'none');
-  const compact = columns < 64 || rows < 28, small = rows < 28;
+  columns = Math.max(1, Math.floor(columns));
+  const compact = columns < 64 || rows < 28, small = rows < 24;
   const version = require('../package.json').version + ' · PRE-RELEASE';
-  const title = (mode === 'none' ? 'AIRODROM' : sgr({type:'highlight',color:[148,225,242]},mode)+'AIRODROM\x1b[0m') + '\n'
-    + wrap('MANY AGENTS. ONE CONTROL PLANE.', columns) + '\n';
-  if (columns < 28) return title + 'PRE-RELEASE\n';
-  if (rows < 24) return title + wrap(version, columns) + '\n';
-  const width = small ? 16 : compact ? 18 : 20, height = small ? 6 : compact ? 7 : 8;
+  const title = (mode === 'none' ? 'AIRODROM'.slice(0, columns) : sgr({type:'highlight',color:[69,200,220]},mode)+'AIRODROM'.slice(0, columns)+'\x1b[0m') + '\n';
+  if (columns < 28) return title + wrap('PRE-RELEASE', columns) + '\n';
+  if (rows < 24 || !unicode) return title + wrap(version, columns) + '\n';
+  const width = small ? 10 : compact ? 12 : 16, height = small ? 4 : compact ? 5 : 7;
   const graphic = mode !== 'none' && unicode ? inlineImage(graphics, width, height) : '';
   const info = [version, '', 'Personal assistant.', 'Local. Private. Governed.'];
   if (graphic) {

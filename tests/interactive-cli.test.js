@@ -27,7 +27,7 @@ async function conversationFixture(t) {
   } };
 }
 test('compact brand, no-color and command help are available without bootstrap', () => {
-  assert.match(intro(), /AIRODROM\nMANY AGENTS\. ONE CONTROL PLANE\./);
+  assert.match(intro(), /AIRODROM/);
   assert.doesNotMatch(intro({ color: false, unicode: false }), /\x1b|◈/);
   assert.match(intro({ color: true }), /\x1b/);
   for (const command of ['status', 'start', 'stop', 'restart', 'open', 'memory', '/remember', '/forget', '/runtime', '/quit']) assert.ok(help().includes(command));
