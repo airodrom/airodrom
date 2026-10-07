@@ -28,7 +28,7 @@ function normalize(value, nickname) {
 function parse(request, {capture = false} = {}) {
  if (/[\r\n]/.test(request) && containsPrivate(request)) return {route:'MEMORY', kind:'clarify', message:'Submit one private storage request at a time.'};
  const names = LABELS.join('|');
- const save = new RegExp('^(?:save|store|remember)\\s+(?:that\\s+)?(?:my\\s+)?(' + names + ')\\s*(?:(?:is|:|=)\\s*)?(\\d{1,12})$', 'i').exec(request);
+ const save = new RegExp('^(?:save|store|remember)\\s+(?:that\\s+)?(?:(?:secret of|the secret of)\\s+)?(?:my\\s+)?(' + names + ')\\s*(?:(?:is|:|=|-)\\s*)?(\\d{1,12})$', 'i').exec(request);
  if (save) return {route:'MEMORY', kind:'private_storage', action:'save', label:label(save[1]), ...(capture ? {value:save[2]} : {value_present:true})};
  const recall = new RegExp("^(?:what(?:['’]s| is)|show|reveal|recall|tell me|give me)\\s+(?:my\\s+)?(" + names + ")$", 'i').exec(request);
  if (recall) return {route:'MEMORY', kind:'private_storage', action:'reveal', label:label(recall[1])};

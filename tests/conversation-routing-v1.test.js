@@ -8,7 +8,7 @@ const ControlServer=require('../src/control-server');
 const id=()=>crypto.randomUUID();
 for(const message of ['Hi','Who are you?','How are you?','Explain this concept','Help me think about something','Write a poem about the sea'])test('conversation intent has no work authority: '+message,()=>assert.deepEqual(intent.parse(message),{route:'CONVERSATION',kind:'conversation',message}));
 test('host intent parser keeps memory, Vault, connector and explicit Mission boundaries',()=>{
- for(const [message,route,kind]of [['Remember I prefer concise answers','MEMORY','remember'],['Remember my preference','MEMORY','clarify'],["Let’s save a password",'VAULT','vault'],['Save a password','VAULT','vault'],['Save a password synthetic-value','VAULT','secret'],['Check my Gmail.','CONNECTOR','connector'],['Can you check my Gmail?','CONNECTOR','connector'],['Fix this repository.','WORK','work'],['Implement this feature','WORK','work'],['Audit this website','WORK','work'],['Create a Mission to explain this concept','EXPLICIT MISSION','mission'],['Create a Mission','EXPLICIT MISSION','mission'],['/mission new','EXPLICIT MISSION','mission'],['/mission list','EXPLICIT MISSION','mission'],['/mission status','EXPLICIT MISSION','mission'],['/mission cancel','EXPLICIT MISSION','mission'],['Show my active Missions','EXPLICIT MISSION','mission'],['Cancel the current Mission','EXPLICIT MISSION','mission']]){const parsed=intent.parse(message);assert.equal(parsed.route,route,message);assert.equal(parsed.kind,kind,message);}
+ for(const [message,route,kind]of [['Remember I prefer concise answers','MEMORY','remember'],['Remember my preference','MEMORY','clarify'],["Let’s save a password",'VAULT','vault'],['Save a password','VAULT','vault'],['Save a password synthetic-value','VAULT','secret'],['Check my Gmail.','CONNECTOR','connector'],['Can you check my Gmail?','CONNECTOR','connector'],['Fix this repository.','WORK','work'],['Implement this feature','WORK','work'],['Audit this website','WORK','research_unavailable'],['Create a Mission to explain this concept','EXPLICIT MISSION','mission'],['Create a Mission','EXPLICIT MISSION','mission'],['/mission new','EXPLICIT MISSION','mission'],['/mission list','EXPLICIT MISSION','mission'],['/mission status','EXPLICIT MISSION','mission'],['/mission cancel','EXPLICIT MISSION','mission'],['Show my active Missions','EXPLICIT MISSION','mission'],['Cancel the current Mission','EXPLICIT MISSION','mission']]){const parsed=intent.parse(message);assert.equal(parsed.route,route,message);assert.equal(parsed.kind,kind,message);}
  assert.equal(intent.parse('Do it').kind,'clarify');assert.equal(intent.parse('Check my inbox').kind,'clarify');
  assert.equal(intent.parse('Your nickname is Airo.').kind,'preference');assert.equal(intent.parse('Your nickname is Airo.').nickname,'Airo');
  assert.deepEqual(intent.workCapabilities('Deploy this website'),['web_read','deployment']);assert.deepEqual(intent.workCapabilities('Fix the repository and email the report'),['communications','repo','developer_environment']);
@@ -60,7 +60,7 @@ test('registered Work template retains exact files, checks and governed verifica
  const scoped=b.missions.require(created.mission_id);assert.equal(scoped.envelope.kind,'coding');assert.deepEqual(scoped.envelope.allowed_files,['fixture.txt']);assert.deepEqual(scoped.envelope.verification.tests,['fixture-test']);assert.equal(scoped.envelope.preferred_agent,'opencode');assert.equal(scoped.envelope.manifest.settlement.merge_allowed,false);
  const verified=await f.settle(scoped.id);assert.equal(verified.state,'awaiting_acceptance');assert.equal(verified.verifications[0].result,'passed');assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n,0);
  // A website capability cannot piggyback on a repository's write template.
- const website=await service.submit(server,{message:'Audit this website',request_id:id(),workspace:f.repo});assert.equal(website.state,'draft');assert.deepEqual(b.missions.require(website.mission_id).envelope.capability_scopes,[]);
+ const website=await service.submit(server,{message:'Audit this website',request_id:id(),workspace:f.repo});assert.equal(website.kind,'research_unavailable');assert.equal(website.available,false);assert.deepEqual(website.evidence,[]);
  const combined=await service.submit(server,{message:'Fix the repository and email the report',request_id:id(),workspace:f.repo});assert.equal(combined.state,'draft');assert.deepEqual(b.missions.require(combined.mission_id).envelope.capability_scopes,[]);assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,1);
  const narrowed=await missions.newMission(server,{objective:'Deploy this website',capability_classes:['repo'],request_id:id(),workspace:f.repo});assert.equal(narrowed.state,'draft');assert.ok(b.missions.require(narrowed.mission_id).envelope.requested_capabilities.includes('deployment'));
  await assert.rejects(missions.newMission(server,{objective:'Fix fixture.txt',request_id:'private-request-label',workspace:f.repo}),/Opaque request UUID/);
@@ -79,4 +79,27 @@ test('authorized Gmail uses only canonical read-only GETs; previews get minimum 
  assert.ok(calls.every(c=>c.method==='GET'&&c.url.startsWith('https://gmail.googleapis.com/')));
  await assert.rejects(service.connectorInput(server,{connector:'gmail',action:'send',input:{}}),/governed/);
  const wrong=new AssistantConnectors({gmail:{scope:'https://www.googleapis.com/auth/gmail.modify',reference:'opaque'},secrets:{resolve:async()=>{throw Error('must not resolve');}}});await assert.rejects(wrong.read('gmail','recent'),/exact read-only/);
+});
+
+test('private ingress and unavailable research return no model/service authority or raw values',async()=>{
+ const server={conversationEngine:{start(){throw Error('No model allowed');}}};
+ for(const message of ['Save my mailbox number 818','Save my mailbox number 818\nThanks',"What's my mailbox number?"]){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,'private_vault');assert.doesNotMatch(JSON.stringify(r),/818/);}
+ for(const message of ['Research https://example.invalid','Could you please research https://example.invalid','I would like you to research https://example.invalid']){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,'research_unavailable');assert.equal(r.available,false);assert.deepEqual(r.evidence,[]);}
+});
+test('explicit and direct research Missions cannot dispatch even with a matching web template',async t=>{
+ const f=await fixture(t),server={bridge:f.bridge};f.bridge.options.externalMissionTemplates={fixture:{all:{workspace:f.repo,capability_scopes:['web_read','repo','developer_environment']}}};
+ for(const message of ['Create a Mission to research https://example.invalid','/mission new Research https://example.invalid']){const r=await service.submit(server,{message,request_id:id(),workspace:f.repo});assert.equal(r.route,'EXPLICIT MISSION');assert.equal(r.state,'draft');assert.equal(r.browser_research_available,false);assert.deepEqual(r.evidence,[]);assert.deepEqual(f.bridge.missions.require(r.mission_id).envelope.capability_scopes,[]);}
+ const direct=await missions.newMission(server,{objective:'Could you please research https://example.invalid',request_id:id(),workspace:f.repo});assert.equal(direct.browser_research_available,false);assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
+ await assert.rejects(missions.newMission(server,{objective:'Save my mailbox number 818',request_id:id(),workspace:f.repo}),/Private identifiers/);
+});
+
+test('ordinary Memory ingress refuses private identifiers with alternate whitespace',async t=>{
+ const f=await fixture(t),server=Object.create(ControlServer.prototype);server.bridge=f.bridge;
+ for(const content of ['my mailbox   number 818','my locker\tnumber 818','my parking\nspace number 818'])assert.throws(()=>server.rememberInteractive(content),/Sensitive Memory/);
+ assert.equal(f.bridge.personalMemory.recent({domain:'personal',limit:100}).items.length,0);
+});
+
+test('connector output with Unicode credential labels is withheld before conversation or display',async()=>{
+ const adapter=new AssistantConnectors({whatsapp:{read:async()=>[{id:'test',text:'My ＰＡＳＳＷＯＲＤ is synthetic-credential'},{id:'pin',text:'Your ＰＩＮ: 818'}]}});
+ const rows=await adapter.read('whatsapp','recent');assert.equal(rows.items.length,2);assert.doesNotMatch(JSON.stringify(rows),/synthetic-credential|818/);assert.ok(rows.items.every(r=>r.content==='[Sensitive content withheld]'));
 });

@@ -27,12 +27,12 @@ async function guide({input, output, home, plan, message, signal, vault, request
    const backend = target === '1' ? 'Sensitive Memory' : 'Vault';
    output.write(`Save ${name.toLowerCase()} in ${backend}?\n`);
    if ((await choose('Type yes to confirm (hidden): ')).toLowerCase() !== 'yes' || signal?.aborted) return cancelled();
-   const receipt = target === '1' ? await request({action:'save', label:name, value, confirmed:true}) : vault.put(value, 'operator', {kind:'private_identifier', label:name});
+   const receipt = target === '1' ? await request({action:'save', label:name, value, confirmed:true}) : vault.put(value, 'operator', {kind:'private_identifier', name});
    output.write(`${name} saved in ${backend}.\n`);
    return {state:'saved', backend, ...(target === '1' ? {memoryId:receipt.memoryId} : {reference:receipt.reference})};
   }
   const memory = await request({action:'lookup', label:name});
-  const choices = [...memory.items.map(item => ({backend:'Sensitive Memory', id:item.memoryId})), ...vault.privateEntries(name).map(item => ({backend:'Vault', id:item.reference}))];
+  const choices = [...memory.items.map(item => ({backend:'Sensitive Memory', id:item.memoryId})), ...vault.search(name).filter(item=>item.kind==='private_identifier'&&item.name.toLowerCase()===name.toLowerCase()).map(item => ({backend:'Vault', id:item.reference}))];
   if (!choices.length) {output.write(`No current ${name.toLowerCase()} entry found.\n`); return {state:'empty'};}
   let selected = choices[0];
   if (choices.length > 1) {

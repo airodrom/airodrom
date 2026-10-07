@@ -52,16 +52,16 @@ test('named Vault save requires choice and confirmation; fresh lookup uses curre
  const saved=await guide({input:new Terminal(['2\r','yes\r']),output:out,plan:intent.parse(PHRASE),message:PHRASE,vault:v.vault,request});assert.equal(saved.state,'saved');assert.equal(v.values.get(saved.reference),'818');
  assert.doesNotMatch(out.text()+JSON.stringify(saved)+fs.readFileSync(path.join(v.home,'vault-dispositions.json'),'utf8'),/818/);
  const restarted=new SecretVault(v.home,v.port),reveal=output();assert.equal((await guide({input:new Terminal(['yes\r']),output:reveal,plan:intent.parse("What's my mailbox number?"),vault:restarted,request})).state,'revealed');assert.match(reveal.text(),/is 818/);
- assert.throws(()=>restarted.revealPrivate(saved.reference));assert.throws(()=>restarted.resolve(saved.reference,'gmail'));assert.throws(()=>restarted.put('999','operator',{kind:'private_identifier',label:'Mailbox number'}));
+ assert.throws(()=>restarted.revealPrivate(saved.reference));assert.throws(()=>restarted.resolve(saved.reference,'gmail'));assert.throws(()=>restarted.put('999','operator',{kind:'private_identifier',name:'Mailbox number'}));
  const credential=restarted.put('synthetic-password','operator',{kind:'password'}),gmail=restarted.put('synthetic-oauth','gmail');for(const id of [credential.reference,gmail.reference])assert.throws(()=>restarted.revealPrivate(id,{confirmed:true}));
- restarted.forget(saved.reference);assert.equal(restarted.privateEntries('Mailbox number').length,0);assert.throws(()=>restarted.revealPrivate(saved.reference,{confirmed:true}));assert.doesNotMatch(fs.readFileSync(path.join(v.home,'vault-dispositions.json'),'utf8'),/Mailbox|818/);
+ restarted.forget(saved.reference);assert.equal(restarted.search('Mailbox number').length,0);assert.throws(()=>restarted.revealPrivate(saved.reference,{confirmed:true}));assert.doesNotMatch(fs.readFileSync(path.join(v.home,'vault-dispositions.json'),'utf8'),/Mailbox|818/);
 });
 test('cancellation, competing readers, stale confirmation and ambiguous backends cannot disclose or write silently',async t=>{
  const f=await fixture(t),v=vaultFixture(t,f.root),request=body=>privateMemory.operate(f.bridge,body),plan=intent.parse(PHRASE);
  for(const steps of [['3\r'],['1\r','no\r'],['2\r','\x03']])assert.equal((await guide({input:new Terminal(steps),output:output(),plan,message:PHRASE,vault:v.vault,request})).state,'cancelled');
  assert.deepEqual(v.calls,[]);assert.equal(privateMemory.operate(f.bridge,{action:'lookup',label:plan.label}).items.length,0);
  for(const input of [Object.assign(new Terminal(),{isTTY:false}),new Terminal()]){if(input.isTTY)input.on('data',()=>{});await assert.rejects(guide({input,output:output(),plan,message:PHRASE,vault:v.vault,request}));}
- const m=privateMemory.operate(f.bridge,{action:'save',label:plan.label,value:'818',confirmed:true});v.vault.put('999','operator',{kind:'private_identifier',label:plan.label});
+ const m=privateMemory.operate(f.bridge,{action:'save',label:plan.label,value:'818',confirmed:true});v.vault.put('999','operator',{kind:'private_identifier',name:plan.label});
  const out=output();assert.equal((await guide({input:new Terminal(['0\r']),output:out,plan:intent.parse("What's my mailbox number?"),vault:v.vault,request})).state,'cancelled');assert.doesNotMatch(out.text(),/818|999/);
  const stale=output();assert.equal((await guide({input:new Terminal([stream=>{f.bridge.personalMemory.forget(m.memoryId);stream.emit('data',Buffer.from('yes\r'));}]),output:stale,plan:intent.parse('What is my locker number?'),vault:v.vault,request:body=>body.action==='lookup'?{items:[{memoryId:m.memoryId}]}:request(body)})).state,'unavailable');assert.doesNotMatch(stale.text(),/818/);
 });
@@ -77,6 +77,6 @@ test('operator endpoint denies anonymous callers, credentials, missing confirmat
 });
 test('direct model bypass and unsolicited model persistence claims fail closed',async t=>{
  const f=await fixture(t);let content='I have saved your information.',calls=0;const engine=new ConversationEngine(f.bridge,{qualify:async()=>({state:'READY',model:'ollama/qwen3-coder:30b'}),request:async()=>{calls++;return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{role:'assistant',content}}]}));}});t.after(()=>engine.close());
- await assert.rejects(engine.start({message:PHRASE,request_id:randomUUID()}),/private identifiers/);assert.equal(calls,0);
+ await assert.rejects(engine.start({message:PHRASE,request_id:randomUUID()}),/deterministic host workflow/);assert.equal(calls,0);
  for(content of ['I have saved your information.',"I don't have the ability to store personal information.",'Your mailbox number is 818.']){const receipt=await engine.start({message:'Hi',request_id:randomUUID()});await engine.active.get(receipt.turn_id)?.promise;assert.equal(engine.result({conversation_id:receipt.conversation_id,turn_id:receipt.turn_id}).state,'failed');assert.equal(engine.db.prepare('SELECT response FROM cp_conversation_turns WHERE id=?').get(receipt.turn_id).response,null);}
 });
