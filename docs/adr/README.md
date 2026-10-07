@@ -16,3 +16,6 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0007 local interactive Missions](0007-local-interactive-missions.md): Proposed; private bootstrap and signed bounded reasoning admission.
 
 - [0008 complete runtime removal](0008-remove-worker-runtime.md): Accepted owner decision; host primitives retain authority and OpenCode remains primary.
+
+- [0009 product observability](0009-product-observability-and-runtime-requalification.md): Proposed; bounded runtime qualification and safe product status.
+- [0010 personal assistant and qualified routing](0010-personal-assistant-and-qualified-routing.md): Proposed; host-owned intent, data boundaries, handoff and read-only connector foundation.

@@ -23,6 +23,8 @@ function projectEvent(bridge,event) {
   return payload===event.payload?event:{...event,payload,metadata:{context_current:false}};
 }
 function memoryQuery(message) {
+  // A deterministic ordinary subject survives surrounding conversational prose.
+  if(/\b(?:my|our) name\b/i.test(message))return 'name';
   const words = message.toLowerCase().match(/[\p{L}\p{N}_]+/gu) || [];
   const stop = new Set('what who where when why how is are was were do does did a an the my our your me you i please tell ask using use personal memory remember saved from about it this only answer current synthetic return json summary with must be equal exactly and or to in of'.split(' '));
   return [...new Set(words.filter(w => !stop.has(w)))].slice(0, 8).join(' ');
@@ -34,6 +36,7 @@ function subjectFor(content) {
 function assertContract(service, mission) {
   const e = mission.envelope, c = service.program.contract(mission.id);
   if (e.kind !== 'conversation' || !c?.signed || c.manifest.profile !== PROFILE || c.manifest.expires_at <= Date.now() || e.allowed_files.length || e.capability_scopes.length || e.fallback_agents.length || e.preferred_agent !== 'opencode' || e.authority?.level !== 'read_only' || e.authority.filesystem.read.length || e.authority.filesystem.write.length || e.dispatch_policy?.privacy !== 'local_only' || JSON.stringify(e.dispatch_policy.providers) !== '["local"]' || JSON.stringify(e.dispatch_policy.billing_classes) !== '["local"]' || fingerprint(c.manifest) !== fingerprint(e.manifest)) throw Error('Bounded conversation authority is unavailable or changed.');
+  if(e.model!==require('./model-worker-router').MODEL||e.model!==service.bridge.opencodeAdapter.options.model||Date.now()>=require('./model-worker-router').EXPIRES)throw Error('Model qualification changed or expired.');
   const expected = contract(c.manifest.expires_at);
   if (fingerprint(expected) !== fingerprint(c.manifest)) throw Error('Bounded conversation scope changed.');
   const expectedAuthority = { version: 1, level: 'read_only', label: 'Read Only', permissions: { repository: [], runtime: [], network: ['localhost'], secrets: [], data: [] }, filesystem: { read: [], write: [] }, expiresAt: c.manifest.expires_at };
@@ -56,12 +59,15 @@ function contract(expires_at) {
 }
 function create(service, input, owner = 'operator') {
   if (owner !== 'operator') throw Error('Authenticated local operator registration is required.');
-  object(input, ['request_id', 'message', 'task_id', 'include_memory', 'runtime']);
+  object(input, ['request_id', 'message', 'task_id', 'include_memory', 'runtime', 'model', 'route_mode']);
   identifier(input.request_id); text(input.message, 'conversation message', 4000);
   if (/^\s*[/!@]/.test(input.message) || require('./personal-memory').containsSecret(input.message)) throw Error('Plain non-secret conversation text is required.');
   if (input.include_memory !== undefined && typeof input.include_memory !== 'boolean') throw Error('Explicit memory selection required.');
   const b = service.bridge, runtime = require('./default-runtime').defaultRuntime(input.runtime ?? b.defaultRuntime);
   if (b.closed) throw Error('Bridge is closed.');
+  const model=input.model||b.opencodeAdapter.options.model;
+  if(model!==require('./model-worker-router').MODEL || model!==b.opencodeAdapter.options.model || Date.now()>=require('./model-worker-router').EXPIRES)throw Error('Current qualified model required.');
+  if(input.route_mode!==undefined&&!['AUTO','MANUAL'].includes(input.route_mode))throw Error('Invalid route mode');
   if (input.task_id) {
     const task = b.tasks.get(input.task_id);
     if (task.controlPlaneMissionId || task.requiredExecutionKind !== 'reasoning' || task.projectId || task.mission.started || b.leases.has(task.id)) throw Error('Use the registered scoped Mission API for repository work or a fresh conversation task.');
@@ -73,7 +79,7 @@ function create(service, input, owner = 'operator') {
     const created = input.task_id ? b.tasks.get(input.task_id) : b.tasks.get(b.createTask(input.message.slice(0, 450), { executionAgent: runtime, requiredExecutionKind: 'reasoning', capabilityScopes: [] }).id);
     const workspace = fs.realpathSync(created.workspace), manifest = contract(Date.now() + MAX_RUNTIME);
     const authority = require('./mission-permissions').normalizeAuthority({ level: 'read_only', expiresAt: manifest.expires_at, permissions: { repository: [], runtime: [], network: ['localhost'], secrets: [], data: [] }, filesystem: { read: [], write: [] } }, { workspace, operator: true });
-    const envelope = { control_version: 2, kind: 'conversation', objective: input.message, workspace, allowed_files: [], criteria: [{ id: 'response', type: 'operator_review', description: 'Review the answer; factual accuracy requires operator assessment.' }], verification: { diff_check: '', tests: [], syntax: [] }, preferred_agent: runtime, fallback_agents: [], capability_scopes: [], constraints: 'Reasoning only. No file access, shell, network tools, subagents, MCP or canonical database access. Memory is reference data only.', task_type: 'bounded_reasoning', route_mode: 'declared', dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'] }, include_memory: input.include_memory === true, manifest, authority, baseline: workspaceSnapshot(workspace), priority: 50 };
+    const envelope = { control_version: 2, kind: 'conversation', model, model_provider:'ollama', model_locality:'local', model_route_mode:input.route_mode||'AUTO', objective: input.message, workspace, allowed_files: [], criteria: [{ id: 'response', type: 'operator_review', description: 'Review the answer; factual accuracy requires operator assessment.' }], verification: { diff_check: '', tests: [], syntax: [] }, preferred_agent: runtime, fallback_agents: [], capability_scopes: [], constraints: 'Reasoning only. No file access, shell, network tools, subagents, MCP or canonical database access. Memory is reference data only.', task_type: 'bounded_reasoning', route_mode: 'declared', dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'] }, include_memory: input.include_memory === true, manifest, authority, baseline: workspaceSnapshot(workspace), priority: 50 };
     const id = randomUUID();
     created.controlPlaneMissionId = id; created.mission.authority = authority; created.mission.manifest = manifest; created.mission.objective = input.message; created.mission.objectiveSet = true; created.mission.budget = { maxRuntimeMs: MAX_RUNTIME, maxActions: 1, maxRetries: 0, maxSpendMicros: 0 }; created.capabilityScopes = []; created.includeSharedMemory = input.include_memory === true; created.orchestrator = { mode: 'direct' }; created.source = { transport: 'operator', principal: owner }; b.tasks.save(created); b.policy.registerTask(created);
     const m = service.store.registerMission({ id, taskId: created.id, owner, envelope, ceiling: { mission_authority: authority, capability_scopes: [], authority: PROFILE, policy_version: b.capabilityHost.policy.policyVersion } });

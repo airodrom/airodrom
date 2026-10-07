@@ -1218,9 +1218,9 @@ class BridgeController extends EventEmitter {
     const usedChars = items.reduce((total, item) => total + JSON.stringify(item).length, 0);
     return { items, usedChars, truncated: personal.truncated || project.truncated || items.length < personal.items.length + project.items.length };
   }
-  rememberPersonalMemory(input) { return this.authorityRuntime?.active?this.authorityRuntime.operatorMemory(input):this.personalMemory.remember(input); }
-  updatePersonalMemory(memoryId, input) { return this.authorityRuntime?.active?this.authorityRuntime.operatorMemory(input,memoryId):this.personalMemory.update(memoryId, input); }
-  forgetPersonalMemory(memoryId) { return this.authorityRuntime?.active?this.authorityRuntime.memory.forget(memoryId,this.authorityRuntime.store.operator):this.personalMemory.forget(memoryId); }
+  rememberPersonalMemory(input) { if(require('./assistant-intent').secret(input.content||''))throw Error('Secret content requires the operator Secret Vault');if(require('./assistant-intent').sensitive(input.content||'')&&(!input.sensitivity||input.sensitivity==='normal'))throw Error('Explicit Sensitive Memory path required');if(input.sensitivity&&input.sensitivity!=='normal')return this.personalMemory.remember({...input,subject:'sensitive.'+randomUUID()});return this.authorityRuntime?.active?this.authorityRuntime.operatorMemory(input):this.personalMemory.remember(input); }
+  updatePersonalMemory(memoryId, input) { if(require('./assistant-intent').secret(input.content||''))throw Error('Secret content requires the operator Secret Vault');const previous=this.personalMemory.get(memoryId);if(previous&&previous.sensitivity!=='normal')return this.personalMemory.update(memoryId,{...input,subject:previous.subject,sensitivity:previous.sensitivity});if(require('./assistant-intent').sensitive(input.content||''))throw Error('Use explicit Sensitive Memory correction');return this.authorityRuntime?.active?this.authorityRuntime.operatorMemory(input,memoryId):this.personalMemory.update(memoryId, input); }
+  forgetPersonalMemory(memoryId) { const privateItem=this.personalMemory.get(memoryId);if(privateItem&&privateItem.sensitivity!=='normal')return this.personalMemory.forget(memoryId);return this.authorityRuntime?.active?this.authorityRuntime.memory.forget(memoryId,this.authorityRuntime.store.operator):this.personalMemory.forget(memoryId); }
   _personalMemoryScopeForTask(task, domain) {
     if (domain === 'personal') return { domain };
     if (domain === 'project') {

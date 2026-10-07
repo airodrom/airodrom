@@ -31,6 +31,8 @@ class MissionAgents {
   async select(envelope){
     if(envelope.kind!=='coding')throw Error('Unsupported Mission task kind');
     if(!envelope.capability_scopes.includes('repo')||(envelope.task_type!=='local_files'&&!envelope.capability_scopes.includes('developer_environment')))throw Error('Mission scopes do not permit Claude coding');
+    const fixture=process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true;
+    if(!fixture&&[envelope.preferred_agent,...envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     const observations=await this.refresh(),p=envelope.dispatch_policy;
     if(this.bridge.authorityRuntime?.routing){const row=this.store.db.prepare('SELECT id FROM cp_missions WHERE envelope=?').get(JSON.stringify(envelope));if(!row)throw Error('Routing requires a persisted Mission');return this.bridge.authorityRuntime.route(this.store.getMission(row.id),observations);}
     const automatic=envelope.route_mode==='automatic';

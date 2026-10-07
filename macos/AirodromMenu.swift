@@ -24,7 +24,7 @@ private struct BridgeStatus: Codable {
     let managed: Bool
     struct Product: Codable {
         struct Mission: Codable { let id: String?; let label: String; let state: String; let phase: String; let progress: String }
-        let control: String?; let status: String; let runtime: String; let runtimeReason: String?; let memory: String; let provider: String
+        let model: String?; let routing: String?; let connectors: String?; let control: String?; let status: String; let runtime: String; let runtimeReason: String?; let memory: String; let provider: String
         let approvals: Int?; let mission: Mission?; let diagnostic: String
         let quarantined_leases: Int?
     }
@@ -154,6 +154,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
     private let stateRow = NSMenuItem(title: "Status: Waiting", action: nil, keyEquivalent: "")
+    private let modelRow = NSMenuItem(title: "Model: Unavailable", action: nil, keyEquivalent: "")
+    private let connectorsRow = NSMenuItem(title: "Connectors: Unavailable", action: nil, keyEquivalent: "")
     private let runtimeRow = NSMenuItem(title: "OpenCode: Unavailable · Primary", action: nil, keyEquivalent: "")
     private let memoryRow = NSMenuItem(title: "Memory V2: Unavailable · Local", action: nil, keyEquivalent: "")
     private let missionRow = NSMenuItem(title: "Active Mission: none observed", action: nil, keyEquivalent: "")
@@ -189,7 +191,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         statusItem.button?.image = brandImage(); statusItem.button?.setAccessibilityLabel("Airodrom")
         statusItem.menu = menu; menu.autoenablesItems = false
         menu.addItem(NSMenuItem(title: "AIRODROM · PRE-RELEASE", action: nil, keyEquivalent: ""))
-        [stateRow, runtimeRow, memoryRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
+        [stateRow, runtimeRow, modelRow, memoryRow, connectorsRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
         openItem = item("Open Control Center", #selector(openCenter), in: menu, key: "o")
         cliItem = item("New Mission / Open CLI", #selector(openCLI), in: menu)
         menu.addItem(.separator()); menu.addItem(missionRow); menu.addItem(approvalsRow)
@@ -243,6 +245,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let p = status?.product, state = status?.state
         let visible = changing ? "Waiting" : p?.status ?? "Unavailable"
         stateRow.title = "Status: " + visible
+        modelRow.title = "Model: " + (p?.model ?? "Unavailable") + " · " + (p?.routing ?? "Unavailable")
+        connectorsRow.title = "Connectors: " + (p?.connectors ?? "Unavailable")
         runtimeRow.title = "OpenCode: " + (p?.runtime ?? "Unavailable") + " · Primary"
         if p?.runtimeReason == "opencode_runtime_pins_changed" { runtimeRow.title += " · Requalification required" }
         memoryRow.title = "Memory V2: " + (p?.memory ?? "Unavailable") + " · Local"

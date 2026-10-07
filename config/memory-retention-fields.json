@@ -3196,5 +3196,18 @@
       "generation": "A",
       "scope_json": "A"
     }
+  },
+  "cp_mcp_handoff_sessions": {
+    "fields": [
+      "id",
+      "created_at",
+      "expires_at"
+    ],
+    "source": "src/control-server.js",
+    "classification": {
+      "id": "A",
+      "created_at": "A",
+      "expires_at": "A"
+    }
   }
 }

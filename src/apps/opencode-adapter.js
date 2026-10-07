@@ -142,9 +142,12 @@ class OpenCodeAdapter extends AgentAdapter {
     const observed = r?.status === 0 ? version(r.stdout) : null;
     const configured = this.options.enabled === true && /^ollama\/[A-Za-z0-9_.:-]{1,120}$/.test(this.options.model || '');
     const providerReady=configured&&(this.options.fixtureExecutable||await new Promise(resolve=>{
-      const request=require('node:http').get('http://127.0.0.1:11434/api/tags',{timeout:1000},response=>{let text='',bytes=0;response.on('data',chunk=>{bytes+=chunk.length;if(bytes>256000){request.destroy();resolve(false);}else text+=chunk;});response.on('end',()=>{try{resolve(response.statusCode===200&&JSON.parse(text).models?.some(m=>m.name===this.options.model.slice(7)));}catch{resolve(false);}});response.on('error',()=>resolve(false));});request.on('error',()=>resolve(false));request.on('timeout',()=>{request.destroy();resolve(false);});
+      // Capability evidence pins the /api/show weight blob and template, not the
+      // distinct /api/tags manifest digest. Compare the same artifact identity.
+      const body=JSON.stringify({name:this.options.model.slice(7)}),request=require('node:http').request('http://127.0.0.1:11434/api/show',{method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)},timeout:1000},response=>{let text='',bytes=0;response.on('data',chunk=>{bytes+=chunk.length;if(bytes>256000){request.destroy();resolve(false);}else text+=chunk;});response.on('end',()=>{try{const capability=require('../local-model-capability'),live=capability.inspectOllamaShow(JSON.parse(text)),record=require('../../config/local-model-capability-v1.json').models.find(q=>q.model===this.options.model.slice(7));resolve(response.statusCode===200&&live.available&&!!live.digest&&!!live.templateHash&&capability.assessQualification(record,live).allow);}catch{resolve(false);}});response.on('error',()=>resolve(false));});request.on('error',()=>resolve(false));request.on('timeout',()=>{request.destroy();resolve(false);});request.end(body);
     }));
-    const ready = !!executable && observed === VERSION && configured && providerReady && pinned && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
+    const currentQualification=Date.now()<require('../model-worker-router').EXPIRES&&this.options.model===require('../model-worker-router').MODEL;
+    const ready = currentQualification && !!executable && observed === VERSION && configured && providerReady && pinned && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
     return { agentId: this.id, implemented: true, installed: !!executable, version: observed, ready, available: ready,
       availability: ready ? this.active.size ? 'busy' : 'available' : 'unavailable',
       auth_state: configured ? 'local_not_required' : 'auth_required', workspace_required: true,

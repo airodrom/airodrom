@@ -18,7 +18,7 @@ if(o.includes('test codename')){const records=p.current_context?.records||[];con
 console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));
 });`,{mode:0o700});
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
- const options={enabled:true,executable:fake,fixtureExecutable:fake,model:'ollama/fixture'};
+ const options={enabled:true,executable:fake,fixtureExecutable:fake,model:require('../../config/agent-runtime-qualification-v1.json').opencode.model};
  const adapter=new OpenCodeAdapter({options:{allowFixtureWorker:true}},options);
  const workspace=path.join(root,'repo');fs.mkdirSync(workspace);fs.writeFileSync(path.join(workspace,'fixture.txt'),'alpha\n');
  return{adapter,workspace,options,request:{workspace,files:['fixture.txt'],objective:'read',timeoutMs:1000}};

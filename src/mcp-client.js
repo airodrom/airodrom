@@ -14,11 +14,20 @@ function discovery(dataDir = process.env.AIRODROM_DATA_DIR || path.join(__dirnam
   return value;
 }
 
-function createClient({ dataDir } = {}) {
+function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,sessionFile=process.env.AIRODROM_MCP_SESSION_FILE } = {}) {
+  let session=null,sessionPromise=null;
+  if(sessionFile){if(!path.isAbsolute(sessionFile))throw Error('Absolute private session file required');if(require('./private-json').privateFileExists(sessionFile)){const saved=require('./private-json').readPrivateJSON(sessionFile);if(saved.version!==1||!require('./product-observability').id(saved.session_id))throw Error('Invalid client session file');resumeSession=saved.session_id;}}
   return async (name, args, clientInfo) => {
     let connection;
     try { connection = discovery(dataDir); }
     catch { const error = new Error('Bridge discovery failed'); error.publicMessage = 'Local bridge unavailable or private discovery invalid. Start the bridge with npm start.'; throw error; }
+    if(['submit_mission','get_mission_handoff','cancel_mission_handoff'].includes(name)&&(!session||session.pid!==connection.pid||session.port!==connection.port||session.token!==connection.token||session.expires_at<Date.now())){
+      if(!sessionPromise)sessionPromise=(async()=>{
+      const response=await fetch('http://127.0.0.1:'+connection.port+'/api/mcp/session',{method:'POST',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},body:JSON.stringify(session?.session_id?{session_id:session.session_id}:resumeSession?{session_id:resumeSession}:{}),redirect:'error',signal:AbortSignal.timeout(5000)});
+      if(!response.ok)throw Error('Authenticated handoff session unavailable');const value=await response.json();if(!/^[a-f0-9-]{36}$/.test(value.session_id)||!Number.isSafeInteger(value.expires_at))throw Error('Invalid handoff session');session={...value,...connection};if(sessionFile)require('./local-bootstrap').writePrivate(sessionFile,{version:1,session_id:session.session_id});
+      })().finally(()=>{sessionPromise=null;});
+      await sessionPromise;
+    }
     return new Promise((resolve, reject) => {
       const body = JSON.stringify({ name, args, clientInfo: { name: String(clientInfo?.name || 'unknown').slice(0, 100), version: String(clientInfo?.version || '').slice(0, 100) } });
       let settled = false;
@@ -27,7 +36,7 @@ function createClient({ dataDir } = {}) {
       // arbitrary URL, operator credential or general-purpose HTTP proxy is exposed.
       // Each call follows fresh discovery; do not reuse a socket from a replaced bridge.
       // A failed call is still returned to the caller, never automatically replayed.
-      const req = http.request({ agent: false, hostname: '127.0.0.1', port: connection.port, path: '/api/mcp/call', method: 'POST', headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, res => {
+      const req = http.request({ agent: false, hostname: '127.0.0.1', port: connection.port, path: '/api/mcp/call', method: 'POST', headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body),...(session?{'x-airodrom-session':session.session_id}:{}) } }, res => {
         const parts = []; let bytes = 0;
         res.on('data', part => { bytes += part.length; if (bytes > 512 * 1024) { fail('Bridge response exceeded limit; inspect Control Center before retrying'); res.destroy(); } else parts.push(part); });
         res.on('error', () => fail('Bridge response interrupted; inspect status before retrying'));
