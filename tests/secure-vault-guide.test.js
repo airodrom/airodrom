@@ -19,10 +19,10 @@ function fixture(t,port=null){
 function clean(input){assert.equal(input.listenerCount('data'),0);assert.equal(input.listenerCount('readable'),0);assert.equal(input.listenerCount('end'),0);assert.equal(input.listenerCount('close'),0);assert.equal(input.listenerCount('error'),0);assert.equal(input.isRaw,false);assert.equal(input.paused,true);}
 
 test('secure Vault guide stores only through the canonical host port; input and receipts never echo values',async t=>{
- const f=fixture(t),input=new Terminal(['1\r'+CANARY,'2\r',CANARY+'\r/chat '+CANARY]),out=output();
+ const f=fixture(t),input=new Terminal(['1\r','2\r','2\r',CANARY+'\r/chat '+CANARY,'yes\r']),out=output();
  const receipt=await guide({input,output:out,home:f.home,vault:f.vault});assert.equal(receipt.state,'saved');assert.equal(f.values.get(receipt.reference),CANARY);
- assert.ok(out.text().startsWith(MENU));assert.match(out.text(),/Secret saved as API key [a-f0-9]{8}/);assert.doesNotMatch(out.text()+JSON.stringify(receipt)+fs.readFileSync(path.join(f.data,'vault-dispositions.json'),'utf8'),new RegExp(CANARY));
- assert.deepEqual(f.calls.map(c=>c.op),['put']);assert.deepEqual(input.raw,[true,false,true,false,true,false]);clean(input);
+ assert.ok(out.text().startsWith(MENU));assert.match(out.text(),/Secret saved as Work API key/);assert.doesNotMatch(out.text()+JSON.stringify(receipt)+fs.readFileSync(path.join(f.data,'vault-dispositions.json'),'utf8'),new RegExp(CANARY));
+ assert.deepEqual(f.calls.map(c=>c.op),['put']);assert.deepEqual(input.raw,[true,false,true,false,true,false,true,false,true,false]);clean(input);
 });
 test('secure Vault guide fails closed with an ordinary or competing input reader, including paused readers',async t=>{
  const f=fixture(t);
@@ -49,13 +49,13 @@ test('secure Vault list exposes only generated operator names, never connector r
  assert.match(out.text(),new RegExp('Password '+operator.reference.slice(0,8)));assert.doesNotMatch(out.text(),new RegExp(CANARY+'|'+gmail.reference+'|'+whatsapp.reference));assert.deepEqual(f.calls,[]);clean(input);
 });
 test('secure Vault removal revokes canonical references and removes name metadata before failed host cleanup',async t=>{
- const f=fixture(t),ref=f.vault.put(CANARY,'operator',{kind:'password'}),old=f.vault.names()[0].name,out=output(),input=new Terminal(['3\r','1\r','1\r']);
+ const f=fixture(t),ref=f.vault.put(CANARY,'operator',{kind:'password'}),old=f.vault.names()[0].name,out=output(),input=new Terminal(['3\r','1\r','yes\r']);
  assert.equal((await guide({input,output:out,home:f.home,vault:f.vault})).state,'removed');assert.deepEqual(f.vault.names(),[]);assert.throws(()=>f.vault.resolve(ref.reference,'operator'),/revoked/);const state=fs.readFileSync(path.join(f.data,'vault-dispositions.json'),'utf8');assert.doesNotMatch(state,new RegExp(CANARY+'|'+old));clean(input);
  const failure=fixture(t,(op)=>{if(op==='delete')throw Error(CANARY);return '';});const secret=failure.vault.put(CANARY,'operator',{kind:'api_key'});assert.throws(()=>failure.vault.forget(secret.reference));assert.deepEqual(failure.vault.names(),[]);assert.equal(JSON.parse(fs.readFileSync(path.join(failure.data,'vault-dispositions.json'),'utf8')).refs[secret.reference].name,undefined);
 });
 test('secure Vault cancels or blocks unavailable input without retaining credential-bearing host diagnostics',async t=>{
- const f=fixture(t,()=>{throw Error(CANARY);}),out=output(),input=new Terminal(['1\r','1\r',CANARY+'\r']);assert.equal((await guide({input,output:out,home:f.home,vault:f.vault})).state,'unavailable');assert.doesNotMatch(out.text(),new RegExp(CANARY));assert.deepEqual(f.vault.names(),[]);clean(input);
- const next=fixture(t),cancelInput=new Terminal(['1\r','1\r',CANARY+'\x03']),cancelOut=output();assert.equal((await guide({input:cancelInput,output:cancelOut,home:next.home,vault:next.vault})).state,'cancelled');assert.deepEqual(next.calls,[]);clean(cancelInput);
+ const f=fixture(t,()=>{throw Error(CANARY);}),out=output(),input=new Terminal(['1\r','1\r','2\r',CANARY+'\r','yes\r']);assert.equal((await guide({input,output:out,home:f.home,vault:f.vault})).state,'unavailable');assert.doesNotMatch(out.text(),new RegExp(CANARY));assert.deepEqual(f.vault.names(),[]);clean(input);
+ const next=fixture(t),cancelInput=new Terminal(['1\r','1\r','2\r',CANARY+'\x03']),cancelOut=output();assert.equal((await guide({input:cancelInput,output:cancelOut,home:next.home,vault:next.vault})).state,'cancelled');assert.deepEqual(next.calls,[]);clean(cancelInput);
  const unconfigured=new SecretVault(next.data),notReady=new Terminal(['1\r']),notReadyOut=output();assert.equal((await guide({input:notReady,output:notReadyOut,home:next.home,vault:unconfigured})).state,'unavailable');assert.match(notReadyOut.text(),/secret prepare/);clean(notReady);
 });
 test('secure Vault names are compatible with legacy references and reject arbitrary display metadata',t=>{
@@ -65,4 +65,52 @@ test('secure Vault names are compatible with legacy references and reject arbitr
 test('secure Vault restored names recheck independent current dispositions and cannot resurrect erased names',t=>{
  const f=fixture(t),saved=f.vault.put(CANARY,'operator',{kind:'password'}),copy=path.join(f.home,'copy');fs.mkdirSync(copy,{mode:0o700});fs.copyFileSync(path.join(f.data,'vault-dispositions.json'),path.join(copy,'vault-dispositions.json'));fs.chmodSync(path.join(copy,'vault-dispositions.json'),0o600);
  const restored=new SecretVault(copy,()=>'',{restoreFromBackup:true,erasureSourceVault:f.vault});assert.equal(restored.names().length,1);f.vault.forget(saved.reference);assert.deepEqual(restored.names(),[]);new SecretVault(copy,()=>'',{restoreFromBackup:true,erasureSourceVault:f.vault});assert.equal(JSON.parse(fs.readFileSync(path.join(copy,'vault-dispositions.json'),'utf8')).refs[saved.reference].name,undefined);
+});
+
+test('visible choices echo only permitted answers and restore terminal ownership',async()=>{
+ const {visible,confirm}=require('../src/vault-cli');
+ const input=new Terminal([stream=>{stream.emit('data',Buffer.from('y'));stream.emit('data',Buffer.from('e'));stream.emit('data',Buffer.from('s\r'));}]),out=output();
+ assert.equal(await confirm(input,out),true); // The receipt never includes the answer text.
+ assert.match(out.text(),/\[y\/N\].*yes/);clean(input);
+ for(const answer of [CANARY+'\r',CANARY+'\x7f'.repeat(CANARY.length)+'yes\r','yes\r'+CANARY+'\r','\x1b[200~yes\x1b[201~\r','\x03','\x04']){
+  const terminal=new Terminal([answer]),display=output();await assert.rejects(visible(terminal,display));assert.doesNotMatch(display.text(),new RegExp(CANARY));clean(terminal);
+ }
+ const terminal=new Terminal(['2\b1\r']),display=output();assert.equal(await visible(terminal,display,{choices:['1','2']}),'1');assert.ok(display.text().includes('2\b \b1'));clean(terminal);
+});
+test('credential save requires a fresh visible Yes after hidden capture and never echoes value',async t=>{
+ for(const decision of ['no\r','\r','\x03','yes\r'+CANARY+'\r']){
+  const f=fixture(t),input=new Terminal(['1\r','1\r','2\r',CANARY+'\r',decision]),out=output();
+  assert.equal((await guide({input,output:out,vault:f.vault})).state,'cancelled');
+  assert.deepEqual(f.calls,[]);assert.deepEqual(f.vault.names(),[]);assert.doesNotMatch(out.text(),new RegExp(CANARY));assert.match(out.text(),/Save Work login securely/);clean(input);
+ }
+});
+test('preset labels reject credential paste and duplicates before credential entry without echo',async t=>{
+ const f=fixture(t);f.vault.put(CANARY,'operator',{kind:'password',name:'Work login'});f.calls.length=0;
+ for(const [label,state]of [['2','collision'],['sk-proj-'+CANARY,'cancelled'],['amber forest river','cancelled']]){
+  const input=new Terminal(['1\r','1\r',label+'\r']),out=output();assert.equal((await guide({input,output:out,vault:f.vault})).state,state);assert.deepEqual(f.calls,[]);assert.doesNotMatch(out.text(),new RegExp(CANARY));clean(input);
+ }
+});
+test('non-TTY output denies every capture and both guides before any Vault write',async t=>{
+ const f=fixture(t),input=new Terminal(),out=output();out.isTTY=false;
+ await assert.rejects(hidden(input,out),/interactive/);
+ await assert.rejects(require('../src/vault-cli').visible(input,out),/interactive/);
+ await assert.rejects(guide({input,output:out,vault:f.vault}),/interactive/);
+ await assert.rejects(require('../src/natural-private-vault').guide({message:'Save my mailbox number 818',input,output:out,vault:f.vault}),/interactive/);
+ assert.equal(out.text(),'');assert.deepEqual(f.calls,[]);clean(input);
+});
+
+test('account capability authorization uses visible named choices and fresh confirmation without credential reads',async t=>{
+ const f=fixture(t);f.vault.put('synthetic-user-canary','operator',{kind:'password',name:'Personal login'});f.vault.put(CANARY,'operator',{kind:'password',name:'Work login'});f.calls.length=0;
+ const guideAccount=require('../src/research-account-guide').guide;
+ for(const decision of ['no\r','\r','\x03','yes\r'+CANARY+'\r']){
+  const out=output(),input=new Terminal(['1\r','2\r',decision]);let sent=0;
+  const promise=guideAccount({entry_url:'https://account.example.invalid/login',input,output:out,vault:f.vault,request:async()=>{sent++;}});
+  if(decision==='\x03'||decision.startsWith('yes'))await assert.rejects(promise,/cancelled/);else assert.equal((await promise).kind,'clarify');
+  assert.equal(sent,0);assert.deepEqual(f.calls,[]);assert.doesNotMatch(out.text(),new RegExp(CANARY+'|synthetic-user-canary'));assert.match(out.text(),/Username: Personal login\nPassword: Work login/);clean(input);
+ }
+ const out=output(),input=new Terminal(['1\r','2\r','yes\r']);let payload;
+ await guideAccount({entry_url:'https://account.example.invalid/login',input,output:out,vault:f.vault,request:async(_home,_route,body)=>{payload=body;return {kind:'mission'};}});
+ assert.equal(payload.confirmed,true);assert.doesNotMatch(JSON.stringify(payload),new RegExp(CANARY+'|synthetic-user-canary'));assert.deepEqual(f.calls,[]);clean(input);
+ const stale=new Terminal(['1\r','2\r',stream=>{f.vault.rename(f.vault.search('Work login')[0].reference,'Service login');stream.emit('data',Buffer.from('yes\r'));}]);
+ await assert.rejects(guideAccount({entry_url:'https://account.example.invalid/login',input:stale,output:output(),vault:f.vault,request:async()=>{throw Error('Stale choice must not dispatch');}}),/selection changed/);assert.deepEqual(f.calls,[]);clean(stale);
 });

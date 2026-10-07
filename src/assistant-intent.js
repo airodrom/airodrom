@@ -24,12 +24,13 @@ function parse(value, {nickname:assistantNickname} = {}) {
  const request=storage.normalize(value,assistantNickname);
  const forgetId=/^forget\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.exec(request);
  if(forgetId)return route('MEMORY',{kind:'forget',selection:forgetId[1]});
+ const privateIntent=require('./private-vault-intent').parse(request);
+ // Explicit named operations accept label metadata, never credential values.
+ if(/^\/secret\b/i.test(request)&&privateIntent)return {...privateIntent,message:'Use the native /secret workflow.'};
  // Only a valueless request opens secure entry. Credentials supplied in chat
  // still hit the secret refusal below and never reach a model or memory.
  if(/^\/vault$/i.test(request)||/^(?:(?:let['’]s|let us|i want to)\s+)?(?:save|store|add)\s+(?:a|an|my)\s+(?:password|api[ _-]?key|secret)$/i.test(request)||/^(?:open|show)\s+(?:the\s+)?(?:secret\s+)?vault$/i.test(request)||/^(?:view|show|list)\s+(?:my\s+)?saved secret names$/i.test(request)||/^remove a secret$/i.test(request))return route('VAULT',{kind:'vault',action:'menu'});
  if(secret(value)||/\b(?:my|a) (?:secret|credential)\s+\S+/i.test(value))return route('VAULT',{kind:'secret',message:'Credentials typed in chat are not secure input. Use /vault and enter the value only in the native hidden prompt.'});
- const privateIntent=require('./private-vault-intent').parse(request);
- if(/^\/secret\b/i.test(request)&&privateIntent)return {...privateIntent,message:'Use the native /secret workflow.'};
  const privateRequest=storage.parse(request);if(privateRequest)return privateRequest;
  if(privateIntent)return {...privateIntent,message:'Use the operator terminal /secret workflow. Private values never enter conversation.'};
  const missionCommand=/^\/mission(?:\s+(new|list|status|cancel))?(?:\s+(.+))?$/i.exec(request);

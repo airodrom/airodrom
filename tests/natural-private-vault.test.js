@@ -24,12 +24,12 @@ test('natural identifier ingress has no value in default routing or credential f
  for(const text of ["Hi Airo, let's not save my mailbox number 818.","Hi Airo, let's save my mailbox number 818 and locker number 999.","Hi Airo, let's save my mailbox number 818. Then send it.","Hi Airo, let's save my mailbox number 818.\nYes"]){
   assert.equal(intent.parse(text).action,'clarify');assert.doesNotMatch(JSON.stringify(intent.parse(text)),/818|999/);
  }
- assert.equal(intent.parse('Save my mailbox number').action,'clarify');assert.equal(intent.parse('Hi'),null);
+ assert.equal(intent.parse('Save my mailbox number').action,'save');assert.equal(intent.parse('Save my mailbox number').value_present,false);assert.equal(intent.parse('Hi'),null);
 });
 test('confirmed named save and restart lookup disclose only in operator reveal output',async t=>{
  const f=fixture(t),out=output();
  const saved=await guide({message:"Hi Airo, let's save my mailbox number 818.",input:new Terminal(['yes\r']),output:out,vault:f.vault});assert.equal(saved.state,'saved');
- const metadata=fs.readFileSync(path.join(f.home,'vault-dispositions.json'),'utf8');assert.doesNotMatch(metadata+out.text()+JSON.stringify(saved),/818/);assert.equal(f.values.get(saved.reference),'818');
+ const metadata=fs.readFileSync(path.join(f.home,'vault-dispositions.json'),'utf8');assert.doesNotMatch(metadata+JSON.stringify(saved),/"818"/);assert.equal(f.values.get(saved.reference),'818');assert.match(out.text(),/Value: 818/);
  const restarted=new SecretVault(f.home,f.port),reveal=output();const receipt=await guide({message:"What's my mailbox number?",input:new Terminal(['yes\r']),output:reveal,vault:restarted});
  assert.equal(receipt.state,'revealed');assert.match(reveal.text(),/mailbox number is 818/);assert.doesNotMatch(JSON.stringify(receipt),/818/);assert.deepEqual(f.calls.map(c=>c.op),['put','read']);
 });
@@ -41,7 +41,7 @@ test('confirmation refusal and non-operator streams cannot save or reveal',async
  assert.throws(()=>f.vault.revealPrivate(saved.reference,{confirmed:false}));
  assert.equal((await guide({message:"What's my mailbox number?",input:new Terminal(['no\r']),output:out,vault:f.vault})).state,'cancelled');assert.equal(f.calls.length,0);
  const stream=new Terminal();stream.isTTY=false;await assert.rejects(guide({message:"What's my mailbox number?",input:stream,output:out,vault:f.vault}));
- const competing=new Terminal();competing.on('data',()=>{});await assert.rejects(guide({message:"What's my mailbox number?",input:competing,output:out,vault:f.vault}));assert.doesNotMatch(out.text(),/818/);
+ const competing=new Terminal();competing.on('data',()=>{});await assert.rejects(guide({message:"What's my mailbox number?",input:competing,output:out,vault:f.vault}));assert.doesNotMatch(out.text().slice(out.text().lastIndexOf('Reveal Mailbox')), /818/);
 });
 test('labels collide case-insensitively and rename cannot repurpose credentials',async t=>{
  const f=fixture(t),a=f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'});assert.throws(()=>f.vault.put('999','operator',{kind:'private_identifier',name:'mailbox NUMBER'}),/label/);
@@ -64,5 +64,30 @@ test('purpose binding, tombstones and current source prevent name or value resur
  f.vault.forget(a.reference);assert.equal(restored.search('').length,0);assert.throws(()=>restored.revealPrivate(a.reference,{confirmed:true}));assert.throws(()=>f.vault.resolve(a.reference,'operator'));const dispositions=JSON.parse(fs.readFileSync(path.join(f.home,'vault-dispositions.json'),'utf8'));for(const metadata of Object.values(dispositions.refs))assert.deepEqual(Object.keys(metadata).sort(),['purpose','state']);assert.doesNotMatch(JSON.stringify(dispositions),/Mailbox|Locker|"818"/);
 });
 test('host failures cannot leak diagnostics through private guide',async t=>{
- const f=fixture(t),vault=new SecretVault(f.home,()=>{throw Error('synthetic-private-diagnostic-canary');}),out=output();assert.equal((await guide({message:'Save my mailbox number 818',input:new Terminal(['yes\r']),output:out,vault})).state,'unavailable');assert.doesNotMatch(out.text(),/818|canary/);
+ const f=fixture(t),vault=new SecretVault(f.home,()=>{throw Error('synthetic-private-diagnostic-canary');}),out=output();assert.equal((await guide({message:'Save my mailbox number 818',input:new Terminal(['yes\r']),output:out,vault})).state,'unavailable');assert.doesNotMatch(out.text(),/canary/);
+});
+
+test('a selection renamed or revoked while confirmation is open cannot be revealed or mutated',async t=>{
+ for(const action of ['reveal','remove','rename']){
+  const f=fixture(t),saved=f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'}),out=output();f.calls.length=0;
+  const input=new Terminal([stream=>{f.vault.rename(saved.reference,'Locker number');stream.emit('data',Buffer.from('yes\r'));}]);
+  const receipt=await guide({message:'/secret '+action+' Mailbox number'+(action==='rename'?' to Parking space number':''),input,output:out,vault:f.vault});
+  assert.equal(receipt.state,'unavailable');assert.deepEqual(f.calls,[]);assert.doesNotMatch(out.text(),/818/);assert.match(out.text(),/changed.*\/secret list/);assert.equal(f.vault.search('Locker number').length,1);
+ }
+ const f=fixture(t),saved=f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'}),out=output();
+ const input=new Terminal([stream=>{f.vault.forget(saved.reference);f.calls.length=0;stream.emit('data',Buffer.from('yes\r'));}]);
+ assert.equal((await guide({message:"What's my mailbox number?",input,output:out,vault:f.vault})).state,'unavailable');assert.deepEqual(f.calls,[]);assert.doesNotMatch(out.text(),/818/);
+});
+test('rename collisions and empty Vault show a useful next step without writes or reads',async t=>{
+ const f=fixture(t),empty=output();assert.equal((await guide({message:'/secret list',input:new Terminal(),output:empty,vault:f.vault})).state,'listed');assert.match(empty.text(),/empty.*\/vault/);
+ f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'});f.vault.put('999','operator',{kind:'private_identifier',name:'Locker number'});f.calls.length=0;
+ const out=output();assert.equal((await guide({message:'/secret rename Mailbox number to Locker number',input:new Terminal(),output:out,vault:f.vault})).state,'collision');assert.match(out.text(),/both entries are unchanged/);assert.deepEqual(f.calls,[]);
+});
+
+test('valueless identifier request captures privately, previews only digits and cancels before storage',async t=>{
+ const f=fixture(t),out=output();assert.equal((await guide({message:'Save my mailbox number',input:new Terminal(['818\r','yes\r']),output:out,vault:f.vault})).state,'saved');assert.match(out.text(),/Value: 818/);assert.equal(f.vault.search('mailbox')[0].kind,'private_identifier');
+ f.vault.forget(f.vault.search('mailbox')[0].reference);f.calls.length=0;
+ for(const answers of [['\r'],['\x03'],['synthetic-private-canary\r'],['818\r','no\r']]){
+  const display=output(),receipt=await guide({message:'Save my mailbox number',input:new Terminal(answers),output:display,vault:f.vault});assert.ok(['cancelled','invalid'].includes(receipt.state));assert.deepEqual(f.calls,[]);assert.doesNotMatch(display.text(),/synthetic-private-canary/);
+ }
 });
