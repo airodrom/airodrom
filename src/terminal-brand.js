@@ -66,20 +66,20 @@ function pixel(x, y, width, height) {
   };
   const face = coverage();
   if (face >= .5) {
-    // Muted teal-to-blue-to-violet face; signature slots remain open.
+    // Ice/cyan light, canonical blue face and indigo depth; keep signature slots open.
     const light = Math.max(0, Math.min(1, (px * .6 + py * .4 - 32) / 192));
-    let color = light < .5 ? blend([46, 140, 145], [69, 111, 187], light * 2)
-      : blend([69, 111, 187], [123, 78, 162], (light - .5) * 2);
+    let color = light < .5 ? blend([148, 225, 242], [80, 145, 255], light * 2)
+      : blend([80, 145, 255], [110, 105, 220], (light - .5) * 2);
     const rim = !inside(px - 1.5, py - 2);
-    if (rim) color = blend(color, [134, 155, 193], .08);
-    else if (!inside(px + 2, py + 2)) color = blend(color, [35, 49, 82], .25);
+    if (rim) color = blend(color, [85, 210, 175], .38);
+    else if (!inside(px + 2, py + 2)) color = blend(color, [110, 105, 220], .28);
     return { type: rim ? 'highlight' : 'front', color, ansi: light < .3 ? 36 : light > .7 ? 35 : 34 };
   }
   // Extrude only outside the outer silhouette, so depth never fills the cutouts.
   if (!inPolygon(px, py, geometry[0])) {
     for (const depth of [2, 4, 6]) {
       if (coverage(depth, depth * .75) >= .5) {
-        return { type: 'depth', color: blend([40, 44, 81], [25, 30, 55], lightDepth(py)) };
+        return { type: 'depth', color: blend([110, 105, 220], [39, 47, 92], lightDepth(py)) };
       }
     }
   }
@@ -131,7 +131,7 @@ function intro({ color = false, mode, unicode = true, columns = 80, rows = 40, g
   mode = mode || (color ? 'truecolor' : 'none');
   const compact = columns < 64 || rows < 28, small = rows < 28;
   const version = require('../package.json').version + ' · PRE-RELEASE';
-  const title = (mode === 'none' ? 'AIRODROM' : sgr({type:'highlight',color:[100,140,196]},mode)+'AIRODROM\x1b[0m') + '\n'
+  const title = (mode === 'none' ? 'AIRODROM' : sgr({type:'highlight',color:[148,225,242]},mode)+'AIRODROM\x1b[0m') + '\n'
     + wrap('MANY AGENTS. ONE CONTROL PLANE.', columns) + '\n';
   if (columns < 28) return title + 'PRE-RELEASE\n';
   if (rows < 24) return title + wrap(version, columns) + '\n';

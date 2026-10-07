@@ -180,7 +180,9 @@ class ControlServer {
       if (req.method === 'GET' && url.pathname === '/api/product/events') return this.json(res, 200, require('./product-observability').events(this.bridge, url));
       if (req.method === 'GET' && url.pathname === '/api/product/mission') return this.json(res, 200, require('./product-observability').missionView(this.bridge, this.bridge.missions.require(url.searchParams.get('id'))));
       if(req.method==='GET'&&url.pathname==='/api/assistant/history'){
-        const rows=this.bridge.controlStore.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.kind')='conversation' ORDER BY created_at DESC LIMIT 20").all();
+        const selected=url.searchParams.get('mission_id');
+        if(selected&&!require('./product-observability').id(selected))throw Error('Invalid Mission ID');
+        const rows=selected?this.bridge.controlStore.db.prepare("SELECT id FROM cp_missions WHERE id=? AND json_extract(envelope,'$.kind')='conversation'").all(selected):this.bridge.controlStore.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.kind')='conversation' ORDER BY created_at DESC LIMIT 20").all();
         const items=rows.map(r=>{const m=this.bridge.missions.require(r.id),t=this.bridge.tasks.get(m.task_id);const prompt=require('./conversation-mission').projectRead(this.bridge,t.id,m.envelope.objective,m.id),response=require('./conversation-mission').projectRead(this.bridge,t.id,t.lastResult||null,m.id);return {mission_id:m.id,state:m.state,prompt:typeof prompt==='string'?prompt:null,response:typeof response==='string'?response:null};});return this.json(res,200,{items,generation:require('./product-observability').memoryStatus(this.bridge).generation,streaming:'Unavailable: adapter returns one bounded visible response'});
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));

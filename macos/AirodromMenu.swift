@@ -25,7 +25,7 @@ private struct BridgeStatus: Codable {
     struct Product: Codable {
         struct Mission: Codable { let id: String?; let label: String; let state: String; let phase: String; let progress: String }
         let model: String?; let routing: String?; let connectors: String?; let control: String?; let status: String; let runtime: String; let runtimeReason: String?; let memory: String; let provider: String
-        let approvals: Int?; let mission: Mission?; let diagnostic: String
+        let active_missions: Int?; let approvals: Int?; let mission: Mission?; let diagnostic: String
         let quarantined_leases: Int?
     }
     let product: Product?
@@ -164,6 +164,19 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private var startItem: NSMenuItem!, stopItem: NSMenuItem!, restartItem: NSMenuItem!, openItem: NSMenuItem!, qualifyItem: NSMenuItem!
     private var cliItem: NSMenuItem!, doctorItem: NSMenuItem!, copyItem: NSMenuItem!
     private var openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
+    private var animationTimer: Timer?, animationIndex = 0, animationTicks = 0
+    private let idleImage = brandImage()
+    private lazy var busyImages: [NSImage] = (0..<12).map { frame in
+        let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { [idleImage] rect in
+            idleImage.draw(in: NSRect(x: 3, y: 3, width: 14, height: 14))
+            NSColor.black.setStroke()
+            let arc = NSBezierPath(); arc.lineWidth = 1.2
+            arc.appendArc(withCenter: NSPoint(x: 10, y: 10), radius: 9, startAngle: CGFloat(frame * 30), endAngle: CGFloat(frame * 30 + 220))
+            arc.stroke(); return true
+        }
+        image.isTemplate = true; image.accessibilityDescription = "Airodrom working"; return image
+    }
+    private var animationState = "idle"
     private var timer: Timer?, status: BridgeStatus?, currentAction: ControlAction?
     private var checkedAt: Date?, lastError: String?, failures = 0
     private var quitAfterAction = false
@@ -180,7 +193,15 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
                 return row
             }
         }
-        return ["template_icon": statusItem.button?.image?.isTemplate == true, "items": entries(menu)]
+        // Allow the real lightweight timer to advance for native fixture evidence.
+        let firstFrame = statusItem.button?.image?.tiffRepresentation
+        RunLoop.current.run(until: Date().addingTimeInterval(0.65))
+        let frameChanged = firstFrame != statusItem.button?.image?.tiffRepresentation
+        let running = animationTimer != nil, originalState = animationState, ticks = animationTicks
+        let displayed = entries(menu)
+        status = nil; render()
+        let stoppedOnIdle = animationTimer == nil && statusItem.button?.image === idleImage
+        return ["frame_changed": frameChanged, "stopped_on_idle": stoppedOnIdle, "template_icon": statusItem.button?.image?.isTemplate == true, "items": displayed, "animation_state": originalState, "animation_running": running, "animation_ticks": ticks, "reduced_motion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion]
     }
     private func item(_ title: String, _ selector: Selector, in target: NSMenu, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key); item.target = self; target.addItem(item); return item
@@ -188,7 +209,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = brandImage(); statusItem.button?.setAccessibilityLabel("Airodrom")
+        statusItem.button?.image = idleImage; statusItem.button?.setAccessibilityLabel("Airodrom")
         statusItem.menu = menu; menu.autoenablesItems = false
         menu.addItem(NSMenuItem(title: "AIRODROM · PRE-RELEASE", action: nil, keyEquivalent: ""))
         [stateRow, runtimeRow, modelRow, memoryRow, connectorsRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
@@ -217,8 +238,9 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         _ = item("Help / Documentation", #selector(documentation), in: menu)
         _ = item("About Airodrom", #selector(about), in: menu)
         _ = item("Quit Menu Bar (service stays running)", #selector(quitHelper), in: menu, key: "q")
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(motionPreferenceChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         request(.status)
-        timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+        timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, self.currentAction == nil else { return }
             self.request(.status)
         }
@@ -244,6 +266,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let changing = currentAction != nil && currentAction != .status
         let p = status?.product, state = status?.state
         let visible = changing ? "Waiting" : p?.status ?? "Unavailable"
+        updateAnimation(changing: changing)
         stateRow.title = "Status: " + visible
         modelRow.title = "Model: " + (p?.model ?? "Unavailable") + " · " + (p?.routing ?? "Unavailable")
         connectorsRow.title = "Connectors: " + (p?.connectors ?? "Unavailable")
@@ -252,7 +275,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         memoryRow.title = "Memory V2: " + (p?.memory ?? "Unavailable") + " · Local"
         missionRow.title = p?.mission.map { $0.label + " · " + $0.phase } ?? "Active Mission: none observed"
         approvalsRow.title = p?.approvals.map { "Approvals: " + String($0) + " waiting" } ?? "Approvals: unavailable"
-        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : ""
+        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : animationState == "error" || animationState == "degraded" ? "!" : animationState == "waiting" ? "…" : ""
         statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title
         statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title)
         detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Local observations checked just now")
@@ -272,6 +295,27 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
             for (index, item) in health.items.enumerated() { item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + (values[index] ?? "Unavailable") }
         }
     }
+    @objc private func motionPreferenceChanged() { render() }
+    private func updateAnimation(changing: Bool) {
+        let p = status?.product
+        let executing = (p?.active_missions ?? 0) > 0 || ["dispatching", "running", "verifying"].contains(p?.mission?.state ?? "")
+        animationState = lastError != nil || status?.state == .error ? "error" : changing ? "waiting" : (p?.approvals ?? 0) > 0 ? "approval" : executing ? "busy" : ["awaiting_acceptance", "waiting_for_operator"].contains(p?.mission?.state ?? "") ? "waiting" : p?.status == "Degraded" ? "degraded" : "idle"
+        let animate = animationState == "busy" && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if !animate {
+            animationTimer?.invalidate(); animationTimer = nil; animationIndex = 0
+            statusItem.button?.image = idleImage
+            return
+        }
+        guard animationTimer == nil else { return }
+        statusItem.button?.image = busyImages[0]
+        animationTimer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.animationIndex = (self.animationIndex + 1) % self.busyImages.count
+            self.animationTicks += 1
+            self.statusItem.button?.image = self.busyImages[self.animationIndex]
+        }
+        if let animationTimer { RunLoop.main.add(animationTimer, forMode: .common) }
+    }
     private func show(_ title: String, _ message: String) { let alert = NSAlert(); alert.messageText = title; alert.informativeText = message; alert.runModal() }
     @objc private func openCenter() { request(.open) }
     @objc private func openCLI() { request(.cli) }
@@ -286,7 +330,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     @objc private func documentation() { if let url = URL(string: "https://github.com/airodrom/airodrom#readme") { NSWorkspace.shared.open(url) } }
     @objc private func about() { show("AIRODROM", "AI operating platform\n\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Version unavailable") · PRE-RELEASE\nOpenCode executes. Airodrom governs.\nLocal Memory V2 · independent verification · Acceptance · Settlement") }
     @objc private func quitHelper() { if currentAction != nil { quitAfterAction = true } else { NSApp.terminate(nil) } }
-    func applicationWillTerminate(_ notification: Notification) { timer?.invalidate(); Darwin.close(helperLock) }
+    func applicationWillTerminate(_ notification: Notification) { timer?.invalidate(); animationTimer?.invalidate(); NSWorkspace.shared.notificationCenter.removeObserver(self); Darwin.close(helperLock) }
 }
 private func acquirePrivateLock(_ directory: String, name: String) -> Int32? {
     var directoryInfo = stat()

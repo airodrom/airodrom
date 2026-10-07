@@ -28,10 +28,18 @@ const STAGES = Object.freeze({
  'mission.cancelled':['Mission','Cancellation recorded; termination checked separately'], 'mission.completed':['Mission','Mission completed'],
  'mission.accepted':['Settlement','Acceptance recorded'], 'mission.settled':['Settlement','Local Settlement recorded']
 });
+const DISPLAY_STAGE = Object.freeze({
+ 'mission.request_received':'request','mission.created':'request','mission.authority_registered':'request','manifest.registered':'request',
+ 'context_pack.created':'context','runtime.context.delivered':'context',
+ 'runtime.qualification.checked':'runtime','agent.route.selected':'runtime',
+ 'mission.dispatching':'execution','run.started':'execution','runtime.execution.started':'execution','mission.running':'execution','agent.completed':'execution','agent.failed':'execution',
+ 'verification.started':'verification','verification.completed':'verification','verification.failed':'verification','acceptance.started':'verification','acceptance.passed':'verification','acceptance.operator_review':'acceptance',
+ 'mission.awaiting_acceptance':'acceptance','mission.waiting_for_operator':'acceptance','mission.accepted':'acceptance','mission.settled':'settlement'
+});
 function eventView(event) {
  const mapping = STAGES[event.event_type]; if (!mapping) return null;
  const label=event.event_type==='run.started'&&event.metadata?.execution_role==='verifier'?'Independent verifier starting':event.event_type==='run.started'&&event.metadata?.agent_id==='host'&&event.metadata?.execution_role!=='worker'?'Host run starting; purpose unobserved':event.event_type==='mission.accepted'&&event.metadata?.decision==='rework'?'Rework decision recorded':event.event_type==='mission.settled'&&event.metadata?.state!=='settled'?'Settlement requires rework':mapping[1];
- return {event_id:id(event.event_id),sequence:count(event.sequence),timestamp_ms:time(event.timestamp_ms),mission_id:id(event.mission_id),mission_revision:count(event.metadata?.mission_revision),run_id:id(event.run_id),category:mapping[0],label,branch:/(failed|blocked|rework|rejected|expired|cancelled)$/.test(event.event_type)?'attention':'observed',
+ return {event_id:id(event.event_id),sequence:count(event.sequence),timestamp_ms:time(event.timestamp_ms),mission_id:id(event.mission_id),mission_revision:count(event.metadata?.mission_revision),run_id:id(event.run_id),category:mapping[0],stage:event.event_type==='run.started'&&event.metadata?.execution_role==='verifier'?'verification':DISPLAY_STAGE[event.event_type]||null,label,branch:/(failed|blocked|rework|rejected|expired|cancelled)$/.test(event.event_type)?'attention':'observed',
   outcome:enumValue(event.metadata?.status,['passed','failed','operator_review','unavailable'],null),
   runtime:enumValue(event.metadata?.agent_id,['opencode','host','claude_code','codex','cursor'],null)};
 }
