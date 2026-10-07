@@ -1,6 +1,6 @@
 # ADR 0015 — Authenticated browser session handoff
 
-Status: Proposed. Independent privacy/authority review and maintainer merge disposition are pending. No deployment or publication decision is included.
+Status: Accepted. The owner authorized two independent boundary reviews, normal merge after passing gates, and local reinstall. Runtime/Mission authority and security/privacy reviewers independently approved source revision `9f194b61ddb93c1aa8b8b12607b5aeb4d8b7d282` after both blocking findings were repaired. No deployment or publication decision is included.
 
 Extends accepted ADR 0013 with a separate, operator-consented browser session mode. Public research and purpose-bound Vault login remain compatible. The signed manifest seals a dedicated-manual session authorization, exact HTTPS origin, source baseline, three-minute budget, no downloads, no Vault use and local-only processing. Existing canonical Runs, invocations, read leases, verification, Acceptance and Settlement remain mandatory. Browser lifetime is bounded by the signed manifest deadline, including time spent before dispatch or awaiting manual login. Human hand-back is an authenticated operator operation bound to the current waiting Mission. Models and website content cannot authorize it.
 
