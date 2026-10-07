@@ -9,6 +9,11 @@ async function setup(t,canonical=false,transport){
  const engine=new ConversationEngine(f.bridge,{qualify:async()=>({state:'READY',model:router.MODEL}),request:async(_url,o)=>{const packet=JSON.parse(o.body);packets.push(packet);return transport?transport(packet,o):response('Hello.');}});t.after(()=>engine.close());
  return {...f,engine,packets,start:(message,extra={})=>engine.start({message,request_id:randomUUID(),...extra}),settle:async r=>{await engine.active.get(r.turn_id)?.promise;return engine.result(identity(r));}};
 }
+test('private identifiers and unavailable research never cross direct inference ingress',async t=>{
+ const f=await setup(t);
+ for(const message of ['Save my mailbox number 818',"What's my mailbox number?",'My mailbox number is 818','My mailbox number is 818\nExplain that','Save my parking\nspace number 818','My parking\tspace number is 818','Research this website for features Arecibo should adopt'])await assert.rejects(()=>f.start(message),/deterministic host workflow/);
+ assert.equal(f.packets.length,0);assert.equal(f.engine.history().length,0);assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);
+});
 test('direct conversation persists text and nickname separately without Task, Mission or lease',async t=>{
  const f=await setup(t),session=f.engine.session();f.engine.setPreference({nickname:'Airo'});
  const before=f.bridge.personalMemory.stats();const first=await f.start('Hi',session);assert.equal((await f.settle(first)).summary,'Hello.');
@@ -76,4 +81,17 @@ test('disconnected operator request cancels a late-admitted direct turn',async t
  const request=fetch(server.origin+'/api/assistant/input',{method:'POST',headers:{Authorization:'Bearer '+server.token,'Content-Type':'application/json'},body:JSON.stringify({message:'Hi',request_id:randomUUID(),...session}),signal:controller.signal});
  await begin;controller.abort();await assert.rejects(request);await new Promise(r=>setTimeout(r,30));release();await new Promise(r=>setTimeout(r,50));
  const rows=f.bridge.controlStore.db.prepare('SELECT state,response FROM cp_conversation_turns WHERE conversation_id=?').all(session.conversation_id);assert.equal(rows.length,1);assert.equal(rows[0].state,'cancelled');assert.equal(rows[0].response,null);
+});
+
+test('selected private identifier context and generated private output are denied',async t=>{
+ const f=await setup(t,false,async()=>response('Your mailbox number is 818.'));
+ await assert.rejects(()=>f.start('Summarize selected mail.',{include_memory:false,context:[{id:'test',subject:'Mail',content:'My mailbox number is 818',untrusted:true}]}),/minimum selected untrusted/);assert.equal(f.packets.length,0);
+ const r=await f.start('Hi');assert.equal((await f.settle(r)).state,'failed');assert.equal(f.engine.history()[0].response,null);assert.doesNotMatch(JSON.stringify(f.bridge.ledger.list({limit:100}).events),/818/);
+});
+
+test('Unicode credential ingress, selected context and credential output fail closed',async t=>{
+ const f=await setup(t,false,async()=>response('Your PIN: 818'));
+ await assert.rejects(()=>f.start('My ＰＡＳＳＷＯＲＤ is synthetic-credential'),/Credentials|sensitive/);assert.equal(f.packets.length,0);
+ await assert.rejects(()=>f.start('Summarize selected mail.',{include_memory:false,context:[{id:'test',subject:'Mail',content:'Your ＰＩＮ: 818',untrusted:true}]}),/minimum selected/);assert.equal(f.packets.length,0);
+ const r=await f.start('Hi');assert.equal((await f.settle(r)).state,'failed');assert.equal(f.engine.history()[0].response,null);
 });

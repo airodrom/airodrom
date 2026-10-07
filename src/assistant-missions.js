@@ -59,7 +59,7 @@ function matchingTemplates(bridge,workspace){
 async function newMission(server,input){
  object(input,['objective','request_id','workspace','capability_classes','model','worker','explicit']);requestIdentity(input.request_id);
  if(input.explicit!==undefined&&typeof input.explicit!=='boolean')throw Error('Invalid explicit Mission choice');
- if(input.objective!==undefined&&input.objective!==null){text(input.objective,'Mission objective',4000);if(intent.secret(input.objective))throw Error('Secrets cannot be Mission objectives. Use /vault.');}
+ if(input.objective!==undefined&&input.objective!==null){text(input.objective,'Mission objective',4000);if(require('./private-vault-intent').containsPrivate(input.objective))throw Error('Private identifiers cannot be Mission objectives. Use /secret.');if(intent.secret(input.objective))throw Error('Secrets cannot be Mission objectives. Use /vault.');}
  if(input.workspace!==undefined){text(input.workspace,'workspace context',1000);if(!path.isAbsolute(input.workspace))throw Error('Absolute workspace context required');}
  const requested=input.capability_classes||[];
  if(!Array.isArray(requested)||requested.length>10||requested.some(c=>!['repo','developer_environment','communications','web_read','deployment'].includes(c)))throw Error('Unknown requested capabilities');
@@ -68,6 +68,7 @@ async function newMission(server,input){
  const capabilities=[...new Set([...intent.workCapabilities(input.objective||''),...requested])];
  const request={...input,capability_classes:capabilities};
  if(!input.objective)return draft(server,request,'What should this Mission accomplish? Then choose its bounded workspace, allowed files and registered checks.');
+ if(require('./browser-research').parse(input.objective))return {...draft(server,request,require('./browser-research').MESSAGE),browser_research_available:false,evidence:[],comparison:'unverified'};
  const templates=matchingTemplates(server.bridge,input.workspace);
  if(templates.length!==1)return draft(server,request,templates.length?'Several approved scopes match this workspace. Choose one host-registered Mission template.':'Mission created as a draft. Choose an owner-registered workspace template with allowed files and checks before execution.');
  const template=templates[0];

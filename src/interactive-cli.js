@@ -148,6 +148,12 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     try { await require('./secure-vault-guide').guide({ input, output, home, signal: active?.signal }); }
     finally { if (!quitting && !input.readableEnded) attachReader(); }
   };
+  const privateGuide = async message => {
+    if (!input.isTTY || !output.isTTY || !input.setRawMode) throw Error('Private Vault requires an interactive operator terminal.');
+    await detachReader();
+    try { await require('./natural-private-vault').guide({message,input,output,home,signal:active?.signal}); }
+    finally { if (!quitting && !input.readableEnded) attachReader(); }
+  };
   const session = async () => {
     if (!conversationId) conversationId = (await local.request(home, '/api/assistant/conversation/session', {})).conversation_id;
     if (!conversationId) throw Error('Conversation session is unavailable.');
@@ -201,6 +207,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       if (quitting) break;
       const {value,command,arg,json}=parseLine(line); if (!value) { readerLocked=false;if (output.isTTY) output.write('You › '); continue; }
       try {
+        if(require('./private-vault-intent').parse(value)){active=new AbortController();await privateGuide(value);active=null;readerLocked=false;if(output.isTTY)output.write('\nYou › ');continue;}
         if(command)output.write('\n');
         if(['help','about','version','mcp','status','details','doctor','connectors'].includes(command)&&arg)throw Error('Submit this command on its own, or use --json for read-only details.');
         if (command === 'quit') {if(arg)throw Error('Submit /quit on its own.');break;}

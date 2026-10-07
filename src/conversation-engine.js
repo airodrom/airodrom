@@ -57,10 +57,11 @@ class ConversationEngine {
  }
  async start(input){
   object(input,['message','request_id','conversation_id','include_memory','model','context']);text(input.message,'conversation message',4000);
+  if(require('./private-vault-intent').parse(input.message)||require('./browser-research').parse(input.message))throw Error('This request requires a deterministic host workflow, outside conversation.');
   if(secretLike(input.message)||require('./assistant-intent').secret(input.message))throw Error('Credentials require the secure Secret Vault.');
   if(input.include_memory!==undefined&&typeof input.include_memory!=='boolean')throw Error('Invalid Memory choice');
   const context=input.context||[];
-  if(!Array.isArray(context)||context.length>3||context.some(c=>!c||c.untrusted!==true||Object.keys(c).some(k=>!['id','subject','content','untrusted'].includes(k))||typeof c.content!=='string'||c.content.length>700||typeof c.subject!=='string'||c.subject.length>200||typeof c.id!=='string'||c.id.length>200||secretLike(c)))throw Error('Only minimum selected untrusted connector context is permitted');
+  if(!Array.isArray(context)||context.length>3||context.some(c=>!c||c.untrusted!==true||Object.keys(c).some(k=>!['id','subject','content','untrusted'].includes(k))||typeof c.content!=='string'||c.content.length>700||typeof c.subject!=='string'||c.subject.length>200||typeof c.id!=='string'||c.id.length>200||secretLike(c)||[c.id,c.subject,c.content].some(require('./assistant-intent').secret)||require('./private-vault-intent').containsPrivate(c)))throw Error('Only minimum selected untrusted connector context is permitted');
   erasure.assertReadable(this.db);const conversation_id=input.conversation_id?this.requireSession(input.conversation_id).id:this.session({channel:context.length?'connector':'terminal',new:true}).conversation_id;
   const request_id=opaque(input.request_id||randomUUID()),generation=this.generation();
   const request_digest=createHash('sha256').update(JSON.stringify({message:input.message,include_memory:input.include_memory!==false,model:input.model||'auto',context})).digest('hex');
@@ -84,7 +85,7 @@ class ConversationEngine {
   while(Buffer.byteLength(JSON.stringify(messages))>24000&&history.length){history.shift();messages.splice(memory.length?2:1,2);}
   const memory_ids=new Set(memory.map(m=>m.id));for(const h of history){const row=this.db.prepare('SELECT context_json FROM cp_conversation_turns WHERE id=?').get(h.turn_id);for(const id of JSON.parse(row.context_json).memory_ids||[])memory_ids.add(id);}
   if(generation!==this.generation())throw Error('Memory context changed; send this message again.');
-  if(Buffer.byteLength(JSON.stringify(messages))>24000||secretLike(messages))throw Error('Conversation context exceeds the private text boundary. Start a new conversation.');
+  if(Buffer.byteLength(JSON.stringify(messages))>24000||secretLike(messages)||messages.some(m=>require('./assistant-intent').secret(m.content))||require('./private-vault-intent').containsPrivate(messages))throw Error('Conversation context exceeds the private text boundary. Start a new conversation.');
   const id=randomUUID(),now=this.now(),controller=new AbortController();
   const context_json=JSON.stringify({memory_ids:[...memory_ids],memory_backend:this.bridge.authorityRuntime?.active?'governed':'personal',turn_ids:history.map(h=>h.turn_id),connector:context.length>0,authority:false});
   this.db.prepare('INSERT INTO cp_conversation_turns VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,conversation_id,this.owner,request_id,request_digest,'running',input.message,null,context_json,generation,route.model,now,now,null);
@@ -107,7 +108,7 @@ class ConversationEngine {
    if(row.state!=='running'||this.retired(id))return;
    if(!this.current(row)||generation!==this.generation()){this.finish(id,conversation_id,route.model,'cancelled',null,'context_changed');return;}
    if(controller.signal.aborted){this.finish(id,conversation_id,route.model,'cancelled',null,'cancelled');return;}
-   if(result.status!=='completed'||result.tool_requests?.length||!result.text?.trim()||result.text.length>12000||secretLike(result.text)){this.finish(id,conversation_id,route.model,'failed',null,'provider_unavailable');return;}
+   if(result.status!=='completed'||result.tool_requests?.length||!result.text?.trim()||result.text.length>12000||secretLike(result.text)||require('./assistant-intent').secret(result.text)||require('./private-vault-intent').containsPrivate(result.text)){this.finish(id,conversation_id,route.model,'failed',null,'provider_unavailable');return;}
    // Only visible text is retained. Hidden reasoning never leaves this frame.
    this.finish(id,conversation_id,route.model,'completed',result.text,null);
   }catch{

@@ -4,7 +4,7 @@ const { redactText, sensitiveKey } = require('./secret-observation');
 const CLASSES = new Set(['public','internal','private','financial','sensitive','credentials']);
 function secretLike(value, depth = 0) {
   if (depth > 20) return true;
-  if (typeof value === 'string') return containsSecret(value) || redactText(value) !== value;
+  if (typeof value === 'string') {const normalized=value.normalize('NFKC');return containsSecret(normalized) || redactText(normalized) !== normalized;}
   if (Array.isArray(value)) return value.some(v => secretLike(v, depth + 1));
   return !!value && typeof value === 'object' && Object.entries(value).some(([k,v]) => sensitiveKey(k) || secretLike(v, depth + 1));
 }

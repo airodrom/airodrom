@@ -34,7 +34,7 @@ test('credentials, path traversal and unknown operator fields are rejected',t=>{
 });
 test('live loopback controls deny MCP credentials and expose content only to the operator',async t=>{
  const {dir,v,id}=fixture(t),ControlServer=require('../src/control-server');
- const server=new ControlServer({dataDir:dir},{port:0,token:'operator-dummy',mcpToken:'mcp-dummy'});await server.start();t.after(()=>server.close());
+ const server=new ControlServer({dataDir:dir,conversationEngine:{close:async()=>{}}},{port:0,token:'operator-dummy',mcpToken:'mcp-dummy'});await server.start();t.after(()=>server.close());
  const post=(op,body,token)=>fetch(server.origin+'/api/control-v2/restricted-memory-'+op,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
  assert.equal((await post('save',{id,content:DUMMY},'mcp-dummy')).status,401);assert.equal(fs.existsSync(v.root),false);
  const save=await post('save',{id,content:DUMMY},'operator-dummy');assert.equal(save.status,200);assert.equal(JSON.stringify(await save.json()).includes(DUMMY),false);
