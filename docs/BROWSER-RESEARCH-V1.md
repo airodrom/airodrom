@@ -1,0 +1,17 @@
+# Governed browser research
+
+Type: `Airo, research https://competitor.example, explore its product, compare it with Arecibo and tell me what we should build.`
+
+The request registers a bounded research Mission for that one public HTTPS origin. Airodrom inspects selected public product, pricing, help and integration pages and desktop/mobile views automatically. Cross-origin redirects, private addresses, credentials in URLs and unsupported operations fail closed. Public navigation needs no repeated approval. The colorful terminal wave/fish remains the existing renderer.
+
+The comparison reads the current `arecibo-core` repository beside the owning Airodrom installation. The reviewed host profile is `config/research-profile-v1.json`; website/model text and the terminal's current directory cannot select another baseline. Missing repository or canonical evidence requires configuration or clarification. Existing dirty work is captured read-only and must remain current through verification.
+
+Control Center → Missions → selected research Mission shows **ARECIBO PRODUCT RESEARCH**, real observed phases and a **Read research report** action. The report distinguishes observed/documented/inferred/inaccessible features, actual Arecibo support, priorities, complexity, security/compliance, approximate cost assumptions, supporting evidence and features not worth copying. Owner review, Acceptance and Settlement remain separate. A research Mission never implements its recommendations.
+
+For an existing competitor account, first save its username and password as separate credentials using `/vault` secure entry. Labels can be renamed through the existing `/secret` workflow. Then use `/research account <HTTPS login URL>` in Terminal and select the two references in the detached no-echo guide. The owner confirms the exact origin and research purpose. The new account Mission permits one existing-account login with an exact protected approval and ephemeral origin-bound cookies. Values are never printed or delivered to a model. Authenticated screenshots are disabled; private inspection is limited to safe navigation categories. V1 supports standard POST login forms. OAuth, JavaScript-only login, MFA and CAPTCHA stop this Mission for manual inspection; live handoff is unavailable. Airodrom never bypasses them. Account creation, subscriptions, payments and data-changing forms remain unsupported and fail closed. Private navigation never establishes that a financial action works.
+
+During active public research, Control Center offers **Request public evidence download**. A same-origin UTF-8 text, CSV or JSON file (up to 48 KiB) requires one exact protected approval, is recorded as private task evidence and is rehashed before review. Browser-native downloads, binary files and authenticated downloads stay blocked.
+
+The browser uses pinned `playwright-core` and an installed Chrome engine with a fresh owned profile. No browser engine is downloaded automatically. A missing engine is a truthful configuration blocker. The transport blocks service workers because request interception does not cover their traffic; see [Playwright BrowserContext routing](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
+
+[Qualification evidence](BROWSER-RESEARCH-V1-QUALIFICATION.md) is recorded with the reviewed candidate. Synthetic accounts prove input isolation only; they do not qualify a real competitor login, production site or financial operation.

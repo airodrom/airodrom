@@ -201,7 +201,7 @@ class ControlPlaneStore {
   }); }
   acquireLease({resource,runId,missionId=null,baseline={},mode='write',ttlMs=120000}) {
     const canonical=fs.realpathSync(resource);if(!['read','write'].includes(mode))throw new Error('Invalid lease mode');
-    return transaction(this.db,()=>{if(mode==='write'&&this.db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND state IN ('held','quarantined') AND mode='write'").get(canonical))throw new Error('Workspace has an active or unverified writer lease');
+    return transaction(this.db,()=>{if(this.db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND state IN ('held','quarantined') AND (?='write' OR mode='write')").get(canonical,mode))throw new Error('Workspace has an active or unverified writer lease or protected reader lease');
       const id=randomUUID();this.db.prepare('INSERT INTO cp_leases VALUES(?,?,?,?,?,?,?,?,?)').run(id,canonical,runId,missionId,mode,'held',this.now(),this.now()+ttlMs,json(baseline));this.event('workspace.lease_acquired',missionId,{lease_id:id,mode},{runId});return id;});
   }
   invocation(requestId){require('./memory-content-erasure').assertReadable(this.db);const r=this.db.prepare('SELECT * FROM cp_invocations WHERE request_id=?').get(requestId);return r?{...r,result:r.result?JSON.parse(r.result):null}:null;}
@@ -268,7 +268,7 @@ class ControlPlaneStore {
       if(dispatch){const intent=JSON.parse(dispatch.record);if(intent.no_side_effects===true&&run.process_state==='not_started'&&['dispatch_pending_external','retry_wait','waiting','failed'].includes(intent.status)&&!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state IN ('held','quarantined') AND (state='quarantined' OR expires_at<=?)").get(run.id,this.now()))continue;}
       this.updateRun(run.id,{state:'interrupted',processState:'unknown',resolution:'reconcile_process'});
       this.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(run.id);
-      const m=run.mission_id?this.getMission(run.mission_id):null;if(m&&!['waiting_for_operator','paused','cancelled','completed'].includes(m.state))this.state(m.id,'blocked','Interrupted run requires process reconciliation');
+      const m=run.mission_id?this.getMission(run.mission_id):null;if(m&&!['waiting_for_operator','paused','cancelled','completed','blocked'].includes(m.state))this.state(m.id,'blocked','Interrupted run requires process reconciliation');
     }
     this.db.prepare("UPDATE cp_dispatches SET state='unknown' WHERE state='dispatching'").run();
     this.db.prepare("UPDATE cp_invocations SET state='unknown' WHERE state='running'").run();this.db.prepare("UPDATE cp_continuations SET state='unknown' WHERE state='dispatching'").run();
