@@ -43,6 +43,17 @@ test('in-flight forgotten Memory never reaches retained response; cancellation s
  const turn=await f.start('What is my name?',session);f.bridge.personalMemory.forget(m.memoryId);release();await f.settle(turn);assert.equal(f.engine.result(identity(turn)).state,'cancelled');
  assert.equal(f.bridge.controlStore.db.prepare('SELECT response FROM cp_conversation_turns WHERE id=?').get(turn.turn_id).response,null);
 });
+test('host Memory IDs resembling credentials stay outside provider text and retain erasure provenance',async t=>{
+ const f=await setup(t),b=f.bridge;
+ const record=b.rememberPersonalMemory({domain:'personal',type:'fact',subject:'name',content:'My name is SyntheticHostIdentity.',source:'user_explicit',sensitivity:'normal'});
+ const id='aaaaaaaa-aaaa-4aaa-8111-111111111112';assert.equal(require('../src/provider-policy').secretLike(id),true);
+ // Give this disposable fixture a deterministic opaque ID that triggers the existing Luhn guard.
+ b.personalMemory.db.prepare('UPDATE personal_memories SET memory_id=? WHERE memory_id=?').run(id,record.memoryId);
+ const session=f.engine.session(),turn=await f.start('What is my name?',session);assert.equal((await f.settle(turn)).state,'completed');
+ assert.match(JSON.stringify(f.packets),/SyntheticHostIdentity/);assert.doesNotMatch(JSON.stringify(f.packets),new RegExp(id));
+ const context=JSON.parse(b.controlStore.db.prepare('SELECT context_json FROM cp_conversation_turns WHERE id=?').get(turn.turn_id).context_json);assert.deepEqual(context.memory_ids,[id]);
+ b.personalMemory.erase(id);assert.equal(f.engine.history(session.conversation_id).length,0);assert.equal(f.engine.result(identity(turn)).state,'cancelled');
+});
 test('conversation replay binds privacy choices and admission serializes concurrent qualification',async t=>{
  const f=await setup(t);let release;const gate=new Promise(r=>release=r);f.engine.qualify=async()=>{await gate;return {state:'READY',model:router.MODEL};};
  const session=f.engine.session(),request_id=randomUUID();const a=f.engine.start({message:'Hi',request_id,...session}),b=f.start('Hi again',session);release();const results=await Promise.allSettled([a,b]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
