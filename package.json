@@ -361,6 +361,7 @@
     "config/research-profile-v1.json",
     "docs/BROWSER-RESEARCH-V1.md",
     "docs/adr/0013-governed-browser-product-research.md",
-    "src/conversation-address.js"
+    "src/conversation-address.js",
+    "docs/BROWSER-RESEARCH-V1-QUALIFICATION.md"
   ]
 }

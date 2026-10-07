@@ -527,5 +527,6 @@
   "tests/research-capability.test.js",
   "tests/research-credentials.test.js",
   "tests/research-mission.test.js",
-  "tests/research-report.test.js"
+  "tests/research-report.test.js",
+  "docs/BROWSER-RESEARCH-V1-QUALIFICATION.md"
 ]

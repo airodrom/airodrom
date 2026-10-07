@@ -14,4 +14,4 @@ During active public research, Control Center offers **Request public evidence d
 
 The browser uses pinned `playwright-core` and an installed Chrome engine with a fresh owned profile. No browser engine is downloaded automatically. A missing engine is a truthful configuration blocker. The transport blocks service workers because request interception does not cover their traffic; see [Playwright BrowserContext routing](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
 
-Qualification evidence is recorded with the reviewed candidate. Synthetic accounts prove input isolation only; they do not qualify a real competitor login, production site or financial operation.
+[Qualification evidence](BROWSER-RESEARCH-V1-QUALIFICATION.md) is recorded with the reviewed candidate. Synthetic accounts prove input isolation only; they do not qualify a real competitor login, production site or financial operation.
