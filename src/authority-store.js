@@ -234,6 +234,7 @@ class AuthorityStore {
   reviseMission(id,envelope,expectedRevision,by=this.operator) {
     actor(by);return transaction(this.db,()=>{
       const m=this.getMission(id);if(!m||m.current_revision!==expectedRevision)throw new Error('Stale mission revision');
+      if(this.getMissionRevision(id,m.current_revision).envelope.kind==='work_request')throw Error('Draft scope requires a distinct registered Mission');
       if(this.db.prepare("SELECT 1 FROM authority_runs WHERE mission_id=? AND status IN('starting','running','verifying')").get(id))throw new Error('Active run prevents revision');
       this.insertRevision(id,expectedRevision+1,envelope,by,'exact');
       this.db.prepare("UPDATE authority_missions SET current_revision=?,current_state='ready',updated_at=? WHERE id=?").run(expectedRevision+1,this.now(),id);return this.getMission(id);
@@ -242,7 +243,8 @@ class AuthorityStore {
   setState(id,state,by=this.host) {
     actor(by);return transaction(this.db,()=>{
       const m=this.getMission(id);if(!m)throw new Error('Unknown mission');
-      if(!['planned','dispatching','verifying','awaiting_acceptance','ready','running','waiting_for_operator','waiting_for_dependency','waiting_for_agent','verification','awaiting_orchestrator_acceptance','needs_rework','blocked','paused','cancelled','completed'].includes(state)||['completed','cancelled'].includes(m.current_state)&&m.current_state!==state)throw new Error('Invalid Mission state transition');
+      if(!['draft','planned','dispatching','verifying','awaiting_acceptance','ready','running','waiting_for_operator','waiting_for_dependency','waiting_for_agent','verification','awaiting_orchestrator_acceptance','needs_rework','blocked','paused','cancelled','completed'].includes(state)||['completed','cancelled'].includes(m.current_state)&&m.current_state!==state)throw new Error('Invalid Mission state transition');
+      if(this.getMissionRevision(id,m.current_revision).envelope.kind==='work_request'&&!['draft','cancelled'].includes(state))throw Error('Work request draft grants no execution authority');
       if(state==='completed'&&!this.db.prepare("SELECT 1 FROM authority_acceptance_records WHERE mission_id=? AND mission_revision=? AND decision='accepted'").get(id,m.current_revision)&&this.getMissionRevision(id,m.current_revision).binding_quality!=='legacy_snapshot')throw new Error('Completion requires acceptance');
       this.db.prepare('UPDATE authority_missions SET current_state=?,updated_at=? WHERE id=?').run(state,this.now(),id);
       this.append('mission.state_changed',{version:1,mission_id:id,state,previous:m.current_state},{projectId:m.project_id||LOCAL_PROJECT,missionId:id,revision:m.current_revision,by});return this.getMission(id);
@@ -251,6 +253,7 @@ class AuthorityStore {
   startRun(input,by=this.host) {
     actor(by);safe(input);return transaction(this.db,()=>{
       const m=this.getMission(input.mission_id);if(!m||m.current_revision!==input.mission_revision)throw new Error('Run revision mismatch');
+      if(this.getMissionRevision(m.id,m.current_revision).envelope.kind==='work_request')throw Error('Work request draft grants no execution authority');
       const id=input.id||randomUUID(),agentId=input.agent_id==='claude_code'?'claude':input.agent_id;
       const runtimeId=input.runtime_id||agentId;
       this.db.prepare('INSERT OR IGNORE INTO authority_runtime_registry VALUES(?,?,?,?,1,0,?,?,?)').run(runtimeId,agentId,input.adapter_type||'existing',runtimeId,'1',this.now(),this.now());
@@ -309,6 +312,7 @@ class AuthorityStore {
     actor(by,['host']);const {signature_reference,...request}=input;safe(request);
     if(typeof signature_reference!=='string'||!/^broker:[A-Za-z0-9_.:-]{1,160}$/.test(signature_reference))throw new Error('Broker reference required');
     return transaction(this.db,()=>{
+      if(this.getMissionRevision(input.mission_id,input.mission_revision)?.envelope.kind==='work_request')throw Error('Work request draft grants no execution authority');
       if(!input.signature_reference||!input.capabilities?.length)throw new Error('Broker-bound grant required');
       const id=input.id||randomUUID();this.db.prepare('INSERT INTO authority_execution_grants VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,input.mission_id,input.mission_revision,input.run_id,by.id,input.policy_version,this.now(),input.expires_at,null,input.signature_reference,canonicalHash(input));
       for(const c of input.capabilities)this.db.prepare('INSERT INTO authority_execution_grant_capabilities VALUES(?,?,?)').run(id,c.capability,json(c.scope));

@@ -1,6 +1,6 @@
 'use strict';
 const TRANSITIONS = Object.freeze({
-  planned:['ready','cancelled'], ready:['dispatching','cancelled','blocked'],
+  draft:['cancelled'], planned:['ready','cancelled'], ready:['draft','dispatching','cancelled','blocked'],
   dispatching:['running','blocked','cancelled'], running:['waiting_for_operator','verifying','blocked','needs_rework','cancelled'],
   waiting_for_operator:['ready','blocked','cancelled'], waiting_for_dependency:['ready','blocked','cancelled'],
   verifying:['awaiting_acceptance','needs_rework','blocked','cancelled'],

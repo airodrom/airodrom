@@ -88,7 +88,7 @@ class AuthorityRuntime {
     if(!this.memory.validatePack(decision.context_pack_id,{operator_id:this.store.operatorId,project_id:mission.project_id}).valid||pack&&pack.context_hash!==route.context_hash)throw new Error('Context changed after routing; WAIT and reroute');
   }
   memoryItems(input) {
-    const pack=this.memory.build({operator_id:this.store.operatorId,include_personal:input.domain!=='project',project_id:input.projectId||null,query:input.query||'',privacy:'internal',max_items:input.limit||6});
+    const pack=this.memory.build({operator_id:this.store.operatorId,include_personal:input.domain!=='project',project_id:input.projectId||null,query:input.query||'',...(input.relevance==='all_query_terms'?{relevance:'all_query_terms'}:{}),privacy:'internal',max_items:input.limit||6});
     if(pack.state!=='ready')throw new Error('Memory context requires WAIT');
     const items=pack.items.filter(m=>input.domain==='personal'?m.kind==='personal_preference':input.domain==='project'?m.project_id===input.projectId:true).map(m=>({memoryId:m.memory_id,domain:m.scope==='global'?'personal':'project',projectId:m.project_id,type:m.kind,subject:m.subject_key,content:typeof m.value==='string'?m.value:json(m.value),status:'active',sensitivity:'normal',authority:false}));
     return {items,usedChars:items.reduce((n,m)=>n+m.content.length,0),truncated:pack.manifest.excluded.some(m=>m.reason==='budget'),context_pack_id:pack.id};

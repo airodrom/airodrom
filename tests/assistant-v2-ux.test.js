@@ -11,15 +11,15 @@ test('pasted command prompts and local shell flags never become conversation req
 });
 test('interactive V2 renders human views, rejects unsafe selection and keeps the canonical review rail behind explicit details',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,old=b.dataDir,home=path.join(f.root,'v2');local.privateDirectory(home,true);b.dataDir=local.privateDirectory(path.join(home,'data'),true);
- const server=new ControlServer(b,{port:0}),address=await server.start();local.writePrivate(path.join(b.dataDir,'ui.json'),{...address,pid:process.pid});fs.writeFileSync(path.join(b.dataDir,'bridge.lock'),String(process.pid),{mode:0o600});
+ const server=new ControlServer(b,{port:0,conversationOptions:require('./fixtures/direct-conversation-fixture.cjs').conversationOptions()}),address=await server.start();local.writePrivate(path.join(b.dataDir,'ui.json'),{...address,pid:process.pid});fs.writeFileSync(path.join(b.dataDir,'bridge.lock'),String(process.pid),{mode:0o600});
  t.after(async()=>{await server.close();b.dataDir=old;});
  const output=new PassThrough();let text='';output.on('data',c=>text+=c);
  await interactive(home,{input:Readable.from(['/models\n/model ollama/qwen3-coder:30b\n/model auto\n/model local\n/model unknown\n/model auto\n/workers\n/worker codex\n/worker claude_code\n/worker cursor\n/connectors\n/sensitive\n/vault\n/runtime --json\nYou › --version\n/mcp\n/connectorsAirodrom\nRemember that my name is Aurora.\nWhat do you remember about my name?\nForget my name\nExplain a synthetic greeting\n/details\n/quit\n']),output,env:{NO_COLOR:'1',TERM:'dumb'}});
- for(const expected of ['MODELS','Qwen3 Coder 30B','MANUAL','Routing: AUTO','WORKERS','NOT QUALIFIED','DENIED','CONNECTORS','Gmail','WhatsApp','SENSITIVE MEMORY','SECRET VAULT','Remembered in Personal Memory V2.','Aurora','Forgotten.','shell transport','Verification: operator review','Review: /accept','Settlement: waiting acceptance'])assert.ok(text.includes(expected),expected);
+ for(const expected of ['MODELS','Qwen3 Coder 30B','MANUAL','Routing: AUTO','WORKERS','NOT QUALIFIED','DENIED','CONNECTORS','Gmail','WhatsApp','SENSITIVE MEMORY','Secure Vault requires an interactive operator terminal','Remembered in Personal Memory V2.','Aurora','Forgotten.','shell transport','No Mission is selected.'])assert.ok(text.includes(expected),expected);
  assert.equal((text.match(/Selection unavailable/g)||[]).length,4);
  assert.doesNotMatch(text,/"qualification"|"data_classes"|"active_refs"|\x1b|Bearer |token=/);
  assert.match(text,/"runtime": "opencode"/); // JSON is explicit only.
- const missions=b.controlStore.listMissions({limit:10});assert.equal(missions.length,1);assert.equal(missions[0].envelope.preferred_agent,'opencode');assert.equal(missions[0].envelope.model_route_mode,'AUTO');assert.equal(missions[0].state,'awaiting_acceptance');
+ const missions=b.controlStore.listMissions({limit:10});assert.equal(missions.length,0);assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_conversation_turns').get().n,1);
  assert.equal(server.interactiveMemory('name').items.length,0);
 });
 test('selected conversation history uses the existing current-context erasure projection',async t=>{
@@ -53,15 +53,14 @@ test('waiting animation is indeterminate, width bounded, portable and erased exa
   let wrote=false;render.waiting({isTTY,write:()=>wrote=true},{env,schedule:()=>assert.fail('No timer on a plain terminal')}).stop();assert.equal(wrote,false);
  }
 });
-test('ordinary chat hides operational output without accepting or settling the answer',async t=>{
+test('ordinary chat returns a direct answer without registering a Work Mission',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,old=b.dataDir,home=path.join(f.root,'clean');local.privateDirectory(home,true);b.dataDir=local.privateDirectory(path.join(home,'data'),true);
- const server=new ControlServer(b,{port:0}),address=await server.start();local.writePrivate(path.join(b.dataDir,'ui.json'),{...address,pid:process.pid});fs.writeFileSync(path.join(b.dataDir,'bridge.lock'),String(process.pid),{mode:0o600});t.after(async()=>{await server.close();b.dataDir=old;});
+ const server=new ControlServer(b,{port:0,conversationOptions:require('./fixtures/direct-conversation-fixture.cjs').conversationOptions()}),address=await server.start();local.writePrivate(path.join(b.dataDir,'ui.json'),{...address,pid:process.pid});fs.writeFileSync(path.join(b.dataDir,'bridge.lock'),String(process.pid),{mode:0o600});t.after(async()=>{await server.close();b.dataDir=old;});
  const output=new PassThrough();let text='';output.on('data',c=>text+=c);
  await interactive(home,{input:Readable.from(['Hi\n/quit\n']),output,env:{NO_COLOR:'1',TERM:'dumb'}});
  assert.match(text,/You › Hi\n\nAirodrom\nfixture result/);
  assert.doesNotMatch(text,/· running|Provider|Model|Memory:|Verification:|Review:|Settlement:|─|\x1b|fresh bounded Mission/);
- const mission=b.controlStore.listMissions({limit:1})[0],detail=b.missions.detail(mission.id);
- assert.equal(detail.state,'awaiting_acceptance');assert.equal(detail.acceptance.length,0);assert.notEqual(detail.program_contract.settlement.state,'settled');
+ assert.equal(b.controlStore.listMissions({limit:1}).length,0);assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_conversation_turns WHERE state='completed'").get().n,1);
 });
 test('TTY waiting fish is removed before answer, failure, admission failure and cancellation and never leaks a timer',async t=>{
  const originalStart=local.start,originalRequest=local.request;
@@ -71,6 +70,7 @@ test('TTY waiting fish is removed before answer, failure, admission failure and 
   const output=new PassThrough();output.isTTY=true;output.columns=32;let text='',cancelRequests=0;
   output.on('data',chunk=>{text+=chunk;if(outcome==='cancel'&&String(chunk).includes('Thinking'))queueMicrotask(()=>process.emit('SIGINT'));});
   local.request=async(_,route)=>{
+   if(route==='/api/assistant/conversation/session')return {conversation_id:'synthetic-session'};
    if(route==='/api/assistant/input'){if(outcome==='admission_failure')throw Error('Synthetic admission failure');return {kind:'conversation',mission_id:'synthetic'};}
    if(route==='/api/interactive/cancel'){cancelRequests++;return {};}
    if(route.startsWith('/api/interactive/task')){await new Promise(r=>setTimeout(r,100));return outcome==='answer'?{state:'awaiting_acceptance',summary:'Hello.'}:outcome==='failure'?{state:'needs_rework',reason:'Synthetic failure'}:{state:'running'};}

@@ -16,7 +16,7 @@ async function conversationFixture(t) {
   const home = path.join(f.root, 'cli'); local.privateDirectory(home, true);
   // Reuse fixture data with a canonical private home; no real operator data.
   const b = f.bridge, old = b.dataDir; b.dataDir = local.privateDirectory(path.join(home, 'data'), true);
-  const server = new ControlServer(b, { port: 0 }); const address = await server.start();
+  const server = new ControlServer(b, { port: 0, conversationOptions: require('./fixtures/direct-conversation-fixture.cjs').conversationOptions() }); const address = await server.start();
   local.writePrivate(path.join(b.dataDir, 'ui.json'), { ...address, pid: process.pid });
   fs.writeFileSync(path.join(b.dataDir, 'bridge.lock'), String(process.pid), { mode: 0o600 });
   t.after(async () => { await server.close(); b.dataDir = old; });
@@ -109,7 +109,8 @@ test('no-argument terminal attaches without another writer and exposes only priv
   const [first, second] = await Promise.all([local.start(f.home), local.start(f.home)]); assert.equal(first.pid, second.pid); assert.equal(first.pid, process.pid);
   await interactive(f.home, { input: Readable.from(['/remember My test codename is Silver Falcon.\n/memory test codename\nWhat is my test codename?\n/forget test codename\nWhat is my test codename?\n/quit\n']), output, env: { NO_COLOR: '1', TERM: 'dumb' } });
   assert.match(text, /AIRODROM/); assert.match(text, /Silver Falcon/); assert.match(text, /unavailable/); assert.doesNotMatch(text, /\x1b|#token=|Bearer /);
-  assert.ok(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_runs').get().n > before);
+  assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_runs').get().n, before);
+  assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_conversation_turns').get().n, 2);
   assert.equal(fs.existsSync(path.join(f.home, 'launch.lock')), false);
   await assert.rejects(local.stop(f.home), /not owned/);
 });

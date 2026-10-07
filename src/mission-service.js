@@ -72,7 +72,7 @@ class MissionService {
   }
   require(id,owner){return this.store.requireMission(id,owner==='operator'?null:owner);}
   detail(id,owner='operator'){
-    const m=this.require(id,owner);const view={...m,program_contract:this.program.detail(id),objective:m.envelope.objective,priority:m.envelope.priority,next_action:({ready:'dispatch',waiting_for_operator:'answer_decision',awaiting_acceptance:'accept_or_rework',needs_rework:'explicit_dispatch',blocked:'review_then_dispatch'})[m.state]||'inspect',tasks:this.db.prepare('SELECT * FROM cp_mission_tasks WHERE mission_id=? ORDER BY ordinal').all(id),runs:this.db.prepare('SELECT id FROM cp_runs WHERE mission_id=? ORDER BY created_at').all(id).map(r=>this.store.run(r.id)),decisions:this.store.decisions(id),verifications:this.db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC').all(id).map(v=>({...v,evidence:JSON.parse(v.evidence)})),acceptance:this.db.prepare('SELECT * FROM cp_acceptances WHERE mission_id=? ORDER BY created_at DESC').all(id),artifacts:this.db.prepare('SELECT * FROM cp_artifacts WHERE mission_id=?').all(id),timeline:this.bridge.ledger.list({missionId:id,limit:100,order:'desc'}).events,results:this.db.prepare('SELECT run_id,normalized FROM cp_run_results WHERE mission_id=?').all(id).map(r=>({run_id:r.run_id,result:{...JSON.parse(r.normalized),continuity:JSON.parse(this.db.prepare('SELECT evidence FROM cp_continuity_checks WHERE run_id=?').get(r.run_id)?.evidence||'null')}})),dispatches:this.db.prepare('SELECT * FROM cp_dispatches WHERE mission_id=? ORDER BY created_at').all(id).map(d=>({...d,route:d.route?JSON.parse(d.route):null}))};
+    const m=this.require(id,owner);if(m.envelope.kind==='work_request')return {...m,objective:m.envelope.objective,next_action:'register_bounded_scope',program_contract:null,tasks:[],runs:[],decisions:[],verifications:[],acceptance:[],artifacts:[],timeline:[],results:[],dispatches:[]};const view={...m,program_contract:this.program.detail(id),objective:m.envelope.objective,priority:m.envelope.priority,next_action:({ready:'dispatch',waiting_for_operator:'answer_decision',awaiting_acceptance:'accept_or_rework',needs_rework:'explicit_dispatch',blocked:'review_then_dispatch'})[m.state]||'inspect',tasks:this.db.prepare('SELECT * FROM cp_mission_tasks WHERE mission_id=? ORDER BY ordinal').all(id),runs:this.db.prepare('SELECT id FROM cp_runs WHERE mission_id=? ORDER BY created_at').all(id).map(r=>this.store.run(r.id)),decisions:this.store.decisions(id),verifications:this.db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC').all(id).map(v=>({...v,evidence:JSON.parse(v.evidence)})),acceptance:this.db.prepare('SELECT * FROM cp_acceptances WHERE mission_id=? ORDER BY created_at DESC').all(id),artifacts:this.db.prepare('SELECT * FROM cp_artifacts WHERE mission_id=?').all(id),timeline:this.bridge.ledger.list({missionId:id,limit:100,order:'desc'}).events,results:this.db.prepare('SELECT run_id,normalized FROM cp_run_results WHERE mission_id=?').all(id).map(r=>({run_id:r.run_id,result:{...JSON.parse(r.normalized),continuity:JSON.parse(this.db.prepare('SELECT evidence FROM cp_continuity_checks WHERE run_id=?').get(r.run_id)?.evidence||'null')}})),dispatches:this.db.prepare('SELECT * FROM cp_dispatches WHERE mission_id=? ORDER BY created_at').all(id).map(d=>({...d,route:d.route?JSON.parse(d.route):null}))};
     if(require('./removed-runtime').removed(m)){view.runtimeRemoved=true;view.runtimeLabel='Historical runtime removed';view.next_action='inspect';}
     view.results=view.results.map(r=>({...r,result:require('./conversation-mission').projectRead(this.bridge,m.task_id,r.result,m.id)}));
     view.timeline=view.timeline.map(e=>require('./conversation-mission').projectEvent(this.bridge,e));
@@ -85,6 +85,7 @@ class MissionService {
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
   assertAuthority(mission, requirements={}){
+    if(mission.envelope.kind==='work_request')throw Error('Work request draft requires registered scope and verification before execution');
     require('./removed-runtime').assertExecutable(mission);
     if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     this.program.assert(mission);
@@ -325,7 +326,7 @@ class MissionService {
   }
   async reverify(id,input,owner='operator'){
     object(input,['id','request_id']);identifier(input.request_id);
-    const m=this.require(id,owner);require('./removed-runtime').assertExecutable(m);
+    const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);
     const receipt=this.store.request(owner,input.request_id,{op:'reverify',id},()=>{
       if(!['needs_rework','awaiting_acceptance'].includes(m.state)||m.envelope.baseline.version!==2)throw Error('V2 failed verification required');
       const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode') AND state='completed' AND termination_verified=1 ORDER BY ended_at DESC LIMIT 1").get(id);
@@ -348,7 +349,7 @@ class MissionService {
     const result=this.store.request(actor,input.request_id,{op:'answer',id,...input},()=>this.store.answerDecision(id,{option_id:input.option_id??null,free_text:input.free_text??null,actor,surface}));this.schedule();return result;
   }
   accept(id,input,owner='operator'){
-    const m=this.require(id,owner);require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
+    const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
     return this.store.request(owner,input.request_id,{op:'accept',id,...input},()=>{
       if(m.state!=='awaiting_acceptance')throw Error('Mission is not awaiting acceptance');
       if(input.decision==='accept')this.program.assertAcceptance(m,input.verification_id);
