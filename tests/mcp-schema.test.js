@@ -22,9 +22,9 @@ function exchange(method, params) {
   return response.result;
 }
 
-test('actual stdio tools/list exposes the canonical twenty-one tools, optional acceptance fields and array capability scopes', () => {
+test('actual stdio tools/list exposes the canonical twenty-four tools, optional acceptance fields and array capability scopes', () => {
   const { tools } = exchange('tools/list', {});
-  assert.deepEqual(tools.map(tool => tool.name), ['create_task', 'continue_task', 'get_task_status', 'approve_once', 'reject', 'cancel_task', 'get_task_events', 'acknowledge_task_event', 'native_tool_invoke', 'capability_invoke', 'capability_status', 'capability_inventory', 'agent_status', 'get_agent_results', 'get_agent_dispatches', 'claim_agent_dispatch', 'report_agent_dispatch', 'get_provider_status', 'get_reasoning_admissions', 'list_architecture_memories', 'inspect_context_pack']);
+  assert.deepEqual(tools.map(tool => tool.name), ['create_task', 'continue_task', 'get_task_status', 'approve_once', 'reject', 'cancel_task', 'get_task_events', 'acknowledge_task_event', 'native_tool_invoke', 'capability_invoke', 'capability_status', 'capability_inventory', 'agent_status', 'get_agent_results', 'get_agent_dispatches', 'claim_agent_dispatch', 'report_agent_dispatch', 'get_provider_status', 'get_reasoning_admissions', 'list_architecture_memories', 'inspect_context_pack', 'submit_mission', 'get_mission_handoff', 'cancel_mission_handoff']);
   assert.deepEqual(tools, TOOLS);
   const schema = tools[0].inputSchema;
   assert.deepEqual(schema.required, ['description', 'message', 'request_id']);

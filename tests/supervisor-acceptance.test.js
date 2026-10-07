@@ -65,7 +65,7 @@ test('cancellation stops the fixture before settlement and remains stopped after
   assert.equal(restored.tasks.get(task.id).mission.attempts, 0);
 });
 test('schema keeps legacy requests and requires exact opt-in fixture contract', async t => {
-  assert.equal(TOOLS.length, 21);
+  assert.equal(TOOLS.length, 24);
   const legacy = { description: 'Legacy', message: 'Acceptance criterion mentioned only in prose', request_id: 'legacy-request-001' };
   validate('create_task', legacy);
   for (const changed of [{ acceptance_criterion: 'other' }, { workspace: 'bridge' }, { acceptance_mode: 'arbitrary' }, { acceptance_mode: undefined }]) {

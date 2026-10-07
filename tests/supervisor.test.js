@@ -18,7 +18,7 @@ async function setup(t, options = {}) {
 }
 test('incomplete MCP goal automatically continues twice from durable checkpoints and stops at budget', async t => {
   const b = await setup(t), mcp = new McpTools(b);
-  assert.equal(TOOLS.length, 21);
+  assert.equal(TOOLS.length, 24);
   const receipt = await mcp.call('create_task', { description: 'Local recovery fixture', message: 'first turn', request_id: 'supervisor-0001', acceptance_criterion: 'operator verified goal' });
   const task = b.tasks.get(receipt.task_id);
   await until(() => task.recovery?.reason === 'recovery_budget_exhausted');

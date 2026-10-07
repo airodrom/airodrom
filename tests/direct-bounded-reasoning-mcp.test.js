@@ -67,7 +67,7 @@ function fakeBridge(t){
 }
 
 test('create_task schema exposes explicit bounded reasoning policy without adding a new MCP tool',()=>{
-  assert.equal(TOOLS.length,21);
+  assert.equal(TOOLS.length,24);
   const schema=TOOLS.find(t=>t.name==='create_task').inputSchema;
   assert.equal(schema.properties.reasoning_policy.type,'object');
   const base={description:'reasoning',message:'Return exactly: 4',request_id:'reasoning-schema',mission_mode:'reasoning_only',reasoning_policy:externalPolicy};
