@@ -73,3 +73,19 @@ test('LIVE natural Aurora memory survives restart, fresh conversation recalls th
 test('LIVE external MCP handoff returns canonical safe progress and visible result without private context',async t=>{
  assert.equal(qualification,true);const f=await fixture(t,{opencode:options,settleTimeoutMs:150000});qualifyCanonical(f.bridge);const server=new(require('../src/control-server'))(f.bridge,{port:0});await server.start();t.after(()=>server.close());require('../src/local-bootstrap').writePrivate(path.join(f.bridge.dataDir,'mcp.json'),{port:server.port,token:server.mcpToken,pid:process.pid});const client=require('../src/mcp-client').createClient({dataDir:f.bridge.dataDir,sessionFile:path.join(f.bridge.dataDir,'synthetic-client-session.json')});const receipt=await client('submit_mission',{packet:{version:1,request_id:'synthetic-live-handoff',objective:'Explain what a governed Mission is in one sentence.',mission_class:'CONVERSATION',data_class:'public',privacy:'local_only'}});const done=await f.settle(receipt.mission_id),status=await client('get_mission_handoff',{mission_id:receipt.mission_id});assert.equal(done.state,'awaiting_acceptance');assert.equal(f.bridge.tasks.get(done.task_id).includeSharedMemory,false);assert.ok(status);assert.doesNotMatch(JSON.stringify(status),/Bearer|access_token|session_id|chain.of.thought/i);console.log(JSON.stringify({external_handoff:true,canonical_mission:true,safe_progress_and_result:true,private_context:false,synthetic_only:true}));
 });
+
+test('LIVE Conversation V2.1 greeting and Airodrom identity stay bounded and await Acceptance',async t=>{
+ const f=await fixture(t,{opencode:options,settleTimeoutMs:150000});
+ const server=new(require('../src/control-server'))(f.bridge,{port:0});await server.start();t.after(()=>server.close());
+ const summaries=[];
+ for(const message of ['Hi','Who are you?']){
+  const receipt=await require('../src/assistant-service').submit(server,{message,request_id:require('node:crypto').randomUUID(),include_memory:false});
+  assert.equal(receipt.kind,'conversation');const done=await f.settle(receipt.mission_id);
+  assert.equal(done.state,'awaiting_acceptance');assert.equal(done.verifications[0].result,'operator_review');assert.equal(done.acceptance.length,0);
+  assert.equal(done.runs.find(r=>r.agent_id==='opencode').termination_verified,1);assert.deepEqual(done.envelope.allowed_files,[]);assert.deepEqual(done.envelope.capability_scopes,[]);
+  const summary=f.bridge.tasks.get(done.task_id).lastResult;summaries.push(summary);
+  assert.doesNotMatch(summary,/I am Qwen|I'm Qwen|observed work|result_contract|Settlement/i);
+ }
+ assert.match(summaries[0],/hello|hi|help/i);assert.match(summaries[1],/Airodrom/);assert.match(summaries[1],/assistant|help/i);
+ console.log(JSON.stringify({synthetic_only:true,greeting:true,airodrom_identity:true,confined:true,independent_boundary_verification:true,awaiting_explicit_acceptance:true,private_memory_inspected:false,runtime:'OpenCode 2.0.20',model:options.model}));
+});

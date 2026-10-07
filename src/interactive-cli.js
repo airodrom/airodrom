@@ -6,7 +6,7 @@ const { randomUUID } = require('node:crypto');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
 const render = require('./assistant-render');
-const READ_COMMANDS = new Set(['models','workers','connectors','status','doctor','memory','runtime','sensitive','vault','secret','gmail','whatsapp']);
+const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','memory','runtime','sensitive','vault','secret','gmail','whatsapp']);
 function parseLine(line) {
  const raw=line.trim().replace(/^(?:You\s*[›>]|>)\s*(?=\/|--help|--version)/,'');
  const value=({'--version':'/version','--help':'/help','-h':'/help'}[raw])||raw;
@@ -18,7 +18,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/status · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -64,10 +64,20 @@ async function scopedTask(home, file,preferences={}) {
 }
 async function interactive(home, { input = process.stdin, output = process.stdout, env = process.env } = {}) {
   output.write(intro({ mode: terminalBrand.colorMode({tty:!!output.isTTY,env}), graphics:terminalBrand.imageProtocol({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
-  const s = await local.start(home, env); output.write(rows(s));
-  output.write('\nType a question, or /help for commands. Each question gets a fresh bounded Mission.\n');
+  const s = await local.start(home, env);
+  output.write('\nType a question, or /help for commands.\n');
   const rl = readline.createInterface({ input, output, terminal: !!input.isTTY && !!output.isTTY });
-  let model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, active = null, quitting = false;
+  let model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, active = null, indicator = null, quitting = false;
+  const startAnswer=()=>{
+    output.write('\nAirodrom\n');
+    indicator=render.waiting(output,{env,signal:active.signal});
+  };
+  const stopAnswer=()=>{indicator?.stop();indicator=null;};
+  const answer=async id=>{
+    if(!indicator)startAnswer();
+    try { return await waitResult(home,id,{signal:active.signal}); }
+    finally { stopAnswer(); }
+  };
   const interrupt = () => { if (active) active.abort(); else { quitting = true; rl.close(); } };
   rl.on('SIGINT', interrupt); process.on('SIGINT', interrupt);
   try {
@@ -77,7 +87,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       const {value,command,arg,json}=parseLine(line); if (!value) { if (output.isTTY) output.write('You › '); continue; }
       try {
         if(command)output.write('\n');
-        if(['help','about','version','mcp','status','doctor','connectors'].includes(command)&&arg)throw Error('Submit this command on its own, or use --json for read-only details.');
+        if(['help','about','version','mcp','status','details','doctor','connectors'].includes(command)&&arg)throw Error('Submit this command on its own, or use --json for read-only details.');
         if (command === 'quit') {if(arg)throw Error('Submit /quit on its own.');break;}
         if (command === 'help') output.write(help());
         else if (command === 'about'||command==='version') output.write(branding.name+' '+require('../package.json').version+' · PRE-RELEASE\n');
@@ -98,13 +108,20 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if(command==='connect') {if(!['gmail','whatsapp'].includes(arg))throw Error('Use /connect gmail or /connect whatsapp');const result=await local.request(home,'/api/assistant/connect',{connector:arg});if(result.authorization_url){const r=require('node:child_process').spawnSync('/usr/bin/open',[result.authorization_url],{stdio:'ignore',timeout:5000});if(r.status!==0)throw Error('OAuth browser could not open.');output.write('Read-only Gmail OAuth opened. Complete the operator authorization in your browser.\n');}else output.write(terminalText(result.message)+'\n');}
         else if(command==='gmail'||command==='whatsapp') {
           const [actionArg='status',...parts]=arg.split(/\s+/),action=actionArg==='draft-reply'?'draft_reply':actionArg,query=parts.join(' '),selected=['read','thread','summarize','draft_reply'].includes(action);
-          const receipt=await local.request(home,'/api/assistant/connector',{connector:command,action,input:query?{[selected?'id':action==='draft'?'body':'query']:query}:{}});if(receipt.kind==='conversation'){lastMission=receipt.mission_id;active=new AbortController();const result=await waitResult(home,lastMission,{signal:active.signal});output.write(terminalText(result.summary)+'\n[Review: /accept · No message sent]\n');active=null;}else show(output,receipt,render.receipt,json);
+          const receipt=await local.request(home,'/api/assistant/connector',{connector:command,action,input:query?{[selected?'id':action==='draft'?'body':'query']:query}:{}});if(receipt.kind==='conversation'){lastMission=receipt.mission_id;active=new AbortController();const result=await answer(lastMission);output.write(terminalText(result.summary)+'\n');active=null;}else show(output,receipt,render.receipt,json);
         }
         else if(command==='remember-sensitive'){const item=await local.request(home,'/api/assistant/sensitive',{content:arg});output.write('Sensitive Memory saved; operator-only ID '+item.memoryId+'\n');}
         else if(command==='sensitive'){const parts=arg.split(/\s+/);if(parts[0]==='correct'){const r=await local.request(home,'/api/assistant/sensitive',{id:parts[1],content:parts.slice(2).join(' ')});output.write('Corrected sensitive ID '+r.memoryId+'\n');}else show(output,await local.request(home,parts[0]==='reveal'?'/api/assistant/reveal-sensitive':'/api/assistant/sensitive',parts[0]==='reveal'?{id:parts[1]}:undefined),render.sensitive,json);}
         else if(command==='vault'||command==='secret'){if(arg)throw Error('Use airodrom secret put from the shell for hidden secure input. /secret never takes values.');show(output,new (require('./secret-vault').SecretVault)(require('./local-bootstrap').privateDirectory(path.join(home,'data'),true)).status(),render.vault,json);output.write('Use airodrom secret put from the shell for hidden secure input.\n');}
         else if (command === 'doctor') show(output,await require('./product-diagnostics').doctor(home),require('./product-diagnostics').summary,json);
-        else if (command === 'status') show(output,await local.status(home),rows,json);
+        else if (command === 'status'||command==='details') {
+          const detail=lastMission?await local.request(home,'/api/product/mission?id='+encodeURIComponent(lastMission)):null;
+          if(command==='status'){
+            const status=await local.status(home);
+            show(output,detail?{...status,mission:detail}:status,d=>rows(d)+(d.mission?render.rail(d.mission):''),json);
+          }else if(detail)show(output,detail,render.rail,json);
+          else output.write('No Mission is selected.\n');
+        }
         else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg);show(output,{runtime},d=>'Runtime for fresh tasks: '+render.name(d.runtime),json); }
         else if (command === 'open') { local.open(home); output.write('Control Center opened.\n'); }
         else if (command === 'memory') await memory(home, arg, output,json);
@@ -117,22 +134,22 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           await local.request(home, '/api/control-v2/accept-mission', { id: lastMission, request_id: randomUUID(), verification_id: r.verification_id, decision: 'accept', rationale: 'Authenticated local operator reviewed the result.', evidence: arg || 'Operator reviewed the conversation response.' }); output.write('Accepted and settled locally.\n');
         } else if (command) throw Error('Unknown command. Use /help.');
         else {
+          if(!output.isTTY)output.write('\nYou › '+terminalText(value)+'\n');
           active = new AbortController();
+          startAnswer();
           const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker });
-          if(created.kind!=='conversation'){show(output,created,render.receipt);active=null;}
+          if(created.kind!=='conversation'){stopAnswer();show(output,created,render.receipt);active=null;}
           else {
             lastMission=created.mission_id;
-            output.write('\nAirodrom\n');
-            const r=await waitResult(home,lastMission,{signal:active.signal,onProgress:state=>{if(output.isTTY&&state.state!=='awaiting_acceptance')output.write('  · '+render.name(state.state)+'\n');}});
+            const r=await answer(lastMission);
             output.write(terminalText(r.summary)+'\n');
-            const detail=await local.request(home,'/api/product/mission?id='+encodeURIComponent(lastMission));
-            output.write(render.rail(detail));active=null;
+            active=null;
           }
         }
-      } catch (error) { active = null; output.write('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
+      } catch (error) { stopAnswer();active = null; output.write('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
       if (output.isTTY) output.write('\nYou › ');
     }
-  } finally { process.removeListener('SIGINT', interrupt); rl.close(); }
+  } finally { indicator?.stop();process.removeListener('SIGINT', interrupt); rl.close(); }
   output.write('Local service remains available. Use airodrom stop to stop it.\n');
 }
 async function main(args = process.argv.slice(2)) {
