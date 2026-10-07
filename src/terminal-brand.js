@@ -36,18 +36,18 @@ function pixel(x, y, width, height) {
   const face = coverage();
   if (face >= .5) {
     // Subdued blue face with a directional bevel; signature slots remain open.
-    const light = Math.max(0, Math.min(1, (py - 32) / 192));
-    let color = blend([88, 140, 204], [62, 93, 157], light);
+    const light = Math.max(0, Math.min(1, (px * .25 + py * .75 - 24) / 190));
+    let color = blend([78, 123, 181], [54, 77, 124], light);
     const rim = !inside(px - 1.5, py - 2);
-    if (rim) color = blend(color, [111, 165, 219], .18);
-    else if (!inside(px + 2, py + 2)) color = blend(color, [41, 61, 104], .24);
+    if (rim) color = blend(color, [116, 153, 195], .14);
+    else if (!inside(px + 2, py + 2)) color = blend(color, [35, 49, 82], .25);
     return { type: rim ? 'highlight' : 'front', color };
   }
   // Extrude only outside the outer silhouette, so depth never fills the cutouts.
   if (!inPolygon(px, py, geometry[0])) {
-    for (const depth of [2, 4, 6, 8]) {
+    for (const depth of [2, 4, 6]) {
       if (coverage(depth, depth * .75) >= .5) {
-        return { type: 'depth', color: blend([42, 45, 96], [28, 33, 62], lightDepth(py)) };
+        return { type: 'depth', color: blend([40, 44, 81], [25, 30, 55], lightDepth(py)) };
       }
     }
   }
@@ -68,7 +68,7 @@ function mark({ mode = 'none', compact = false, small = false, unicode = true } 
   compact = !!compact; small = !!small; unicode = !!unicode;
   const key = `${mode}:${compact}:${small}:${unicode}`;
   if (cache.has(key)) return [...cache.get(key)];
-  const width = small ? 20 : compact ? 26 : 44, height = small ? 16 : compact ? 22 : 36, lines = [];
+  const width = small ? 18 : compact ? 24 : 30, height = small ? 14 : compact ? 20 : 24, lines = [];
   for (let y = 0; y < height; y += 2) {
     let row = '';
     for (let x = 0; x < width; x++) {
@@ -97,15 +97,15 @@ function wrap(text, width) {
 }
 function intro({ color = false, mode, unicode = true, columns = 80, rows = 40 } = {}) {
   mode = mode || (color ? 'truecolor' : 'none');
-  const compact = columns < 78 || rows < 36, small = rows < 28;
+  const compact = columns < 64 || rows < 28, small = rows < 28;
   const version = require('../package.json').version + ' · PRE-RELEASE';
-  const title = (mode === 'none' ? 'AIRODROM' : '\x1b[96mAIRODROM\x1b[0m') + '\n'
+  const title = (mode === 'none' ? 'AIRODROM' : sgr({type:'highlight',color:[100,140,196]},mode)+'AIRODROM\x1b[0m') + '\n'
     + wrap('MANY AGENTS. ONE CONTROL PLANE.', columns) + '\n';
   if (columns < 28) return title + 'PRE-RELEASE\n';
   if (rows < 24) return title + wrap(version, columns) + '\n';
   const art = mark({ mode, compact, small, unicode });
   if (compact) return title + '\n' + art.join('\n') + '\n' + wrap(version, columns) + '\n';
-  const info = [version, '', 'Personal assistant.', 'Many agents. One authority.', 'Local. Private. Governed.'];
+  const info = [version, '', 'Personal assistant.', 'Local. Private. Governed.'];
   const start = Math.floor((art.length - info.length) / 2);
   return title + '\n' + art.map((line, i) => line + '   ' + (info[i - start] || '')).join('\n') + '\n';
 }
