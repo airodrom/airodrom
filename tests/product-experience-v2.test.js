@@ -7,10 +7,14 @@ test('terminal mark uses canonical cutouts and portable color/width modes',()=>{
  for(const [env,expected]of [[{TERM:'xterm-256color',COLORTERM:'truecolor'},'truecolor'],[{TERM:'xterm-256color'},'256'],[{TERM:'xterm'},'16'],[{NO_COLOR:'',TERM:'xterm'},'none'],[{TERM:'dumb'},'none']]){
  const mode=brand.colorMode({tty:true,env});assert.equal(mode,expected);const output=brand.intro({mode,columns:80});assert.match(output,/AIRODROM/);assert.match(output,/PRE-RELEASE/);if(mode==='none')assert.doesNotMatch(output,/\x1b/);else assert.match(output,/\x1b/);
  }
- assert.equal(brand.mark().length,13);assert.equal(brand.mark({compact:true}).length,7);assert.equal(brand.colorMode({tty:false,env:{COLORTERM:'truecolor'}}),'none');
+ assert.equal(brand.mark().length,18);assert.equal(brand.mark({compact:true}).length,11);assert.equal(brand.colorMode({tty:false,env:{COLORTERM:'truecolor'}}),'none');
  const strip=require('node:util').stripVTControlCharacters;
  for(const mode of ['truecolor','256','16'])assert.deepEqual(brand.mark({mode}).map(row=>strip(row).replace(/[▀▄]/g,'#')),brand.mark({unicode:false}).map(row=>row.replace(/[+.]/g,'#')),'colored empty cells and canonical cutouts remain transparent');
- for(const width of [20,40,80])for(const row of brand.intro({mode:'none',columns:width,unicode:false}).trimEnd().split('\n'))assert.ok(row.length<=width);
+ for(const width of [20,28,40,77,78,80])for(const mode of ['none','16','256','truecolor'])for(const unicode of [false,true]){
+  const output=brand.intro({mode,columns:width,unicode});for(const row of strip(output).trimEnd().split('\n'))assert.ok(row.length<=width,'intro fits '+width+' columns');
+  if(!unicode)assert.doesNotMatch(output,/[▀▄█▓░]/,'ASCII fallback uses no block glyphs');
+ }
+ for(const rows of [20,24,28,36])assert.ok(strip(brand.intro({mode:'truecolor',columns:80,rows})).trimEnd().split('\n').length<=rows-12,'intro leaves room for readiness and composer');
 });
 test('timeline deduplicates canonical identities, preserves order and excludes untrusted content',()=>{
  const first={event_id:randomUUID(),sequence:1,timestamp_ms:1,event_type:'mission.created',metadata:{prompt:'PRIVATE_PROMPT',reasoning:'PRIVATE_REASONING',token:'PRIVATE_TOKEN'}};
