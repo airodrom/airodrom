@@ -7,7 +7,7 @@ const local = require('./local-bootstrap');
 const branding = require('./branding');
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
 const COMMANDS = '/about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/status · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
-const intro = require('./terminal-brand').intro;
+const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
   const p=s.product, runtime=p?.runtime|| (s.opencode.ready?'Ready':s.opencode.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
   return `OpenCode   ${runtime==='Ready'?'● Ready · Primary':runtime+' · '+(p?.runtimeReason||s.opencode.reason)}\nMemory V2  ${p?.memory||'Unavailable'} · Local\nControl    ${p?.control|| (s.healthy?'Ready':'Unavailable')} · Local\nProvider   ${p?.provider||'Unavailable'}\nModel      ${p?.model||'Unavailable'} · Local · ${p?.routing||'AUTO'}\nContext    Limit / usage / tokens / cost: Unavailable\nMissions   ${p?.active_missions??'Unavailable'} active · ${p?.approvals??'Unavailable'} approvals waiting\nPrivacy    Prompts, reasoning and credentials stay private\n`;
@@ -41,7 +41,7 @@ async function scopedTask(home, file,preferences={}) {
   return mission.id;
 }
 async function interactive(home, { input = process.stdin, output = process.stdout, env = process.env } = {}) {
-  output.write(intro({ mode: require('./terminal-brand').colorMode({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
+  output.write(intro({ mode: terminalBrand.colorMode({tty:!!output.isTTY,env}), graphics:terminalBrand.imageProtocol({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
   const s = await local.start(home, env); output.write(rows(s));
   output.write('\nType a question, or /help for commands. Each question gets a fresh bounded Mission.\n');
   const rl = readline.createInterface({ input, output, terminal: !!input.isTTY && !!output.isTTY });
