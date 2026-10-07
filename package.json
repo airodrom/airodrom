@@ -40,7 +40,8 @@
     "test:product": "node scripts/run.cjs --test tests/product-experience-v2.test.js",
     "macos:menu:prepare": "node scripts/run.cjs scripts/macos/prepare-local-menu.cjs",
     "test:product:browser": "node scripts/run.cjs --test tests/product-browser.cjs",
-    "test:assistant": "node scripts/run.cjs --test tests/personal-assistant-v1.test.js"
+    "test:assistant": "node scripts/run.cjs --test tests/personal-assistant-v1.test.js",
+    "test:conversation": "NODE_ENV=test node scripts/run.cjs --test tests/conversation-engine.test.js tests/conversation-routing-v1.test.js tests/conversation-cli.test.js tests/secure-vault-guide.test.js"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -336,6 +337,11 @@
     "src/gmail-oauth.js",
     "scripts/macos/vault-keychain-helper.c",
     "docs/adr/0010-personal-assistant-and-qualified-routing.md",
-    "docs/PERSONAL-ASSISTANT-V1.md"
+    "docs/PERSONAL-ASSISTANT-V1.md",
+    "src/assistant-missions.js",
+    "src/conversation-engine.js",
+    "src/secure-vault-guide.js",
+    "docs/CONVERSATION-ENGINE-V1.md",
+    "docs/adr/0011-conversation-engine-and-intent-routing.md"
   ]
 }

@@ -27,5 +27,26 @@ function select(catalog,input={}) {
  for(const m of candidates){const w=catalog.workers.find(w=>m.workers.includes(w.id)&&(worker==='auto'||w.id===worker)&&w.qualification==='qualified'&&w.available&&(privacy!=='local_only'||w.locality==='local'));if(w)return {state:'READY',model:m.id,worker:w.id,provider:m.provider,locality:m.locality,mode:manual?'MANUAL':'AUTO',reason:'Current qualified local model and compatible bounded worker; minimum permitted context',evidence_version:m.evidence_version,expires_at:m.expires_at,authority:false};}
  return wait('no_current_qualified_compatible_route');
 }
-async function inspect(bridge){return registry(bridge,await bridge.opencodeAdapter.readiness());}
-module.exports={MODEL,EXPIRES,registry,select,inspect};
+async function inspect(bridge,{conversation=qualifyConversation}={}){
+ const [worker,direct]=await Promise.allSettled([bridge.opencodeAdapter.readiness(),conversation()]);
+ const catalog=registry(bridge,worker.status==='fulfilled'?worker.value:{}),ready=direct.status==='fulfilled'&&direct.value.state==='READY'&&direct.value.model===MODEL;
+ catalog.models[0].conversation={available:ready,worker_required:false};
+ if(ready){catalog.models[0].available=true;catalog.models[0].qualification='qualified';}
+ return catalog;
+}
+// Conversation qualification admits only an observed, pinned local model.
+// There is no worker selection or execution admission on this path.
+async function qualifyConversation({model='auto',request=fetch,now=Date.now()}={}){
+ const denied=()=>({state:'WAIT',reason:'conversation_model_unavailable',authority:false});
+ if(!['auto','local',MODEL].includes(model)||now>=EXPIRES||runtime.execution_qualified!==true||evidence?.qualification_status!=='qualified')return denied();
+ try{
+  const response=await request('http://127.0.0.1:11434/api/show',{method:'POST',redirect:'error',signal:AbortSignal.timeout(1500),headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODEL.slice(7)})});
+  if(!response.ok){await response.body?.cancel();return denied();}
+  const reader=response.body.getReader(),decoder=new TextDecoder();let content='',bytes=0;
+  try{while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>256000)return denied();content+=decoder.decode(value,{stream:true});}content+=decoder.decode();}finally{await reader.cancel().catch(()=>{});}
+  const capability=require('./local-model-capability'),live=capability.inspectOllamaShow(JSON.parse(content));
+  if(!live.available||!live.digest||!live.templateHash||!capability.assessQualification(evidence,live).allow)return denied();
+  return {state:'READY',model:MODEL,provider:'ollama',locality:'local',worker:null,expires_at:EXPIRES,authority:false};
+ }catch{return denied();}
+}
+module.exports={MODEL,EXPIRES,registry,select,inspect,qualifyConversation};

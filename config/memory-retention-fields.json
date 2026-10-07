@@ -3209,5 +3209,70 @@
       "created_at": "A",
       "expires_at": "A"
     }
+  },
+  "cp_conversations": {
+    "fields": [
+      "id",
+      "operator_id",
+      "channel",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/conversation-engine.js",
+    "classification": {
+      "id": "A",
+      "operator_id": "A",
+      "channel": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "cp_conversation_turns": {
+    "fields": [
+      "id",
+      "conversation_id",
+      "operator_id",
+      "request_id",
+      "request_digest",
+      "state",
+      "prompt",
+      "response",
+      "context_json",
+      "context_generation",
+      "model",
+      "created_at",
+      "updated_at",
+      "safe_error_class"
+    ],
+    "source": "src/conversation-engine.js",
+    "classification": {
+      "id": "A",
+      "conversation_id": "A",
+      "operator_id": "A",
+      "request_id": "A",
+      "request_digest": "D",
+      "state": "A",
+      "prompt": "B",
+      "response": "B",
+      "context_json": "B",
+      "context_generation": "B",
+      "model": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "safe_error_class": "A"
+    }
+  },
+  "cp_assistant_preferences": {
+    "fields": [
+      "operator_id",
+      "nickname",
+      "updated_at"
+    ],
+    "source": "src/conversation-engine.js",
+    "classification": {
+      "operator_id": "A",
+      "nickname": "B",
+      "updated_at": "A"
+    }
   }
 }

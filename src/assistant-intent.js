@@ -5,21 +5,49 @@ const sensitive = value => /\b(?:health|diagnosis|diagnosed|disease|condition|as
 // Automatic durable classification is deliberately small. Unknown facts require
 // an operator choice rather than treating the absence of a keyword as evidence.
 const ordinary = value => /^(?:my name is|i am called) [\p{L} .'-]{1,100}\.?$/iu.test(value) || /^(?:i prefer|my preferred (?:language|theme) is) (?:typescript|javascript|python|rust|go|java|swift|dark mode|light mode|concise answers|detailed answers)\.?$/i.test(value);
+const route = (name, result) => ({route:name,...result});
+// This classifies requested operations, never grants their capabilities. The
+// host's registered immutable Mission template is the only execution scope.
+function workCapabilities(value) {
+ const classes=new Set();
+ if(/\b(?:send|email|gmail|whatsapp|archive|mark.read)\b/i.test(value))classes.add('communications');
+ if(/\b(?:website|web site|domain)\b|https?:\/\/\S+/i.test(value))classes.add('web_read');
+ if(/\b(?:deploy|publish|release|production)\b/i.test(value))classes.add('deployment');
+ if(/\b(?:repository|repo|feature|file|code|script)\b/i.test(value)||/^(?:fix|implement|edit|modify|build|create|write|delete|remove|install|run|execute|commit|push|change)\b/i.test(value)||!classes.size){classes.add('repo');classes.add('developer_environment');}
+ return [...classes];
+}
 function parse(value) {
  if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');value=value.trim();
- if(secret(value))return {kind:'secret',message:'Secret content is refused. Use the operator Secret Vault secure input path; values are never displayed.'};
  // A pasted control command cannot be silently embedded in a model prompt.
  if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
- const remember=/^(?:please\s+)?remember\s+(?:that\s+)?([\s\S]+)$/i.exec(value);
- if(remember){const content=remember[1];return sensitive(content)?{kind:'sensitive',content}:ordinary(content)?{kind:'remember',content}:{kind:'clarify',message:'Choose the data class explicitly: /remember <ordinary fact> or /remember-sensitive <private fact>. Credentials require the secure Secret Vault input path.'};}
- const forget=/^(?:please\s+)?forget\s+(?:that\s+)?(?:my\s+)?([\s\S]+?)\.?$/i.exec(value);
- if(forget)return {kind:'forget',selection:forget[1]};
- const recall=/^(?:what do you remember(?: about)?|recall|show (?:my )?memories(?: about)?)\s*(.*?)\??$/i.exec(value);
- if(recall)return {kind:'recall',query:recall[1].replace(/^my\s+/i,'')};
- if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning\??)$/i.test(value))return {kind:'connector',connector:'gmail',action:'attention'};
- const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(value);if(draft)return {kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]};
- if(/^show whatsapp messages needing attention\.?$/i.test(value))return {kind:'connector',connector:'whatsapp',action:'attention'};
- if(/^(?:create|write|edit|delete|remove|install|run|execute|commit|push|send|archive|deploy|change|modify|fix|build)\b/i.test(value))return {kind:'work',message:'This needs a WORK Mission with registered workspace, capabilities and verification. Use /task <mission.json>.'};
- return {kind:'conversation',message:value};
+ const request=value.replace(/^(?:(?:please|can you|could you|would you|i want you to|i would like you to|i want to|i need to|i would like to|help me)\s+)+/i,'').replace(/[.!?]+$/,'').trim();
+ // Only a valueless request opens secure entry. Credentials supplied in chat
+ // still hit the secret refusal below and never reach a model or memory.
+ if(/^\/vault$/i.test(request)||/^(?:(?:let['’]s|let us|i want to)\s+)?(?:save|store|add)\s+(?:a|an|my)\s+(?:password|api[ _-]?key|secret)$/i.test(request)||/^(?:open|show)\s+(?:the\s+)?(?:secret\s+)?vault$/i.test(request)||/^(?:view|show|list)\s+(?:my\s+)?saved secret names$/i.test(request)||/^remove a secret$/i.test(request))return route('VAULT',{kind:'vault',action:'menu'});
+ if(secret(value))return route('VAULT',{kind:'secret',message:'Secret content is refused. Use /vault for secure entry; values never pass through chat.'});
+ const missionCommand=/^\/mission(?:\s+(new|list|status|cancel))?(?:\s+(.+))?$/i.exec(request);
+ if(missionCommand){const action=(missionCommand[1]||'list').toLowerCase(),argument=missionCommand[2];if(action==='list'&&argument)return route('EXPLICIT MISSION',{kind:'clarify',message:'Use /mission list, /mission status [id], /mission cancel [id] or /mission new <objective>.'});return route('EXPLICIT MISSION',{kind:'mission',action,...(action==='new'?{objective:argument||null}:{mission_id:argument||null})});}
+ if(/^\/(?:mission)\b/i.test(request))return route('EXPLICIT MISSION',{kind:'clarify',message:'Use /mission new, /mission list, /mission status or /mission cancel.'});
+ const explicit=/^(?:create|start|open|make|launch|i want|i need|give me)\s+(?:(?:a|an|new)\s+)?(?:(?:work)\s+)?mission(?:\s+(?:to|for|that will)\s+(.+)|\s*:\s*(.+))?$/i.exec(request);
+ if(explicit)return route('EXPLICIT MISSION',{kind:'mission',action:'new',objective:explicit[1]||explicit[2]||null});
+ if(/^(?:show|list)\s+(?:my\s+)?(?:active\s+)?missions$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'list',active:/\bactive\b/i.test(request)});
+ if(/^(?:show|check)\s+(?:the\s+)?(?:current\s+)?mission(?:\s+status)?$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'status',mission_id:null});
+ if(/^cancel\s+(?:the\s+)?(?:current\s+)?mission$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'cancel',mission_id:null});
+ const nickname=/^(?:your nickname is|i(?:['’]ll| will) call you)\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{0,39})$/iu.exec(request);
+ if(nickname)return route('CONVERSATION',{kind:'preference',nickname:nickname[1].trim()});
+ const remember=/^remember\s+(?:that\s+)?([\s\S]+)$/i.exec(request);
+ if(remember){const content=remember[1];return route('MEMORY',sensitive(content)?{kind:'sensitive',content}:ordinary(content)?{kind:'remember',content}:/^my preference\.?$/i.test(content)?{kind:'clarify',message:'What preference should I remember? For example: Remember I prefer concise answers.'}:{kind:'clarify',message:'Choose the data class explicitly: /remember <ordinary fact> or /remember-sensitive <private fact>. Credentials require /vault.'});}
+ const forget=/^forget\s+(?:that\s+)?(?:my\s+)?([\s\S]+?)\.?$/i.exec(request);
+ if(forget)return route('MEMORY',{kind:'forget',selection:forget[1]});
+ const recall=/^(?:what do you remember(?: about)?|recall|show (?:my )?memories(?: about)?)\s*(.*?)\??$/i.exec(request);
+ if(recall)return route('MEMORY',{kind:'recall',query:recall[1].replace(/^my\s+/i,'').replace(/^me$/i,'')});
+ if(/^(?:check|read|show|open)\s+(?:my\s+)?gmail$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'recent'});
+ if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
+ const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
+ if(/^(?:show|check|read)\s+(?:my\s+)?whatsapp(?: messages(?: needing attention)?)?$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'whatsapp',action:'attention'});
+ if(/^(?:implement|edit|delete|remove|install|run|execute|commit|push|send|archive|deploy|change|modify|fix|build|audit)\b/i.test(request)||/^(?:create|write)\b.*\b(?:repository|repo|feature|file|website|application|app|code|script)\b/i.test(request))return route('WORK',{kind:'work',objective:request,capability_classes:workCapabilities(request)});
+ if(/^(?:do|handle|take care of)\s+(?:it|this|that)$/i.test(request))return {kind:'clarify',message:'Do you want to talk it through or create a Work Mission?'};
+ if(/^(?:check|read|show|open)\s+(?:my\s+)?(?:inbox|messages|email|emails|mail)$/i.test(request))return route('CONNECTOR',{kind:'clarify',message:'Should I check Gmail or the official WhatsApp connector?'});
+ return route('CONVERSATION',{kind:'conversation',message:value});
 }
-module.exports={parse,secret,sensitive,ordinary};
+module.exports={parse,secret,sensitive,ordinary,workCapabilities};
