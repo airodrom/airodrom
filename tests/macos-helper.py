@@ -19,6 +19,25 @@ status={'state':'Connected','pid':12345,'endpoint':'http://127.0.0.1:43117','mcp
 control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
 def run(*args):
  return subprocess.run([str(exe),*args],capture_output=True,text=True,timeout=30)
+if '--menu-refresh-only' in __import__('sys').argv:
+ info['AirodromHome']=str(root)
+ with (contents/'Info.plist').open('wb') as f: plistlib.dump(info,f)
+ for state in ['Connected','Stopped']:
+  status['state']=state
+  status['product']={'control':'Ready','status':'Ready','runtime':'Ready','memory':'Ready','provider':'Ready','approvals':0,'mission':{'id':'c2ed1b09-65db-4ae1-9746-ad5bfe902b30','label':'Synthetic Mission','state':'running','phase':'Working','progress':'indeterminate'},'diagnostic':'Synthetic'} if state=='Connected' else None
+  control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
+  result=run('--inspect-menu')
+  assert result.returncode==0
+  menu=json.loads(result.stdout)
+  assert menu['open_during_refresh'] is (state=='Connected')
+  assert menu['open_queued'] is True
+  assert menu['queued_mission_matches_selection'] is True
+  items={item['title']:item['enabled'] for item in menu['refresh_items']}
+  assert items['New Mission / Open CLI'] is True
+  for name in ['Open Control Center','Open Mission','Cancel Mission']: assert items[name] is (state=='Connected')
+  assert 'token=' not in result.stdout and '127.0.0.1' not in result.stdout
+ print('PASS: native menu controls stay enabled during healthy refresh, requests queue without changing Mission selection, stopped controls stay disabled and private discovery is withheld')
+ raise SystemExit(0)
 for action in ['status','start','stop','restart','open','cli','doctor','requalify']:
  p=run('--action',action)
  assert p.returncode==0,(action,p.stderr,p.stdout)
