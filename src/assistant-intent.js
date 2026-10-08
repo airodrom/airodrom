@@ -48,7 +48,7 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(/^(?:show|list)\s+(?:my\s+)?(?:active\s+)?missions$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'list',active:/\bactive\b/i.test(request)});
  if(/^(?:show|check)\s+(?:the\s+)?(?:current\s+)?mission(?:\s+status)?$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'status',mission_id:null});
  if(/^cancel\s+(?:the\s+)?(?:current\s+)?mission$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'cancel',mission_id:null});
- const research=require('./browser-research').parse(request,{pendingResearch,researchURL});if(research)return research;
+ const research=require('./browser-research').parse(value,{pendingResearch,researchURL});if(research)return research;
  const nickname=/^(?:your nickname is|i(?:['’]ll| will) call you)\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{0,39})$/iu.exec(request);
  if(nickname)return route('CONVERSATION',{kind:'preference',nickname:nickname[1].trim()});
  if(/^(?:save|store|remember)$/i.test(request))return route('MEMORY',{kind:'clarify',message:'What would you like to save? Private facts require a storage choice; credentials require /vault.'});
