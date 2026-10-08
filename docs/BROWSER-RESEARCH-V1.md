@@ -15,3 +15,10 @@ During active public research, Control Center offers **Request public evidence d
 The browser uses pinned `playwright-core` and an installed Chrome engine with a fresh owned profile. No browser engine is downloaded automatically. A missing engine is a truthful configuration blocker. The transport blocks service workers because request interception does not cover their traffic; see [Playwright BrowserContext routing](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
 
 [Qualification evidence](BROWSER-RESEARCH-V1-QUALIFICATION.md) is recorded with the reviewed candidate. Synthetic accounts prove input isolation only; they do not qualify a real competitor login, production site or financial operation.
+# Compatible URL ingress repair (ADRs 0011, 0013 and 0015)
+
+Ordinary public HTTPS origins and conventional paths are website addresses. Display normalization (adding a slash or withholding a path) is not itself credential evidence. Credential-bearing userinfo, queries, fragments, encoded/relative secret links and secret-like surrounding text retain conservative screening; display/evidence redaction remains unchanged. Browser entry still excludes queries/fragments and preserves exact-origin, redirect, DNS, read-only and evidence controls.
+
+Bare HTTPS addresses and speaker-prefixed research requests propose the existing governed Browser Research Mission and current Arecibo comparison. A pending website choice is transient host state bound to a validated operator conversation, bounded to five minutes and cleared by unrelated input. It cannot import model/history instructions or grant account consent. Authenticated/manual-login requests offer the existing detached native consent flow and dedicated visible browser; normal Chrome sessions are not inherited. Real Monarch authentication remains unqualified.
+
+Synthetic regressions cover the reported strings, token-bearing URLs, session isolation/expiry, prompt injection, manual-login offers and actual canonical research dispatch without real account data or automatic Acceptance.

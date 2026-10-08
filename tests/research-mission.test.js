@@ -27,6 +27,21 @@ async function researchFixture(t,{block=false,uncertain=false,account=false,manu
  const create=extra=>b.missions.createResearch({request_id:randomUUID(),objective:'Audit public fixture and compare with Arecibo.',entry_url:'https://public.example/',...extra});
  return{...f,b,create,actions,browsers,resolved};
 }
+test('exact Monarch research strings and bare URL follow-up dispatch synthetic canonical browser Missions',async t=>{
+ const f=await researchFixture(t),service=require('../src/assistant-service');
+ const engine=new(require('../src/conversation-engine').ConversationEngine)(f.b,{qualify:async()=>{throw Error('No model allowed');}}),session=engine.session({new:true}).conversation_id;
+ const server={bridge:f.b,conversationEngine:engine};
+ const submit=message=>service.submit(server,{message,conversation_id:session,request_id:randomUUID()});
+ for(const message of ['https://app.monarch.com','Research https://app.monarch.com and compare it with Arecibo.','Andrew: Research https://app.monarch.com and compare it with Arecibo.']){
+  const receipt=await submit(message);assert.equal(receipt.browser_research_available,true);
+  const m=f.b.missions.require(receipt.mission_id);assert.equal(m.envelope.kind,'browser_research');assert.deepEqual(m.envelope.capability_scopes,['web_read']);assert.equal(m.envelope.manifest.entry_url,'https://app.monarch.com/');
+  const done=await f.settle(m.id);assert.equal(done.state,'awaiting_acceptance');assert.equal(done.acceptance.length,0);assert.equal(f.browsers.at(-1).closed,true);
+ }
+ assert.equal((await submit('Research the Monarch Money website and compare its features with Arecibo.')).pending_research,'public');
+ const follow=await submit('https://app.monarch.com');assert.equal(follow.browser_research_available,true);assert.equal(server.pendingResearch.size,0);await f.settle(follow.mission_id);
+ assert.equal(f.inference(),0);assert.equal(f.calls(),0);assert.equal(f.resolved.length,0);
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,4);
+});
 test('opaque research request digits cannot become secret-like mission prose',async t=>{
  const f=await researchFixture(t),request_id='41111111-1111-4111-8112-111111111111';
  assert.equal(require('../src/personal-memory').containsSecret(request_id),true);
