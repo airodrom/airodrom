@@ -538,5 +538,6 @@
   "src/research-session-guide.js",
   "tests/research-session.test.js",
   "docs/BROWSER-SESSION-HANDOFF-V1.md",
-  "docs/adr/0015-authenticated-browser-session-handoff.md"
+  "docs/adr/0015-authenticated-browser-session-handoff.md",
+  "tests/public-url-routing.test.js"
 ]
