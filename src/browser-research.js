@@ -12,12 +12,14 @@ function parse(message,{pendingResearch}={}){
  if(sessionIntent){
   const urls=request.match(/https?:\/\/[^\s<>"'`]+/gi)||[];let target=urls.length===1?urls[0].replace(/[.,;!]+$/,''):urls.length===0&&/\bmonarch\b/i.test(request)?'https://app.monarch.com/':null;
   if(!target)return {route:'WORK',kind:'clarify',...(urls.length===0?{pending_research:'session'}:{}),message:'Give one HTTPS account URL for the dedicated browser scope.'};
+  if(!require('./provider-policy').ordinaryWebsiteSyntax(target,{login:true}))return {route:'WORK',kind:'clarify',message:'Use one HTTPS website address without credentials or encoded/private path data.'};
   try{const u=new URL(target);require('./research-session').allowedURL(u.href,{origin:u.origin,phase:'login',navigation:true});require('./research-network').safeOrigin(u.origin);return {route:'WORK',kind:'research_session',entry_url:u.href,message:'Your normal Chrome login is not inherited. External session attachment is unavailable in V1. Choose dedicated manual login or cancel.',authority:false};}catch{return {route:'WORK',kind:'clarify',message:'Use one HTTPS account URL without credentials, query parameters or private identifiers.'};}
  }
  const matched=bare||/^(?:research|browse|visit|navigate|investigate)\b/i.test(request)||/[\r\n]\s*(?:research|browse|visit|navigate|investigate)\b/i.test(request)||/^(?:open|inspect|explore|review|check|look at|take a look at)\b.*(?:https?:\/\/|\b(?:website|web site|browser|account)\b)/i.test(request)||/^(?:log|sign)\s+(?:in|into)\b/i.test(request)||/^(?:audit|compare)\b.*(?:website|web site|account|https?:)/i.test(request)||/\bfeatures\b.*\b(?:arecibo|adopt)\b/i.test(request);
  if(!matched)return null;
  const urls=request.match(/https?:\/\/[^\s<>"'`]+/gi)||[];
  if(urls.length!==1)return {route:'WORK',kind:'clarify',...(urls.length===0?{pending_research:'public'}:{}),message:'Which public website should I research? Give one URL to approve its domain scope.'};
+ if(!require('./provider-policy').ordinaryWebsiteSyntax(urls[0].replace(/[.,;!]+$/,'')))return {route:'WORK',kind:'clarify',message:'Use one HTTPS website address without credentials or encoded/private path data.'};
  if(/\b(?:implement|deploy|publish|send|delete|purchase|subscribe|sign\s*up|create\s+(?:an?\s+)?account|(?:log|sign)\s+(?:in|into))\b/i.test(request))return {route:'WORK',kind:'clarify',message:'Public research and account or implementation actions need separate scopes. Start with “Research <public URL> and compare with Arecibo”.'};
  let u;try{u=new URL(urls[0].replace(/[.,;!]+$/,''));}catch{return {route:'WORK',kind:'clarify',message:'Give a valid public HTTPS website URL.'};}
  if(u.username||u.password||u.search||u.hash||u.protocol!=='https:')return {route:'WORK',kind:'clarify',message:'Give a public HTTPS URL without credentials, query parameters or a fragment.'};

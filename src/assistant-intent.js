@@ -1,6 +1,13 @@
 'use strict';
 // Operator ingress only. Retrieved/worker text must never call this parser.
-const secret = value => {value=String(value).normalize('NFKC');return require('./personal-memory').containsSecret(value) || /\b(?:password|passphrase|passcode|one.time (?:code|password)|otp|authentication code|api[ _-]?key|private key|seed phrase|recovery codes?|backup codes?|mfa codes?|pin|oauth token|access token|refresh token|banking login)\b/i.test(value);};
+const secret = value => {
+ value=String(value).normalize('NFKC');
+ // Fixed credential-free login endpoints are addresses, never credential
+ // values. This only narrows a text heuristic; it grants no account authority.
+ const policy=require('./provider-policy');
+ const screened=value.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>policy.ordinaryWebsiteSyntax(candidate,{login:true})&&!policy.ordinaryWebsiteSyntax(candidate)?candidate.replace(/\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i,'/'):candidate);
+ return require('./personal-memory').containsSecret(screened) || /\b(?:password|passphrase|passcode|one.time (?:code|password)|otp|authentication code|api[ _-]?key|private key|seed phrase|recovery codes?|backup codes?|mfa codes?|pin|oauth token|access token|refresh token|banking login)\b/i.test(value);
+};
 const sensitive = value => require('./private-vault-intent').containsPrivate(value) || /\b(?:mailbox number|locker number|parking space number|health|diagnosis|diagnosed|disease|condition|asthma|bipolar|diabetes|cancer|allergy|allergies|medication|medical|bank|checking|savings|balance|debt|loan|account number|private|routing number|identifier|ssn|social security|salary|financial|passport)\b/i.test(value);
 // Automatic durable classification is deliberately small. Unknown facts require
 // an operator choice rather than treating the absence of a keyword as evidence.

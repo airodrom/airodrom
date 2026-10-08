@@ -24,6 +24,14 @@ test('raw dot segments and encodings cannot launder a credential path through UR
 test('credential-shaped path segments retain screening across slash, underscore and hyphen boundaries',()=>{
  for(const p of ['/access_token_syntheticcanary','/secret_syntheticcanary','/session_syntheticcanary','/cookie/syntheticcanary','/passwd/syntheticcanary','/oauth/syntheticcanary','/refresh-token-syntheticcanary'])assert.equal(secretLike('https://www.example.com'+p),true,p);
 });
+test('fixed credential-free login endpoints offer dedicated consent without public/provider equivalence',()=>{
+ for(const path of ['/auth/login','/api/auth/login']){
+  const url='https://app.monarch.com'+path;assert.equal(secretLike(url),true);
+  assert.equal(intent.parse('Research '+url+' after I log in manually').kind,'research_session');
+  assert.equal(intent.parse('Research '+url).kind,'clarify');
+  assert.ok(['secret','clarify'].includes(intent.parse('Research '+url+'?token=synthetic after I log in manually').kind));
+ }
+});
 test('pending URL choice binds validated operator sessions, expires, and clears on unrelated input',async()=>{
  const service=require('../src/assistant-service'),a=randomUUID(),b=randomUUID(),sessions=new Set([a,b]);let modelCalls=0;
  const server={conversationEngine:{requireSession(id){if(!sessions.has(id))throw Error('Conversation not found');return {id};},start(){modelCalls++;return {kind:'chat'};}}};

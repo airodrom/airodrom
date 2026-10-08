@@ -50,6 +50,31 @@ test('opaque research request digits cannot become secret-like mission prose',as
  assert.equal(f.create({request_id}).mission_id,first.mission_id);
  assert.throws(()=>f.create({objective:'Audit public fixture. password is synthetic-test-value'}),/sensitive|credentials/);
 });
+test('raw credential-shaped and normalization-laundered research requests never persist or dispatch',async t=>{
+ const f=await researchFixture(t),service=require('../src/assistant-service'),server={bridge:f.b,conversationEngine:{start(){throw Error('No model allowed');}}};
+ const paths=['/token/synthetic/../../about','/%61uth/synthetic/../../about','/secret_syntheticcanary','/cookie/syntheticcanary'];
+ const before=f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n;
+ const requestsBefore=f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_requests').get().n;
+ for(const path of paths){const url='https://www.example.com'+path;
+  for(const message of [url,'Research '+url,'Research '+url+' after I log in manually']){const r=await service.submit(server,{message,request_id:randomUUID()});assert.ok(['clarify','secret'].includes(r.kind));assert.equal(r.entry_url,undefined);assert.doesNotMatch(JSON.stringify(r),/synthetic/);}
+  assert.throws(()=>f.create({entry_url:url}),/credentials|sensitive|private/);
+  assert.throws(()=>f.create({objective:'Research '+url}),/credentials|sensitive/);
+ }
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,before);
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
+ assert.equal(f.browsers.length,0);assert.equal(f.inference(),0);assert.equal(f.calls(),0);
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_requests').get().n,requestsBefore);
+});
+test('explicitly confirmed session Missions preserve fixed credential-free auth login endpoints',async t=>{
+ const f=await researchFixture(t);
+ for(const path of ['/auth/login','/api/auth/login']){
+  assert.throws(()=>f.create({entry_url:'https://public.example'+path}),/credentials|sensitive|private/);
+  const r=f.create({entry_url:'https://public.example'+path,session_authorization:{mode:'dedicated_manual',confirmed:true}}),m=f.b.missions.require(r.mission_id);
+  assert.equal(m.envelope.manifest.session_authorization.login_url,'https://public.example'+path);
+  assert.doesNotThrow(()=>f.b.missions.research.assertContract(m));
+ }
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
+});
 test('research follows canonical native invocation, Verification, owner Acceptance and Settlement without writes or inference',async t=>{
  const f=await researchFixture(t,{provenanceDigits:true});delete f.b.options.researchMission.reportFactory;const denied=[path.join(f.repo,'.env'),path.join(f.repo,'private-export.json')];for(const file of denied)fs.writeFileSync(file,'Synthetic denied-file read canary\n');const originalRead=fs.readFileSync,originalOpen=fs.openSync,originalProjectSnapshot=f.b._projectMemoryRepositorySnapshot;let deniedReads=0,legacySnapshots=0;f.b._projectMemoryRepositorySnapshot=()=>{legacySnapshots++;throw Error('Research called broad legacy repository metadata');};const guard=file=>{if(typeof file==='string'&&denied.includes(path.resolve(file))){deniedReads++;throw Error('Research opened denied private content');}};fs.readFileSync=function(file,...args){guard(file);return originalRead.call(this,file,...args);};fs.openSync=function(file,...args){guard(file);return originalOpen.call(this,file,...args);};t.after(()=>{fs.readFileSync=originalRead;fs.openSync=originalOpen;f.b._projectMemoryRepositorySnapshot=originalProjectSnapshot;});
  const r=f.create(),before=fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),m=f.b.controlStore.getMission(r.mission_id),task=f.b.tasks.get(r.task_id);
