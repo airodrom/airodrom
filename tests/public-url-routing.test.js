@@ -21,6 +21,9 @@ test('natural manual login offers consent; injections and mixed effects cannot a
 test('raw dot segments and encodings cannot launder a credential path through URL normalization',()=>{
  for(const v of ['https://www.example.com/token/synthetic/../../about','https://www.example.com/auth/synthetic/../../about','https://www.example.com/%2e%2e/about','https://www.example.com/product/../about','https://www.example.com/product\\..\\about','https:///www.example.com/token/synthetic/../../about','https:////www.example.com/auth/synthetic/../../about'])assert.equal(secretLike(v),true,v);
 });
+test('credential-shaped path segments retain screening across slash, underscore and hyphen boundaries',()=>{
+ for(const p of ['/access_token_syntheticcanary','/secret_syntheticcanary','/session_syntheticcanary','/cookie/syntheticcanary','/passwd/syntheticcanary','/oauth/syntheticcanary','/refresh-token-syntheticcanary'])assert.equal(secretLike('https://www.example.com'+p),true,p);
+});
 test('pending URL choice binds validated operator sessions, expires, and clears on unrelated input',async()=>{
  const service=require('../src/assistant-service'),a=randomUUID(),b=randomUUID(),sessions=new Set([a,b]);let modelCalls=0;
  const server={conversationEngine:{requireSession(id){if(!sessions.has(id))throw Error('Conversation not found');return {id};},start(){modelCalls++;return {kind:'chat'};}}};
