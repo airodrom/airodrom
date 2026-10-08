@@ -61,7 +61,7 @@ function snapshotExecutable(observed,root,id){
 function inspect(id,options={}){
  id=canonical(id);if(!IDS.includes(id))fail('unknown');const spec=SPECS[id];let executable=null;
  for(const f of options.executable?[options.executable]:spec.candidates())try{const real=fs.realpathSync(f),s=fs.statSync(real);if(s.isFile()&&s.mode&0o111&&!(s.mode&0o022)&&(typeof process.getuid!=='function'||[0,process.getuid()].includes(s.uid))){executable=real;break;}}catch{}
- const base={id,supported:true,installed:!!executable,available:false,authenticated:false,qualified:false,qualification:'unqualified',transport:'bounded_local_cli',locality:'external',provider:spec.provider,capabilities:['coding','bounded_file_work'],reason:'not_installed',cost:null,context_limit:null,authority:false};
+ const base={id,supported:true,support:id==='cursor'?'experimental':'supported',installed:!!executable,available:false,authenticated:false,qualified:false,qualification:'unqualified',transport:'bounded_local_cli',locality:'external',provider:spec.provider,capabilities:['coding','bounded_file_work'],reason:'not_installed',cost:null,context_limit:null,authority:false};
  if(!executable)return base;
  const version=options.fixture?'fixture-v2':null;
  let roots=null;try{if(id==='codex'&&!options.fixture)roots=publicTLSRoots().sha256;}catch{return {...base,executable,reason:'worker_tls_roots_boundary'};}
