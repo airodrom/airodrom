@@ -62,7 +62,7 @@ class ConversationEngine {
  async start(input){
   object(input,['message','request_id','conversation_id','include_memory','model','context']);text(input.message,'conversation message',4000);
   if(require('./personal-storage-intent').containsPrivate(input.message)||require('./private-vault-intent').parse(input.message)||require('./browser-research').parse(input.message))throw Error('This request requires a deterministic host workflow, outside conversation.');
-  if(secretLike(input.message)||require('./assistant-intent').secret(input.message))throw Error('Credentials require the secure Secret Vault.');
+  if(secretLike(input.message)||require('./assistant-intent').secret(input.message))throw Error('Use /vault for credentials and enter them only in its hidden prompt.');
   if(input.include_memory!==undefined&&typeof input.include_memory!=='boolean')throw Error('Invalid Memory choice');
   const context=input.context||[];
   if(!Array.isArray(context)||context.length>3||context.some(c=>!c||c.untrusted!==true||Object.keys(c).some(k=>!['id','subject','content','untrusted'].includes(k))||typeof c.content!=='string'||c.content.length>700||typeof c.subject!=='string'||c.subject.length>200||typeof c.id!=='string'||c.id.length>200||secretLike(c)||[c.id,c.subject,c.content].some(require('./assistant-intent').secret)||require('./private-vault-intent').containsPrivate(c)))throw Error('Only minimum selected untrusted connector context is permitted');

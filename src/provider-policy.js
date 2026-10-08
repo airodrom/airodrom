@@ -2,9 +2,42 @@
 const { containsSecret } = require('./personal-memory');
 const { redactText, sensitiveKey } = require('./secret-observation');
 const CLASSES = new Set(['public','internal','private','financial','sensitive','credentials']);
+const CREDENTIAL_PATH=/(?:^|[\/._-])(?:auth|authorization|token|secret|credentials?|password|passwd|signature|session|cookie|oauth|bearer|jwt|api[-_]?key|private[-_]?key|access[-_]?token|refresh[-_]?token)(?:[\/._-]|$)/i;
+function ordinaryWebsiteSyntax(candidate,{login=false}={}) {
+  if(typeof candidate!=='string'||/[\\%\x00-\x20\x7f]/.test(candidate))return false;
+  const raw=/^https:\/\/([^/?#]+)(\/[^?#]*)?$/i.exec(candidate);if(!raw||raw[1].includes('@'))return false;
+  if(!/^[a-z0-9.-]+(?::443)?$/i.test(raw[1]))return false;
+  const path=raw[2]||'/';
+  const fixedLogin=login&&/^\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i.test(path);
+  return /^\/(?:[a-z0-9][a-z0-9_.-]{0,47}\/?)*$/i.test(path)&&(!CREDENTIAL_PATH.test(path)||fixedLogin)&&(!containsSecret(candidate)||fixedLogin&&!containsSecret(raw[1]));
+}
+// Operator syntax screening also permits a harmless unregistered origin to
+// reach the domain-scope gate. It does not qualify a network or provider route.
+function operatorSecretLike(value) {
+  const normalized=String(value).normalize('NFKC');
+  const screened=normalized.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate,{login:true})&&!ordinaryWebsiteSyntax(candidate)?candidate.replace(/\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i,'/'):candidate);
+  const baseline=screened.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate)?require('./transport-outcome').safeTransportUrl(candidate):candidate);
+  return containsSecret(screened)||redactText(screened)!==baseline;
+}
+// Display redaction canonicalizes origins and hides arbitrary paths. Those
+// structural edits are not credential evidence. Only ordinary public HTTPS
+// addresses may receive that equivalence; every other redaction still denies.
+function publicURLBaseline(value) {
+  return value.replace(/https:\/\/[^\s<>"'`]+/gi, candidate => {
+    try {
+      // URL parsing can erase dot segments and encoded/backslash syntax. The
+      // raw address must pass before canonicalization can be equivalent.
+      if(!ordinaryWebsiteSyntax(candidate))return candidate;
+      const u=new URL(candidate),host=u.hostname.toLowerCase();
+      if(u.username||u.password||u.search||u.hash||u.port||require('node:net').isIP(host)||!host.includes('.')||host.split('.').some(p=>! /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(p))||/(?:^|\.)(?:localhost|local|internal|invalid|test)$/.test(host)||host.endsWith('.home.arpa'))return candidate;
+      if(!/^\/(?:[a-z0-9][a-z0-9_.-]{0,47}\/?)*$/i.test(u.pathname)||CREDENTIAL_PATH.test(u.pathname)||containsSecret(candidate))return candidate;
+      return require('./transport-outcome').safeTransportUrl(candidate);
+    } catch { return candidate; }
+  });
+}
 function secretLike(value, depth = 0) {
   if (depth > 20) return true;
-  if (typeof value === 'string') {const normalized=value.normalize('NFKC');return containsSecret(normalized) || redactText(normalized) !== normalized;}
+  if (typeof value === 'string') {const normalized=value.normalize('NFKC');return containsSecret(normalized) || redactText(normalized) !== publicURLBaseline(normalized);}
   if (Array.isArray(value)) return value.some(v => secretLike(v, depth + 1));
   return !!value && typeof value === 'object' && Object.entries(value).some(([k,v]) => sensitiveKey(k) || secretLike(v, depth + 1));
 }
@@ -27,4 +60,4 @@ function dataPolicy(input, provider) {
   if (input.attachment_refs?.length || input.context_refs?.length || input.memory_refs?.length) return {allow:false,reason:'reference_transport_unsupported'};
   return {allow:true,classification,minimum_context:true,redaction_required:true,execution_authority:false};
 }
-module.exports = { dataPolicy, secretLike, CLASSES };
+module.exports = { dataPolicy, secretLike, operatorSecretLike, ordinaryWebsiteSyntax, CLASSES };

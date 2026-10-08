@@ -27,6 +27,21 @@ async function researchFixture(t,{block=false,uncertain=false,account=false,manu
  const create=extra=>b.missions.createResearch({request_id:randomUUID(),objective:'Audit public fixture and compare with Arecibo.',entry_url:'https://public.example/',...extra});
  return{...f,b,create,actions,browsers,resolved};
 }
+test('exact Monarch research strings and bare URL follow-up dispatch synthetic canonical browser Missions',async t=>{
+ const f=await researchFixture(t),service=require('../src/assistant-service');
+ const engine=new(require('../src/conversation-engine').ConversationEngine)(f.b,{qualify:async()=>{throw Error('No model allowed');}}),session=engine.session({new:true}).conversation_id;
+ const server={bridge:f.b,conversationEngine:engine};
+ const submit=message=>service.submit(server,{message,conversation_id:session,request_id:randomUUID()});
+ for(const message of ['https://app.monarch.com','Research https://app.monarch.com and compare it with Arecibo.','Andrew: Research https://app.monarch.com and compare it with Arecibo.']){
+  const receipt=await submit(message);assert.equal(receipt.browser_research_available,true);
+  const m=f.b.missions.require(receipt.mission_id);assert.equal(m.envelope.kind,'browser_research');assert.deepEqual(m.envelope.capability_scopes,['web_read']);assert.equal(m.envelope.manifest.entry_url,'https://app.monarch.com/');
+  const done=await f.settle(m.id);assert.equal(done.state,'awaiting_acceptance');assert.equal(done.acceptance.length,0);assert.equal(f.browsers.at(-1).closed,true);
+ }
+ assert.equal((await submit('Research the Monarch Money website and compare its features with Arecibo.')).pending_research,'public');
+ const follow=await submit('https://app.monarch.com');assert.equal(follow.browser_research_available,true);assert.equal(server.pendingResearch.size,0);await f.settle(follow.mission_id);
+ assert.equal(f.inference(),0);assert.equal(f.calls(),0);assert.equal(f.resolved.length,0);
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,4);
+});
 test('opaque research request digits cannot become secret-like mission prose',async t=>{
  const f=await researchFixture(t),request_id='41111111-1111-4111-8112-111111111111';
  assert.equal(require('../src/personal-memory').containsSecret(request_id),true);
@@ -34,6 +49,37 @@ test('opaque research request digits cannot become secret-like mission prose',as
  assert.notEqual(first.mission_id,second.mission_id);
  assert.equal(f.create({request_id}).mission_id,first.mission_id);
  assert.throws(()=>f.create({objective:'Audit public fixture. password is synthetic-test-value'}),/sensitive|credentials/);
+});
+test('raw credential-shaped and normalization-laundered research requests never persist or dispatch',async t=>{
+ const f=await researchFixture(t),service=require('../src/assistant-service'),server={bridge:f.b,conversationEngine:{start(){throw Error('No model allowed');}}};
+ const paths=['/token/synthetic/../../about','/%61uth/synthetic/../../about','/secret_syntheticcanary','/cookie/syntheticcanary'];
+ const before=f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n;
+ const requestsBefore=f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_requests').get().n;
+ for(const path of paths){const url='https://www.example.com'+path;
+  for(const message of [url,'Research '+url,'Research '+url+' after I log in manually']){const r=await service.submit(server,{message,request_id:randomUUID()});assert.ok(['clarify','secret'].includes(r.kind));assert.equal(r.entry_url,undefined);assert.doesNotMatch(JSON.stringify(r),/synthetic/);}
+  assert.throws(()=>f.create({entry_url:url}),/credentials|sensitive|private/);
+  assert.throws(()=>f.create({objective:'Research '+url}),/credentials|sensitive/);
+ }
+ for(const ending of ['MY_TOKEN synthetic-canary','cookie synthetic-canary','password: synthetic-canary']){
+  for(const message of ['Research https://app.monarch.com and '+ending,'Research https://app.monarch.com after I log in manually and '+ending]){
+   const r=await service.submit(server,{message,request_id:randomUUID()});assert.equal(r.kind,'secret');assert.doesNotMatch(JSON.stringify(r),/synthetic/);
+   await assert.rejects(require('../src/assistant-missions').newMission(server,{objective:message,request_id:randomUUID()}),/Secrets|sensitive/);
+  }
+ }
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,before);
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
+ assert.equal(f.browsers.length,0);assert.equal(f.inference(),0);assert.equal(f.calls(),0);
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_requests').get().n,requestsBefore);
+});
+test('explicitly confirmed session Missions preserve fixed credential-free auth login endpoints',async t=>{
+ const f=await researchFixture(t);
+ for(const path of ['/auth/login','/api/auth/login']){
+  assert.throws(()=>f.create({entry_url:'https://public.example'+path}),/credentials|sensitive|private/);
+  const r=f.create({entry_url:'https://public.example'+path,session_authorization:{mode:'dedicated_manual',confirmed:true}}),m=f.b.missions.require(r.mission_id);
+  assert.equal(m.envelope.manifest.session_authorization.login_url,'https://public.example'+path);
+  assert.doesNotThrow(()=>f.b.missions.research.assertContract(m));
+ }
+ assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
 });
 test('research follows canonical native invocation, Verification, owner Acceptance and Settlement without writes or inference',async t=>{
  const f=await researchFixture(t,{provenanceDigits:true});delete f.b.options.researchMission.reportFactory;const denied=[path.join(f.repo,'.env'),path.join(f.repo,'private-export.json')];for(const file of denied)fs.writeFileSync(file,'Synthetic denied-file read canary\n');const originalRead=fs.readFileSync,originalOpen=fs.openSync,originalProjectSnapshot=f.b._projectMemoryRepositorySnapshot;let deniedReads=0,legacySnapshots=0;f.b._projectMemoryRepositorySnapshot=()=>{legacySnapshots++;throw Error('Research called broad legacy repository metadata');};const guard=file=>{if(typeof file==='string'&&denied.includes(path.resolve(file))){deniedReads++;throw Error('Research opened denied private content');}};fs.readFileSync=function(file,...args){guard(file);return originalRead.call(this,file,...args);};fs.openSync=function(file,...args){guard(file);return originalOpen.call(this,file,...args);};t.after(()=>{fs.readFileSync=originalRead;fs.openSync=originalOpen;f.b._projectMemoryRepositorySnapshot=originalProjectSnapshot;});
