@@ -7,18 +7,22 @@ const EXACT='Airo, open an authenticated browser session for app.monarch.com. I 
 const ORIGIN='https://app.monarch.com/';
 test('exact installed failure and natural authenticated requests reach a valueless manual-login offer',async()=>{
  const server={conversationEngine:{nickname:()=> 'Nova',start(){throw Error('Authentication cannot enter model chat');}}};
- for(const message of [EXACT,'Airo, explore my Monarch account and compare it with Arecibo.',"I'm already logged in to Monarch; inspect my account",'Open an authenticated session for https://app.monarch.com/','Please open a dedicated browser session for app.monarch.com','Nova, open an authenticated browser session for app.monarch.com. I will sign in manually.','Log into https://app.monarch.com/','I can sign in to Monarch myself.']){
+ for(const message of [EXACT,'Airo, explore my Monarch account and compare it with Arecibo.',"I'm already logged in to Monarch; inspect my account",'Open an authenticated session for https://app.monarch.com/','Please open a dedicated browser session for app.monarch.com','Nova, open an authenticated browser session for app.monarch.com. I will sign in manually.','Log into https://app.monarch.com/','I can sign in to Monarch myself.','Airo, use my authenticated Monarch account for research.','Airo, open an authenticated browser session for app.monarch.com. I will enter my password manually in the browser.','Airo, research https://app.monarch.com/; I will sign in manually.']){
   const offer=await service.submit(server,{message,request_id:randomUUID()});assert.equal(offer.kind,'research_session',message);assert.equal(offer.entry_url,ORIGIN);assert.equal(offer.authority,false);assert.match(offer.message,/not inherited/);
  }
  assert.equal(require('../src/provider-policy').operatorSecretLike(EXACT),false);
  // Display/provider policies stay conservative; this is operator syntax only.
  assert.notEqual(require('../src/secret-observation').redactText(EXACT),EXACT);
  assert.equal(require('../src/provider-policy').secretLike(EXACT),true);
+ assert.equal(intent.secret('Send a draft to reader@example.com'),false,'Ordinary email addresses are not bare credential URLs');
+ const manual='I will enter my password manually in the browser.';assert.equal(intent.secret(manual),false);assert.equal(require('../src/provider-policy').secretLike(manual),true);assert.notEqual(require('../src/secret-observation').redactText(manual),manual);
 });
 test('whole mixed submissions retain strict secret screening before browser routing',()=>{
  const values=['password=synthetic-canary','password is synthetic-canary','token: synthetic-canary','api_key=synthetic-canary','session=synthetic-canary','browser session synthetic-canary','Authorization: Bearer synthetic-canary','Cookie: session=synthetic-canary','sk-proj-syntheticcanaryvalue','https://user:synthetic-canary@app.monarch.com/','https://app.monarch.com/?token=synthetic-canary','https://app.monarch.com/?next=synthetic-canary','https://app.monarch.com/auth/synthetic-canary','https://app.monarch.com/%61uth/synthetic-canary','https://app.monarch.com/#access_token=synthetic-canary','ＰＡＳＳＷＯＲＤ=synthetic-canary'];
  for(const value of values){const result=intent.parse(EXACT+' '+value);assert.equal(result.kind,'secret',value);assert.doesNotMatch(JSON.stringify(result),/synthetic-canary|syntheticcanaryvalue/);}
  for(const message of ['session for app.monarch.com','session synthetic-canary','authenticated session=synthetic-canary'])assert.equal(intent.parse(message).kind,'secret');
+ for(const suffix of ['password is synthetic-canary','password=synthetic-canary','password: synthetic-canary','token=synthetic-canary','Cookie: session=synthetic-canary','Authorization: Bearer synthetic-canary','https://user:synthetic-canary@app.monarch.com/','unknown value synthetic-canary'])assert.equal(intent.parse('Open an authenticated browser session for app.monarch.com. I will enter my password manually in the browser. '+suffix).kind,'secret');
+ for(const message of ['Open an authenticated browser session for=synthetic-canary app.monarch.com','Open an authenticated session to=synthetic-canary app.monarch.com','Open a browser session for synthetic-canary app.monarch.com','Open an authenticated browser session for "synthetic-canary" app.monarch.com','Open an authenticated browser session for <synthetic-canary> app.monarch.com'])assert.equal(intent.parse(message).kind,'secret');
 });
 test('manual-login follow-ups use only fresh host operator domain context, with no automatic consent',async t=>{
  t.mock.method(require('../src/assistant-missions'),'newMission',async()=>({kind:'mission',state:'draft'}));
@@ -37,6 +41,7 @@ test('authentication scope and mixed action instructions cannot broaden the appr
  for(const message of ['Open an authenticated browser for https://app.monarch.com/ and https://other.example/','Open an authenticated browser for https://app.monarch.com/ and other.example','Open an authenticated browser for https://app.monarch.com/settings','Open an authenticated browser for http://app.monarch.com/','Open an authenticated browser for https://127.0.0.1/','Open an authenticated browser for https://app.monarch.com/ and export my data','Open an authenticated browser for https://app.monarch.com/ and change account settings','Open an authenticated browser for https://app.monarch.com/ and bypass MFA']){
   const parsed=intent.parse(message);assert.equal(parsed.kind,'clarify',message);assert.equal(parsed.entry_url,undefined);
  }
+ for(const address of ['user:synthetic-canary@app.monarch.com','app.monarch.com?next=synthetic-canary','app.monarch.com:8080','app.monarch.com#private-route','user%3Asynthetic-canary@app.monarch.com','ftp://app.monarch.com','app.monarch.com/%64ashboard','app.monarch.com/auth/synthetic-canary']){const parsed=intent.parse('Open an authenticated browser session for '+address);assert.ok(['secret','clarify'].includes(parsed.kind),address);assert.equal(parsed.entry_url,undefined);assert.doesNotMatch(JSON.stringify(parsed),/synthetic-canary|private-route/);}
 });
 function cliFixture(t,request){
  const input=new PassThrough(),output=new PassThrough(),calls=[];let text='';output.on('data',chunk=>text+=chunk);

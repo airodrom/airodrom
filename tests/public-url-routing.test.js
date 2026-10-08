@@ -37,7 +37,7 @@ test('pending URL choice binds validated operator sessions, expires, and clears 
  const server={conversationEngine:{requireSession(id){if(!sessions.has(id))throw Error('Conversation not found');return {id};},start(){modelCalls++;return {kind:'chat'};}}};
  const submit=(message,session=a)=>service.submit(server,{message,conversation_id:session,request_id:randomUUID()});
  assert.equal((await submit('Authenticated research of my account after login')).pending_research,'session');
- assert.equal((await submit('https://app.monarch.com')).kind,'research_session');assert.equal(server.pendingResearch.size,0);
+ assert.equal((await submit('https://app.monarch.com')).kind,'research_session');assert.equal(server.pendingResearch.get(a).entry_url,'https://app.monarch.com/');
  await submit('Authenticated research of my account after login');assert.equal(server.pendingResearch.get(a).mode,'session');
  assert.equal((await submit('Hi',b)).kind,'chat');assert.equal(server.pendingResearch.get(a).mode,'session');
  await assert.rejects(submit('https://app.monarch.com',randomUUID()),/Conversation not found/);
