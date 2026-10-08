@@ -54,7 +54,7 @@ test('canonical Mission waits for operator hand-back, denies tampering, verifies
  }
  b.options.researchMission={workspace:f.repo,synthetic:true,maxPages:2,maxActions:20,timeoutMs:30000,baselineFiles:['docs/README.md'],browserFactory:o=>new Browser(o)};
  f.host.researchAssess=(task,input)=>b.missions.research.assess(task,input);f.host.researchExecute=(task,input,signal)=>b.missions.research.perform(task,input,signal);
- const offer=await require('../src/assistant-service').submit({bridge:b,conversationEngine:{nickname:()=> 'Airo'}},{message:"I'm already logged in to Monarch; inspect my account",request_id:randomUUID()});assert.equal(offer.kind,'research_session');assert.equal(f.inference(),0);
+ for(const message of ["I'm already logged in to Monarch; inspect my account",'Airo, open an authenticated browser session for app.monarch.com. I will sign in manually.']){const offer=await require('../src/assistant-service').submit({bridge:b,conversationEngine:{nickname:()=> 'Airo'}},{message,request_id:randomUUID()});assert.equal(offer.kind,'research_session');assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);assert.equal(f.inference(),0);}
  const research=b.missions.research,input={request_id:randomUUID(),objective:'Inspect the explicitly authorized synthetic account.',entry_url:ORIGIN+'/',session_authorization:{mode:'dedicated_manual',confirmed:true}};
  assert.throws(()=>research.create({...input,session_authorization:{mode:'dedicated_manual',confirmed:false}}));assert.throws(()=>research.create(input,'mcp'));
  const r=research.create(input),m=b.controlStore.requireMission(r.mission_id);assert.equal(m.envelope.authority.permissions.secrets.length,0);assert.equal(m.envelope.manifest.scope.allowDownloads,false);

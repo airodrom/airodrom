@@ -7,7 +7,7 @@ const { PassThrough } = require('node:stream');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
 const render = require('./assistant-render');
-const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','memory','runtime','sensitive','vault','secret','gmail','whatsapp']);
+const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','memory','runtime','sensitive','vault','secret','gmail','whatsapp','research']);
 function parseLine(line) {
  const raw=line.trim().replace(/^(?:You\s*[›>]|>)\s*(?=\/|--help|--version)/,'');
  const value=({'--version':'/version','--help':'/help','-h':'/help'}[raw])||raw;
@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /research login <HTTPS URL> · /research account <HTTPS login URL>\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -179,11 +179,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   };
   const sessionGuide = async entry_url => {
     await detachReader();try{return await require('./research-session-guide').guide({entry_url,input,output,home,signal:active?.signal});}
-    finally{if(!quitting&&!input.readableEnded)attachReader();}
+    finally{if(!quitting&&!input.readableEnded){while(input.read()!==null){};attachReader();}}
   };
   const sessionReady = async mission_id => {
     await detachReader();try{return await require('./research-session-guide').ready({mission_id,input,output,home,signal:active?.signal});}
-    finally{if(!quitting&&!input.readableEnded)attachReader();}
+    finally{if(!quitting&&!input.readableEnded){while(input.read()!==null){};attachReader();}}
   };
   const session = async () => {
     if (!conversationId) conversationId = (await local.request(home, '/api/assistant/conversation/session', {})).conversation_id;
@@ -230,7 +230,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           if(status.mission?.research?.handoff_required&&await sessionReady(lastMission))result=await answer(lastMission,{timeoutMs:200000});
         }
 
-        if(receipt.browser_research_available&&['awaiting_acceptance','completed'].includes(result.state)){const report=await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(lastMission));output.write(terminalText(report.markdown||'Research report is unavailable; inspect /mission status.')+'\n');}
+        if(receipt.browser_research_available&&['awaiting_acceptance','completed'].includes(result.state)){const report=await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(lastMission));show(output,report,render.researchReport,json);}
         else if(receipt.browser_research_available)output.write('Research needs owner intervention. Use /mission status or Control Center to review the required action. No report has been qualified.\n');
         else output.write(terminalText(result.summary || '') + '\n');
       }
@@ -312,6 +312,12 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg);show(output,{runtime},d=>'Runtime for fresh tasks: '+render.name(d.runtime),json); }
         else if (command === 'open') { local.open(home); output.write('Control Center opened.\n'); }
         else if(command==='research'){
+          if(/^report(?:\s+[a-f0-9-]{36})?$/i.test(arg)){
+            const id=arg.split(/\s+/)[1]||lastMission;if(!id)throw Error('Select a research Mission or use /research report <mission-id>.');
+            show(output,await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(id)),render.researchReport,json);
+            active=null;readerLocked=false;showPrompt();continue;
+          }
+          if(json)throw Error('Use /research report [mission-id] --json for verified developer evidence.');
           if(!/^(?:login|account)\s+https:\/\/\S+$/i.test(arg))throw Error('Use /research login <HTTPS URL> for dedicated manual login, or /research account <HTTPS login URL> for stored Vault credentials.');
           active=new AbortController();const receipt=await (/^login\s/i.test(arg)?sessionGuide(arg.replace(/^login\s+/i,'')):accountGuide(arg.replace(/^account\s+/i,'')));await handleReceipt(receipt,json);active=null;
         }

@@ -15,7 +15,14 @@ function ordinaryWebsiteSyntax(candidate,{login=false}={}) {
 // reach the domain-scope gate. It does not qualify a network or provider route.
 function operatorSecretLike(value) {
   const normalized=String(value).normalize('NFKC');
-  const screened=normalized.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate,{login:true})&&!ordinaryWebsiteSyntax(candidate)?candidate.replace(/\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i,'/'):candidate);
+  const loginAddresses=normalized.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate,{login:true})&&!ordinaryWebsiteSyntax(candidate)?candidate.replace(/\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i,'/'):candidate);
+  // Screen actual credential shapes across the complete input first. Display
+  // redaction intentionally treats "session <word>" as sensitive, but the
+  // valueless noun "browser session for ..." describes a host workflow.
+  // Only that noun in instruction syntax is normalized; assignments, unknown
+  // session values and every other part of a mixed submission remain screened.
+  if(containsSecret(loginAddresses))return true;
+  const screened=loginAddresses.replace(/\b(?:browser|authenticated|dedicated|isolated|visible)\s+session\b(?=\s+(?:for|to|at|on|and|in|where|so|please)\b|[.,;!?]|$)/gi,phrase=>phrase.replace(/session$/i,'workflow'));
   const baseline=screened.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate)?require('./transport-outcome').safeTransportUrl(candidate):candidate);
   return containsSecret(screened)||redactText(screened)!==baseline;
 }
