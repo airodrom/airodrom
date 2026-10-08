@@ -60,6 +60,12 @@ test('raw credential-shaped and normalization-laundered research requests never 
   assert.throws(()=>f.create({entry_url:url}),/credentials|sensitive|private/);
   assert.throws(()=>f.create({objective:'Research '+url}),/credentials|sensitive/);
  }
+ for(const ending of ['MY_TOKEN synthetic-canary','cookie synthetic-canary','password: synthetic-canary']){
+  for(const message of ['Research https://app.monarch.com and '+ending,'Research https://app.monarch.com after I log in manually and '+ending]){
+   const r=await service.submit(server,{message,request_id:randomUUID()});assert.equal(r.kind,'secret');assert.doesNotMatch(JSON.stringify(r),/synthetic/);
+   await assert.rejects(require('../src/assistant-missions').newMission(server,{objective:message,request_id:randomUUID()}),/Secrets|sensitive/);
+  }
+ }
  assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,before);
  assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
  assert.equal(f.browsers.length,0);assert.equal(f.inference(),0);assert.equal(f.calls(),0);

@@ -6,9 +6,18 @@ const CREDENTIAL_PATH=/(?:^|[\/._-])(?:auth|authorization|token|secret|credentia
 function ordinaryWebsiteSyntax(candidate,{login=false}={}) {
   if(typeof candidate!=='string'||/[\\%\x00-\x20\x7f]/.test(candidate))return false;
   const raw=/^https:\/\/([^/?#]+)(\/[^?#]*)?$/i.exec(candidate);if(!raw||raw[1].includes('@'))return false;
+  if(!/^[a-z0-9.-]+(?::443)?$/i.test(raw[1]))return false;
   const path=raw[2]||'/';
   const fixedLogin=login&&/^\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i.test(path);
   return /^\/(?:[a-z0-9][a-z0-9_.-]{0,47}\/?)*$/i.test(path)&&(!CREDENTIAL_PATH.test(path)||fixedLogin)&&(!containsSecret(candidate)||fixedLogin&&!containsSecret(raw[1]));
+}
+// Operator syntax screening also permits a harmless unregistered origin to
+// reach the domain-scope gate. It does not qualify a network or provider route.
+function operatorSecretLike(value) {
+  const normalized=String(value).normalize('NFKC');
+  const screened=normalized.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate,{login:true})&&!ordinaryWebsiteSyntax(candidate)?candidate.replace(/\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i,'/'):candidate);
+  const baseline=screened.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate)?require('./transport-outcome').safeTransportUrl(candidate):candidate);
+  return containsSecret(screened)||redactText(screened)!==baseline;
 }
 // Display redaction canonicalizes origins and hides arbitrary paths. Those
 // structural edits are not credential evidence. Only ordinary public HTTPS
@@ -51,4 +60,4 @@ function dataPolicy(input, provider) {
   if (input.attachment_refs?.length || input.context_refs?.length || input.memory_refs?.length) return {allow:false,reason:'reference_transport_unsupported'};
   return {allow:true,classification,minimum_context:true,redaction_required:true,execution_authority:false};
 }
-module.exports = { dataPolicy, secretLike, ordinaryWebsiteSyntax, CLASSES };
+module.exports = { dataPolicy, secretLike, operatorSecretLike, ordinaryWebsiteSyntax, CLASSES };
