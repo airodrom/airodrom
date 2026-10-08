@@ -36,9 +36,9 @@ class WorkerRegistry{
  recordFailure(id,error){id=worker.canonical(id);const code=/^worker_[a-z_]{1,80}$/.test(error?.code||error?.message)?error.code||error.message:'worker_execution_failed';this.failures.set(id,code);this.db.prepare("UPDATE cp_worker_qualifications SET state='failed' WHERE worker_id=? AND state='qualified'").run(id);this.cache.delete(id);this.bridge.controlStore.event('worker.execution_failed',null,{worker:id,error_class:code,authority:false});}
  registerTemplate(input,owner='operator'){
   if(owner!=='operator')throw Error('Authenticated operator template registration required');object(input,['project','workspace_alias','template','confirmed']);if(input.confirmed!==true||![input.project,input.workspace_alias].every(v=>typeof v==='string'&&/^[a-z][a-z0-9_-]{0,79}$/.test(v)))throw Error('Explicit named template consent required');const t=input.template;
-  // Screen all strings unchanged. Numeric scope metadata, including timestamps,
-  // is validated below and must not be mistaken for card-like text.
-  const screened=JSON.stringify(t,(_key,value)=>typeof value==='number'?null:value);
+  // Only the authority expiry is independently bounded below. Screen all other
+  // numeric and textual content unchanged, including unvalidated identifiers.
+  const screened=JSON.stringify(t,function(key,value){return this===t?.authority&&key==='expiresAt'&&typeof value==='number'?null:value;});
   if(Buffer.byteLength(JSON.stringify(t)||'')>32768||require('./personal-memory').containsSecret(screened)||require('./private-vault-intent').containsPrivate(t))throw Error('Sensitive or unbounded template refused');if(t.constraints)worker.safe(t.constraints,2000);for(const c of t.criteria||[])for(const key of ['description','content'])if(c[key]!==undefined)worker.safe(c[key],12000);
   if(!t||t.privacy!=='approved_external'||t.data_class!=='public'||!Array.isArray(t.workers)||!t.workers.length||t.workers.some(id=>!['codex','claude_code'].includes(id)))throw Error('Explicit public external-worker template required');
   object(t,['privacy','data_class','workers','project_id','goal_id','workspace','allowed_files','criteria','verification','capability_scopes','constraints','authority','manifest']);if(!path.isAbsolute(t.workspace)||fs.realpathSync(t.workspace)!==t.workspace||!Array.isArray(t.allowed_files)||t.allowed_files.length>8||!t.allowed_files.length)throw Error('Bounded canonical workspace and files required');t.allowed_files.forEach(worker.relative);
