@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all [id] [URLs] · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -35,7 +35,7 @@ Connectors ${p?.connectors||'Unavailable'}
 Privacy    Local inference · scoped Memory · credentials stay private
 `;
 }
-function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  menu         Open the native macOS menu helper\n  help         Show full command guidance\n  doctor       Inspect safe readiness and pin categories\n  requalify    Fresh confined qualification while stopped\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
+function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  menu         Open the native macOS menu helper\n  help         Show full command guidance\n  browser options  Show browser connection availability\n  doctor       Inspect safe readiness and pin categories\n  requalify    Fresh confined qualification while stopped\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
 async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
   const deadline = Date.now() + timeoutMs; let lastState=null;
   while (Date.now() < deadline) {
@@ -312,6 +312,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         }
         else if (command === 'runtime') { if (arg) runtime = require('./default-runtime').defaultRuntime(arg);show(output,{runtime},d=>'Runtime for fresh tasks: '+render.name(d.runtime),json); }
         else if (command === 'open') { local.open(home); output.write('Control Center opened.\n'); }
+        else if(command==='browser'){
+          const [action='options',target,...extra]=(arg||'options').split(/\s+/);if(extra.length||!['options','sessions','status','permissions','diagnostics','revoke','close','open'].includes(action))throw Error('Use /browser options|sessions|status|permissions|diagnostics|revoke|close [Mission] or open <HTTPS URL>.');
+          if(action==='open'){active=new AbortController();await handleReceipt(await sessionGuide(target),json);active=null;}
+          else {const id=target||lastMission;if(['status','permissions','diagnostics','revoke','close'].includes(action)&&!id)throw Error('Select a browser Mission first.');let result;if(['revoke','close'].includes(action))result=await local.request(home,'/api/assistant/browser/'+action,{mission_id:id,request_id:randomUUID()});else result=await local.request(home,'/api/assistant/browser/'+(action==='permissions'?'status':action)+(id&&!['options','sessions'].includes(action)?'?mission_id='+encodeURIComponent(id):''));show(output,result,require('./browser-render').render,json);}
+        }
         else if(command==='research'){
           if(/^report(?:\s+[a-f0-9-]{36})?$/i.test(arg)){
             const id=arg.split(/\s+/)[1]||lastMission;if(!id)throw Error('Select a research Mission or use /research report <mission-id>.');
@@ -332,8 +337,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           else {
             const [action, ...parts] = arg.split(/\s+/);
             if(action==='web'){
-              const mode=parts.shift();if(!['on','off','all'].includes(mode))throw Error('Use /mission web on|off|all [id] [public HTTPS URLs].');
+              const selected=parts.shift(),mode=selected==='revoke'?'off':selected;if(!['on','off','all','status'].includes(mode))throw Error('Use /mission web on|off|all [id] [public HTTPS URLs].');
               const id=/^[a-f0-9-]{36}$/i.test(parts[0]||'')?parts.shift():lastMission;if(!id)throw Error('Select a qualified Work Mission first.');
+              if(mode==='status'){show(output,await local.request(home,'/api/assistant/mission/web/status?mission_id='+encodeURIComponent(id)),require('./browser-render').render,json);active=null;readerLocked=false;showPrompt();continue;}
               if(mode==='off'){const receipt=await local.request(home,'/api/assistant/mission/web',{mission_id:id,mode,request_id:randomUUID()});output.write(receipt.message+'\n');active=null;readerLocked=false;showPrompt();continue;}
               const status=await local.request(home,'/api/assistant/mission',{action:'status',mission_id:id,request_id:randomUUID()}),proposal=require('./mission-web-policy').proposal(status.mission.objective);
               const offer={mode,entries:parts.length?parts:proposal.entries,...(!parts.length&&!proposal.entries.length?{query:status.mission.objective}:{})};
@@ -370,6 +376,7 @@ async function main(args = process.argv.slice(2)) {
   if (!command) return interactive(home);
   if (['help', '--help', '-h'].includes(command)) { process.stdout.write(help()); return; }
   if (command === 'menu') { const app = require('../scripts/macos/prepare-local-menu.cjs').prepare(home); const r = require('node:child_process').spawnSync('/usr/bin/open',[app],{stdio:'ignore',timeout:5000}); if(r.status!==0) throw Error('Native menu could not open.'); process.stdout.write('Airodrom menu opened. Service lifecycle is separate.\n'); return; }
+  if(command==='browser'&&rest[0]==='options'&&rest.length===1){process.stdout.write(require('./browser-render').render(require('./browser-connections').availability()));return;}
   if (command === 'doctor') { show(process.stdout,await require('./product-diagnostics').doctor(home),require('./product-diagnostics').summary,rest.includes('--json')); return; }
   if (command === 'requalify') { await local.requalify(home); process.stdout.write('OpenCode requalified. Run airodrom start.\n'); return; }
   if(command==='gmail'&&rest[0]==='setup'){if(rest.length!==2||!rest[1].endsWith('.apps.googleusercontent.com'))throw Error('Use airodrom gmail setup <Google desktop client ID>');local.privateDirectory(home,true);const data=local.privateDirectory(path.join(home,'data'),true),file=path.join(data,'gmail-oauth-config.json');if(fs.existsSync(file))throw Error('Existing Gmail config preserved. Configure through an explicitly reviewed change.');local.writePrivate(file,{clientId:rest[1]});process.stdout.write('Owner OAuth client configured. Prepare the Keychain helper, restart Airodrom, then /connect gmail. No account connected.\n');return;}

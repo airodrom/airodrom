@@ -55,9 +55,9 @@ test('exact natural terminal request opens detached visible consent and cancel p
  const f=cliFixture(t,(route,body)=>{if(route==='/api/assistant/conversation/session')return {conversation_id:randomUUID()};assert.equal(route,'/api/assistant/input');return service.submit(server,body);});
  f.input.isTTY=true;f.input.isRaw=false;f.input.setRawMode=v=>f.input.isRaw=v;f.output.isTTY=true;
  const running=interactive('synthetic',{input:f.input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});
- await f.wait('You › ');f.input.write(EXACT+'\npasted-private-canary\n');await f.wait('Choose [1/2]');assert.equal(f.input.listenerCount('data'),1,'Only native consent reader owns input');
- f.input.write('2\n');await f.wait('authorization cancelled');await new Promise(resolve=>setImmediate(resolve));f.input.write('/quit\n');await running;
- assert.match(f.text(),/AUTHENTICATED PRODUCT RESEARCH\nhttps:\/\/app.monarch.com/);assert.doesNotMatch(f.text(),/Credentials typed|pasted-private-canary|Mission .*dispatching/);
+ await f.wait('You › ');f.input.write(EXACT+'\npasted-private-canary\n');await f.wait('Choose [1–7]');assert.equal(f.input.listenerCount('data'),1,'Only native consent reader owns input');
+ f.input.write('7\n');await f.wait('authorization cancelled');await new Promise(resolve=>setImmediate(resolve));f.input.write('/quit\n');await running;
+ assert.match(f.text(),/AIRODROM · BROWSER ACCESS\nWebsite: https:\/\/app.monarch.com/);assert.doesNotMatch(f.text(),/Credentials typed|pasted-private-canary|Mission .*dispatching/);
  assert.equal(f.calls.filter(c=>c.route==='/api/assistant/input').length,1);assert.equal(f.calls.some(c=>c.route==='/api/assistant/research/session'),false);assert.equal(f.input.isRaw,false);assert.equal(f.input.listenerCount('data'),0);
 });
 const REPORT={markdown:'# Example — competitor research\n\n## Survey coverage\n\n- **Transactions — unknown**. Not established. [E1](<https://research.example/features>) [B1](#b1)\n\n## Evidence and screenshots\n\n### E1\n\n[Public \\[features\\]](<https://research.example/features>)\n\n### B1\n\ndocs/product\\_scope.md:1–2',report:{sections:{comparison:[{status:'unknown'}]},references:[{url:'https://research.example/features'}]},authority:false};

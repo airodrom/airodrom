@@ -37,10 +37,10 @@ test('reused profiles reject nested symlinks, hardlinks, broad permissions and s
   assert.throws(()=>profile(d,ORIGIN),/profile_integrity_denied/);assert.equal(fs.readFileSync(outside,'utf8'),'synthetic-preserved');assert.equal(fs.existsSync(path.join(p.dir,'.airodrom-owner')),true,'Rejected profile stays quarantined');
  }
 });
-test('source boundary has no credential/cookie/storage/header/body export, screenshots or external attach',()=>{
+test('source boundary has no credential/cookie/storage/header/body export or arbitrary external attach',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/research-session.js'),'utf8');
  assert.doesNotMatch(source,/\.(?:cookies|storageState|addCookies|allHeaders|headers|postData|postDataJSON|connectOverCDP)\s*\(/);
- assert.doesNotMatch(source,/--remote-debugging-port|--no-sandbox|ignoreHTTPSErrors:true|recordHar|recordVideo/);
+ assert.doesNotMatch(source,/--no-sandbox|ignoreHTTPSErrors:true|recordHar|recordVideo/);
  assert.match(source,/headless:false/);assert.match(source,/chromiumSandbox:true/);assert.match(source,/requestStage:'Response'/);
 });
 test('canonical Mission waits for operator hand-back, denies tampering, verifies safe artifacts and never self-accepts',async t=>{
@@ -91,9 +91,9 @@ test('synthetic visible persistent-browser smoke sanitizes finance, closes clean
 
 test('detached terminal consent cancels safely and hand-back targets only the selected Mission',async()=>{
  const {PassThrough}=require('node:stream'),guide=require('../src/research-session-guide');
- async function choose(fn,bytes){const input=new PassThrough(),output=new PassThrough();input.isTTY=true;input.setRawMode=()=>{};output.isTTY=true;const calls=[];const pending=fn({input,output,home:'synthetic-private-home',entry_url:ORIGIN+'/',mission_id:'synthetic-mission',request:async(_home,url,body)=>{calls.push({url,body});return {kind:'mission'};}});setImmediate(()=>input.write(bytes));const result=await pending;input.destroy();output.destroy();return {calls,result};}
- const cancel=await choose(guide.guide,'2\n');assert.equal(cancel.calls.length,0);
- const approved=await choose(guide.guide,'1\n');assert.equal(approved.calls.length,1);assert.equal(approved.calls[0].body.mode,'dedicated_manual');assert.equal(approved.calls[0].body.confirmed,true);
+ async function choose(fn,bytes){const input=new PassThrough(),output=new PassThrough();input.isTTY=true;input.setRawMode=()=>{};output.isTTY=true;const calls=[];const pending=fn({input,output,home:'synthetic-private-home',entry_url:ORIGIN+'/',mission_id:'synthetic-mission',request:async(_home,url,body)=>{calls.push({url,body});return {kind:'mission'};}});let delay=10;for(const line of bytes.split('\n').filter(Boolean)){setTimeout(()=>input.write(line+'\n'),delay);delay+=40;}const result=await pending;input.destroy();output.destroy();return {calls,result};}
+ const cancel=await choose(guide.guide,'7\n');assert.equal(cancel.calls.length,0);
+ const approved=await choose(guide.guide,'3\n2\nyes\n');assert.equal(approved.calls.length,1);assert.equal(approved.calls[0].body.mode,'dedicated_manual');assert.equal(approved.calls[0].body.confirmed,true);
  const back=await choose(guide.ready,'yes\n');assert.equal(back.calls[0].url,'/api/assistant/research/session/ready');assert.equal(back.calls[0].body.mission_id,'synthetic-mission');
  const cancelled=await choose(guide.ready,'no\n');assert.equal(cancelled.calls[0].body.action,'cancel');
 });

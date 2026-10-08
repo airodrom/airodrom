@@ -11,7 +11,7 @@ function proposal(objective){
  return {needed,mode:entries.length?'on':'all',entries,search:needed&&!entries.length,authority:false};
 }
 function normalize(input,{now=Date.now(),expiresAt}={}){
- keys(input,['mode'],['entries','query','confirmed']);
+ keys(input,['mode'],['entries','query','confirmed','duration_ms','permission_mode']);
  if(!['on','all'].includes(input.mode)||input.confirmed!==true)throw error('operator_web_consent_required');
  const entries=input.entries||[];if(!Array.isArray(entries)||entries.length>8||entries.some(v=>typeof v!=='string'))throw error('web_entries_bound');
  const origins=[...new Set(entries.map(v=>safeOrigin(new URL(v).origin)))];
@@ -20,8 +20,9 @@ function normalize(input,{now=Date.now(),expiresAt}={}){
  let query=null;if(input.query!==undefined){text(input.query,'public search query',{max:500,multiline:false});if(unsafeEvidenceText(input.query)||require('./assistant-intent').secret(input.query)||require('./private-vault-intent').containsPrivate(input.query))throw error('private_search_query_denied');query=input.query;}
  if(!urls.length&&!query)throw error('public_sources_or_query_required');
  if(input.mode==='on'&&!origins.length&&query===null)throw error('approved_sites_required');
- const deadline=Math.min(now+180000,expiresAt||now+180000);if(deadline<=now)throw error('web_grant_expired');
- return {version:1,mode:input.mode,entries:urls,origins,query,expires_at:deadline,max_origins:8,max_actions:40,max_pages:8,max_requests:100,max_bytes:8388608,private_accounts:false,downloads:false,provenance:'authenticated_operator'};
+ const duration=input.duration_ms??180000;if(!Number.isSafeInteger(duration)||duration<1000||duration>900000||input.permission_mode!==undefined&&!['strict','extended'].includes(input.permission_mode)||duration>180000&&input.permission_mode!=='extended'||input.permission_mode==='extended'&&input.mode!=='all'||input.permission_mode==='strict'&&input.mode!=='on')throw error('bounded_public_permission_required');
+ const deadline=Math.min(now+duration,expiresAt||now+duration);if(deadline<=now)throw error('web_grant_expired');
+ return {version:1,permission_mode:input.permission_mode||(input.mode==='all'?'extended':'strict'),methods:['GET','HEAD'],purpose:'public_web_research',mode:input.mode,entries:urls,origins,query,expires_at:deadline,max_origins:8,max_actions:40,max_pages:8,max_requests:100,max_bytes:8388608,private_accounts:false,downloads:false,provenance:'authenticated_operator'};
 }
 function validate(input){
  keys(input,['mission_id','action']);if(!UUID.test(input.mission_id||''))throw new CapabilityInputError('Canonical Mission UUID required');

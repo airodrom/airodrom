@@ -3,9 +3,9 @@ const {randomUUID}=require('node:crypto'),terminal=require('./vault-cli'),local=
 async function guide({offer,mission_id,input,output,home,signal,request=local.request}){
  require('./research-session-guide').terminalRequired?.(input,output);
  if(!input?.isTTY||!output?.isTTY||!input.setRawMode||input.listenerCount('data')||input.listenerCount('readable'))throw Error('Public web consent requires detached operator terminal input');
- output.write('PUBLIC WEB PERMISSION\n'+(mission_id?'Mission '+mission_id+'\n':'New research Mission\n')+(offer.mode==='all'?'Discover public websites from verified source links.':'Visit these approved public websites:')+'\n'+(offer.entries||[]).join('\n')+'\n'+(offer.query?'Public search query: '+offer.query+'\n':'')+'Up to three minutes, eight pages, eight domains, one hundred requests and forty actions. Airodrom performs the work. Login, private data, mutations, payments and private downloads require separate authorization.\n');
+ output.write('PUBLIC WEB PERMISSION\n'+(mission_id?'Mission '+mission_id+'\n':'New research Mission\n')+(offer.mode==='all'?'Discover public websites from verified source links.':'Visit these approved public websites:')+'\n'+(offer.entries||[]).join('\n')+'\n'+(offer.query?'Public search query: '+offer.query+'\n':'')+'Up to '+Math.floor((offer.duration_ms||180000)/60000)+' minutes, eight pages, eight domains, one hundred requests and forty actions. Airodrom performs the work. Login, private data, mutations, payments and private downloads require separate authorization.\n');
  if(!await terminal.confirm(input,output,{prompt:'Approve this public web scope?',signal}))return {kind:'clarify',message:'Public web authorization cancelled.'};
- const body={mode:offer.mode,entries:offer.entries||[],...(offer.query?{query:offer.query}:{}),confirmed:true,request_id:randomUUID()};
+ const body={mode:offer.mode,entries:offer.entries||[],...(offer.query?{query:offer.query}:{}),...(offer.duration_ms?{duration_ms:offer.duration_ms}:{}),...(offer.permission_mode?{permission_mode:offer.permission_mode}:{}),confirmed:true,request_id:randomUUID()};
  return request(home,mission_id?'/api/assistant/mission/web':'/api/assistant/web/research',{...body,...(mission_id?{mission_id}:{objective:offer.objective})});
 }
 function parse(message){
