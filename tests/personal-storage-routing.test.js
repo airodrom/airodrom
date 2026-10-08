@@ -86,7 +86,7 @@ test('split queued input cannot confirm a private save or selected reveal before
  for(const action of ['save','reveal']){
   if(action==='reveal'){privateMemory.operate(f.bridge,{action:'save',label:'Mailbox number',value:'818',confirmed:true});v.vault.put('999','operator',{kind:'private_identifier',name:'Mailbox number'});}
   const input=terminal(),out=output(),write=out.write;let queued=false,fresh=false;
-  out.write=value=>{write(value);if(!queued&&value.includes(action==='save'?'Choose 1–3':'Choose an entry number')){queued=true;queueMicrotask(()=>{input.write(action==='save'?'2\r':'1\r');input.write('yes\r');});}if(!fresh&&value.includes(action==='save'?'Type yes to confirm':'Type yes to reveal')){fresh=true;setImmediate(()=>input.write('no\r'));}};
+  out.write=value=>{write(value);if(!queued&&value.includes(action==='save'?'Choose 1–3':'Choose an entry number')){queued=true;queueMicrotask(()=>{input.write(action==='save'?'2\r':'1\r');input.write('yes\r');});}if(!fresh&&value.includes('Confirm [y/N]')){fresh=true;setImmediate(()=>input.write('no\r'));}};
   const receipt=await guide({input,output:out,plan:intent.parse(action==='save'?PHRASE:"What's my mailbox number?"),message:PHRASE,vault:v.vault,request});
   assert.equal(receipt.state,'cancelled');assert.equal(queued,true);assert.equal(fresh,true);assert.doesNotMatch(out.text(),/Your mailbox number is|\b818\b|\b999\b/);
   if(action==='save'){assert.deepEqual(v.calls,[]);assert.equal(privateMemory.operate(f.bridge,{action:'lookup',label:'Mailbox number'}).items.length,0);}

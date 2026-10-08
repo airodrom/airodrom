@@ -11,7 +11,7 @@ async function guide({message,input,output,home,signal,vault,nickname}={}) {
  const choose=(prompt,choices)=>terminal.visible(input,output,{prompt,choices,signal});
  const cancel=()=>{output.write('Cancelled. Nothing saved, revealed or changed.\n');return {state:'cancelled'};};
  const confirm=prompt=>terminal.confirm(input,output,{prompt,signal});
- const entries=query=>{const rows=vault.search(query||'');if(!rows.length)output.write(query?'No matching Vault label. Try /secret list to see saved names.\n':'Your Vault is empty. Save a mailbox number here, or use /vault for a password or API key.\n');else rows.forEach((r,i)=>output.write(`${i+1}. ${r.name} · ${r.kind==='private_identifier'?'Private identifier':'Credential · stays hidden'}\n`));return rows;};
+ const entries=query=>{const rows=vault.search(query||'');if(!rows.length)output.write(query?'No matching Vault label. Try /secret list to see saved names.\n':'Your Vault is empty. Save a mailbox number here, or use /vault for a password or API key.\n');else rows.forEach((r,i)=>output.write(`${i+1}. ${r.name} · ${r.kind==='private_identifier'?'Private identifier':'Credential · stays hidden'} · Operator purpose · Active\n`));return rows;};
  try {
   if(intent.action==='classify'){
    output.write('Where should this belong?\n1. Personal Memory: ordinary preferences and facts\n2. Sensitive Memory: private facts, operator-only\n3. Vault: identifiers or credentials in Keychain\n');

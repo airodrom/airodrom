@@ -13,6 +13,9 @@ function parse(value,{capture=false,nickname}={}) {
  if(typeof value!=='string')return null;
  if(Buffer.byteLength(value)>4000||/[\r\n\0]/.test(value))return containsPrivate(value)?{kind:'private_vault',route:'VAULT',action:'clarify'}:null;
  const request=require('./personal-storage-intent').normalize(value,nickname).replace(/\s+/g,' ');
+ // Bounded valueless listing requests belong to the host, before credential
+ // screening. Arbitrary prose/values appended to these phrases do not match.
+ if(/^(?:(?:show|list|view)\s+(?:me\s+)?(?:(?:all|the)\s+)?(?:my\s+)?(?:saved\s+)?(?:secrets|secret names|vault(?:\s+(?:entries|labels|secrets))?)|what\s+secrets\s+(?:have i saved|did i save|are saved|do i have))$/i.test(request))return {kind:'private_vault',route:'VAULT',action:'list'};
  const command=/^\/secret(?:\s+(list|search|reveal|remove|rename))?(?:\s+(.+))?$/i.exec(request);
  if(command){
   const action=(command[1]||'list').toLowerCase(),arg=command[2]||'';

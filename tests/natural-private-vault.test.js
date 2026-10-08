@@ -26,6 +26,19 @@ test('natural identifier ingress has no value in default routing or credential f
  }
  assert.equal(intent.parse('Save my mailbox number').action,'save');assert.equal(intent.parse('Save my mailbox number').value_present,false);assert.equal(intent.parse('Hi'),null);
 });
+test('natural listing exposes active operator metadata with zero Keychain reads; malformed save preserves existing entry',async t=>{
+ const f=fixture(t),mailbox=f.vault.put('818','operator',{kind:'private_identifier',name:'Mailbox number'});
+ f.vault.put('synthetic-password-canary','operator',{kind:'password',name:'Personal login'});f.vault.put('synthetic-connector-canary','gmail');
+ const revoked=f.vault.put('synthetic-revoked-canary','operator',{kind:'api_key',name:'Old service key'});f.vault.forget(revoked.reference);f.calls.length=0;
+ for(const message of ['Show my saved secrets.','List my saved secrets','What secrets have I saved?','Show my vault']){
+  const out=output(),receipt=await guide({message,input:new Terminal(),output:out,vault:f.vault});assert.equal(receipt.state,'listed');
+  assert.match(out.text(),/Mailbox number · Private identifier · Operator purpose · Active/);assert.match(out.text(),/Personal login · Credential · stays hidden/);
+  assert.doesNotMatch(out.text()+JSON.stringify(receipt),/818|canary|Old service key/);assert.deepEqual(f.calls,[]);
+ }
+ const message='Airo, save my mailbox number 818.sdfasfdassdafsdf',out=output();
+ assert.equal(intent.parse(message,{capture:true}).action,'clarify');assert.equal((await guide({message,input:new Terminal(),output:out,vault:f.vault})).state,'clarification');
+ assert.deepEqual(f.calls,[]);assert.equal(f.values.get(mailbox.reference),'818');
+});
 test('confirmed named save and restart lookup disclose only in operator reveal output',async t=>{
  const f=fixture(t),out=output();
  const saved=await guide({message:"Hi Airo, let's save my mailbox number 818.",input:new Terminal(['yes\r']),output:out,vault:f.vault});assert.equal(saved.state,'saved');
