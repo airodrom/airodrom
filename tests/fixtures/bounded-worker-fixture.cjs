@@ -12,4 +12,5 @@ function executable(root,id='codex',mode='valid'){
 });`,{mode:0o700});return file;
 }
 const options=(root,id='codex',mode='valid')=>({fixture:true,executable:executable(root,id,mode)});
-module.exports={executable,options};
+function manifest(repo){const input=require('./opencode-fixture.cjs').manifest(repo),m=input.mission;m.id='public-codex-fixture';m.title='Public bounded proposal qualification';m.permissions.network.internet=true;m.permissions.providers.approved_external=true;m.permissions.providers.local_reasoning=false;m.permissions.memory={read:false,search:false,write:false,delete:false};m.budget.max_external_reasoning_calls=2;m.budget.max_memory_injections=0;return input;}
+module.exports={executable,options,manifest};

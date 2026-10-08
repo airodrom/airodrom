@@ -564,5 +564,8 @@
   "docs/adr/0018-qualified-multi-worker-v2.md",
   "tests/multi-worker-v2.test.js",
   "tests/multi-worker-ui.test.js",
-  "tests/fixtures/bounded-worker-fixture.cjs"
+  "tests/fixtures/bounded-worker-fixture.cjs",
+  "docs/adr/0019-codex-live-qualification.md",
+  "tests/codex-live-qualification.test.js",
+  "tests/live-codex.cjs"
 ]
