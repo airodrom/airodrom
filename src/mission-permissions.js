@@ -100,6 +100,7 @@ function callRequirements(call, workspace) {
   }
   if (tool === 'capability') {
     const name = input.name, args = input.input || {};
+    if(name==='mission_web')return {network:['internet'],data:['read']};
     if(name==='browser_research')return {network:['internet'],data:['read'],...(args.action?.type==='authenticate'?{secrets:['use']}:{})};
     if (FILE_READ.has(name) || FILE_WRITE.has(name)) {
       const mode = FILE_READ.has(name) ? 'read' : 'write';

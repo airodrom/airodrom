@@ -39,6 +39,7 @@
     "capability": "READ_ONLY"
   },
   "capabilities": {
+    "mission_web": { "group": "research", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["*"], "reason": "Typed host port requires a current signed per-Mission public web grant and qualified canonical Run" },
     "browser_research": { "group": "research", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["web_read"], "reason": "Host-scoped public browser research; restricted operations require exact owner approval" },
     "capability_list": { "group": "discovery", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["*"], "reason": "Capability inventory read" },
     "capability_status": { "group": "discovery", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["*"], "reason": "Capability status read" },

@@ -3274,5 +3274,57 @@
       "nickname": "B",
       "updated_at": "A"
     }
+  },
+  "cp_mission_web_grants": {
+    "fields": [
+      "id",
+      "mission_id",
+      "policy",
+      "policy_hash",
+      "seal",
+      "state",
+      "actions",
+      "pages",
+      "bytes",
+      "requests",
+      "visited_origins"
+    ],
+    "source": "src/mission-web.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "policy": "B",
+      "policy_hash": "D",
+      "seal": "B",
+      "state": "A",
+      "actions": "A",
+      "pages": "A",
+      "bytes": "A",
+      "requests": "A",
+      "visited_origins": "B"
+    }
+  },
+  "cp_mission_web_evidence": {
+    "fields": [
+      "id",
+      "grant_id",
+      "mission_id",
+      "task_id",
+      "run_id",
+      "sha256",
+      "invocation_id",
+      "created_at"
+    ],
+    "source": "src/mission-web.js",
+    "classification": {
+      "id": "A",
+      "grant_id": "A",
+      "mission_id": "A",
+      "task_id": "A",
+      "run_id": "A",
+      "sha256": "D",
+      "invocation_id": "A",
+      "created_at": "A"
+    }
   }
 }

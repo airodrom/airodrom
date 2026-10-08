@@ -12,7 +12,7 @@ const REDIRECTS=new Set([301,302,303,307,308]);
 const TYPES=new Set(['text/html','application/xhtml+xml','text/plain','text/css','text/javascript','application/javascript','application/json','image/png','image/jpeg','image/webp','image/gif','image/svg+xml','image/x-icon','font/woff','font/woff2','application/font-woff']);
 const DOWNLOAD_TYPES=new Set(['text/plain','text/csv','application/json']);
 const MAX_DOWNLOAD_BYTES=49152;
-const SENSITIVE_URL=/(?:^|[/.?&=_-])(?:login|log-in|signin|sign-in|signout|logout|oauth|authorize|authorization|auth|password|passwd|secret|credential|token|session|cookie|account|billing|payment|checkout|captcha|mfa|2fa|otp)(?:[/.?&=_-]|$)/i;
+const SENSITIVE_URL=/(?:^|[/.?&=_-])(?:login|log-in|signin|sign-in|signout|logout|oauth|authorize|authorization|auth|password|passwd|secret|credential|token|session|cookie|accounts?|billing|payment|checkout|captcha|mfa|2fa|otp)(?:[/.?&=_-]|$)/i;
 const KEY=/(?:password|passwd|secret|credential|token|session|cookie|authorization|api.?key|access.?key|email|username|user.?id|code|state)/i;
 const PUBLIC_QUERY=new Set(['q','query','search','page','p','lang','language','locale','sort','order','category','filter','limit','offset']);
 const MUTATION_PATH=/(?:^|\/)(?:logout|signout|log-out|sign-out|delete|remove|destroy|unsubscribe|connect|disconnect|authorize|revoke|update|create|save|add|new|invite|register|signup|sign-up|reset|change|checkout|purchase|pay(?!ments(?:\/|$))|submit|accept|approve|enable|disable|transfer|refund|withdraw|send|cancel|execute|redeem|subscribe|upgrade|downgrade|import|export|clear|close|terminate)/i;
@@ -27,14 +27,15 @@ function safeOrigin(value,allowFixture=false){
 }
 function abortable(promise,signal){return new Promise((resolve,reject)=>{const abort=()=>{signal?.removeEventListener('abort',abort);reject(error('cancelled'));};if(signal?.aborted)return abort();signal?.addEventListener('abort',abort,{once:true});Promise.resolve(promise).then(v=>{signal?.removeEventListener('abort',abort);resolve(v);},()=>{signal?.removeEventListener('abort',abort);reject(error('dns_unavailable'));});});}
 class ResearchNetwork{
- constructor({scope,signal,testing,timeoutMs=10000,maxBytes=2097152}={}){
+ constructor({scope,signal,testing,timeoutMs=10000,maxBytes=2097152,onRequest=null,onBytes=null}={}){
   if(testing&&process.env.NODE_ENV!=='test')throw error('test_transport_denied');
   this.fixture=testing?.allowLoopback===true;this.lookup=testing?.lookup||dns.lookup;this.request=testing?.request||null;this.signal=signal;
   if(!scope||!Array.isArray(scope.origins)||!scope.origins.length||scope.origins.length>20)throw error('invalid_scope');
+  this.publicDiscovery=scope.publicDiscovery===true;this.maxOrigins=scope.maxOrigins??8;if(this.publicDiscovery&&(!Number.isInteger(this.maxOrigins)||this.maxOrigins<1||this.maxOrigins>8||scope.useVault||scope.usePersistentProfile))throw error('invalid_public_discovery');
   this.origins=new Set(scope.origins.map(o=>safeOrigin(o,this.fixture)));if(this.origins.size!==scope.origins.length)throw error('duplicate_origin');
   if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>30000||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>4194304)throw error('invalid_bound');
   this.timeoutMs=timeoutMs;this.maxBytes=maxBytes;this.active=0;
-  this.account=null;
+  this.account=null;this.onRequest=onRequest;this.onBytes=onBytes;
  }
  // These are host-only methods. The typed browser port never accepts bodies,
  // cookies or credential values from action JSON.
@@ -88,11 +89,13 @@ class ResearchNetwork{
   if(!['GET','HEAD'].includes(method))throw error('method_denied');
   if(typeof value!=='string'||value.length>2048||/[\x00-\x20\x7f\\]|%(?:0[0-9a-f]|1[0-9a-f]|7f|5c)/i.test(value)||containsSecret(value))throw error('credential_or_invalid_url');
   let u;try{u=new URL(value);}catch{throw error('invalid_url');}
-  let pathname;try{pathname=decodeURIComponent(u.pathname);}catch{throw error('invalid_url');}if(!this.origins.has(u.origin)||u.username||u.password||u.hash||SENSITIVE_URL.test(pathname)||MUTATION_PATH.test(pathname))throw error('origin_or_sensitive_path_denied');
+  if(/%(?:25|2f|2e|3f|23)/i.test(u.pathname))throw error('ambiguous_path_denied');
+  let pathname;try{pathname=decodeURIComponent(u.pathname);}catch{throw error('invalid_url');}if(this.publicDiscovery&&!this.origins.has(u.origin)){safeOrigin(u.origin,this.fixture);if(this.origins.size>=this.maxOrigins)throw error('public_domain_budget');this.origins.add(u.origin);}
+  if(!this.origins.has(u.origin)||u.username||u.password||u.hash||SENSITIVE_URL.test(pathname)||MUTATION_PATH.test(pathname))throw error('origin_or_sensitive_path_denied');
   for(const [k,v]of u.searchParams)if(!PUBLIC_QUERY.has(k)||KEY.test(k)||v.length>200||secretLike(v)||/[\x00-\x1f\x7f]/.test(v)||/\b(?:bearer|password|passphrase|api.?key|private.?key|secret|credential|oauth|access.?token|refresh.?token)\b/i.test(v))throw error('private_query_denied');
   return u.href;
  }
- async fetch({url,method='GET',signal=this.signal,download=false,followRedirects=true}={}){
+ async fetch({url,method='GET',signal=this.signal,download=false,document=false,followRedirects=true}={}){
   const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,this.timeoutMs);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();
   if(this.active>=8){clearTimeout(timer);signal?.removeEventListener('abort',abort);throw error('concurrency_bound');}this.active++;
   try{
@@ -101,7 +104,7 @@ class ResearchNetwork{
     if(REDIRECTS.has(result.status)){if(hops.length>=3||typeof result.location!=='string')throw error('redirect_denied');let next;try{next=new URL(result.location,current).href;}catch{throw error('redirect_denied');}next=this.validate(next,method);if(next===current||hops.includes(next))throw error('redirect_loop');if(!followRedirects)return {url:current,status:result.status,location:next,contentType:'text/html',body:Buffer.alloc(0),redirects:1};hops.push(current);current=next;continue;}
     if(!Number.isInteger(result.status)||result.status<200||result.status>=300)throw error([401,403,407,429].includes(result.status)?'authentication_or_captcha':'response_unavailable');
     if(!Buffer.isBuffer(result.body)||result.body.length>this.maxBytes||method==='HEAD'&&result.body.length)throw error('response_bound');
-    const type=String(result.contentType||'').split(';')[0].trim().toLowerCase();if(!(download?DOWNLOAD_TYPES:TYPES).has(type))throw error('content_type_denied');
+    const type=String(result.contentType||'').split(';')[0].trim().toLowerCase();if(!(download?DOWNLOAD_TYPES:document?new Set([...TYPES,'application/pdf','text/markdown']):TYPES).has(type))throw error('content_type_denied');
     if(result.attachment&&!download)throw error('unapproved_download');
     if(download){const text=result.body.toString('utf8');if(Buffer.from(text).compare(result.body)!==0||unsafeEvidenceText(text))throw error('credential_download_denied');}
     return {url:current,status:result.status,contentType:type,body:result.body,redirects:hops.length};
@@ -110,6 +113,7 @@ class ResearchNetwork{
   finally{this.active--;clearTimeout(timer);signal?.removeEventListener('abort',abort);}
  }
  async hop(url,method,signal,privateRequest,responseLimit=this.maxBytes){
+  this.onRequest?.(url.origin);
   const fixture=this.fixture&&url.protocol==='http:'&&['127.0.0.1','[::1]'].includes(url.hostname);
   const addresses=fixture?[{address:url.hostname.replace(/^\[|\]$/g,''),family:url.hostname==='[::1]'?6:4}]:await abortable(Promise.resolve().then(()=>this.lookup(url.hostname,{all:true,verbatim:true})),signal);
   if(signal.aborted)throw error('cancelled');if(!Array.isArray(addresses)||!addresses.length||addresses.length>32||!fixture&&addresses.some(r=>!r||!publicAddress(r.address,r.family)))throw error('private_dns_denied');
@@ -125,7 +129,7 @@ class ResearchNetwork{
      const status=res.statusCode;if(REDIRECTS.has(status))return finish(null,{status,location:res.headers.location});
      if(String(res.headers['content-encoding']||'identity').toLowerCase()!=='identity')return finish(error('compressed_response_denied'));
      const length=res.headers['content-length'];if(length!==undefined&&(!/^\d+$/.test(String(length))||BigInt(length)>BigInt(responseLimit)))return finish(error('response_bound'));
-     let bytes=0;const chunks=[];res.on('data',chunk=>{const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);bytes+=data.length;if(bytes>responseLimit||method==='HEAD'&&bytes)return finish(error('response_bound'));chunks.push(data);});
+     let bytes=0;const chunks=[];res.on('data',chunk=>{const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);try{this.onBytes?.(data.length);}catch(e){return finish(e);}bytes+=data.length;if(bytes>responseLimit||method==='HEAD'&&bytes)return finish(error('response_bound'));chunks.push(data);});
      res.on('end',()=>{if(!res.complete)return finish(error('incomplete_response'));finish(null,{status,contentType:res.headers['content-type'],attachment:/\battachment\b/i.test(String(res.headers['content-disposition']||'')),body:Buffer.concat(chunks,bytes)});});
     });
     req.on('error',()=>finish(error('transport_unavailable')));req.on('upgrade',(_r,socket)=>{socket.destroy();finish(error('upgrade_denied'));});req.on('connect',(_r,socket)=>{socket.destroy();finish(error('tunnel_denied'));});if(settled)req.destroy();else req.end(privateRequest?.body);

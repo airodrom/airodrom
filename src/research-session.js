@@ -12,8 +12,8 @@ const LOGIN=/^\/(?:login|signin|sign-in|auth\/(?:login|signin|session|verify|mfa
 const ASSET=/^\/(?:assets|static|css|js|images|img|fonts|_next\/static)\/[A-Za-z0-9_./-]+\.(?:css|js|mjs|png|jpe?g|webp|gif|svg|ico|woff2?|ttf|otf)$/i;
 const READ_API=/^\/(?:api\/)?(?:transactions|accounts|budgets|cashflow|reports|recurring|goals|insights)\/?$/;
 function authorization(a,scope){
- if(!a||Object.keys(a).some(k=>!['id','origin','login_url','confirmed','purpose','mode'].includes(k))||!UUID.test(a.id||'')||a.confirmed!==true||a.purpose!=='competitor_product_research'||a.mode!=='dedicated_manual'||scope.usePersistentProfile!==true||scope.useVault||scope.allowDownloads!==false||scope.origins.length!==1||a.origin!==scope.origins[0]||new URL(a.login_url).origin!==a.origin)throw error('sealed_session_authorization_required');
- safeOrigin(a.origin);return Object.freeze(structuredClone(a));
+ if(!a||Object.keys(a).some(k=>!['id','origin','login_url','confirmed','purpose','mode','network_profile'].includes(k))||!UUID.test(a.id||'')||a.confirmed!==true||a.purpose!=='competitor_product_research'||a.mode!=='dedicated_manual'||scope.usePersistentProfile!==true||scope.useVault||scope.allowDownloads!==false||scope.origins.length!==1||a.origin!==scope.origins[0]||new URL(a.login_url).origin!==a.origin)throw error('sealed_session_authorization_required');
+ require('./research-session-policy').profile(a.network_profile,a.origin);safeOrigin(a.origin);return Object.freeze(structuredClone(a));
 }
 function validateProfileTree(dir,{privateModes=true}={}){
  let nodes=0;
@@ -54,6 +54,11 @@ function allowedURL(value,{origin,phase='inspect',method='GET',kind='document',n
  if(['websocket','eventsource','other'].includes(kind))throw error('session_transport_denied');
  return u.href;
 }
+// Safe diagnostic metadata: never headers, bodies, query values or private paths.
+function blockedMetadata(value,{method,kind,reason,source='playwright_route'}={}){
+ let u;try{u=new URL(value);safeOrigin(u.origin);}catch{}
+ return {source,reason:/^[a-z_]{1,80}$/.test(reason||'')?reason:'session_scope_denied',origin:u?.origin||'[invalid]',route:u&&(LOGIN.test(u.pathname)||Object.hasOwn(ROUTES,u.pathname))?u.pathname:u&&ASSET.test(u.pathname)?'[static asset]':'[unrecognized path]',query_present:!!u?.search,method:['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'].includes(method)?method:'OTHER',resource:['document','stylesheet','script','image','font','xhr','fetch'].includes(kind)?kind:'other'};
+}
 // Only constants and booleans leave the DOM. No text, URLs, form values, account
 // identifiers, ledger rows, balances, headers, bodies or storage are projected.
 function inspectSessionDocument(){
@@ -74,7 +79,7 @@ function inspectSessionDocument(){
 }
 class SessionBrowser extends ResearchBrowser{
  constructor(options){
-  super(options);this.session=authorization(options.sessionAuthorization,options.scope);this.accountAuthorization=this.session;this.privateMode=true;this.phase='locked';this.profileRoot=options.profileRoot;this.profileLease=null;this.sockets=new Set();this.redirectGuard=null;
+  super(options);this.session=authorization(options.sessionAuthorization,options.scope);this.accountAuthorization=this.session;this.privateMode=true;this.phase='locked';this.profileRoot=options.profileRoot;this.profileLease=null;this.sockets=new Set();this.redirectGuard=null;this.redirects=new Map();
  }
  async open(){
   this.ensure();this.profileLease=profile(this.profileRoot,this.session.origin);
@@ -84,8 +89,8 @@ class SessionBrowser extends ResearchBrowser{
   this.proxy.on('connect',async(req,socket,head)=>{
    this.sockets.add(socket);socket.on('close',()=>this.sockets.delete(socket));
    try{
-    if(this.closed||this.signal.aborted||this.phase==='locked'||req.url!==new URL(this.session.origin).hostname+':443')throw error('proxy_scope_denied');
-    const rows=await dns.lookup(new URL(this.session.origin).hostname,{all:true,verbatim:true});
+    if(this.closed||this.signal.aborted||this.phase==='locked'||!this.networkOrigins().some(origin=>req.url===new URL(origin).hostname+':443'))throw error('proxy_scope_denied');
+    const rows=await dns.lookup(req.url.slice(0,-4),{all:true,verbatim:true});
     if(this.closed||this.signal.aborted||this.phase==='locked'||!rows.length||rows.length>32||rows.some(r=>!publicAddress(r.address,r.family)))throw error('private_dns_denied');
     const upstream=net.connect({host:rows[0].address,port:443,family:rows[0].family});this.sockets.add(upstream);upstream.on('close',()=>this.sockets.delete(upstream));upstream.on('error',()=>socket.destroy());socket.on('error',()=>upstream.destroy());socket.on('close',()=>upstream.destroy());
     upstream.setTimeout(15000,()=>upstream.destroy());socket.setTimeout(15000,()=>socket.destroy());
@@ -97,27 +102,41 @@ class SessionBrowser extends ResearchBrowser{
   this.context=await pw.chromium.launchPersistentContext(this.profileLease.dir,{channel:'chrome',chromiumSandbox:true,headless:false,timeout:15000,viewport:this.viewport,serviceWorkers:'block',acceptDownloads:false,ignoreHTTPSErrors:false,permissions:[],env:{PATH:'/usr/bin:/bin',TMPDIR:require('node:os').tmpdir(),LANG:'en_US.UTF-8'},proxy:{server:'http://127.0.0.1:'+this.proxy.address().port,bypass:'<-loopback>'},args:['--disable-background-networking','--disable-component-update','--disable-quic','--force-webrtc-ip-handling-policy=disable_non_proxied_udp','--disable-features=WebTransport,MediaRouter']});
   this.browser=this.context.browser();this.ensure();this.context.setDefaultTimeout(5000);this.context.setDefaultNavigationTimeout(15000);
   await this.context.addInitScript(restrictPage);await this.context.routeWebSocket('**/*',socket=>socket.close());
-  await this.context.route('**/*',async route=>{try{
-   this.ensure();const request=route.request();if(request.frame().page()!==this.page)throw error('unowned_page_denied');allowedURL(request.url(),{origin:this.session.origin,phase:this.phase,method:request.method(),kind:request.resourceType(),navigation:request.isNavigationRequest()});
+  await this.context.route('**/*',async route=>{const request=route.request();try{
+   this.ensure();if(request.frame().page()!==this.page)throw error('unowned_page_denied');this.allowed(request.url(),{phase:this.phase,method:request.method(),kind:request.resourceType(),navigation:request.isNavigationRequest()});
    if(request.isNavigationRequest()&&request.frame().parentFrame())throw error('embedded_navigation_denied');
    // Redirected requests may bypass Playwright routing; the Response-stage CDP
    // guard below denies redirects before Chromium can follow them.
    await route.continue();
-  }catch{await route.abort('blockedbyclient').catch(()=>{});this.event('research.network_denied',{reason:'session_scope_denied'});}});
+  }catch(e){await route.abort('blockedbyclient').catch(()=>{});this.event('research.network_denied',blockedMetadata(request.url(),{method:request.method(),kind:request.resourceType(),reason:e.code}));}});
   this.page=this.context.pages()[0]||await this.context.newPage();
   this.context.on('page',page=>{if(page!==this.page)page.close().catch(()=>{});});
   for(const page of this.context.pages())if(page!==this.page)await page.close();
   await this.page.goto('about:blank');
-  this.redirectGuard=await this.context.newCDPSession(this.page);await this.redirectGuard.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Response'}]});
-  this.redirectGuard.on('Fetch.requestPaused',event=>{
-   const method=event.responseStatusCode>=300&&event.responseStatusCode<400?'Fetch.failRequest':'Fetch.continueResponse';
-   this.redirectGuard.send(method,{requestId:event.requestId,...(method==='Fetch.failRequest'?{errorReason:'BlockedByClient'}:{})}).catch(()=>{this.phase='locked';for(const s of this.sockets)s.destroy();});
+  this.redirectGuard=await this.context.newCDPSession(this.page);await this.redirectGuard.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'},{urlPattern:'*',requestStage:'Response'}]});
+  this.redirectGuard.on('Fetch.requestPaused',async event=>{
+   try{
+    const kind=String(event.resourceType||'other').toLowerCase(),navigation=kind==='document';
+    this.ensure();this.allowed(event.request.url,{phase:this.phase,method:event.request.method,kind,navigation});
+    if(event.responseStatusCode>=300&&event.responseStatusCode<400){
+     const count=(this.redirects.get(event.networkId)||0)+1;this.redirects.set(event.networkId,count);
+     const locations=(event.responseHeaders||[]).filter(h=>h.name.toLowerCase()==='location');
+     if(count>3||locations.length!==1||!['GET','HEAD'].includes(event.request.method)||![301,302,303,307,308].includes(event.responseStatusCode))throw error('session_redirect_denied');
+     this.allowed(new URL(locations[0].value,event.request.url).href,{phase:this.phase,method:event.request.method,kind,navigation});
+    }
+    await this.redirectGuard.send(event.responseStatusCode?'Fetch.continueResponse':'Fetch.continueRequest',{requestId:event.requestId});
+   }catch(e){
+    this.event('research.network_denied',blockedMetadata(event.request.url,{method:event.request.method,reason:e.code,source:event.responseStatusCode?'cdp_response':'cdp_request'}));
+    await this.redirectGuard.send('Fetch.failRequest',{requestId:event.requestId,errorReason:'BlockedByClient'}).catch(()=>{this.phase='locked';for(const s of this.sockets)s.destroy();});
+   }
   });
   this.page.on('download',d=>d.cancel().catch(()=>{}));this.page.on('dialog',d=>d.dismiss().catch(()=>{}));
   this.context.on('close',()=>{if(!this.closed)this.lifecycle.abort();});this.phase='login';
   this.event('research.browser_started',{private_context:true,credentials_available:false,network:'browser_owned_scoped_tls',existing_chrome_login_inherited:false});
  }
- validateURL(value,method='GET'){return allowedURL(value,{origin:this.session.origin,phase:this.phase==='locked'?'login':this.phase,method,navigation:true});}
+ networkOrigins(){return require('./research-session-policy').profile(this.session.network_profile,this.session.origin)?.origins||[this.session.origin];}
+ allowed(value,options){return require('./research-session-policy').allowed(value,{authorization:this.session,...options},allowedURL);}
+ validateURL(value,method='GET'){return this.allowed(value,{phase:this.phase==='locked'?'login':this.phase,method,kind:'document',navigation:true});}
  async navigate(value){
   const safe=this.validateURL(value);await this.start();this.links.clear();
   try{await this.page.goto(safe,{waitUntil:'domcontentloaded'});await this.page.waitForTimeout(100);}catch{this.ensure();throw error('session_navigation_unavailable');}
@@ -153,4 +172,4 @@ class SessionBrowser extends ResearchBrowser{
   })();return this.closePromise;
  }
 }
-module.exports={SessionBrowser,authorization,profile,harden,validateProfileTree,allowedURL,inspectSessionDocument,ROUTES};
+module.exports={SessionBrowser,authorization,profile,harden,validateProfileTree,allowedURL,inspectSessionDocument,ROUTES,blockedMetadata};

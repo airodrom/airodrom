@@ -42,7 +42,7 @@ function inspectAccountDocument(){
  return {url:location.href,takeover,auth,forms,links};
 }
 class ResearchBrowser{
- constructor({scope,evidenceDir,signal,onEvent=()=>{},network,playwright,approve,accountAuthorization,resolveCredential,testing}={}){
+ constructor({scope,evidenceDir,signal,onEvent=()=>{},network,onEvidenceBytes,playwright,approve,accountAuthorization,resolveCredential,testing}={}){
   if(testing&&process.env.NODE_ENV!=='test'||playwright&&process.env.NODE_ENV!=='test'||network&&!(network instanceof ResearchNetwork)&&process.env.NODE_ENV!=='test')throw error('test_browser_denied');
   this.lifecycle=new AbortController();this.signal=signal?AbortSignal.any([signal,this.lifecycle.signal]):this.lifecycle.signal;
   this.network=network||new ResearchNetwork({scope,signal:this.signal,testing});this.policy=new ResearchNetwork({scope,signal:this.signal,testing});
@@ -50,7 +50,7 @@ class ResearchBrowser{
   if(accountAuthorization){exact(accountAuthorization,['id','origin','login_url','username_reference','password_reference','confirmed','purpose']);const a=accountAuthorization;if(scope.useVault!==true||a.confirmed!==true||a.purpose!=='competitor_product_research'||![a.id,a.username_reference,a.password_reference].every(v=>UUID.test(v||''))||a.username_reference===a.password_reference||!this.policy.origins.has(a.origin)||typeof resolveCredential!=='function'||typeof this.network.openAccount!=='function')throw error('sealed_account_authorization_required');this.network.accountURL(a.login_url,a.origin);this.accountAuthorization=Object.freeze(structuredClone(a));}
   privateDirectory(evidenceDir,true);this.evidenceDir=fs.realpathSync(evidenceDir);this.maxActions=scope.maxActions??30;
   if(!bounded(this.maxActions,1,100))throw error('action_bound');
-  this.actions=0;this.server=null;this.browser=null;this.context=null;this.page=null;this.proxy=null;this.links=new Map();this.forms=new Map();this.closed=false;this.blocked=false;this.privateMode=false;this.active=false;this.closePromise=null;this.startPromise=null;this.viewport={width:1280,height:800};this.abort=()=>{this.close().catch(()=>{});};this.signal.addEventListener('abort',this.abort,{once:true});
+  this.onEvidenceBytes=onEvidenceBytes;this.actions=0;this.server=null;this.browser=null;this.context=null;this.page=null;this.proxy=null;this.links=new Map();this.forms=new Map();this.closed=false;this.blocked=false;this.privateMode=false;this.active=false;this.closePromise=null;this.startPromise=null;this.viewport={width:1280,height:800};this.abort=()=>{this.close().catch(()=>{});};this.signal.addEventListener('abort',this.abort,{once:true});
  }
  event(type,extra={}){try{this.onEvent({type,at:Date.now(),authority:false,...extra});}catch{throw error('audit_unavailable');}}
  ownedProcessId(){const value=this.server?.process()?.pid;return !this.closed&&Number.isSafeInteger(value)&&value>0?value:null;}
@@ -165,7 +165,7 @@ class ResearchBrowser{
   return this.receipt(record);
  }
  receipt(record){const filename=record.id+'.json',bytes=Buffer.from(JSON.stringify(record)+'\n');if(bytes.length>MAX_EVIDENCE)throw error('evidence_bound');this.write(filename,bytes);record.evidence_ref={id:record.id,path:path.join(this.evidenceDir,filename),sha256:sha(bytes)};this.event('research.evidence_captured',{id:record.id,classification:record.classification});return record;}
- write(filename,bytes){const file=path.join(this.evidenceDir,filename),fd=fs.openSync(file,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
+ write(filename,bytes){this.onEvidenceBytes?.(bytes.length);const file=path.join(this.evidenceDir,filename),fd=fs.openSync(file,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
  read(reference,extension){
   if(!reference||!UUID.test(reference.id||'')||reference.path!==path.join(this.evidenceDir,reference.id+extension))throw error('evidence_scope_denied');
   const fd=fs.openSync(reference.path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);try{const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.uid!==process.getuid?.()||stat.mode&0o077||stat.size>MAX_EVIDENCE)throw error('evidence_integrity_denied');const bytes=fs.readFileSync(fd);if(sha(bytes)!==reference.sha256)throw error('evidence_integrity_denied');return bytes;}finally{fs.closeSync(fd);}

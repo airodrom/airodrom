@@ -27,3 +27,5 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 
 - [0014 conversational private storage](0014-conversational-private-storage.md): Accepted after independent privacy/security and runtime/authority reviews and owner approval of PR #22; greeting-safe host routing, confirmed native storage choice and name-bound operator reveal.
 - [0015 authenticated browser session handoff](0015-authenticated-browser-session-handoff.md): Accepted after independent runtime/authority and privacy/security reviews and owner approval of PR #26; explicit dedicated-profile login, sanitized navigation evidence and canonical operator hand-back.
+
+- [0016 universal Mission web](0016-universal-mission-web.md): Accepted under the owner implementation request; signed per-Mission public web grants and narrowly consented Monarch login network repair.

@@ -12,6 +12,7 @@ function relative(value){text(value,'file path',300);if(path.isAbsolute(value)||
 class MissionService {
   constructor(bridge){this.bridge=bridge;this.store=bridge.controlStore;this.db=this.store.db;this.db.exec('CREATE TABLE IF NOT EXISTS cp_continuity_checks(run_id TEXT PRIMARY KEY,mission_id TEXT NOT NULL,status TEXT NOT NULL,evidence TEXT NOT NULL,checked_at INTEGER NOT NULL)');this.program=new (require('./mission-program').MissionProgram)(this);this.codingAdapter=new (require('./qualified-coding-adapter').QualifiedCodingAdapter)(this);this.acceptanceEngine=new (require('./deterministic-acceptance').DeterministicAcceptance)(this);this.agents=new MissionAgents(bridge,this.store);this.verifier=new MissionVerifier(bridge,this.store);this.busy=false;this.stopped=false;}
   createConversation(input,owner='operator'){return require('./conversation-mission').create(this,input,owner);}
+  get web(){return this._web||(this._web=new (require('./mission-web').MissionWeb)(this));}
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
   createResearch(input,owner='operator'){return this.research.create(input,owner);}
   create(input,owner='operator'){
@@ -176,6 +177,7 @@ class MissionService {
       transaction(this.db,()=>{this.db.prepare('UPDATE cp_dispatches SET route=?,updated_at=? WHERE id=?').run(JSON.stringify(route),Date.now(),dispatch.id);this.store.event('agent.route.planned',m.id,route);});
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
+      if(require('./mission-web-policy').proposal(m.envelope.objective).needed){this.web.qualify(m);this.web.grant(m);}
       if(m.envelope.coding_plan)this.codingAdapter.assert(m);
       if(m.envelope.manifest&&!['host','opencode'].includes(route.selected))throw Error('Mission Manifest requires a qualified bounded native adapter');
       // Existing external adapters do not enforce all six permission dimensions.
@@ -222,7 +224,9 @@ class MissionService {
         this.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,updated_at=? WHERE id=? AND state='queued'").run(runId,Date.now(),dispatch.id);
         this.store.state(m.id,'running');started=true;return pack;
       });
-      const output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt:m.envelope.objective+'\n'+m.envelope.constraints,context:{id:pack.id},requestId:`mission:${dispatch.id}`});
+      await this.web.preflight(m,task);
+      let output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt:m.envelope.objective+'\n'+m.envelope.constraints,context:{id:pack.id},requestId:`mission:${dispatch.id}`});
+      for(let round=0;output.result?.web_requests?.length;round++){if(round>=2||output.changes.length)throw Error('opencode_web_request_bound');for(const action of output.result.web_requests)await this.web.call(m,task,action);output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt:m.envelope.objective+'\n'+m.envelope.constraints,context:{id:pack.id},requestId:`mission:${dispatch.id}:web:${round}`});}
       this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
       if(task.cancelRequested||task.safetyStop?.latched)throw Error('opencode_cancelled');
       for(const [i,change]of output.changes.entries()){
@@ -239,7 +243,7 @@ class MissionService {
     }catch(error){
       if(!started)throw error;
       // Uncertain process/invocation termination retains a quarantined writer.
-      const uncertain=['opencode_termination_unverified','opencode_spawn_failed','opencode_apply_not_completed'].includes(error.code||error.message);
+      const uncertain=['opencode_termination_unverified','opencode_spawn_failed','opencode_apply_not_completed','web_termination_unverified'].includes(error.code||error.message);
       const errorClass=/^opencode_[a-z_]{1,80}$/.test(error.code||error.message)?(error.code||error.message):'opencode_execution_stopped';
       this.store.updateRun(runId,{state:uncertain?'termination_unverified':task.cancelRequested?'cancelled':'failed',processState:uncertain?'unknown':'exited',verified:!uncertain,resolution:errorClass,result:{runtime_id:'opencode',error_class:errorClass}});
       if(uncertain){this.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(runId);this.db.prepare("UPDATE cp_dispatches SET state='unknown' WHERE id=?").run(dispatch.id);if(this.store.getMission(m.id).state!=='cancelled')this.store.state(m.id,'blocked','opencode_termination_unverified');}
@@ -260,6 +264,7 @@ class MissionService {
     });
     const receipts=[];let failed=false;
     try{
+      await this.web.preflight(m,task);
       for(const [i,a]of plan.entries()){
         this.program.assert(this.store.requireMission(m.id));
         if(m.envelope.coding_plan)this.codingAdapter.assert(this.store.requireMission(m.id),a);
@@ -274,7 +279,8 @@ class MissionService {
         this.captureResult(runId,{status:failed?'failed':'completed',result:{text:JSON.stringify({summary:failed?'Native plan stopped by policy':'Immutable native file plan completed',changed_files:plan.map(a=>a.path),tests:[],artifacts:[],limitations:[]})}});
       });
     }catch{
-      this.store.updateRun(runId,{state:'termination_unverified',processState:'unknown',resolution:'reconcile_native_invocation'});
+      this.store.updateRun(runId,{state:'termination_unverified',processState:'unknown',verified:false,resolution:'reconcile_native_invocation'});
+      this.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(runId);
       this.db.prepare("UPDATE cp_dispatches SET state='unknown' WHERE id=?").run(dispatch.id);
       if(this.store.getMission(m.id).state!=='cancelled')this.store.state(m.id,'blocked','Native fallback requires reconciliation');
     }
@@ -359,7 +365,7 @@ class MissionService {
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
       if(!v||v.revision!==m.revision||(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
-      if(input.decision==='accept')this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));
+      if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');
       if(input.decision==='accept'&&!require('./execution-evidence').runSatisfied(this.store.run(v.run_id)))throw Error('Required native execution evidence is missing');
       if(input.decision==='accept'&&v.result==='operator_review'){if(owner!=='operator')throw Error('Unsupported criterion requires operator review');text(input.evidence,'operator evidence',4000);}
@@ -379,11 +385,11 @@ class MissionService {
       for(const h of this.db.prepare("SELECT h.run_id FROM cp_codex_handoffs h JOIN cp_runs r ON r.id=h.run_id WHERE r.mission_id=? AND h.state<>'settled'").all(id))this.bridge.codexAdapter.cancelTask(h.run_id);
       this.store.event('mission.stop_requested',id,{});return{mission_id:id,state:'cancelled'};
     });
-    afterCommit(this.db,()=>{if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id))this.bridge.opencodeAdapter?.cancel({task:this.bridge.tasks.get(row.task_id)});for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
+    afterCommit(this.db,()=>{this._web?.cancel(id);if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id))this.bridge.opencodeAdapter?.cancel({task:this.bridge.tasks.get(row.task_id)});for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
     return result;
   }
   decisionDetails(id){const d=this.store.decision(id);if(!d)throw Error('Decision not found');const m=this.detail(d.mission_id);return{decision:d,mission_objective:m.objective,result:this.db.prepare('SELECT normalized FROM cp_run_results WHERE run_id=?').get(d.run_id)?.normalized||null,verification:m.verifications,risks:['Worker rationale is untrusted; protected approvals are separate.']};}
   recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.schedule();}
-  async close(){this.stopped=true;await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
+  async close(){this.stopped=true;await this._web?.close();await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
 }
 module.exports={MissionService,relative};

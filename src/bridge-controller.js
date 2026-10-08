@@ -215,6 +215,7 @@ class BridgeController extends EventEmitter {
         try { return fs.realpathSync(task.workspace) === this.hostRepoRoot; } catch { return false; }
       },
       onAuthorized: (task, toolName, detail) => {
+        if(toolName==='capability'&&detail.request?.input?.name==='mission_web')this.missions.web.bindInvocation(task,detail.request);
         if(task.mission?.manifest&&this.missions){const m=this.controlStore.missionForTask(task.id);if(!m)throw Error('Manifest Mission binding missing');this.missions.program.assert(m);const capability=detail.request?.input?.name;if(capability==='git_commit')this.missions.program.reserve(m.id,'commits',detail.request.toolCallId||'commit:'+task.id,1,{input:detail.request.input});}
         task.mission.used.actions++;
         if (task.mission?.level1MissionId) this.level1Flow?.recordUsage(task.mission.level1MissionId, task.mission.used);
@@ -301,7 +302,7 @@ class BridgeController extends EventEmitter {
       });
       this.config = prepareControlProfile(this.dataDir, this.options.sourceProfile);
       this.tasks = new TaskSessionManager(this.dataDir, this.memory.db);
-      this.tasks.isErasureActive=id=>this.leases.has(id)||Boolean(this.missions?._research?.isActiveTask(id));
+      this.tasks.isErasureActive=id=>this.leases.has(id)||Boolean(this.missions?._research?.isActiveTask(id))||Boolean(this.missions?._web?.isActiveTask(id));
       this.projects = new ProjectMissionOrchestrator({
         db: this.memory.db, personalMemory: this.personalMemory,
         record: event => this._ledgerRecord(event),
@@ -358,6 +359,7 @@ class BridgeController extends EventEmitter {
       this.authorityRuntime=new (require('./authority-integration').AuthorityRuntime)(this);
       this.fixtureAcceptance = new (require('./fixture-acceptance').FixtureAcceptance)(this);
       this.missions = new MissionService(this);
+      this.capabilityHost.missionWeb=this.missions.web;
       this.workExecution = new (require('./apps/work-execution-adapter').WorkExecutionAdapter)(this, this.options.workExecution || {});
       this.policy.manifestGuard=(task,call)=>this.missions.program.guardTask(task,call);
       this.providerGateway.beforeInference=(input,provider,attempt,profile,providerRecordId)=>{const run=this.controlStore.run(input.run_id),m=run?.mission_id?this.controlStore.getMission(run.mission_id):null;if(!m?.envelope.manifest)return;this.missions.program.assert(m);const p=m.envelope.manifest.permissions.providers;if(!(provider==='ollama'?p.local_reasoning:p.approved_external))throw Error('Manifest provider denied');if(provider!=='ollama'){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(providerRecordId||''))throw Error('Provider budget origin unavailable');this.missions.program.reserve(m.id,'external_reasoning',['provider',providerRecordId,provider,attempt,profile].join(':'),1,{run_id:run.id,provider,attempt,profile});}};
