@@ -29,11 +29,12 @@ class ControlContext {
   _build(mission,runId=null){
     require('./memory-content-erasure').assertReadable(this.db);
     const memoryAllowed=!mission.envelope.manifest||(mission.envelope.manifest.permissions.memory.read&&mission.envelope.manifest.permissions.memory.search);
-    if(this.bridge.authorityRuntime?.active){if(!memoryAllowed)throw Error('Governed context adapter requires manifest memory eligibility');return this.bridge.authorityRuntime.buildContext(mission,runId);}
+    if(this.bridge.authorityRuntime?.active){if(!memoryAllowed&&!mission.envelope.worker_contract)throw Error('Governed context adapter requires manifest memory eligibility');return this.bridge.authorityRuntime.buildContext(mission,runId);}
     const task=this.bridge.tasks.get(mission.task_id),conversation=mission.envelope.kind==='conversation',query=conversation?require('./conversation-mission').memoryQuery(mission.envelope.objective):mission.envelope.objective.slice(0,4000),memory=this.bridge.personalMemory;
     const architecture=require('./architecture-memory');
-    const found=memoryAllowed&&mission.project_id?architecture.retrieve(this.db,mission.project_id,{maxBytes:7000,topK:20}).records:[];
-    if(memoryAllowed&&query)for(const scope of conversation?(mission.envelope.include_memory?[{domain:'personal'}]:[]):[{domain:'session',taskId:task.id},...(mission.project_id?[{domain:'project',projectId:mission.project_id}]:[]),...(task.includeSharedMemory?[{domain:'personal'}]:[])]){
+    const external=!!mission.envelope.worker_contract;
+    const found=memoryAllowed&&!external&&mission.project_id?architecture.retrieve(this.db,mission.project_id,{maxBytes:7000,topK:20}).records:[];
+    if(memoryAllowed&&!external&&query)for(const scope of conversation?(mission.envelope.include_memory?[{domain:'personal'}]:[]):[{domain:'session',taskId:task.id},...(mission.project_id?[{domain:'project',projectId:mission.project_id}]:[]),...(task.includeSharedMemory?[{domain:'personal'}]:[])]){
       found.push(...memory.search(query,{...scope,limit:conversation?1:6,maxChars:conversation?2000:4000,includeSensitive:false}).items.filter(x=>!x.type.startsWith('architecture:')&&!found.some(r=>r.provenance&&(x.subject.replace(/^architecture:/,'')===r.subject))));
     }
     let used=2;const records=[];for(const item of found){if(records.some(x=>x.memoryId===item.memoryId))continue;const current=item.provenance?item:memory.get(item.memoryId,{includeSensitive:false});if(!current||current.status!=='active')continue;const size=Buffer.byteLength(JSON.stringify(current));if(records.length>=(conversation?1:20)||used+size+(records.length?1:0)>(conversation?2000:8000))continue;records.push(current);used+=size+(records.length>1?1:0);}

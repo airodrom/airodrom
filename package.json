@@ -41,7 +41,8 @@
     "macos:menu:prepare": "node scripts/run.cjs scripts/macos/prepare-local-menu.cjs",
     "test:product:browser": "node scripts/run.cjs --test tests/product-browser.cjs",
     "test:assistant": "node scripts/run.cjs --test tests/personal-assistant-v1.test.js",
-    "test:conversation": "NODE_ENV=test node scripts/run.cjs --test tests/conversation-engine.test.js tests/conversation-routing-v1.test.js tests/conversation-cli.test.js tests/secure-vault-guide.test.js"
+    "test:conversation": "NODE_ENV=test node scripts/run.cjs --test tests/conversation-engine.test.js tests/conversation-routing-v1.test.js tests/conversation-cli.test.js tests/secure-vault-guide.test.js",
+    "test:workers": "NODE_ENV=test node scripts/run.cjs --test tests/multi-worker-v2.test.js tests/multi-worker-ui.test.js"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -384,6 +385,10 @@
     "src/browser-cdp.js",
     "src/browser-render.js",
     "docs/UNIVERSAL-BROWSER-V2.md",
-    "docs/adr/0017-universal-browser-v2.md"
+    "docs/adr/0017-universal-browser-v2.md",
+    "src/bounded-worker.js",
+    "src/worker-registry.js",
+    "docs/MULTI-WORKER-V2.md",
+    "docs/adr/0018-qualified-multi-worker-v2.md"
   ]
 }

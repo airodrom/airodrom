@@ -31,3 +31,5 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0016 universal Mission web](0016-universal-mission-web.md): Accepted under the owner implementation request; signed per-Mission public web grants and narrowly consented Monarch login network repair.
 
 - [0017 Universal Browser V2](0017-universal-browser-v2.md): Accepted under the owner implementation request; truthful connection modes, owned CDP and temporary permission controls, subject to exact local boundary reviews.
+
+- [0018 qualified Multi-Worker V2](0018-qualified-multi-worker-v2.md): Proposed; public no-tools vendor proposals, signed owner qualification/templates and V2 handoff.

@@ -9,7 +9,7 @@ class MissionVerifier {
   async verify(mission,run){
     if(mission.envelope.kind==='conversation')return require('./conversation-mission').verify(this.bridge.missions,mission,run);
     if(mission.envelope.kind==='browser_research')return this.bridge.missions.research.verify(mission,run);
-    try{this.bridge.opencodeAdapter?.assertEvidence(run);this.bridge.missions._web?.verify(mission,run);}catch{return{status:'failed',checks:[{id:'runtime_provenance',status:'failed',evidence:{reason:'opencode_provenance_unavailable'}}],workspace_hash:'unavailable'};}
+    try{this.bridge.opencodeAdapter?.assertEvidence(run);this.bridge.workers?.assertEvidence(run);this.bridge.missions._web?.verify(mission,run);}catch{return{status:'failed',checks:[{id:'runtime_provenance',status:'failed',evidence:{reason:'opencode_provenance_unavailable'}}],workspace_hash:'unavailable'};}
     const envelope=mission.envelope,checks=[],task=this.bridge.tasks.get(run.task_id);
     const add=(id,status,evidence)=>checks.push({id,status,evidence:redactValue(evidence)});
     const call=async(name,input)=>{

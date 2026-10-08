@@ -9,6 +9,7 @@ const DEFINITIONS=Object.freeze({
  cursor:{transport:'acp_stdio',implemented:true,workspace_write:false,tool_runtime_style:'acp_unqualified',continuation:false,hard_cancel:false,result_publication:false,direct_dispatch:false,handoff_only:false,lifecycle_observation:false,external_cycle_required:false,cost_class:'subscription',latency_class:'unknown'}
 });
 function agentRuntimeProfile(id,observation={}){
+ if(observation.bounded_worker)return {agent_id:id,kind:'agent_runtime',transport:'bounded_local_cli',direct_dispatch:true,hard_cancel:true,result_publication:true,lifecycle_observation:true,external_cycle_required:false,execution_authority:false,locality:'external',isolation_verified:true,availability:observation.availability,available:observation.available,auth_state:observation.authenticated?'session_observed':'auth_required',quota_state:'unknown',circuit_state:'not_observed',cost_class:'subscription',qualification:observation.qualification,reason:observation.reason,model:observation.model};
  if(id==='cloud')return require('./runtime-support').cloudStatus();
  const definition=DEFINITIONS[id];if(!definition)throw Error('Unknown agent runtime');
  let availability=observation.availability||observation.state||(observation.available===true?'available':'unknown');

@@ -31,6 +31,7 @@ function prepareMemoryRestore({db,erasureSourceDb,vaultDirectory,erasureSourceVa
   // Vault tombstones are durable before key cleanup. A later database failure
   // cannot make erased ciphertext readable; the entire restore stays quarantined.
   if(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='cp_mcp_handoff_sessions'").get())db.prepare('DELETE FROM cp_mcp_handoff_sessions').run();
+  for(const table of ['cp_worker_qualifications','cp_worker_templates'])if(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table))db.exec('DELETE FROM '+table);
   const vault=new RestrictedMemoryVault(vaultDirectory,{restoreFromBackup:true,erasureSourceVault});
   return transaction(db,()=>{
     const personal=new PersonalMemory({db,now,restoreFromBackup:true,erasureSourceDb});

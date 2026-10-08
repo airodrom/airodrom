@@ -13,8 +13,8 @@ function models(catalog,selection='auto') {
  return out+`Routing: ${selection==='auto'?'AUTO':'MANUAL · '+clean(selection)}\n/model <qualified-id> · /model local · /model auto\n`;
 }
 function workers(catalog,selection='auto') {
- let out='WORKERS\n\n';for(const w of catalog.workers)out+=`${w.qualification==='denied'?'×':w.available?'●':'○'} ${name(w.id)} · ${w.available?'READY':w.qualification==='denied'?'DENIED':'NOT QUALIFIED'}\n`+row('Location',name(w.locality))+row('Support',name(w.support))+row('Qualification',name(w.qualification))+row('Capabilities',list(w.capabilities))+'\n';
- return out+`Routing: ${selection==='auto'?'AUTO':'MANUAL · '+name(selection)}\n/worker <qualified-id> · /worker auto\n`;
+ let out='WORKERS\n\n';for(const w of catalog.workers)out+=`${w.qualification==='denied'?'×':w.available?'●':'○'} ${name(w.id)} · ${w.available?'READY':w.qualification==='denied'?'DENIED':'NOT QUALIFIED'}\n`+row('Location',name(w.locality))+row('Support',name(w.support))+row('Qualification',name(w.qualification))+row('Installed',w.installed===undefined?'Host runtime':w.installed?'Yes':'No')+row('Account',w.auth_state||'Not probed')+row('Version',w.version||'Not verified')+row('Reason',w.reason||'None')+row('Expires',w.expires_at?new Date(w.expires_at).toISOString():'Not qualified')+row('Capabilities',list(w.capabilities))+'\n';
+ return out+`Routing: ${selection==='auto'?'AUTO':'MANUAL · '+name(selection)}\n/worker <qualified-id> · /worker auto\n/workers qualify <id> <exact-model> --confirm-public-fixture · /workers revoke <id>\n`;
 }
 function connectors(data) {
  let out='CONNECTORS\n\n';for(const c of data.items||[])out+=`${name(c.id)} · ${c.state==='ready'?'Ready':c.state==='unavailable'?'Not connected / unavailable':name(c.state)}\n`+row('Protocol',c.protocol)+row('Access',c.read_only?'Read-only':'Not reported')+row('Qualification',c.live_qualified?'Live qualified':'Not live qualified')+row('Setup',c.setup)+row('Actions',c.mutations)+'\n';return out;
