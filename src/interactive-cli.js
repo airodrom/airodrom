@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all [id] [URLs] · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -202,6 +202,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   };
   const handleReceipt = async (receipt, json = false, message = null) => {
     if (receipt.kind === 'preference') assistantNickname=receipt.nickname;
+    if(receipt.kind==='public_web_offer'){stopAnswer();await detachReader();let next;try{next=await require('./mission-web-guide').guide({offer:receipt,input,output,home,signal:active?.signal});}finally{await attachReader();}await handleReceipt(next,json,message);return;}
     if(receipt.kind==='research_session'){stopAnswer();await handleReceipt(await sessionGuide(receipt.entry_url),json,message);return;}
     if (receipt.kind === 'chat') {
       if (!indicator) startAnswer();
@@ -317,6 +318,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
             show(output,await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(id)),render.researchReport,json);
             active=null;readerLocked=false;showPrompt();continue;
           }
+          if(/^(search|explore)\s+/i.test(arg)){await handleReceipt(require('./mission-web-guide').parse(arg.replace(/^search\s+/i,'search the web for ')),false,arg);active=null;readerLocked=false;showPrompt();continue;}
           if(json)throw Error('Use /research report [mission-id] --json for verified developer evidence.');
           if(!/^(?:login|account)\s+https:\/\/\S+$/i.test(arg))throw Error('Use /research login <HTTPS URL> for dedicated manual login, or /research account <HTTPS login URL> for stored Vault credentials.');
           active=new AbortController();const receipt=await (/^login\s/i.test(arg)?sessionGuide(arg.replace(/^login\s+/i,'')):accountGuide(arg.replace(/^account\s+/i,'')));await handleReceipt(receipt,json);active=null;
@@ -329,9 +331,17 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           if (!arg) output.write('/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id]\n');
           else {
             const [action, ...parts] = arg.split(/\s+/);
-            if (!['new','list','status','cancel'].includes(action) || action==='list'&&parts.length || ['status','cancel'].includes(action)&&parts.length>1) throw Error('Use /mission new [objective], list, status [id], or cancel [id].');
+            if(action==='web'){
+              const mode=parts.shift();if(!['on','off','all'].includes(mode))throw Error('Use /mission web on|off|all [id] [public HTTPS URLs].');
+              const id=/^[a-f0-9-]{36}$/i.test(parts[0]||'')?parts.shift():lastMission;if(!id)throw Error('Select a qualified Work Mission first.');
+              if(mode==='off'){const receipt=await local.request(home,'/api/assistant/mission/web',{mission_id:id,mode,request_id:randomUUID()});output.write(receipt.message+'\n');active=null;readerLocked=false;showPrompt();continue;}
+              const status=await local.request(home,'/api/assistant/mission',{action:'status',mission_id:id,request_id:randomUUID()}),proposal=require('./mission-web-policy').proposal(status.mission.objective);
+              const offer={mode,entries:parts.length?parts:proposal.entries,...(!parts.length&&!proposal.entries.length?{query:status.mission.objective}:{})};
+              await detachReader();let receipt;try{receipt=await require('./mission-web-guide').guide({offer,mission_id:id,input,output,home});}finally{await attachReader();}output.write(receipt.message+'\n');active=null;readerLocked=false;showPrompt();continue;
+            }
+            if (!['new','list','status','cancel','run'].includes(action) || action==='list'&&parts.length || ['status','cancel','run'].includes(action)&&parts.length>1) throw Error('Use /mission new [objective], list, status [id], or cancel [id].');
             active=new AbortController();
-            const receipt=await local.request(home,'/api/assistant/mission',{action,request_id:randomUUID(),...(action==='new'?{workspace:fs.realpathSync(process.cwd()),objective:parts.join(' '),model,worker}:['status','cancel'].includes(action)&& (parts[0]||lastMission)?{mission_id:parts[0]||lastMission}: {})});
+            const receipt=await local.request(home,'/api/assistant/mission',{action,request_id:randomUUID(),...(action==='new'?{workspace:fs.realpathSync(process.cwd()),objective:parts.join(' '),model,worker}:['status','cancel','run'].includes(action)&& (parts[0]||lastMission)?{mission_id:parts[0]||lastMission}: {})});
             await handleReceipt(receipt);active=null;
           }
         }

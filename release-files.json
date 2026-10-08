@@ -539,5 +539,16 @@
   "tests/research-session.test.js",
   "docs/BROWSER-SESSION-HANDOFF-V1.md",
   "docs/adr/0015-authenticated-browser-session-handoff.md",
-  "tests/public-url-routing.test.js"
+  "tests/public-url-routing.test.js",
+  "config/mission-web-v1.json",
+  "docs/UNIVERSAL-MISSION-WEB-V1.md",
+  "docs/adr/0016-universal-mission-web.md",
+  "src/mission-web-document.js",
+  "src/mission-web-guide.js",
+  "src/mission-web-policy.js",
+  "src/mission-web-search.js",
+  "src/mission-web.js",
+  "src/research-session-policy.js",
+  "tests/universal-mission-web.test.js",
+  "tests/authenticated-research-routing.test.js"
 ]

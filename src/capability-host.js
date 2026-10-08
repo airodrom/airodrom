@@ -22,6 +22,7 @@ const AUDIT_PLAIN_KEYS = new Set(['path', 'root', 'source', 'destination', 'arch
 
 function auditCapabilityInput(name, input) {
   const audit = { capability: typeof name === 'string' ? name : null };
+  if(name==='mission_web')return {...audit,mission_id:require('./mission-web-policy').UUID.test(input?.mission_id||'')?input.mission_id:null,action:require('./mission-web-policy').ACTIONS.includes(input?.action?.type)?input.action.type:null};
   if(name==='browser_research')return {...audit,mission_id:typeof input?.mission_id==='string'&&/^[a-f0-9-]{36}$/i.test(input.mission_id)?input.mission_id:null,action:Object.hasOwn(require('./research-capability').ACTIONS,input?.action?.type)?input.action.type:null};
   if (!input || typeof input !== 'object' || Array.isArray(input)) return audit;
   for (const [key, value] of Object.entries(input).slice(0, 32)) {
@@ -38,7 +39,7 @@ class CapabilityHost {
     dataDir, home = os.homedir(), env = process.env, policy = null, scopes = null, exec = null, bridgeRoot = path.resolve(__dirname, '..'),
     protectedRoots = [], trustedFiles = [], saveTask = () => {}, requestBridgeRestart = null, webFetch = null, webEnabled = () => false,
     mcpConnected = () => false, bridgePids = () => [], localServicesPath = path.join(__dirname, '../config/local-services-v2.json'),
-    protectedBranches = [], definitions = null, probeHttp = null, researchAssess = null, researchExecute = null
+    protectedBranches = [], definitions = null, probeHttp = null, researchAssess = null, researchExecute = null, missionWeb = null
   } = {}) {
     this.policy = policy || new CapabilityPolicy();
     this.scopes = scopes || new FilesystemScopes({ home, bridgeRoot, dataDir, protectedRoots, trustedFiles });
@@ -46,7 +47,7 @@ class CapabilityHost {
     this.home = home; this.env = env; this.saveTask = saveTask; this.requestBridgeRestart = requestBridgeRestart;
     this.webFetch = webFetch; this.webEnabled = webEnabled; this.mcpConnected = mcpConnected; this.bridgePids = bridgePids;
     this.protectedBranches = protectedBranches;
-    this.researchAssess=researchAssess;this.researchExecute=researchExecute;
+    this.missionWeb=missionWeb;this.researchAssess=researchAssess;this.researchExecute=researchExecute;
     this.probeHttp = probeHttp || require('./capability-mac').probeHttp;
     this.jobs = new ClaudeCodeJobs();
     this.notificationState = { sent: [] };
@@ -54,7 +55,7 @@ class CapabilityHost {
     this.apps = capabilityApps();
     this.definitions = definitions || {
       ...this._metaCapabilities(), ...fileCapabilities(), ...developerCapabilities({ jobs: this.jobs }), ...macCapabilities({ notificationState: this.notificationState }),
-      ...this.apps.definitions(), ...researchCapabilities()
+      ...this.apps.definitions(), ...researchCapabilities(), ...require('./mission-web-policy').capabilities()
     };
     // Startup invariant: the policy matrix and the adapters describe exactly the
     // same capability set, so nothing executes without an explicit class.
@@ -67,7 +68,7 @@ class CapabilityHost {
     const executor = task.mission?.authority ? Object.assign(Object.create(this.exec), { run: (file, args, options = {}) => this.exec.run(file, args, {...options, signal, missionAuthority:task.mission.authority, allowGitMetadata:['git_stage','git_commit','git_branch_create','git_checkout','git_pull'].includes(operation)}) }) : this.exec;
     return {
       controlExecution: this.controlExecution, task, home: this.home, env: this.env, scopes: this.scopes, exec: executor, policy: this.policy,
-      signal,researchAssess:this.researchAssess,researchExecute:this.researchExecute,
+      signal,missionWeb:this.missionWeb,researchAssess:this.researchAssess,researchExecute:this.researchExecute,
       trashDir: path.join(this.home, '.Trash'), hostOwnedRoot: this.scopes.hostOwnedRoot, localServices: this.localServices,
       protectedBranches: this.protectedBranches, requestBridgeRestart: this.requestBridgeRestart, bridgePids: this.bridgePids,
       webFetch: input => this.webFetch ? this.webFetch(task, input) : Promise.reject(new Error('Web reader unavailable')), webEnabled: this.webEnabled,

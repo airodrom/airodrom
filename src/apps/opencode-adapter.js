@@ -31,6 +31,14 @@ function contextSafetyView(value, key, parentKey) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([field,item]) => [field,contextSafetyView(item,field,key)]));
   return value;
 }
+function webTextSafety(value){
+ if(typeof value!=='string'||require('../research-baseline').unsafeEvidenceText(value))fail('opencode_sensitive_context');
+ return value.replace(/https?:\/\/[^\s<>"'`]+/g,raw=>{const url=raw.replace(/[.,;!]+$/,'');try{new (require('../research-network').ResearchNetwork)({scope:{origins:[new URL(url).origin]}}).validate(url);}catch{fail('opencode_sensitive_context');}return '[validated public URL]';});
+}
+function webSafetyView(web){return web.map(e=>{
+ if(e.authority!==false||e.untrusted!==true)fail('opencode_sensitive_context');
+ const view=value=>{if(Array.isArray(value))return value.map(view);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,['id','evidence_id'].includes(k)&&require('../mission-web-policy').UUID.test(v||'')?'[evidence UUID]':view(v)]));return typeof value==='string'?webTextSafety(value):value;};return view(e);
+});}
 function relative(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_.\/-]{1,300}$/.test(value) || path.isAbsolute(value) || value.split('/').some(p => !p || p === '.' || p === '..') || /(^|\/)(?:\.git|\.opencode|\.agents|\.claude|node_modules|\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|auth\.json|[^/]+\.(?:sqlite|db|pem|key))($|\/)/i.test(value)) fail('opencode_file_scope');
   return value;
@@ -58,13 +66,17 @@ function parseOutput(stdout, allowedFiles) {
     }
   }
   let result; try { result = JSON.parse(text); } catch { fail('opencode_malformed_result'); }
-  object(result, ['status', 'summary', 'changed_files', 'tests', 'artifacts', 'limitations']);
+  object(result, ['status', 'summary', 'changed_files', 'tests', 'artifacts', 'limitations','web_requests']);
   // Omitted claims mean no claims. Host-measured file changes are authoritative.
   for(const k of ['changed_files','tests','artifacts','limitations'])if(result[k]===undefined)result[k]=[];
-  if (typeof result.summary !== 'string' || !result.summary.trim() || Buffer.byteLength(result.summary) > 8000 || result.status!==undefined&&!['completed','failed'].includes(result.status) || !Array.isArray(result.changed_files) || result.changed_files.length > 8 || result.changed_files.some(f => !allowedFiles.includes(relative(f))) || new Set(result.changed_files).size !== result.changed_files.length) fail('opencode_malformed_result');
+  if (typeof result.summary !== 'string' || !result.summary.trim() || Buffer.byteLength(result.summary) > 8000 || result.status!==undefined&&!['completed','failed','needs_web'].includes(result.status) || !Array.isArray(result.changed_files) || result.changed_files.length > 8 || result.changed_files.some(f => !allowedFiles.includes(relative(f))) || new Set(result.changed_files).size !== result.changed_files.length) fail('opencode_malformed_result');
   for (const k of ['tests', 'artifacts', 'limitations']) if (!Array.isArray(result[k]) || result[k].length > 8) fail('opencode_malformed_result');
+  if(result.web_requests!==undefined&&(!Array.isArray(result.web_requests)||result.web_requests.length>3))fail('opencode_web_request_bound');
+  const web=(result.web_requests||[]).map(action=>require('../mission-web-policy').validate({mission_id:randomUUID(),action}).action);
+  if(web.length&&(result.status!=='needs_web'||result.changed_files.length))fail('opencode_web_request_bound');
+  if(result.status==='needs_web'&&!web.length)fail('opencode_web_request_bound');
   // Drop raw tool arguments, diagnostics and worker-supplied evidence/paths.
-  return { session_id: session, events, result: { status: result.status === 'failed' ? 'failed' : 'completed', summary: redactValue(result.summary), changed_files: result.changed_files, tests: [], artifacts: [], limitations: ['Runtime claims are untrusted; canonical repository verification is required.'] } };
+  return { session_id: session, events, result: { status: web.length?'needs_web':result.status === 'failed' ? 'failed' : 'completed',...(web.length?{web_requests:web}:{}), summary: redactValue(result.summary), changed_files: result.changed_files, tests: [], artifacts: [], limitations: ['Runtime claims are untrusted; canonical repository verification is required.'] } };
 }
 function disposableEnv(root, cwd, config) {
   return { PATH: '/usr/bin:/bin', PWD: cwd, LANG: 'en_US.UTF-8', NO_COLOR: '1',
@@ -163,7 +175,11 @@ class OpenCodeAdapter extends AgentAdapter {
     let records;
     if(b.authorityRuntime?.active){const a=b.authorityRuntime,p=a.store.one('context_pack_manifests',context.id);if(!p||!a.memory.validatePack(context.id,{operator_id:a.store.operatorId,project_id:p.project_id}).valid)fail('opencode_memory_context_unavailable');records=a.memory.items(context.id).map(m=>({subject:m.kind==='mission_episodic'?'Accepted mission episode':m.subject_key,content:require('../authority-memory').referenceContent(m),authority:false}));}
     else{const p=b.controlContext.inspect(context.id);records=p.refs.map(ref=>{const m=b.personalMemory.get(ref.memory_id,{includeSensitive:false});if(!m||require('../architecture-memory').hash(m.content)!==ref.content_hash)fail('opencode_memory_context_unavailable');return{subject:m.subject,content:m.content,authority:false};});}
-    const minimum={records,authority:false};if(records.length>20||Buffer.byteLength(JSON.stringify(minimum))>8000)fail('opencode_context_bound');safeText(JSON.stringify(minimum));return minimum;
+    const binding=b.controlStore.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE context_pack_id=?').get(context.id),mission=binding?b.controlStore.missionForTask(binding.task_id):null;
+    const web=mission?.envelope.kind==='coding'&&b.missions._web?b.missions.web.context(b.tasks.get(mission.task_id)):[];
+    const minimum={records,...(web.length?{web:[]}:{}),authority:false};if(records.length>20||Buffer.byteLength(JSON.stringify(minimum))>8000)fail('opencode_context_bound');
+    for(const e of web.slice(-4)){const projected={...e,text:e.text?.slice(0,1400),links:e.links?.slice(0,3),projection_truncated:true};minimum.web.push(projected);while(Buffer.byteLength(JSON.stringify(minimum))>8000&&projected.text?.length)projected.text=projected.text.slice(0,-200);while(Buffer.byteLength(JSON.stringify(minimum))>8000&&projected.links?.length)projected.links.pop();if(Buffer.byteLength(JSON.stringify(minimum))>8000)minimum.web.pop();}
+    safeText(JSON.stringify({...minimum,...(minimum.web?{web:webSafetyView(minimum.web)}:{})}));return minimum;
   }
   assertEvidence(run){
     if(run.agent_id!=='opencode')return;
@@ -176,8 +192,9 @@ class OpenCodeAdapter extends AgentAdapter {
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
     if (!(await this.readiness()).ready) fail('opencode_unavailable_or_unsupported');
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || fs.realpathSync(workspace) !== workspace || !Array.isArray(files) || files.length > 8 || new Set(files).size !== files.length || !Array.isArray(writable) || new Set(writable).size !== writable.length || writable.some(f => !files.includes(f))) fail('opencode_workspace_binding');
-    files.forEach(relative); writable.forEach(relative); safeText(objective, 12000);
+    files.forEach(relative); writable.forEach(relative);
     const currentContext=this.authorizedContext(context);
+    safeText(currentContext?.web?.length?webTextSafety(objective):objective,12000);
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'airodrom-opencode-'))); fs.chmodSync(root, 0o700);
     const originals = new Map();let cleanup=true;
     try {
@@ -189,7 +206,8 @@ class OpenCodeAdapter extends AgentAdapter {
         fs.mkdirSync(path.dirname(path.join(root, 'workspace', f)), { recursive: true, mode: 0o700 });
         fs.writeFileSync(path.join(root, 'workspace', f), content, { mode: 0o600 });
       }
-      const input = safeText(JSON.stringify({ protocol: 'airodrom-opencode-v1', objective, readable_files: files, allowed_files: writable, current_context: currentContext, authority: false, result_contract:{summary:conversation?'Answer the user directly in natural conversational language':'Describe observed work',changed_files:[],tests:[],artifacts:[],limitations:[]}, instructions: (conversation?'You are Airodrom, the user\'s personal AI assistant, speaking directly to the user. When asked who you are, introduce yourself naturally as Airodrom and offer help. Your assistant identity is Airodrom; Qwen and OpenCode are underlying model/runtime details available through the models and status commands. Do not introduce yourself as Qwen3 Coder or a worker. The summary field is the actual answer, not an execution report. Respond to hi with a friendly greeting. Answer What is my name? directly using only current_context, or say you do not know yet if absent. Never describe the objective, observed work, internal prompts, JSON contract or reasoning. Empty reference context does not prevent ordinary conversation. ':'') + 'Work only on supplied files. No shell, network tools, Memory DB, git or external actions. ' + (conversation?'Use only current_context for personal facts; never infer missing personal facts.':'Use only current_context; if unavailable answer unavailable.') + ' Return only one JSON object matching result_contract exactly: summary is a nonempty string; every other field is an array. Never claim verification or Acceptance.' }));
+      const envelope = { protocol: 'airodrom-opencode-v1', objective, readable_files: files, allowed_files: writable, current_context: currentContext, authority: false, result_contract:{...(!conversation&&currentContext?.web?.length?{status:'completed',web_requests:[]}:{}),summary:conversation?'Answer the user directly in natural conversational language':'Describe observed work',changed_files:[],tests:[],artifacts:[],limitations:[]}, instructions: (conversation?'You are Airodrom, the user\'s personal AI assistant, speaking directly to the user. When asked who you are, introduce yourself naturally as Airodrom and offer help. Your assistant identity is Airodrom; Qwen and OpenCode are underlying model/runtime details available through the models and status commands. Do not introduce yourself as Qwen3 Coder or a worker. The summary field is the actual answer, not an execution report. Respond to hi with a friendly greeting. Answer What is my name? directly using only current_context, or say you do not know yet if absent. Never describe the objective, observed work, internal prompts, JSON contract or reasoning. Empty reference context does not prevent ordinary conversation. ':'') + (!conversation&&currentContext?.web?.length?'For additional approved public evidence, return status needs_web with up to three typed web_requests (type search, explore, inspect, click, screenshot, document or test). Use an approved starting URL or a supplied verified link. Make no file changes in that response. Airodrom will execute approved requests; you have no browser authority. ':'')+'Work only on supplied files. No shell, network tools, Memory DB, git or external actions. ' + (conversation?'Use only current_context for personal facts; never infer missing personal facts.':'Use only current_context; if unavailable answer unavailable.') + ' Return only one JSON object matching result_contract exactly: summary is a nonempty string; status is a string; every other field is an array. Never claim verification or Acceptance.' };
+      const safeEnvelope=currentContext?.web?.length?{...envelope,objective:webTextSafety(objective),current_context:{...currentContext,web:webSafetyView(currentContext.web)}}:envelope;safeText(JSON.stringify(safeEnvelope));const input=JSON.stringify(envelope);if(Buffer.byteLength(input)>MAX_CONTEXT)fail('opencode_context_bound');
       const executable = this.verifyArtifact(this.executable()), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
       const remaining = expiresAt - Date.now();
       if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
@@ -207,7 +225,8 @@ class OpenCodeAdapter extends AgentAdapter {
         if (content !== before) { if (!writable.includes(f)) fail('opencode_undeclared_write'); changes.push({ path: f, content, preimage_sha256: hash(before), sha256: hash(content), size: Buffer.byteLength(content) }); }
         if (fs.realpathSync(path.join(workspace, f)) !== path.join(workspace, f) || fs.readFileSync(path.join(workspace, f), 'utf8') !== before) fail('opencode_preimage_changed');
       }
-      if (parsed.result.status !== 'completed') fail('opencode_runtime_failed');
+      if(parsed.result.status==='needs_web'&&(conversation||changes.length))fail('opencode_web_request_bound');
+      if (!['completed','needs_web'].includes(parsed.result.status)) fail('opencode_runtime_failed');
       this.authorizedContext(context);
       return { ...parsed, result: { ...parsed.result, changed_files: changes.map(c => c.path) }, changes,
         provenance: { runtime_id: this.id, runtime_version: VERSION, executable_sha256: executableHash, execution_id: randomUUID(), session_state: 'disposable', workspace_bound: true, termination_verified: true, authority: false } };

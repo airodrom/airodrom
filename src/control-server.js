@@ -179,7 +179,7 @@ class ControlServer {
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/research/report'){
         const id=url.searchParams.get('mission_id'),mission=this.bridge.missions.require(id,'operator'),report=await this.bridge.missions.research.report(id,'operator');
-        const projected=require('./research-report').projectResearchResponse(report,{scope:mission.envelope.manifest.scope});
+        const projected=mission.envelope.manifest.public_web?report:require('./research-report').projectResearchResponse(report,{scope:mission.envelope.manifest.scope});
         res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(JSON.stringify(projected));
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/research/evidence'){
@@ -285,13 +285,15 @@ class ControlServer {
       }
       if(url.pathname==='/api/assistant/conversation/session')return this.json(res,201,this.conversationEngine.session(body));
       if(url.pathname==='/api/assistant/conversation/cancel')return this.json(res,200,this.conversationEngine.cancel(body));
+      if(url.pathname==='/api/assistant/web/research'){const created=this.bridge.missions.web.createResearch(body);this.bridge.missions.dispatch(created.mission_id,{request_id:'public-web-dispatch:'+body.request_id});return this.json(res,202,{...created,browser_research_available:true});}
+      if(url.pathname==='/api/assistant/mission/web'){require('./control-plane-store').object(body,['mission_id','request_id','mode','entries','query','confirmed']);const {mission_id,...input}=body;return this.json(res,200,this.bridge.missions.web.configure(mission_id,input));}
       if(url.pathname==='/api/assistant/research/download'){
         require('./control-plane-store').object(body,['mission_id','url','request_id']);
         return this.json(res,202,this.bridge.missions.research.download(body.mission_id,{url:body.url,request_id:body.request_id},'operator'));
       }
       if(url.pathname==='/api/assistant/research/session'){
-        require('./control-plane-store').object(body,['entry_url','mode','confirmed','request_id']);
-        const created=this.bridge.missions.research.create({request_id:body.request_id,entry_url:body.entry_url,objective:'Inspect explicitly authorized account feature navigation and compare with current Arecibo evidence.',session_authorization:{mode:body.mode,confirmed:body.confirmed}},'operator');
+        require('./control-plane-store').object(body,['entry_url','mode','confirmed','request_id','network_profile']);
+        const created=this.bridge.missions.research.create({request_id:body.request_id,entry_url:body.entry_url,objective:'Inspect explicitly authorized account feature navigation and compare with current Arecibo evidence.',session_authorization:{mode:body.mode,confirmed:body.confirmed,...(body.network_profile?{network_profile:body.network_profile}:{})}},'operator');
         const id=created.mission_id||created.id;if(created.state==='ready')this.bridge.missions.dispatch(id,{request_id:'session-dispatch:'+body.request_id},'operator');
         return this.json(res,202,{kind:'mission',mission_id:id,state:this.bridge.missions.require(id,'operator').state,browser_research_available:true,session_mode:'dedicated_manual',message:'Dedicated browser opening. Sign in manually, complete MFA, then confirm hand-back. Normal Chrome login is not inherited.',authority:false});
       }
@@ -312,6 +314,7 @@ class ControlServer {
         if(body.action==='new')return this.json(res,202,await missions.newMission(this,{objective:body.objective||null,request_id:body.request_id,workspace:body.workspace,model:body.model,worker:body.worker,explicit:true}));
         if(body.action==='list')return this.json(res,200,missions.list(this));
         if(body.action==='status')return this.json(res,200,missions.status(this,{mission_id:body.mission_id}));
+        if(body.action==='run')return this.json(res,202,{kind:'mission',...this.bridge.missions.dispatch(body.mission_id,{request_id:body.request_id}),browser_research_available:this.bridge.missions.require(body.mission_id).envelope.kind==='browser_research'});
         if(body.action==='cancel')return this.json(res,200,missions.cancel(this,{mission_id:body.mission_id,request_id:body.request_id}));
         throw Error('Use Mission new, list, status or cancel.');
       }

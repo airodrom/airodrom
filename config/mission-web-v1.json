@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "search_source": null,
+  "supported_search_sources": ["duckduckgo_html"],
+  "public_only": true
+}
