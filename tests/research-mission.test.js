@@ -38,7 +38,7 @@ test('exact Monarch research strings and bare URL follow-up dispatch synthetic c
   const done=await f.settle(m.id);assert.equal(done.state,'awaiting_acceptance');assert.equal(done.acceptance.length,0);assert.equal(f.browsers.at(-1).closed,true);
  }
  assert.equal((await submit('Research the Monarch Money website and compare its features with Arecibo.')).pending_research,'public');
- const follow=await submit('https://app.monarch.com');assert.equal(follow.browser_research_available,true);assert.equal(server.pendingResearch.size,0);await f.settle(follow.mission_id);
+ const follow=await submit('https://app.monarch.com');assert.equal(follow.browser_research_available,true);assert.equal(server.pendingResearch.get(session).entry_url,'https://app.monarch.com/');await f.settle(follow.mission_id);
  assert.equal(f.inference(),0);assert.equal(f.calls(),0);assert.equal(f.resolved.length,0);
  assert.equal(f.b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,4);
 });

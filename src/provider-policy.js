@@ -13,10 +13,40 @@ function ordinaryWebsiteSyntax(candidate,{login=false}={}) {
 }
 // Operator syntax screening also permits a harmless unregistered origin to
 // reach the domain-scope gate. It does not qualify a network or provider route.
+function operatorInstructionText(value) {
+  return String(value).normalize('NFKC')
+    .replace(/\b(?:browser|authenticated|dedicated|isolated|visible)\s+session\b(?=\s+(?:for|to|at|on)\s|[.,;!?]|$)/gi,(phrase,offset,source)=>{
+      const tail=source.slice(offset+phrase.length),next=/^\s+(?:for|to|at|on)\s+([^\s<>"'`]+)/i.exec(tail);
+      if(/^\s+(?:for|to|at|on)\s/i.test(tail)&&!next)return phrase;
+      if(next){const token=next[1].replace(/[.,;!]+$/,'');if(!operatorAddress(token,{login:true})&&!(/^(?:[a-z0-9-]+\.)+[a-z]{2,63}(?::443)?(?:\/.*)?$/i.test(token)&&operatorAddress('https://'+token,{login:true}))&&!/^(?:monarch|login|research)$/i.test(token))return phrase;}
+      return phrase.replace(/session$/i,'workflow');
+    })
+    // A complete final clause describes human entry, with no supplied value.
+    // Unknown trailing text keeps the original credential noun screened.
+    .replace(/\b(?:i(?: will|['’]ll)|let me)\s+(?:enter|type)\s+(?:my|the)\s+(?:password|credentials)\s+(?:(?:manually|myself)\s+)?(?:in|into)\s+(?:the|a|that)\s+(?:(?:dedicated|visible|isolated|separate)\s+)?browser(?:\s+(?:manually|myself))?[.!]?$/gi,phrase=>phrase.replace(/\b(?:password|credentials)\b/i,'login'));
+}
+function operatorAddress(candidate,{login=false}={}) {
+  const value=candidate.replace(/[.,;!]+$/,'');
+  return ordinaryWebsiteSyntax(value,{login})?{value,suffix:candidate.slice(value.length)}:null;
+}
 function operatorSecretLike(value) {
   const normalized=String(value).normalize('NFKC');
-  const screened=normalized.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate,{login:true})&&!ordinaryWebsiteSyntax(candidate)?candidate.replace(/\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i,'/'):candidate);
-  const baseline=screened.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>ordinaryWebsiteSyntax(candidate)?require('./transport-outcome').safeTransportUrl(candidate):candidate);
+  const loginAddresses=normalized.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>{
+    const address=operatorAddress(candidate,{login:true});if(!address)return candidate;
+    const safe=ordinaryWebsiteSyntax(address.value)?address.value:address.value.replace(/\/(?:api\/)?auth\/(?:login|signin|session)\/?$/i,'/');
+    // Separate sentence punctuation only after the whole address validates.
+    return safe+(address.suffix?' '+address.suffix:'');
+  });
+  // Screen actual credential shapes across the complete input first. Display
+  // redaction intentionally treats "session <word>" as sensitive, but the
+  // valueless noun "browser session for ..." describes a host workflow.
+  // Only that noun in instruction syntax is normalized; assignments, unknown
+  // session values and every other part of a mixed submission remain screened.
+  if(containsSecret(loginAddresses))return true;
+  // Bare domain syntax must not hide credential/query suffixes or userinfo.
+  for(const token of normalized.match(/[^\s<>"'`]+/g)||[])if(!token.includes('://')&&/(?:[a-z0-9-]+\.)+[a-z]{2,63}\b/i.test(token)&&(/[?#%\\]/.test(token)||/[:/]/.test(token)&&containsSecret('https://'+token)))return true;
+  const screened=operatorInstructionText(loginAddresses);
+  const baseline=screened.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>{const address=operatorAddress(candidate);return address?require('./transport-outcome').safeTransportUrl(address.value)+address.suffix:candidate;});
   return containsSecret(screened)||redactText(screened)!==baseline;
 }
 // Display redaction canonicalizes origins and hides arbitrary paths. Those
@@ -60,4 +90,4 @@ function dataPolicy(input, provider) {
   if (input.attachment_refs?.length || input.context_refs?.length || input.memory_refs?.length) return {allow:false,reason:'reference_transport_unsupported'};
   return {allow:true,classification,minimum_context:true,redaction_required:true,execution_authority:false};
 }
-module.exports = { dataPolicy, secretLike, operatorSecretLike, ordinaryWebsiteSyntax, CLASSES };
+module.exports = { dataPolicy, secretLike, operatorSecretLike, operatorInstructionText, ordinaryWebsiteSyntax, CLASSES };

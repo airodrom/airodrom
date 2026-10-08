@@ -2,16 +2,24 @@
 // ADRs 0012/0013: operator intent proposes a bounded host Mission; website text
 // and models never call this parser or enlarge the approved origin.
 const MESSAGE='Governed browser research is unavailable in this version. Navigation, account access, screenshots and feature-gap reports have not been qualified. No website was visited or compared with Arecibo. Account access requires separate operator authorization and human MFA.';
-function parse(message,{pendingResearch}={}){
+function parse(message,{pendingResearch,researchURL}={}){
  if(typeof message!=='string')return null;
  // A speaker label is request syntax, never an authenticated identity.
  const request=message.normalize('NFKC').trim().replace(/^[\p{L}][\p{L} .'-]{0,31}:\s+(?=(?:research|browse|visit|inspect|explore|review|https:\/\/)\b)/iu,'').replace(/^(?:airo(?:drom)?)[,:]?\s+/i,'').replace(/^(?:(?:please|also|can you|could you|would you|i want you to|i would like you to|i want to|i need to|i would like to|help me)\s+)+/i,'').replace(/^(?:(?:create|start|open|make|launch)\s+(?:(?:a|an|new)\s+)?mission\s+(?:to|for)\s+|\/mission\s+new\s+)/i,'');
  const bare=/^https?:\/\/[^\s<>"'`]+$/i.test(request);
- const sessionIntent=bare&&pendingResearch==='session'||/(?:\b(?:already|currently)\s+(?:logged|signed)\s+in\b|\b(?:inspect|explore|research|review)\b.*\bmy account\b|\bauthenticated\s+(?:research|browser|inspection)\b|\b(?:log|sign)\s+in\s+manually\b|\bafter\s+(?:login|(?:i\s+)?(?:log|sign)\s+in)\b)/i.test(request);
+ const accountIntent=/\b(?:use|inspect|explore|research|review|compare|analy[sz]e)\b.*\b(?:my|the)\s+(?:authenticated|logged[ -]in|signed[ -]in)(?:\s+[\p{L}]+)?\s+account\b/iu.test(request);
+ const manualEntry=/\b(?:i(?: will|['’]ll)|let me)\s+(?:enter|type)\s+(?:my|the)\s+(?:password|credentials)\s+(?:(?:manually|myself)\s+)?(?:in|into)\s+(?:the|a|that)\s+(?:(?:dedicated|visible|isolated|separate)\s+)?browser\b/i.test(request);
+ const sessionIntent=accountIntent||manualEntry||bare&&pendingResearch==='session'||/(?:\b(?:already|currently)\s+(?:logged|signed)\s+in\b|\b(?:inspect|explore|research|review|compare)\b.*\bmy\s+(?:monarch\s+)?account\b|\bauthenticated\s+(?:research|browser|session|inspection)\b|\b(?:open|start|launch)\b.*\b(?:dedicated|isolated|visible)?\s*browser\s+(?:session|profile)\b|\b(?:log|sign)\s+in\s+(?:manually|myself)\b|^(?:log|sign)\s+(?:in|into)\b|\b(?:i(?:['’]ll| will| can)|let me)\s+(?:log|sign)\s+(?:in|into)\b|\bafter\s+(?:login|(?:i\s+)?(?:log|sign)\s+in)\b)/i.test(request);
+ if(sessionIntent&&/\b(?:export|download|change|modify|update|edit|transfer|withdraw|pay|trade)\b/i.test(request))return {route:'WORK',kind:'clarify',message:'Authenticated research is read-only. Exports, financial actions and account-setting changes require separate scope and are unavailable in this workflow.'};
  if((sessionIntent||bare||/\b(?:research|browse|visit|inspect|explore|review)\b/i.test(request))&&/\b(?:ignore|override|bypass)\b.*\b(?:instructions|approval|authority|scope|mfa|rules)\b|\b(?:deploy|publish|send|delete|purchase|subscribe|sign\s*up|create\s+(?:an?\s+)?account)\b/i.test(request))return {route:'WORK',kind:'clarify',message:'Research requires a separate read-only scope. Implementation, account changes and authority overrides are not included.'};
  if(sessionIntent){
-  const urls=request.match(/https?:\/\/[^\s<>"'`]+/gi)||[];let target=urls.length===1?urls[0].replace(/[.,;!]+$/,''):urls.length===0&&/\bmonarch\b/i.test(request)?'https://app.monarch.com/':null;
-  if(!target)return {route:'WORK',kind:'clarify',...(urls.length===0?{pending_research:'session'}:{}),message:'Give one HTTPS account URL for the dedicated browser scope.'};
+  const urls=request.match(/https?:\/\/[^\s<>"'`]+/gi)||[];
+  // Bare domains are operator address syntax. They still cross the same raw
+  // URL and exact-origin gates; no origin is learned from model/history text.
+  const domains=(request.replace(/https?:\/\/[^\s<>"'`]+/gi,' ').match(/[^\s<>"'`]+/g)||[]).filter(token=>/(?:[a-z0-9-]+\.)+[a-z]{2,63}\b/i.test(token));
+  const targets=[...urls,...domains.map(domain=>'https://'+domain)];
+  let target=targets.length===1?targets[0].replace(/[.,;!]+$/,''):targets.length===0&&/\bmonarch\b/i.test(request)?'https://app.monarch.com/':targets.length===0?researchURL:null;
+  if(!target)return {route:'WORK',kind:'clarify',...(targets.length===0?{pending_research:'session'}:{}),message:'Give one HTTPS account URL for the dedicated browser scope.'};
   if(!require('./provider-policy').ordinaryWebsiteSyntax(target,{login:true}))return {route:'WORK',kind:'clarify',message:'Use one HTTPS website address without credentials or encoded/private path data.'};
   try{const u=new URL(target);require('./research-session').allowedURL(u.href,{origin:u.origin,phase:'login',navigation:true});require('./research-network').safeOrigin(u.origin);return {route:'WORK',kind:'research_session',entry_url:u.href,message:'Your normal Chrome login is not inherited. External session attachment is unavailable in V1. Choose dedicated manual login or cancel.',authority:false};}catch{return {route:'WORK',kind:'clarify',message:'Use one HTTPS account URL without credentials, query parameters or private identifiers.'};}
  }

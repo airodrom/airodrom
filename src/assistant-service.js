@@ -27,8 +27,15 @@ async function submit(server,input){
  const now=Date.now(),pending=server.pendingResearch ||= new Map();
  for(const [key,item] of pending)if(item.expires<=now)pending.delete(key);
  const session=input.conversation_id&&server.conversationEngine?.requireSession?server.conversationEngine.requireSession(input.conversation_id).id:null;
- const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:session?pending.get(session)?.mode:undefined});
- if(session){pending.delete(session);if(parsed.pending_research){if(pending.size>=64)pending.delete(pending.keys().next().value);pending.set(session,{mode:parsed.pending_research,expires:now+300000});}}
+ const context=session?pending.get(session):null;
+ const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:context?.mode,researchURL:context?.entry_url});
+ if(session){
+  pending.delete(session);
+  if(parsed.pending_research||['research','research_session'].includes(parsed.kind)){
+   if(pending.size>=64)pending.delete(pending.keys().next().value);
+   pending.set(session,{mode:parsed.pending_research||(parsed.kind==='research_session'?'session':'public'),...(parsed.entry_url?{entry_url:parsed.entry_url}:{}),expires:now+300000});
+  }
+ }
  if(parsed.kind==='private_storage')return {...parsed,message:'Open this request in the native Airodrom terminal to choose Sensitive Memory or Vault and confirm.'};
  if(parsed.kind==='research_session')return parsed;
  if(parsed.kind==='research')return require('./assistant-missions').newMission(server,{objective:parsed.objective,capability_classes:['web_read'],request_id:input.request_id,workspace:input.workspace,model:input.model,worker:input.worker,explicit:false});

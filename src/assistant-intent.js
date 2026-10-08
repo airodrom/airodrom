@@ -4,7 +4,8 @@ const secret = value => {
  value=String(value).normalize('NFKC');
  // Fixed credential-free login endpoints are addresses, never credential
  // values. This only narrows a text heuristic; it grants no account authority.
- return require('./provider-policy').operatorSecretLike(value) || /\b(?:password|passphrase|passcode|one.time (?:code|password)|otp|authentication code|api[ _-]?key|private key|seed phrase|recovery codes?|backup codes?|mfa codes?|pin|oauth token|access token|refresh token|banking login)\b/i.test(value);
+ const policy=require('./provider-policy');
+ return policy.operatorSecretLike(value) || /\b(?:password|passphrase|passcode|one.time (?:code|password)|otp|authentication code|api[ _-]?key|private key|seed phrase|recovery codes?|backup codes?|mfa codes?|pin|oauth token|access token|refresh token|banking login)\b/i.test(policy.operatorInstructionText(value));
 };
 const sensitive = value => require('./private-vault-intent').containsPrivate(value) || /\b(?:mailbox number|locker number|parking space number|health|diagnosis|diagnosed|disease|condition|asthma|bipolar|diabetes|cancer|allergy|allergies|medication|medical|bank|checking|savings|balance|debt|loan|account number|private|routing number|identifier|ssn|social security|salary|financial|passport)\b/i.test(value);
 // Automatic durable classification is deliberately small. Unknown facts require
@@ -21,7 +22,7 @@ function workCapabilities(value) {
  if(/\b(?:repository|repo|feature|file|code|script)\b/i.test(value)||/^(?:fix|implement|edit|modify|build|create|write|delete|remove|install|run|execute|commit|push|change)\b/i.test(value)||!classes.size){classes.add('repo');classes.add('developer_environment');}
  return [...classes];
 }
-function parse(value, {nickname:assistantNickname,pendingResearch} = {}) {
+function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} = {}) {
  if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');value=value.trim();
  // A pasted control command cannot be silently embedded in a model prompt.
  if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
@@ -48,7 +49,7 @@ function parse(value, {nickname:assistantNickname,pendingResearch} = {}) {
  if(/^(?:show|list)\s+(?:my\s+)?(?:active\s+)?missions$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'list',active:/\bactive\b/i.test(request)});
  if(/^(?:show|check)\s+(?:the\s+)?(?:current\s+)?mission(?:\s+status)?$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'status',mission_id:null});
  if(/^cancel\s+(?:the\s+)?(?:current\s+)?mission$/i.test(request))return route('EXPLICIT MISSION',{kind:'mission',action:'cancel',mission_id:null});
- const research=require('./browser-research').parse(value,{pendingResearch});if(research)return research;
+ const research=require('./browser-research').parse(value,{pendingResearch,researchURL});if(research)return research;
  const nickname=/^(?:your nickname is|i(?:['’]ll| will) call you)\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{0,39})$/iu.exec(request);
  if(nickname)return route('CONVERSATION',{kind:'preference',nickname:nickname[1].trim()});
  if(/^(?:save|store|remember)$/i.test(request))return route('MEMORY',{kind:'clarify',message:'What would you like to save? Private facts require a storage choice; credentials require /vault.'});

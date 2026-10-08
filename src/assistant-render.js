@@ -28,6 +28,21 @@ function sensitive(data) {
  return 'SENSITIVE MEMORY · Operator-only\n'+(data.items?.length?data.items.map(m=>row('ID',m.memoryId)).join(''):'No sensitive records observed.\n')+clean(data.disclosure||'Explicit reveal by ID. No worker injection.')+'\n'+clean(data.encryption||'Private local storage; no field-level encryption claim.')+'\n';
 }
 function vault(data) {return 'SECRET VAULT\n'+row('Backend',data.backend)+row('Helper',data.configured?'Configured':'Not configured')+row('Active refs',data.active_refs??'Unavailable')+'Values stay hidden. Workers have no access.\n';}
+// Presentation of the host's verified research Markdown dialect only. Keep the
+// canonical report/digests unchanged; explicit --json exposes structured data.
+function researchReport(data) {
+ if(typeof data.markdown!=='string')return 'Research report is unavailable; inspect /mission status.';
+ return clean(data.markdown)
+  .replace(/\[((?:\\.|[^\]\\\n])*)\]\((?:<([^>\n]+)>|([^\s)]+))\)/g,(_all,label,angle,target)=>{
+   const url=angle||target;
+   return /^#[eb]\d+$/i.test(url)?'['+label+']':/^https?:\/\//i.test(url)?(/^[EB]\d+$/.test(label)?'['+label+'] '+url:label+' — '+url):label;
+  })
+  .replace(/^### ([EB]\d+)$/gm,'[$1]')
+  .replace(/^#{1,6}\s+/gm,'')
+  .replace(/^[-*]\s+/gm,'• ')
+  .replace(/(?<!\\)\*\*(.*?)(?<!\\)\*\*/g,'$1')
+  .replace(/\\([\\`*_{}\[\]<>|])/g,'$1');
+}
 function receipt(data) {
  if(data.kind==='memory')return memories(data);
  if(data.message)return clean(data.message)+'\n'+(data.choices?.length?data.choices.map(m=>row(m.subject||'Memory ID',m.memoryId)).join(''):'');
@@ -85,4 +100,4 @@ function waiting(output,{env=process.env,signal,now=()=>performance.now(),schedu
  signal?.addEventListener('abort',stop,{once:true});
  return {stop};
 }
-module.exports={clean,name,models,workers,connectors,memories,sensitive,vault,receipt,rail,waitingFrame,waiting};
+module.exports={clean,name,models,workers,connectors,memories,sensitive,vault,researchReport,receipt,rail,waitingFrame,waiting};
