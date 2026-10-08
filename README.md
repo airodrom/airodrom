@@ -52,7 +52,7 @@ These images come from actual local output with synthetic data. The [observed Mi
 | Airodrom host primitives | REQUIRED CONTROL PLANE | Typed broker operations and independent host verification; never a model runtime |
 | OpenCode | SUPPORTED / DEFAULT PRIMARY | CLI 2.0.20, macOS and local Ollama; isolated live synthetic Mission and Memory V2 qualification; bounded default route |
 | Claude Code | SUPPORTED / OPTIONAL FALLBACK | Adapter contract; operator authentication and runtime qualification required |
-| Work/Codex | OPTIONAL EXTERNAL / LIVE UNQUALIFIED | External transport contract tested with stubs; configured live port unqualified |
+| Work/Codex | OPTIONAL EXTERNAL / OPT-IN LIVE QUALIFICATION | Confined Codex 0.160.1 public proposals; host verification/Acceptance; ChatGPT connector exposure separate |
 | Cursor | EXPERIMENTAL | Observation only; governed execution denied |
 | Generic Cloud | UNSUPPORTED | No dispatch or context transfer |
 

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | OpenCode | Primary / default | Qualified 2.0.20 on macOS with local Ollama; disposable declared-file execution and host-applied changes |
 | Claude Code | Optional bounded proposal adapter; live unqualified | Explicit public subscription policy, empty Memory, signed owner qualification; confined live check failed |
-| Work / Codex | Optional bounded proposal adapter; live unqualified | V2 public owner template and qualification; confined live check failed; V1 governed handoff retained |
+| Work / Codex | Optional live-qualified no-tools proposal boundary | V2 public owner template and fresh signed qualification required; signed bundle/public TLS roots; ChatGPT connector exposure separate |
 | Cursor | Experimental | Installation discovery only; tool/credential isolation unqualified, execution denied |
 | Generic Cloud | Unsupported | No execution adapter |
 | Airodrom host primitives | Required control-plane capability | Deterministic typed operations and independent verification; no model or agent runtime |

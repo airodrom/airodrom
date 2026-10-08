@@ -7,8 +7,8 @@ Airodrom owns Mission authority, ContextPacks, routing, leases, file changes, in
 | Worker | Implemented boundary | Live admission |
 | --- | --- | --- |
 | OpenCode | Existing confined local Ollama runtime | Existing current qualification required |
-| Codex | Confined no-tools CLI, structured bounded edit proposals | Opt-in synthetic qualification required; this Mac's confined live check failed |
-| Claude Code | Confined no-tools headless CLI, structured bounded edit proposals | Opt-in synthetic qualification required; this Mac's confined live check failed |
+| Codex | Confined no-tools CLI, structured bounded edit proposals | Opt-in live qualification with signed bundle and pinned public TLS roots; see ADR 0019 |
+| Claude Code | Confined no-tools headless CLI, structured bounded edit proposals | Live unqualified; previous confined check failed |
 | Cursor | Installation discovery and truthful status | Denied: no qualified tool/credential isolation interface |
 | ChatGPT | Authenticated MCP V1/V2 request, status and cancellation | Host-approved template and current worker/model qualification required |
 
@@ -35,7 +35,7 @@ The owner template requires `privacy:"approved_external"`, `data_class:"public"`
 
 ## Execution and privacy
 
-Discovery reads installation metadata without executing vendor programs. An explicit qualification checks the CLI version inside the sandbox, disables user rules/configuration, hooks, tools, MCP, plugins and session persistence where supported, and validates a real structured alpha-to-beta proposal with the original file unchanged. Supported version pins are Codex 0.160.1 and Claude Code 2.1.286; other versions require a new reviewed policy. A qualified record binds binary hash, actual version, model, policy and a 24-hour maximum lifetime. Fixtures are explicitly synthetic and cannot become production qualification.
+Discovery reads installation metadata without executing vendor programs. An explicit qualification checks the CLI version inside the sandbox, disables user rules/configuration, hooks, tools, MCP, plugins and session persistence where supported, and validates a real structured alpha-to-beta proposal with the original file unchanged. Codex uses its signed bundle snapshot, explicitly disables the Code Mode host, and accepts only its exact disabled-host diagnostic. Its read-only public CA snapshot is pinned in qualification and provenance. Supported version pins are Codex 0.160.1 and Claude Code 2.1.286; other versions require a new reviewed policy. A qualified record binds binary hash, actual version, model, policy and a 24-hour maximum lifetime. Fixtures are explicitly synthetic and cannot become production qualification.
 
 Every dispatch rechecks the signed qualification and executes a private hash-verified binary snapshot. Actual source files are never mounted into the vendor CLI workspace. Only declared public file contents (at most eight, 12 KB each), objective and constraints are supplied. Sensitive/path-like content is rejected; the input is bounded at 32 KB. Vendor ContextPacks contain zero personal/project/session Memory records, including when governed Memory is active. Credential-shaped model names and template content are rejected.
 
@@ -54,3 +54,9 @@ Monarch research must distinguish documented public features, observed UI, infer
 ## Local validation
 
 Run the focused Multi-Worker policy/lifecycle and changed UI tests, existing Mission/authority/OpenCode/Memory-restore/browser regressions, both typechecks, package check and source verification. Obtain two independent local runtime/authority and security/privacy reviews at the candidate commit. Live failure is evidence of unavailability; a passing synthetic suite is not live vendor qualification. Preserve unrelated pre-existing failures and report them separately with main-revision evidence.
+
+## Codex Live Qualification V1
+
+[ADR 0019](adr/0019-codex-live-qualification.md) repairs the signed executable snapshot, child-host setting and TLS root boundary. Run `AIRODROM_CODEX_LIVE=1 node scripts/run.cjs tests/live-codex.cjs` only for explicitly authorized live public qualification. It uses the real CLI and isolated public files to exercise conversation/proposal, authenticated local MCP submission/replay/status, host application, protected verification, explicit Acceptance/Settlement and real cancellation. It does not access real Memory, Vault, Gmail, browser sessions or Arecibo. Billing cost remains unknown.
+
+The existing connected ChatGPT adapter may cache an older tool catalog. A local MCP test is not a ChatGPT-originated proof. Smallest owner action: refresh the existing Airodrom connector's tool schema so `get_worker_catalog`, `submit_mission`, `get_mission_handoff` and `cancel_mission_handoff` become exposed. No Pi runtime is required or restored.
