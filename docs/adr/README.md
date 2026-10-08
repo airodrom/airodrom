@@ -29,3 +29,5 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0015 authenticated browser session handoff](0015-authenticated-browser-session-handoff.md): Accepted after independent runtime/authority and privacy/security reviews and owner approval of PR #26; explicit dedicated-profile login, sanitized navigation evidence and canonical operator hand-back.
 
 - [0016 universal Mission web](0016-universal-mission-web.md): Accepted under the owner implementation request; signed per-Mission public web grants and narrowly consented Monarch login network repair.
+
+- [0017 Universal Browser V2](0017-universal-browser-v2.md): Accepted under the owner implementation request; truthful connection modes, owned CDP and temporary permission controls, subject to exact local boundary reviews.

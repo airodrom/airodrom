@@ -177,6 +177,11 @@ class ControlServer {
         const result=this.interactiveMemory(query);
         return this.json(res,200,{generation:require('./product-observability').memoryStatus(this.bridge).generation,items:result.items.map(m=>({id:require('./product-observability').id(m.memoryId),subject:require('./secret-observation').safeValue(m.subject),content:require('./secret-observation').safeValue(m.content),status:'active',source:'Explicit operator reference; not authority'}))});
       }
+      if(req.method==='GET'&&url.pathname==='/api/assistant/browser/options'){return this.json(res,200,require('./browser-connections').availability());}
+      if(req.method==='GET'&&url.pathname==='/api/assistant/browser/sessions'){return this.json(res,200,{sessions:this.bridge.missions.research.sessions(),authority:false});}
+      if(req.method==='GET'&&url.pathname==='/api/assistant/browser/diagnostics'){return this.json(res,200,this.bridge.missions.research.diagnostics(url.searchParams.get('mission_id')));}
+      if(req.method==='GET'&&url.pathname==='/api/assistant/browser/status'){return this.json(res,200,this.bridge.missions.research.sessionStatus(url.searchParams.get('mission_id')));}
+      if(req.method==='GET'&&url.pathname==='/api/assistant/mission/web/status'){return this.json(res,200,this.bridge.missions.web.status(url.searchParams.get('mission_id')));}
       if(req.method==='GET'&&url.pathname==='/api/assistant/research/report'){
         const id=url.searchParams.get('mission_id'),mission=this.bridge.missions.require(id,'operator'),report=await this.bridge.missions.research.report(id,'operator');
         const projected=mission.envelope.manifest.public_web?report:require('./research-report').projectResearchResponse(report,{scope:mission.envelope.manifest.scope});
@@ -286,17 +291,18 @@ class ControlServer {
       if(url.pathname==='/api/assistant/conversation/session')return this.json(res,201,this.conversationEngine.session(body));
       if(url.pathname==='/api/assistant/conversation/cancel')return this.json(res,200,this.conversationEngine.cancel(body));
       if(url.pathname==='/api/assistant/web/research'){const created=this.bridge.missions.web.createResearch(body);this.bridge.missions.dispatch(created.mission_id,{request_id:'public-web-dispatch:'+body.request_id});return this.json(res,202,{...created,browser_research_available:true});}
-      if(url.pathname==='/api/assistant/mission/web'){require('./control-plane-store').object(body,['mission_id','request_id','mode','entries','query','confirmed']);const {mission_id,...input}=body;return this.json(res,200,this.bridge.missions.web.configure(mission_id,input));}
+      if(url.pathname==='/api/assistant/mission/web'){require('./control-plane-store').object(body,['mission_id','request_id','mode','entries','query','confirmed','duration_ms','permission_mode']);const {mission_id,...input}=body;return this.json(res,200,this.bridge.missions.web.configure(mission_id,input));}
       if(url.pathname==='/api/assistant/research/download'){
         require('./control-plane-store').object(body,['mission_id','url','request_id']);
         return this.json(res,202,this.bridge.missions.research.download(body.mission_id,{url:body.url,request_id:body.request_id},'operator'));
       }
       if(url.pathname==='/api/assistant/research/session'){
-        require('./control-plane-store').object(body,['entry_url','mode','confirmed','request_id','network_profile']);
-        const created=this.bridge.missions.research.create({request_id:body.request_id,entry_url:body.entry_url,objective:'Inspect explicitly authorized account feature navigation and compare with current Arecibo evidence.',session_authorization:{mode:body.mode,confirmed:body.confirmed,...(body.network_profile?{network_profile:body.network_profile}:{})}},'operator');
+        require('./control-plane-store').object(body,['entry_url','mode','confirmed','request_id','network_profile','permission_mode']);
+        const created=this.bridge.missions.research.create({request_id:body.request_id,entry_url:body.entry_url,objective:'Inspect explicitly authorized account feature navigation and compare with current Arecibo evidence.',session_authorization:{mode:body.mode,confirmed:body.confirmed,...(body.permission_mode?{permission_mode:body.permission_mode}:{}),...(body.network_profile?{network_profile:body.network_profile}:{})}},'operator');
         const id=created.mission_id||created.id;if(created.state==='ready')this.bridge.missions.dispatch(id,{request_id:'session-dispatch:'+body.request_id},'operator');
-        return this.json(res,202,{kind:'mission',mission_id:id,state:this.bridge.missions.require(id,'operator').state,browser_research_available:true,session_mode:'dedicated_manual',message:'Dedicated browser opening. Sign in manually, complete MFA, then confirm hand-back. Normal Chrome login is not inherited.',authority:false});
+        return this.json(res,202,{kind:'mission',mission_id:id,state:this.bridge.missions.require(id,'operator').state,browser_research_available:true,session_mode:body.mode,message:'Dedicated browser opening. Sign in manually, complete MFA, then confirm hand-back. Normal Chrome login is not inherited.',authority:false});
       }
+      if(url.pathname==='/api/assistant/browser/revoke'||url.pathname==='/api/assistant/browser/close'){require('./control-plane-store').object(body,['mission_id','request_id']);const result=this.bridge.missions.research.revokeSession(body.mission_id,{request_id:body.request_id});this.bridge.missions.cancel(body.mission_id,{request_id:'browser-close:'+body.request_id},'operator');return this.json(res,200,result);}
       if(url.pathname==='/api/assistant/research/session/ready'){
         require('./control-plane-store').object(body,['mission_id','request_id','confirmed']);return this.json(res,200,this.bridge.missions.research.ready(body.mission_id,{request_id:body.request_id,confirmed:body.confirmed},'operator'));
       }

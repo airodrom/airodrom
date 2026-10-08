@@ -30,7 +30,7 @@ class MissionWeb{
   return task;
  }
  configure(id,input,owner='operator'){
-  if(owner!=='operator')throw error('operator_web_consent_required');object(input,['request_id','mode','entries','query','confirmed']);if(!policy.UUID.test(input.request_id||''))throw error('opaque_web_request_required');
+  if(owner!=='operator')throw error('operator_web_consent_required');object(input,['request_id','mode','entries','query','confirmed','duration_ms','permission_mode']);if(!policy.UUID.test(input.request_id||''))throw error('opaque_web_request_required');
   const m=this.store.requireMission(id);if(m.owner!=='operator')throw error('operator_mission_required');
   if(input.mode==='off')return this.store.request(owner,input.request_id,{op:'mission_web_off',id},()=>{this.db.prepare("UPDATE cp_mission_web_grants SET state='revoked' WHERE mission_id=? AND state='active'").run(id);this.cancel(id);this.store.event('mission.web.revoked',id,{actor:'operator'});return {kind:'mission_web',mission_id:id,mode:'off',message:'Web access stopped for this Mission.',authority:false};});
   const task=this.qualify(m),p=policy.normalize(inputPolicy(input),{expiresAt:Math.min(m.envelope.authority.expiresAt,m.envelope.manifest?.expires_at||Infinity)});
@@ -43,16 +43,16 @@ class MissionWeb{
    const grant={...p,id:randomUUID(),mission_binding:this.binding(m)},digest=fingerprint(grant),seal=this.bridge.missionAuthority.sealManifest({mission_id:id,manifest_hash:digest});if(!seal)throw error('signed_web_grant_required');
    this.db.prepare('INSERT INTO cp_mission_web_grants(id,mission_id,policy,policy_hash,seal,state) VALUES(?,?,?,?,?,?)').run(grant.id,id,JSON.stringify(grant),digest,JSON.stringify(seal),'active');
    this.store.event('mission.web.granted',id,{grant_id:grant.id,mode:p.mode,origins:p.origins,expires_at:p.expires_at,max_actions:p.max_actions,max_pages:p.max_pages,actor:'operator',public_only:true});
-   return {kind:'mission_web',mission_id:id,mode:p.mode,grant_id:grant.id,message:'Public web access approved for this Mission for up to three minutes. Login, private data, mutations and private downloads remain separately authorized.',authority:false};
+   return {kind:'mission_web',mission_id:id,mode:p.mode,grant_id:grant.id,message:'Public web access approved for this Mission within the displayed grant expiry. Login, private data, mutations and private downloads remain separately authorized.',authority:false};
   });
  }
  grant(m,{active=true}={}){
   const row=this.db.prepare("SELECT * FROM cp_mission_web_grants WHERE mission_id=? AND state='active'").get(m.id);if(!row)throw error('mission_web_approval_required');
   const p=JSON.parse(row.policy);if(fingerprint(p)!==row.policy_hash||p.mission_binding!==this.binding(m)||!this.bridge.missionAuthority.verifyManifestSeal(JSON.parse(row.seal),{mission_id:m.id,manifest_hash:row.policy_hash}))throw error('web_grant_integrity_denied');
-  if(active&&Date.now()>=p.expires_at)throw error('web_grant_expired');return {...row,policy:p};
+  if(active&&Date.now()>=p.expires_at){this.cancel(m.id);throw error('web_grant_expired');}return {...row,policy:p};
  }
  status(id){const m=this.store.requireMission(id),request=policy.proposal(m.envelope.objective);let grant;try{grant=this.grant(m,{active:false});}catch{}
-  return {needed:request.needed,mode:grant?Date.now()>=grant.policy.expires_at?'expired':grant.policy.mode:'off',origins:grant?.policy.origins||[],expires_at:grant?.policy.expires_at||null,actions:grant?.actions||0,pages:grant?.pages||0,public_only:true,search_source:this.source(),authority:false};
+  return {needed:request.needed,permission_mode:grant?.policy.permission_mode||(grant?.policy.mode==='all'?'extended':'strict'),methods:['GET','HEAD'],purpose:'public_web_research',mode:grant?Date.now()>=grant.policy.expires_at?'expired':grant.policy.mode:'off',origins:grant?.policy.origins||[],expires_at:grant?.policy.expires_at||null,actions:grant?.actions||0,pages:grant?.pages||0,public_only:true,search_source:this.source(),authority:false};
  }
  source(){return this.options.searchSource??JSON.parse(fs.readFileSync(path.join(__dirname,'../config/mission-web-v1.json'),'utf8')).search_source;}
  bindInvocation(task,request){this.invocations.set(task.id,this.bridge.orchestrator.requestIdFor(task,request.toolCallId));}
@@ -132,7 +132,7 @@ class MissionWeb{
  }
  async call(m,task,action){const requestId=randomUUID();let response=await this.bridge.invokeCapability(task.id,{name:'mission_web',input:{mission_id:m.id,action},requestId});if(response.status==='pending'&&this.bridge.orchestrator.inflight.has(requestId))response=await this.bridge.orchestrator.inflight.get(requestId);if(this.uncertainBrowsers.has(m.id))throw error('web_termination_unverified');if(response.status!=='completed')throw error('mission_web_preflight_stopped');return response;}
  createResearch(input,owner='operator'){
-  if(owner!=='operator')throw error('operator_web_consent_required');object(input,['request_id','objective','mode','entries','query','confirmed']);
+  if(owner!=='operator')throw error('operator_web_consent_required');object(input,['objective','mode','entries','query','confirmed','request_id','duration_ms','permission_mode']);
   const p=policy.normalize(inputPolicy(input));
   return this.store.request(owner,'web-research:'+input.request_id,{op:'public_web_research',...input},()=>{
    const created=this.service.research.create({request_id:input.request_id,objective:input.objective,entry_url:p.entries[0]||'https://html.duckduckgo.com/html/',public_web:inputPolicy(input)});
@@ -183,5 +183,5 @@ class MissionWeb{
  async close(){for(const [id,browser] of this.uncertainBrowsers){try{const result=await browser.close();if(result?.closed&&result.termination_verified&&result.owned_process_termination==='verified'){this.uncertainBrowsers.delete(id);this.active.delete(id);}}catch{}}for(const c of this.active.values())c.abort();const until=Date.now()+15000;while(this.active.size&&Date.now()<until)await new Promise(r=>setTimeout(r,20));if(this.active.size)throw error('web_termination_unverified');}
 }
 function stripPaths(value){if(Array.isArray(value))return value.map(stripPaths);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([k,v])=>k!=='evidence_dir'&&!(k==='path'&&typeof v==='string'&&path.isAbsolute(v))).map(([k,v])=>[k,stripPaths(v)]));return value;}
-function inputPolicy(input){return Object.fromEntries(['mode','entries','query','confirmed'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]]));}
+function inputPolicy(input){return Object.fromEntries(['mode','entries','query','confirmed','duration_ms','permission_mode'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]]));}
 module.exports={MissionWeb};

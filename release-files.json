@@ -550,5 +550,12 @@
   "src/mission-web.js",
   "src/research-session-policy.js",
   "tests/universal-mission-web.test.js",
-  "tests/authenticated-research-routing.test.js"
+  "tests/authenticated-research-routing.test.js",
+  "src/browser-connections.js",
+  "src/browser-cdp.js",
+  "src/browser-render.js",
+  "docs/UNIVERSAL-BROWSER-V2.md",
+  "docs/adr/0017-universal-browser-v2.md",
+  "tests/browser-v2.test.js",
+  "tests/browser-ui-v2.test.js"
 ]

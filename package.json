@@ -379,6 +379,11 @@
     "src/research-session.js",
     "src/research-session-guide.js",
     "docs/BROWSER-SESSION-HANDOFF-V1.md",
-    "docs/adr/0015-authenticated-browser-session-handoff.md"
+    "docs/adr/0015-authenticated-browser-session-handoff.md",
+    "src/browser-connections.js",
+    "src/browser-cdp.js",
+    "src/browser-render.js",
+    "docs/UNIVERSAL-BROWSER-V2.md",
+    "docs/adr/0017-universal-browser-v2.md"
   ]
 }

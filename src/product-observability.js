@@ -9,6 +9,7 @@ const STATES = ['draft','ready','dispatching','running','verifying','awaiting_ac
 const ACTIVE = ['dispatching','running','verifying'];
 const STAGES = Object.freeze({
  'memory.write':['Memory','Canonical Memory recorded'], 'memory.superseded':['Memory','Previous Memory superseded'], 'memory.forget':['Memory','Memory forgotten'], 'memory.expired':['Memory','Memory expired'], 'memory.content_redacted':['Memory','Memory content erased'], 'product.memory.recorded':['Memory','Canonical Memory recorded'], 'product.memory.corrected':['Memory','Canonical Memory corrected'], 'product.memory.forgotten':['Memory','Canonical Memory forgotten'],
+ 'research.browser_started':['Capability','Owned browser opened'], 'research.browser_closed':['Capability','Browser closure checked'], 'research.network_denied':['Capability','Browser request blocked by scoped policy'], 'research.network_stopped':['Capability','Browser transport budget stopped'], 'research.permission_granted':['Approval','Temporary browser permission granted'], 'research.permission_revoked':['Approval','Temporary browser permission revoked'], 'mission.web.granted':['Approval','Public web permission granted'], 'mission.web.revoked':['Approval','Public web permission revoked'], 'mission.web.evidence':['Capability','Public web evidence recorded'],
  'mission.request_received':['Mission','Request received'], 'mission.authority_registered':['Mission','Bounded authority registered'],
  'mission.created':['Mission','Mission registered'], 'manifest.registered':['Mission','Scope registered'],
  'context_pack.created':['Memory','Memory context selected'], 'runtime.qualification.checked':['Runtime','Runtime qualification checked'],
@@ -29,6 +30,7 @@ const STAGES = Object.freeze({
  'mission.accepted':['Settlement','Acceptance recorded'], 'mission.settled':['Settlement','Local Settlement recorded']
 });
 const DISPLAY_STAGE = Object.freeze({
+ 'research.browser_started':'execution','research.browser_closed':'execution','research.network_denied':'execution','research.network_stopped':'execution','research.permission_granted':'execution','research.permission_revoked':'execution','mission.web.granted':'execution','mission.web.revoked':'execution','mission.web.evidence':'execution',
  'mission.request_received':'request','mission.created':'request','mission.authority_registered':'request','manifest.registered':'request',
  'context_pack.created':'context','runtime.context.delivered':'context',
  'runtime.qualification.checked':'runtime','agent.route.selected':'runtime',
