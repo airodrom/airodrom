@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -275,15 +275,25 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if (command === 'about'||command==='version') output.write(branding.name+' '+require('../package.json').version+' · PRE-RELEASE\n');
         else if (command==='mcp') output.write('MCP is a shell transport: run airodrom mcp from a separate terminal. submit_mission/get_mission_handoff/cancel_mission_handoff use canonical Airodrom authority.\n');
         else if (['models','workers','model','worker'].includes(command)) {
+          if(command==='workers'&&arg&&arg!=='status'){
+            const parts=arg.split(/\s+/),action=parts.shift(),id=parts.shift();
+            if(action==='revoke'&&id&&!parts.length){show(output,await local.request(home,'/api/assistant/workers/revoke',{worker:id}),v=>'Worker qualification revoked. Active work cancellation requested.\n',json);readerLocked=false;showPrompt();continue;}
+            if(action==='qualify'&&id&&parts.length===2&&parts[1]==='--confirm-public-fixture'){
+              if(!input.isTTY||!output.isTTY)throw Error('Qualification consent requires an interactive owner terminal.');
+              output.write('Checking the selected vendor with one public disposable edit fixture, no personal Memory or repository access; up to two minutes.\n');
+              show(output,await local.request(home,'/api/assistant/workers/qualify',{worker:id,model:parts[0],confirmed:true,request_id:randomUUID()},{timeoutMs:125000}),v=>JSON.stringify(v,null,2)+'\n',json);readerLocked=false;showPrompt();continue;
+            }
+            throw Error('Use /workers status, /workers qualify <id> <exact-model> --confirm-public-fixture, or /workers revoke <id>.');
+          }
           const registry=await local.request(home,'/api/assistant/registry');
           if(['model','worker'].includes(command)&&arg){
             const next={model:command==='model'?arg:model,worker:command==='worker'?arg:worker};
             if(arg!=='auto'){
-              const route=require('./model-worker-router').select(registry,next);
+              const route=require('./model-worker-router').select(registry,{...next,mission_class:'WORK',data_class:'public',privacy:'approved_external'});
               if(route.state!=='READY')throw Error('Selection unavailable: '+route.reason.replaceAll('_',' ')+'. Current selection preserved.');
             }
             model=next.model;worker=next.worker;
-          }else if(arg)throw Error('Use /models or /workers; select with /model or /worker.');
+          }else if(arg&&!(command==='workers'&&arg==='status'))throw Error('Use /models or /workers; select with /model or /worker.');
           show(output,registry,c=>command.startsWith('model')?render.models(c,model):render.workers(c,worker),json);
         }
         else if(command==='connectors')show(output,await local.request(home,'/api/assistant/connectors'),render.connectors,json);
@@ -331,6 +341,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if (command === 'memory') await memory(home, arg, output,json);
         else if (command === 'remember') { const item = await local.request(home, '/api/interactive/remember', { content: arg }); output.write('Remembered in Memory V2. ID: ' + item.memoryId + '\n'); }
         else if (command === 'forget') { const r = await local.request(home, '/api/interactive/forget', { selection: arg }); output.write('Forgotten. Fresh Missions cannot retrieve this record. ID: ' + r.memoryId + '\n'); }
+        else if(command==='workspace'){
+          const parts=arg.split(/\s+/);if(parts.length!==2||parts[1]!=='--confirm-public-files'||!input.isTTY||!output.isTTY)throw Error('Use /workspace <template.json> --confirm-public-files in the owner terminal; only explicitly public files may be shared.');
+          const file=fs.realpathSync(parts[0]),stat=fs.statSync(file);if(!stat.isFile()||stat.size>32768)throw Error('Bounded template JSON required');const body=JSON.parse(fs.readFileSync(file,'utf8'));body.confirmed=true;
+          show(output,await local.request(home,'/api/assistant/workspaces/register',body),v=>'Public worker template registered: '+terminalText(v.project)+' / '+terminalText(v.workspace_alias)+'\n',json);
+        }
         else if (command === 'task') { lastMission = await scopedTask(home, arg,{model,worker}); output.write('Scoped Mission dispatched: ' + lastMission + '\n'); }
         else if (command === 'mission') {
           if (!arg) output.write('/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id]\n');

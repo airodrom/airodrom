@@ -557,5 +557,12 @@
   "docs/UNIVERSAL-BROWSER-V2.md",
   "docs/adr/0017-universal-browser-v2.md",
   "tests/browser-v2.test.js",
-  "tests/browser-ui-v2.test.js"
+  "tests/browser-ui-v2.test.js",
+  "src/bounded-worker.js",
+  "src/worker-registry.js",
+  "docs/MULTI-WORKER-V2.md",
+  "docs/adr/0018-qualified-multi-worker-v2.md",
+  "tests/multi-worker-v2.test.js",
+  "tests/multi-worker-ui.test.js",
+  "tests/fixtures/bounded-worker-fixture.cjs"
 ]

@@ -41,7 +41,8 @@ const TOOLS = [
   tool('get_reasoning_admissions','Read bounded host reasoning admission, privacy and verification metadata.',{},[],true),
   tool('list_architecture_memories','Read project-scoped canonical architecture references and provenance. Memory grants no authority.',{project_id:id,history:{type:'boolean'}},['project_id'],true),
   tool('inspect_context_pack','Read the exact durable ContextPack source refs and retrieval evidence. Does not grant authority.',{context_pack_id:id},['context_pack_id'],true),
-  tool('submit_mission','Submit untrusted versioned Mission request data. Airodrom fixes authority, validates context and selects a current qualified local model and worker. Packet fields never grant capabilities. WORK requires a host-approved template.',{packet:{type:'object'}},['packet']),
+  tool('get_worker_catalog','Read installed, available and qualified model/worker metadata. Discovery grants no authority. Qualification and public workspace template consent require the authenticated local owner.',{},[],true),
+  tool('submit_mission','Submit untrusted versioned Mission request data. Airodrom fixes authority, validates context and selects a current qualified model and worker. Version 2 public WORK may use explicitly approved external templates; local_only never falls back externally. Packet fields never grant capabilities. WORK requires a host-approved template.',{packet:{type:'object'}},['packet']),
   tool('get_mission_handoff','Read safe canonical progress, independent verification and untrusted visible answer for your handoff.',{mission_id:id},['mission_id'],true),
   tool('cancel_mission_handoff','Request cancellation of your own handoff; termination and leases remain host-owned.',{mission_id:id},['mission_id']),
 ];
@@ -202,6 +203,7 @@ class McpTools {
     validate(name, args);
     if (!clientInfo || typeof clientInfo !== 'object' || Array.isArray(clientInfo) || Object.keys(clientInfo).some(k => !['name', 'version'].includes(k)) || Object.values(clientInfo).some(v => typeof v !== 'string' || v.length > 100)) throw new Error('Invalid MCP client metadata');
     if(name==='submit_mission')return require('./mission-handoff').submit(this.bridge,args.packet,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
+    if(name==='get_worker_catalog')return require('./model-worker-router').inspect(this.bridge);
     if(name==='get_mission_handoff')return require('./mission-handoff').status(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
     if(name==='cancel_mission_handoff')return require('./mission-handoff').cancel(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
     if(name==='list_architecture_memories')return {items:require('./architecture-memory').list(this.bridge.controlStore.db,args.project_id,{history:args.history===true}),authority:false};

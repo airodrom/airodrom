@@ -33,7 +33,7 @@
    for(const [label,items,current]of [['Model',snapshot.assistant.models,selectedModel],['Worker',snapshot.assistant.workers,selectedWorker]]){const field=node('label',label+' routing'),select=node('select');select.setAttribute('aria-label',label+' routing');select.dataset.focusKey=label+'-routing';
      for(const id of ['auto',...(label==='Model'?['local']:[]),...items.map(i=>i.id)]){const item=items.find(i=>i.id===id),option=node('option',id==='auto'?'AUTO':id==='local'?'Local only':(item.name||id)+' · '+item.qualification);option.value=id;option.disabled=!!item&&(!item.available||item.qualification!=='qualified');select.append(option);}select.value=current;
      select.onchange=()=>{if(label==='Model')selectedModel=select.value;else selectedWorker=select.value;};field.append(select);group.append(field);
-   }return group;
+   }group.append(node('small','Vendor choices apply to explicitly public Work Missions. Conversation remains local.'));return group;
  }
  async function approvePublicWeb(offer,id){
    const summary=(offer.mode==='all'?'Discover public websites from verified links.':'Visit approved public sites:')+'\n'+(offer.entries||[]).join('\n')+(offer.query?'\nPublic query: '+offer.query:'')+'\nThree minutes; eight domains/pages; 100 requests; forty actions; eight MiB. Login, private data, mutations, payments and private downloads require separate approval.';
@@ -102,7 +102,12 @@
  function assistantView(){
    const result=node('div');
    if(view==='Models'||view==='Workers'){
-     for(const item of (view==='Models'?snapshot.assistant?.models:snapshot.assistant?.workers)||[]){result.append(glass(item.id,item.qualification,(item.provider||item.transport)+' · '+item.locality+' · '+(item.available?'Available':'Unavailable')),node('p',item.support||'Context limit, token usage and cost: Unavailable'));
+     for(const item of (view==='Models'?snapshot.assistant?.models:snapshot.assistant?.workers)||[]){result.append(glass(item.id,item.qualification,(item.provider||item.transport)+' · '+item.locality+' · '+(item.available?'Available':'Unavailable')),node('p',item.reason?item.reason.replaceAll('_',' '):item.support||'Context limit, token usage and cost: Unavailable'));
+       if(view==='Workers'&&['codex','claude_code','cursor'].includes(item.id)){
+         result.append(node('p','Installed: '+(item.installed?'Yes':'No')+' · Account: '+(item.auth_state||'Not probed')+' · Version: '+(item.version||'Not verified')+' · Qualification expiry: '+(item.expires_at?stamp(item.expires_at):'None')));
+         if(item.id!=='cursor'&&item.installed&&!item.busy)result.append(button('Qualify '+item.id,async()=>{const model=window.prompt('Exact vendor model ID for a public synthetic edit check');if(!model||!window.confirm('Allow this vendor to receive one disposable public fixture? No personal Memory or repository files. Up to two minutes. This does not grant Mission execution.'))return;try{await api('/api/assistant/workers/qualify',{worker:item.id,model,confirmed:true,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}}));
+         if(item.qualified||item.busy)result.append(button('Revoke '+item.id,async()=>{try{await api('/api/assistant/workers/revoke',{worker:item.id});await refresh();}catch(e){$('notice').textContent=e.message;}}));
+       }
      }result.append(routeControls());result.append(node('p','Discovery does not qualify a route. Manual preference cannot bypass privacy, expiry or availability. Optional workers require fresh independent qualification.'));return result;
    }
    if(view==='Connectors'){for(const c of snapshot.connectors?.items||[])result.append(glass(c.id,c.state,c.protocol),node('p',c.setup),node('p',c.mutations));result.append(node('p','Selected email and message text is untrusted data. It cannot grant permissions. Local reply drafts never send.'));return result;}

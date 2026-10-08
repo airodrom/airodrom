@@ -33,9 +33,9 @@ class MissionService {
     if(input.coding_plan!==undefined){if(owner!=='operator'||input.dispatch_policy!==undefined||input.preferred_agent!==undefined||input.fallback_agents!==undefined||input.task_type!==undefined)throw Error('Coding plan requires operator registration and its fixed local route');input={...input,task_type:'local_files',preferred_agent:'host',fallback_agents:[],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:input.coding_plan.operations?.map(({name,path,content})=>({name,path,content}))}};}
     const taskType=input.task_type||'focused_refactor';
     if(!['focused_refactor','broad_investigation','large_multi_file_coding','ide_diagnostics','local_files'].includes(taskType))throw Error('Invalid agent task taxonomy');
-    if(input.worker!==undefined&& !['auto','opencode','host'].includes(input.worker))throw Error('Registered worker is not live-qualified for this policy.');
+    if(input.worker==='claude-code')input={...input,worker:'claude_code'};
     if(input.worker!==undefined){if(!['auto','opencode','codex','claude_code','cursor','host'].includes(input.worker))throw Error('Unknown registered worker');if(input.worker!=='auto')input={...input,preferred_agent:input.worker};}
-    if(input.model!==undefined&&!['auto','local',require('./model-worker-router').MODEL].includes(input.model))throw Error('Unqualified model');
+
     const automatic=input.preferred_agent===undefined;
     const preferred=input.preferred_agent||(taskType==='local_files'?'host':this.bridge.defaultRuntime),fallbacks=input.fallback_agents||[];
     if(!['claude_code','codex','cursor','host','opencode'].includes(preferred)||!Array.isArray(fallbacks)||fallbacks.length>3||fallbacks.some(a=>!['claude_code','codex','cursor','host','opencode'].includes(a)))throw Error('Invalid declared agent route');
@@ -47,6 +47,10 @@ class MissionService {
     if(input.constraints!==undefined)text(input.constraints,'constraints',2000);
     if(input.dispatch_policy!==undefined&&owner!=='operator')throw Error('Only operator may set immutable dispatch policy');
     const dispatchPolicy=input.dispatch_policy===undefined?(automatic&&preferred==='opencode'?require('./agent-dispatch').dispatchPolicy(require('./default-runtime').LOCAL_POLICY):null):require('./agent-dispatch').dispatchPolicy(input.dispatch_policy);
+    const workerContract=['codex','claude_code'].includes(preferred)&&dispatchPolicy?.privacy==='cloud_allowed'&&!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker&&!this.bridge.workers.get(preferred).options.fixture)?this.bridge.workers.bind(preferred,input.model):null;
+    if(workerContract&&(fallbacks.length||owner!=='operator'||input.allowed_files.length>8))throw Error('Bounded vendor worker requires operator, no fallbacks and at most eight files');
+    if(workerContract){if(input.authority===undefined||!authority||authority.expiresAt>Date.now()+15*60000||!require('./mission-permissions').checkAuthority(authority,{network:['internet'],repository:['read','write'],data:['workspace_write'],filesystem:{read:input.allowed_files.map(f=>path.join(workspace,f)),write:input.allowed_files.map(f=>path.join(workspace,f))}}).allow)throw Error('Explicit current external-worker authority within fifteen minutes required');input.allowed_files.forEach(require('./bounded-worker').relative);}
+    if(!workerContract&&input.model!==undefined&&!['auto','local',require('./model-worker-router').MODEL].includes(input.model))throw Error('Unqualified model');
     if(preferred==='opencode'&&((!automatic&&owner!=='operator')||fallbacks.length||dispatchPolicy?.privacy!=='local_only'||JSON.stringify(dispatchPolicy.providers)!=='["local"]'||JSON.stringify(dispatchPolicy.billing_classes)!=='["local"]'))throw Error('OpenCode requires bounded local-only policy and no fallbacks');
     if(fallbacks.includes('opencode'))throw Error('OpenCode requires an explicit preferred route');
     if(taskType==='local_files'&&(!dispatchPolicy||!dispatchPolicy.native_actions.length||dispatchPolicy.task_category!=='deterministic_files'))throw Error('Deterministic routing requires an immutable native plan');
@@ -60,7 +64,7 @@ class MissionService {
     const baseline=workspaceSnapshot(workspace);const verificationManifest=baseline.version===2?require('./repository-verification').manifest(baseline,input.allowed_files):null;if(baseline.dirty.some(f=>input.allowed_files.includes(f)))throw Error('Requested changes overlap pre-existing dirty work');
     return this.store.request(owner,input.request_id,{op:'create_mission',...input},()=>{
       const projectMission=this.bridge.projects.createMission({goalId:goal.goalId,name:input.objective.slice(0,180),description:input.objective,acceptanceCriteria:criteria.map(c=>c.description||`Verify ${c.id}`)});
-      const envelope={control_version:2,...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
+      const envelope={control_version:2,...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
       const task=this.newTask(projectMission.missionId,goal.projectId,envelope,owner,1);
       const m=this.store.registerMission({id:projectMission.missionId,projectId:goal.projectId,goalId:goal.goalId,taskId:task.id,owner,envelope,ceiling:{...(authority?{mission_authority:authority}:{}),capability_scopes:scopes,authority:'existing SafetyPolicy and signed authority only',policy_version:this.bridge.capabilityHost.policy.policyVersion}});
       this.db.prepare('INSERT INTO cp_mission_tasks VALUES(?,?,1,NULL,NULL,?)').run(task.id,m.id,Date.now());
@@ -84,13 +88,13 @@ class MissionService {
   dispatch(id,{request_id},owner='operator'){
     const mission=this.require(id,owner);
     this.assertAuthority(mission);
-    if(!this.bridge.authorityRuntime?.routing&&mission.envelope.preferred_agent==='codex'&&mission.envelope.dispatch_policy){const result=this.bridge.codexAdapter.startTask(id,request_id);this.bridge.agentDispatch.schedule();return result;}
+    if(!this.bridge.authorityRuntime?.routing&&mission.envelope.preferred_agent==='codex'&&mission.envelope.dispatch_policy&&!mission.envelope.worker_contract){const result=this.bridge.codexAdapter.startTask(id,request_id);this.bridge.agentDispatch.schedule();return result;}
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
   assertAuthority(mission, requirements={}){
     if(mission.envelope.kind==='work_request')throw Error('Work request draft requires registered scope and verification before execution');
     require('./removed-runtime').assertExecutable(mission);
-    if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
+    if(mission.envelope.worker_contract)this.bridge.workers.assertMission(mission);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     this.program.assert(mission);
     const result=require('./mission-permissions').checkAuthority(mission.envelope.authority,requirements);
     if(!result.allow) {
@@ -102,7 +106,7 @@ class MissionService {
   }
   queue(id,decisionId=null){
     const m=this.store.requireMission(id);this.assertAuthority(m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
-    if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
+    if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     if(['conversation','browser_research'].includes(m.envelope.kind)&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('Bounded Missions admit one run only; create a fresh Mission.');
     if(m.state==='waiting_for_operator'&&!decisionId)throw Error('Mission requires its Decision answer');
     if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','dispatching','running','unknown')").get(id))throw Error('Mission has an active or uncertain dispatch; reconcile it first');
@@ -179,12 +183,12 @@ class MissionService {
       this.assertAuthority(m);
       if(require('./mission-web-policy').proposal(m.envelope.objective).needed){this.web.qualify(m);this.web.grant(m);}
       if(m.envelope.coding_plan)this.codingAdapter.assert(m);
-      if(m.envelope.manifest&&!['host','opencode'].includes(route.selected))throw Error('Mission Manifest requires a qualified bounded native adapter');
+      if(m.envelope.manifest&&!m.envelope.worker_contract&&!['host','opencode'].includes(route.selected))throw Error('Mission Manifest requires a qualified bounded native adapter');
       // Existing external adapters do not enforce all six permission dimensions.
-      if(m.envelope.authority && !['host','opencode'].includes(route.selected))throw Error('Mission authority requires a qualified bounded native adapter');
+      if(m.envelope.authority && !m.envelope.worker_contract&&!['host','opencode'].includes(route.selected))throw Error('Mission authority requires a qualified bounded native adapter');
       if(m.envelope.authority && m.envelope.dispatch_policy?.native_actions.length)this.assertAuthority(m,{repository:['write'],data:['workspace_write'],filesystem:{write:m.envelope.dispatch_policy.native_actions.map(a=>path.resolve(m.envelope.workspace,a.path))}});
       this.bridge.authorityRuntime?.assertDispatch(m,route);
-      if(route.selected==='opencode')return await this.launchOpenCode(dispatch,m,route);
+      if(route.selected==='opencode'||m.envelope.worker_contract)return await this.launchOpenCode(dispatch,m,route);
       if(route.selected==='host'&&(fallback||m.envelope.task_type==='local_files'))return await this.launchNative(dispatch,m,fallback||{fallback_policy:m.envelope.dispatch_policy});
       if(route.selected==='codex'&&route.transport==='handoff'){
         this.bridge.codexAdapter.startTask(m.id,`automatic-handoff:${dispatch.id}`,dispatch.decision_id,dispatch.id,route);this.bridge.agentDispatch.schedule();return;
@@ -209,27 +213,29 @@ class MissionService {
     }
   }
   async launchOpenCode(dispatch,m,route){
-    const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),adapter=this.bridge.opencodeAdapter;
+    const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),vendor=!!m.envelope.worker_contract,agentId=vendor?m.envelope.preferred_agent:'opencode',adapter=vendor?this.bridge.workers.get(agentId):this.bridge.opencodeAdapter;
     if(workspaceSnapshot(m.envelope.workspace).hash!==m.envelope.baseline.hash)throw Error('opencode_workspace_changed');
-    this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
-    if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers.local_reasoning)throw Error('opencode_local_reasoning_denied');
+    this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
+    if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
     let started=false;
     try{
       const pack=transaction(this.db,()=>{
-        this.store.startRun({id:runId,taskId:task.id,missionId:m.id,agentId:'opencode'});
+        this.store.startRun({id:runId,taskId:task.id,missionId:m.id,agentId});
         this.store.acquireLease({resource:m.envelope.workspace,runId,missionId:m.id,baseline:m.envelope.baseline});
         const pack=this.bridge.controlContext.build(m,runId);this.bridge.authorityRuntime?.assertDispatch(m,route,pack);
-        this.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,task.id);task.contextPackId=pack.id;task.assignedAgent='opencode';this.bridge.tasks.save(task);
-        this.store.updateRun(runId,{state:'running',processState:'alive'});
+        this.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,task.id);task.contextPackId=pack.id;task.assignedAgent=agentId;this.bridge.tasks.save(task);
+        this.store.updateRun(runId,{state:'running',processState:vendor?'starting':'alive'});
         this.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,updated_at=? WHERE id=? AND state='queued'").run(runId,Date.now(),dispatch.id);
         this.store.state(m.id,'running');started=true;return pack;
       });
       await this.web.preflight(m,task);
       let output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt:m.envelope.objective+'\n'+m.envelope.constraints,context:{id:pack.id},requestId:`mission:${dispatch.id}`});
       for(let round=0;output.result?.web_requests?.length;round++){if(round>=2||output.changes.length)throw Error('opencode_web_request_bound');for(const action of output.result.web_requests)await this.web.call(m,task,action);output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt:m.envelope.objective+'\n'+m.envelope.constraints,context:{id:pack.id},requestId:`mission:${dispatch.id}:web:${round}`});}
+      if(vendor)this.bridge.workers.assertOutput(this.store.requireMission(m.id),output);
       this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
       if(task.cancelRequested||task.safetyStop?.latched)throw Error('opencode_cancelled');
       for(const [i,change]of output.changes.entries()){
+        if(vendor)this.bridge.workers.assertOutput(this.store.requireMission(m.id),output);
         this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
         const file=path.join(m.envelope.workspace,change.path);
         if(!m.envelope.allowed_files.includes(change.path)||require('./qualified-coding-adapter').digest(file)!==change.preimage_sha256)throw Error('opencode_preimage_changed');
@@ -237,17 +243,18 @@ class MissionService {
         if(applied.status!=='completed')throw Error('opencode_apply_not_completed');
       }
       transaction(this.db,()=>{
-        this.store.updateRun(runId,{state:'completed',processState:'exited',verified:true,result:{opencode_provenance:output.provenance,artifacts:output.changes.map(({content,...metadata})=>metadata)}});
+        this.store.updateRun(runId,{state:'completed',processState:'exited',verified:true,result:{[vendor?'worker_provenance':'opencode_provenance']:output.provenance,artifacts:output.changes.map(({content,...metadata})=>metadata)}});
         this.captureResult(runId,{status:'completed',result:{text:JSON.stringify(output.result)}});
       });
     }catch(error){
       if(!started)throw error;
+      if(vendor&&!task.cancelRequested)this.bridge.workers.recordFailure(agentId,error);
       // Uncertain process/invocation termination retains a quarantined writer.
-      const uncertain=['opencode_termination_unverified','opencode_spawn_failed','opencode_apply_not_completed','web_termination_unverified'].includes(error.code||error.message);
-      const errorClass=/^opencode_[a-z_]{1,80}$/.test(error.code||error.message)?(error.code||error.message):'opencode_execution_stopped';
-      this.store.updateRun(runId,{state:uncertain?'termination_unverified':task.cancelRequested?'cancelled':'failed',processState:uncertain?'unknown':'exited',verified:!uncertain,resolution:errorClass,result:{runtime_id:'opencode',error_class:errorClass}});
+      const uncertain=['opencode_termination_unverified','opencode_spawn_failed','opencode_apply_not_completed','web_termination_unverified','worker_termination_unverified','worker_spawn_failed'].includes(error.code||error.message);
+      const errorClass=/^(?:opencode|worker)_[a-z_]{1,80}$/.test(error.code||error.message)?(error.code||error.message):'opencode_execution_stopped';
+      this.store.updateRun(runId,{state:uncertain?'termination_unverified':task.cancelRequested?'cancelled':'failed',processState:uncertain?'unknown':'exited',verified:!uncertain,resolution:errorClass,result:{runtime_id:agentId,error_class:errorClass}});
       if(uncertain){this.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(runId);this.db.prepare("UPDATE cp_dispatches SET state='unknown' WHERE id=?").run(dispatch.id);if(this.store.getMission(m.id).state!=='cancelled')this.store.state(m.id,'blocked','opencode_termination_unverified');}
-      else this.captureResult(runId,{status:task.cancelRequested?'cancelled':'failed',result:{text:JSON.stringify({summary:'OpenCode execution stopped safely',changed_files:[],tests:[],artifacts:[],limitations:[]})}});
+      else this.captureResult(runId,{status:task.cancelRequested?'cancelled':'failed',result:{text:JSON.stringify({summary:agentId+' execution stopped safely',changed_files:[],tests:[],artifacts:[],limitations:[]})}});
     }
   }
   async launchNative(dispatch,m,fallback){
@@ -365,7 +372,7 @@ class MissionService {
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
       if(!v||v.revision!==m.revision||(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
-      if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
+      if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this.bridge.workers?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');
       if(input.decision==='accept'&&!require('./execution-evidence').runSatisfied(this.store.run(v.run_id)))throw Error('Required native execution evidence is missing');
       if(input.decision==='accept'&&v.result==='operator_review'){if(owner!=='operator')throw Error('Unsupported criterion requires operator review');text(input.evidence,'operator evidence',4000);}
@@ -385,11 +392,11 @@ class MissionService {
       for(const h of this.db.prepare("SELECT h.run_id FROM cp_codex_handoffs h JOIN cp_runs r ON r.id=h.run_id WHERE r.mission_id=? AND h.state<>'settled'").all(id))this.bridge.codexAdapter.cancelTask(h.run_id);
       this.store.event('mission.stop_requested',id,{});return{mission_id:id,state:'cancelled'};
     });
-    afterCommit(this.db,()=>{this._web?.cancel(id);if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id))this.bridge.opencodeAdapter?.cancel({task:this.bridge.tasks.get(row.task_id)});for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
+    afterCommit(this.db,()=>{this._web?.cancel(id);if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id)){const task=this.bridge.tasks.get(row.task_id);this.bridge.opencodeAdapter?.cancel({task});for(const a of this.bridge.workers?.adapters.values()||[])a.cancel({task});}for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
     return result;
   }
   decisionDetails(id){const d=this.store.decision(id);if(!d)throw Error('Decision not found');const m=this.detail(d.mission_id);return{decision:d,mission_objective:m.objective,result:this.db.prepare('SELECT normalized FROM cp_run_results WHERE run_id=?').get(d.run_id)?.normalized||null,verification:m.verifications,risks:['Worker rationale is untrusted; protected approvals are separate.']};}
   recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.schedule();}
-  async close(){this.stopped=true;await this._web?.close();await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
+  async close(){this.stopped=true;await this._web?.close();await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();await this.bridge.workers?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
 }
 module.exports={MissionService,relative};

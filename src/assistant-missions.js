@@ -48,9 +48,9 @@ function draft(server,input,message){
   return {kind:'mission',route:input.explicit?'EXPLICIT MISSION':'WORK',mission_id:m.id,state:'draft',message,authority:false,execution_authorized:false};
  });
 }
-function matchingTemplates(bridge,workspace){
+function matchingTemplates(bridge,workspace,selectedWorker){
  if(!workspace)return [];
- const candidates=[];
+ const candidates=[];if(['codex','claude_code'].includes(selectedWorker))for(const r of bridge.workers.templates())if(r.template.workspace===workspace&&r.template.workers.includes(selectedWorker))candidates.push(r.template);
  for(const entries of Object.values(bridge.options.externalMissionTemplates||{}))for(const template of Object.values(entries||{})){
   if(template&&typeof template.workspace==='string'&&path.isAbsolute(template.workspace)&&path.resolve(template.workspace)===path.resolve(workspace))candidates.push(template);
  }
@@ -81,7 +81,7 @@ async function newMission(server,input){
   if(created.state==='ready')server.bridge.missions.dispatch(missionId,{request_id:'assistant-research-dispatch:'+input.request_id},'operator');
   return {kind:'mission',route:input.explicit?'EXPLICIT MISSION':'WORK',mission_id:missionId,state:server.bridge.missions.require(missionId,'operator').state,browser_research_available:true,message:'Research Mission created. Beginning public website investigation within the approved domain. Account-only features require separate owner authorization.',authority:false};
  }
- const templates=matchingTemplates(server.bridge,input.workspace);
+ const templates=matchingTemplates(server.bridge,input.workspace,input.worker);
  if(templates.length!==1)return draft(server,request,templates.length?'Several approved scopes match this workspace. Choose one host-registered Mission template.':'Mission created as a draft. Choose an owner-registered workspace template with allowed files and checks before execution.');
  const template=templates[0];
  if(capabilities.some(c=>c!=='web_read'&&!(template.capability_scopes||[]).includes(c)))return draft(server,request,'This request needs capabilities outside the registered template. Choose a supported bounded scope; no capability has been granted.');
@@ -90,14 +90,15 @@ async function newMission(server,input){
  else {
   // Preferences may restrict a template's fixed local route, never replace it
   // with an unqualified worker or external inference provider.
-  if(template.preferred_agent&&template.preferred_agent!=='opencode')return draft(server,request,'The registered template worker is not qualified for automatic local execution.');
-  route=router.select(await router.inspect(server.bridge),{mission_class:'WORK',data_class:'personal',privacy:'local_only',model:input.model,worker:input.worker});
+  if(!template.workers&&template.preferred_agent&&template.preferred_agent!=='opencode')return draft(server,request,'The registered template worker is not qualified for automatic local execution.');
+  route=router.select(await router.inspect(server.bridge),{mission_class:'WORK',data_class:template.workers?'public':'personal',privacy:template.workers?'approved_external':'local_only',model:input.model,worker:input.worker});
   if(route.state!=='READY')return draft(server,request,'Mission created as a draft. Its model or worker is not currently qualified; inspect /status before execution.');
  }
  // Keep an implicit default route implicit: MissionService attaches the
  // canonical bounded local policy. An explicitly registered template must
  // already carry its matching immutable policy; this layer cannot invent one.
- const created=server.bridge.missions.create({...structuredClone(template),request_id:'assistant-work:'+input.request_id,objective:input.objective,...(route?{...(template.preferred_agent?{preferred_agent:route.worker}:{}),model:route.model}:{} )},'operator');
+ const {workers,privacy,data_class,...scope}=template;
+ const created=server.bridge.missions.create({...structuredClone(scope),...(workers?{preferred_agent:route.worker,fallback_agents:[],dispatch_policy:{privacy:'cloud_allowed',providers:[require('./bounded-worker').SPECS[route.worker].provider],billing_classes:['subscription'],max_attempts:1}}:{}),request_id:'assistant-work:'+input.request_id,objective:input.objective,...(route?{...(template.preferred_agent?{preferred_agent:route.worker}:{}),model:route.model}:{} )},'operator');
  if(created.state==='ready')server.bridge.missions.dispatch(created.id,{request_id:'assistant-dispatch:'+input.request_id},'operator');
  const current=server.bridge.missions.require(created.id,'operator');
  return {kind:'mission',route:input.explicit?'EXPLICIT MISSION':'WORK',mission_id:created.id,state:current.state,message:'Bounded Work Mission created with its registered scope, qualification and verification gates.',authority:false};

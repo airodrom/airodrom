@@ -45,7 +45,7 @@ async function submit(server,input){
  if(parsed.kind==='sensitive')return {kind:'clarify',message:'Use /remember-sensitive to explicitly save this as operator-only Sensitive Memory.'};
  if(parsed.kind==='forget')return forget(server,parsed.selection);
  if(parsed.kind==='recall')return {kind:'memory',items:server.interactiveMemory(parsed.query).items,memory_generation:require('./product-observability').memoryStatus(server.bridge).generation};
- if(parsed.kind==='connector')return connectorInput(server,{connector:parsed.connector,action:parsed.action,input:parsed.query?{query:parsed.query}:{},conversation_id:input.conversation_id,model:input.model});
+ if(parsed.kind==='connector')return connectorInput(server,{connector:parsed.connector,action:parsed.action,input:parsed.query?{query:parsed.query}:{},conversation_id:input.conversation_id,model:/^(?:codex|claude_code):/.test(input.model||'')?'auto':input.model});
  if(parsed.kind==='mission'){
   const missions=require('./assistant-missions');
   if(parsed.action==='list')return missions.list(server,{active:parsed.active===true});
@@ -55,7 +55,7 @@ async function submit(server,input){
  }
  if(parsed.kind==='work')return require('./assistant-missions').newMission(server,{objective:parsed.objective,capability_classes:parsed.capability_classes,request_id:input.request_id,workspace:input.workspace,model:input.model,worker:input.worker,explicit:false});
  if(parsed.kind!=='conversation')return parsed;
- return server.conversationEngine.start({message:parsed.message,request_id:input.request_id,conversation_id:input.conversation_id,include_memory:input.include_memory!==false,model:input.model});
+ return server.conversationEngine.start({message:parsed.message,request_id:input.request_id,conversation_id:input.conversation_id,include_memory:input.include_memory!==false,model:/^(?:codex|claude_code):/.test(input.model||'')?'auto':input.model});
 }
 function authorizationOffer(server,connector){return {kind:'connect_required',route:'CONNECTOR',connector,can_start_oauth:connector==='gmail'&&!!server.gmailOAuth,message:connector==='gmail'?'Gmail needs authorization. Start the existing Gmail OAuth flow to authorize read-only access.':'The official WhatsApp inbound connector is unavailable. Configure its authorized host transport; personal WhatsApp history is not supported.',authorized:false,authority:false};}
 async function connectorInput(server,{connector,action,input={},conversation_id,model}){

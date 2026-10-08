@@ -3326,5 +3326,41 @@
       "invocation_id": "A",
       "created_at": "A"
     }
+  },
+  "cp_worker_qualifications": {
+    "fields": [
+      "id",
+      "worker_id",
+      "record",
+      "record_hash",
+      "seal",
+      "state",
+      "created_at",
+      "expires_at"
+    ],
+    "source": "src/worker-registry.js",
+    "classification": {
+      "id": "A",
+      "worker_id": "A",
+      "record": "B",
+      "record_hash": "D",
+      "seal": "D",
+      "state": "A",
+      "created_at": "A",
+      "expires_at": "A"
+    }
+  },
+  "cp_worker_templates": {
+    "fields": [
+      "project_alias",
+      "workspace_alias",
+      "record"
+    ],
+    "source": "src/worker-registry.js",
+    "classification": {
+      "project_alias": "B",
+      "workspace_alias": "B",
+      "record": "B"
+    }
   }
 }

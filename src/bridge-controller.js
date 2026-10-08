@@ -344,6 +344,7 @@ class BridgeController extends EventEmitter {
       this.agentRouter.register(new (require('./apps/claude-code-adapter').ClaudeCodeAdapter)(this));
       this.cursorAdapter=new (require('./apps/cursor-adapter').CursorAdapter)();this.agentRouter.register(this.cursorAdapter);
       this.opencodeAdapter=new (require('./apps/opencode-adapter').OpenCodeAdapter)(this,this.options.opencode||require('./default-runtime').OPENCODE_DEFAULTS);this.agentRouter.register(this.opencodeAdapter);this.capabilityHost.opencodeStatus=()=>this.opencodeAdapter.readiness();
+      this.workers=new (require('./worker-registry').WorkerRegistry)(this);
       this.codexRelay=new (require('./codex-completion-relay').CodexCompletionRelay)(this);
       this.agentDispatch=new (require('./agent-dispatch').AgentDispatch)(this,this.options.agentDispatch||{});
       this.controlStore.recover();
@@ -2023,7 +2024,7 @@ class BridgeController extends EventEmitter {
   }
   async cancel(id) {
     const task = this.tasks.get(id);
-    if(task.controlPlaneMissionId&&this.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind==='browser_research'){
+    if(task.controlPlaneMissionId&&(this.controlStore.requireMission(task.controlPlaneMissionId).envelope.kind==='browser_research'||this.controlStore.requireMission(task.controlPlaneMissionId).envelope.worker_contract)){
       this.missions.cancel(task.controlPlaneMissionId,{request_id:randomUUID()});return this.snapshotTask(task);
     }
     task.cancelRequested = true;
@@ -2474,7 +2475,7 @@ class BridgeController extends EventEmitter {
     return this.shutdownPromise;
   }
   async shutdownOnce() {
-    this.closed = true; this.codexRelay?.close(); this.supervisor?.close(); clearInterval(this.monitor);
+    this.closed = true; await this.workers?.shutdown(); this.codexRelay?.close(); this.supervisor?.close(); clearInterval(this.monitor);
     await this.missions?.close();
     await this.slackRuntime?.stop();
     this.capabilityHost?.shutdown();

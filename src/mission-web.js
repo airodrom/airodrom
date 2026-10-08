@@ -22,7 +22,7 @@ class MissionWeb{
   if(this.db.prepare("SELECT 1 FROM cp_runs WHERE mission_id=? AND state='termination_unverified' AND termination_verified=0").get(m.id))throw error('web_termination_unverified');
   if(m.owner!=='operator'||!['coding','browser_research'].includes(m.envelope.kind)||!m.envelope.authority)throw error('qualified_work_mission_required');
   this.service.assertAuthority(m,{network:['internet'],data:['read']});
-  if(m.envelope.dispatch_policy?.privacy!=='local_only'||m.envelope.fallback_agents.length||!['host','opencode'].includes(m.envelope.preferred_agent))throw error('confined_local_worker_required');
+  if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(m.envelope.dispatch_policy?.privacy!=='local_only'||m.envelope.fallback_agents.length||!['host','opencode'].includes(m.envelope.preferred_agent))throw error('confined_local_worker_required');
   if(m.envelope.automatic_acceptance)throw error('web_evidence_requires_owner_acceptance');
   if(['completed','cancelled'].includes(m.state))throw error('mission_web_stopped');
   const task=this.bridge.tasks.get(m.task_id);if(!task||task.content_state==='erased'||task.cancelRequested||task.safetyStop?.latched||task.mission?.authorityRevoked)throw error('mission_web_stopped');

@@ -203,6 +203,7 @@ class ControlServer {
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/conversation')return this.json(res,200,this.conversationEngine.result({conversation_id:url.searchParams.get('conversation_id'),turn_id:url.searchParams.get('turn_id')}));
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/connectors')return this.json(res,200,require('./assistant-service').connectors(this.bridge).status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/sensitive')return this.json(res,200,require('./assistant-service').sensitiveList(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/handoff')return this.json(res,200,require('./mission-handoff').status(this.bridge,url.searchParams.get('id'),'operator'));
@@ -258,6 +259,9 @@ class ControlServer {
       if (req.method !== 'POST') return this.json(res, 404, { error: 'Operation not exposed' });
       if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') return this.json(res, 415, { error: 'JSON content type required' });
       const body = await readJSON(req);
+      if(url.pathname==='/api/assistant/workers/qualify'){require('./control-plane-store').object(body,['worker','model','confirmed','request_id']);return this.json(res,200,await this.bridge.workers.qualify(body.worker,body,'operator'));}
+      if(url.pathname==='/api/assistant/workers/revoke'){require('./control-plane-store').object(body,['worker']);return this.json(res,200,this.bridge.workers.revoke(body.worker,'operator'));}
+      if(url.pathname==='/api/assistant/workspaces/register')return this.json(res,201,this.bridge.workers.registerTemplate(body,'operator'));
       if (url.pathname.startsWith('/api/product/')) {
         try {
           const action = url.pathname.slice('/api/product/'.length);
