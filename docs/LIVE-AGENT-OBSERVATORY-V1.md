@@ -6,6 +6,8 @@ Control Center Mission detail is a three-column Live Observatory:
 - **Center** — current activity, elapsed time, heartbeat, live command/worker stream
 - **Right** — files, Git diff, worker details, tests, verification/acceptance
 
+Overview shows active Missions, working agents, waiting Approvals, recent failures, current operations, and system readiness.
+
 ## Transport
 
 | Route | Role |
@@ -15,16 +17,45 @@ Control Center Mission detail is a three-column Live Observatory:
 | `GET /api/product/live-stream?mission=&after=` | Authenticated SSE with reconnect cursor |
 | `GET /api/product/observatory/diff?mission=&path=` | Bounded in-scope Git diff |
 
-Hidden pages and paused feeds stop SSE. Events are deduplicated by `event_id` and ledger idempotency keys.
+Hidden pages and paused feeds stop SSE. Events are deduplicated by `event_id` and ledger idempotency keys. Browser reload resumes from the last cursor.
 
-## Capture
+## Capture (supported live events)
 
-- OpenCode: `worker.*` from NDJSON lines during execution; host-measured `fs.*` / `git.diff_observed` after apply
-- Trusted/governed jobs: existing `shell.command.*`, `test.*`, `git.*.observed` ledger events now project into the UI
-- Never fabricates progress percentages or test counts from log text
+| Event class | Source | Timing |
+| --- | --- | --- |
+| `worker.started` / `worker.terminated` | OpenCode adapter | Mid-run / end of turn |
+| `worker.tool_requested` / `worker.tool_completed` | OpenCode NDJSON `onLine` | Mid-run (tool name only) |
+| `fs.file_*` | Host measurement of allowed paths | After worker turn |
+| `git.diff_observed` | Host Git measurement | After worker turn |
+| `shell.command.*` / `test.*` | Governed job ledger | When jobs register outcomes |
+| Mission lifecycle STAGES | Product observability projection | Continuous ledger |
 
-## Limits
+## Observation boundary
 
-- OpenCode does not stream file contents mid-turn; file panels update from host measurement
-- Diff viewer shows at most 200 lines / 24 KiB, Mission-scoped only
-- Model reasoning and tool arguments are never stored
+- Continuous filesystem watch: **unavailable** — file creates/modifies/deletes are host-measured after the worker turn.
+- Mid-run tool **names** are observed from OpenCode NDJSON; arguments, prompts, and hidden reasoning are never stored.
+- Diff viewer: Mission `allowed_files` only, capped at 200 lines / 24 KiB.
+- Empty center stream shows **Detailed activity unavailable.** rather than inventing progress.
+
+## Activation (owner-authorized only)
+
+`live_cutover_authorized: false` until the operator explicitly authorizes.
+
+1. Confirm PR head SHA and mandatory checks.
+2. Install the Control Center artifacts from that revision into the service tree (`public/control-hub.{html,js,css}`, `src/live-observatory.js`, adapter/control-server wiring).
+3. Backup current `public/control-hub.*` and `src/live-observatory.js` (if present) before replace.
+4. Restart the local control service so routes and static assets reload.
+5. Health: `scripts/harness-safe-status.cjs` allowlisted checks; open Control Center; open one Mission detail; confirm SSE or poll catch-up.
+6. Rollback: restore backed-up Control Center files and previous `src` modules, then restart.
+
+Production credentials, Memory, Mission state, and private discovery must not change during activation.
+
+## Soft dependencies
+
+- Observatory capture does not require PR #38.
+- Production Mission execution with OpenCode 2.0.25 still needs that runtime qualification on the installed service (PR #40 or equivalent dirty pin).
+- Authorized WORK-template live Missions require host-approved WORK templates (not part of this PR).
+
+## Focused tests
+
+`node --test tests/live-observatory-v1.test.js`

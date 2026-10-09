@@ -162,3 +162,67 @@ test('OpenCode NDJSON line observation never stores reasoning text', async t => 
   assert.ok(snap.worker.some(e => e.tool === 'edit' || e.label.includes('Tool requested')));
   assert.ok(!JSON.stringify(snap).includes('PRIVATE_CHAIN'));
 });
+
+
+test('8. Control Center rendering exposes Observatory UX contracts', () => {
+  const js = fs.readFileSync(path.join(__dirname, '../public/control-hub.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../public/control-hub.css'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../public/control-hub.html'), 'utf8');
+  assert.match(html, /control-hub\.js/);
+  assert.match(js, /LIVE MISSION OBSERVATORY/);
+  assert.match(js, /Live Missions/);
+  assert.match(js, /Working agents/);
+  assert.match(js, /Recent failures/);
+  assert.match(js, /Detailed activity unavailable/);
+  assert.match(js, /Host-measured after worker turn/);
+  assert.match(js, /obs-grid/);
+  assert.match(css, /\.obs-grid/);
+  assert.equal(css.includes('obs-enter'), false);
+  assert.equal(css.includes('obs-glow'), false);
+});
+
+test('9. fixture Mission end-to-end Observatory APIs and observation boundary', async t => {
+  const f = await withMission(t);
+  const created = f.create({ objective: 'Synthetic observatory e2e fixture' });
+  const mid = created.mission_id || created.id;
+  const workspace = f.bridge.missions.require(mid).envelope.workspace;
+  fs.writeFileSync(path.join(workspace, 'fixture.txt'), 'beta\n');
+  observatory.record(f.bridge, { eventType: 'worker.started', missionId: mid, metadata: { agent_id: 'opencode' }, idempotencyKey: 'obs-e2e-start' });
+  observatory.observeOpenCodeLine(f.bridge, { missionId: mid, line: JSON.stringify({ type: 'tool_use', part: { tool: 'edit', id: 'e2e1' } }) });
+  observatory.observeOpenCodeResult(f.bridge, { missionId: mid, changes: [{ path: 'fixture.txt', sha256: 'b'.repeat(64), content: 'beta\n' }] });
+  f.bridge.controlStore.event('shell.command.completed', mid, { job_name: 'fixture-test', exit_code: 0, agent_id: 'host' }, { payload: 'ok' });
+  f.bridge.controlStore.event('test.completed', mid, { job_name: 'fixture-test', exit_code: 0, agent_id: 'host' }, { payload: '1 passed' });
+
+  const server = new ControlServer(f.bridge, { port: 0 });
+  t.after(async () => { await new Promise(r => server.server.close(r)); });
+  await server.start();
+  const auth = { Authorization: 'Bearer ' + server.token };
+  const get = (p) => new Promise((resolve, reject) => {
+    http.get(server.origin + p, { headers: auth }, res => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, json: JSON.parse(body), body }); }
+        catch { resolve({ status: res.statusCode, body }); }
+      });
+    }).on('error', reject);
+  });
+
+  const snap = await get('/api/product/observatory?mission=' + mid);
+  assert.equal(snap.status, 200);
+  assert.equal(snap.json.observation_boundary.continuous_filesystem_watch, false);
+  assert.equal(snap.json.observation_boundary.hidden_reasoning, false);
+  assert.ok(snap.json.files.some(e => e.path === 'fixture.txt'));
+  assert.ok(snap.json.worker.some(e => e.event_type === 'worker.tool_requested' || e.tool === 'edit'));
+  assert.ok(snap.json.activity.detail_available);
+
+  const diff = await get('/api/product/observatory/diff?mission=' + mid + '&path=fixture.txt');
+  assert.equal(diff.status, 200);
+  assert.equal(diff.json.path, 'fixture.txt');
+  assert.ok(String(diff.json.diff || '').includes('beta') || diff.json.lines_added >= 0);
+
+  const hub = await get('/control-hub.js');
+  assert.equal(hub.status, 200);
+  assert.match(hub.body, /Working agents/);
+  assert.match(hub.body, /Detailed activity unavailable/);
+});

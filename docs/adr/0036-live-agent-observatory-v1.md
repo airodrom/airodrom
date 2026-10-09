@@ -1,6 +1,6 @@
 # ADR 0036 — Live Agent Observatory V1
 
-Status: Proposed; focused validation pending. Compatible with ADRs 0005, 0009 and 0021.
+Status: Accepted for activation prep; production cutover remains owner-authorized. Compatible with ADRs 0005, 0009 and 0021.
 
 ## Decision
 
@@ -9,3 +9,7 @@ Control Center gains one Mission-scoped Live Observatory that projects host-obse
 ## Consequences
 
 Operators can watch Missions with Cursor-comparable visibility without inventing a second Mission system. Monitoring never bypasses capability permissions. Hidden reasoning, credentials, environment dumps and out-of-scope file contents remain excluded. Claude Code and Cursor appear only through already-verified adapter events.
+
+## Observation boundary
+
+File path events are host-measured after the OpenCode turn. Continuous filesystem monitoring is explicitly out of scope for V1. Mid-run NDJSON contributes tool names only. Progress percentages and hidden reasoning are never invented.

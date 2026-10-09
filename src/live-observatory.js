@@ -213,6 +213,8 @@ function snapshot(bridge, missionId) {
   const latest = projected.at(-1) || null;
   const advancing = ['dispatching', 'running', 'verifying'].includes(view.state);
   const heartbeat = projected.filter(e => e.event_type === 'observatory.heartbeat' || e.category === 'Worker' || e.category === 'Runtime').at(-1);
+  const midRunWorker = worker.some(e => ['worker.tool_requested', 'worker.started', 'runtime.execution.started'].includes(e.event_type));
+  const postRunFiles = files.some(e => String(e.event_type || '').startsWith('fs.') || e.event_type === 'git.diff_observed' || e.event_type === 'git.diff.observed');
   return {
     version: 1,
     mission: view,
@@ -222,9 +224,18 @@ function snapshot(bridge, missionId) {
       worker: view.runtime,
       model: view.model?.id || null,
       elapsed_s: view.started_at ? Math.max(0, Math.floor(((view.finished_at || Date.now()) - view.started_at) / 1000)) : null,
-      last_heartbeat_ms: heartbeat?.timestamp_ms || view.observed_at,
+      last_heartbeat_ms: heartbeat?.timestamp_ms || latest?.timestamp_ms || view.observed_at,
       advancing,
-      error: latest?.branch === 'attention' ? latest.label : null
+      error: latest?.branch === 'attention' ? latest.label : null,
+      detail_available: projected.length > 0
+    },
+    observation_boundary: {
+      worker_tools: 'openCode_ndjson_mid_run',
+      files: 'host_measured_after_turn',
+      git_diff: 'host_measured_authorized_paths',
+      commands_tests: 'governed_job_ledger',
+      continuous_filesystem_watch: false,
+      hidden_reasoning: false
     },
     files: files.slice(-64),
     commands: commands.slice(-64),
@@ -234,11 +245,13 @@ function snapshot(bridge, missionId) {
     cursor: batch.events[0]?.sequence || 0,
     has_more: batch.has_more,
     observed_at: Date.now(),
+    signals: { mid_run_worker: midRunWorker, post_run_files: postRunFiles },
     limitations: [
       'Observatory shows host-observed sanitized events only.',
-      'Model reasoning and prompts remain private.',
-      'File contents appear only for authorized workspace paths via bounded diff.',
-      'OpenCode mid-run tool names are observed from NDJSON; arguments are never stored.'
+      'OpenCode tool names are observed from mid-run NDJSON; arguments and reasoning are never stored.',
+      'File creates/modifies/deletes are host-measured after the worker turn — not a continuous filesystem watch.',
+      'File contents appear only for authorized workspace paths via bounded Git diff.',
+      'Model reasoning and prompts remain private.'
     ]
   };
 }
