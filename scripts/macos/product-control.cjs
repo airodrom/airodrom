@@ -9,9 +9,24 @@ function launcher(home){local.privateDirectory(home);const file=path.join(home,'
  const temp=path.join(home,'.cli-'+require('node:crypto').randomUUID());try{fs.writeFileSync(temp,body,{mode:0o700,flag:'wx'});fs.renameSync(temp,file);}finally{fs.rmSync(temp,{force:true});}
  return file;
 }
+// Optional observations: older services have no admission gate, and the ADR 0031
+// supervisor heartbeat exists only when automatic startup is installed.
+async function observations(home,stopped){
+ let admission=null,supervisor=null,mcpReady=false;
+ if(!stopped){try{const g=await local.request(home,'/api/interactive/lifecycle',undefined,{timeoutMs:3000});if(g?.version===1)admission=g;}catch{}
+  try{mcpReady=require('../../src/mcp-client').discovery(path.join(home,'data')).pid===local.discovery(home).pid;}catch{}}
+ try{const f=local.ownedJSON(path.join(home,'data','managed-supervisor.json'));if(f.version===1&&Date.now()-f.updated_at<=90000)supervisor=f;}catch{}
+ return {admission,supervisor,mcpReady};
+}
 async function status(home){const stopped=local.isStopped(home);let product=null;if(!stopped)try{product=await local.request(home,'/api/product/native-status');}catch{}
  const diagnostic=product?.diagnostic||summary(await doctor(home));
- return {state:stopped?'Stopped':product?'Connected':'Error',message:product?null:stopped?'Local service is stopped.':'Local status unavailable. Existing service and data preserved.',pid:null,managed:true,now:Date.now(),mcp:{ready:false,lastCallAt:null},tasks:{active:product?.active_missions||0,connected:0,total:0,counts:{}},lastActivityAt:null,lastHeartbeatAt:null,
+ const seen=await observations(home,stopped),state=stopped?'Stopped':product?'Connected':'Error';
+ const recovery=seen.supervisor?.last_recovery;
+ const menu={indicator:require('../../src/menu-status').indicator({state,product,admission:seen.admission,supervisor:seen.supervisor?.state||null}),
+  service:stopped?'Stopped':product?(seen.admission&&seen.admission.state!=='open'?'Running · maintenance hold':'Running'):'Not answering',
+  mcp:seen.mcpReady?'Ready':'Not ready',maintenance:seen.admission?{state:seen.admission.state,unresolved_runs:seen.admission.blockers?.runs??null,idle:seen.admission.idle===true}:null,
+  last_recovery:recovery?{at:recovery.at,reason:recovery.reason}:null};
+ return {menu,state,message:product?null:stopped?'Local service is stopped.':'Local status unavailable. Existing service and data preserved.',pid:null,managed:true,now:Date.now(),mcp:{ready:false,lastCallAt:null},tasks:{active:product?.active_missions||0,connected:0,total:0,counts:{}},lastActivityAt:null,lastHeartbeatAt:null,
  product:product||{control:'Unavailable',status:'Unavailable',runtime:'Unavailable',runtimeReason:null,memory:'Unavailable',provider:'Unavailable',approvals:null,mission:null,diagnostic}};
 }
 async function action(command,home=local.localHome(),missionId){

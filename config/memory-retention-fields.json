@@ -3362,5 +3362,36 @@
       "workspace_alias": "B",
       "record": "B"
     }
+  },
+  "cp_devtools_jobs": {
+    "fields": [
+      "id",
+      "task_id",
+      "worker",
+      "state",
+      "started_at",
+      "finished_at",
+      "exit_code",
+      "error_category",
+      "events",
+      "result",
+      "modified_files",
+      "updated_at"
+    ],
+    "source": "src/devtools-job-store.js",
+    "classification": {
+      "id": "A",
+      "task_id": "A",
+      "worker": "A",
+      "state": "A",
+      "started_at": "A",
+      "finished_at": "A",
+      "exit_code": "B",
+      "error_category": "B",
+      "events": "B",
+      "result": "B",
+      "modified_files": "B",
+      "updated_at": "A"
+    }
   }
 }

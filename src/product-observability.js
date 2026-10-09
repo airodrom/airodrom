@@ -80,7 +80,7 @@ function missionView(bridge, mission) {
   verification:{current:verificationCurrent,id:id(verification?.id),status:enumValue(verification?.result,['passed','failed','operator_review','unavailable'],'not_observed'),checks,run_id:id(verification?.run_id)},
   acceptance:{status:enumValue(acceptance?.decision,['accept','rework'],'pending'),at:time(acceptance?.created_at)},
   settlement:{status:enumValue(settlement?.state,['waiting_acceptance','needs_rework','settled'],'not_observed'),at:time(settlement?.updated_at)},
-  termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','unknown','not_started'])},
+  termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','idle','unknown','not_started'])},
   progress:progress({state}),timeline:history,history_truncated:ev.has_more,
   actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent}};
 }

@@ -21,6 +21,11 @@ function show(output,data,formatter,json=false){output.write(terminalText(json?J
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
 const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail · /gmail status|unread|recent|search|read|thread · /whatsapp status|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
+const cliRender = require('./cli-render');
+// Read-only observations for the status view; older services simply omit the gate.
+async function lifecycleGate(home){try{const g=await local.request(home,'/api/interactive/lifecycle',undefined,{timeoutMs:3000});return g?.version===1?g:null;}catch{return null;}}
+function mcpReadyFor(home,pid){try{const d=require('./mcp-client').discovery(require('node:path').join(home,'data'));return d.pid===pid;}catch{return false;}}
+async function serviceObservations(home,status){return {status,admission:await lifecycleGate(home),mcpReady:mcpReadyFor(home,status?.pid)};}
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
  return `OpenCode   ${runtime==='Ready'?'● Ready · Primary':runtime+' · '+(p?.runtimeReason||s.opencode?.reason||'Not observed')}${s.opencode?.version?' · '+s.opencode.version:''}
@@ -397,12 +402,23 @@ async function main(args = process.argv.slice(2)) {
   if(command==='gmail'&&rest[0]==='setup'){if(rest.length!==2||!rest[1].endsWith('.apps.googleusercontent.com'))throw Error('Use airodrom gmail setup <Google desktop client ID>');local.privateDirectory(home,true);const data=local.privateDirectory(path.join(home,'data'),true),file=path.join(data,'gmail-oauth-config.json');if(fs.existsSync(file))throw Error('Existing Gmail config preserved. Configure through an explicitly reviewed change.');local.writePrivate(file,{clientId:rest[1]});process.stdout.write('Owner OAuth client configured. Prepare the Keychain helper, restart Airodrom, then /connect gmail. No account connected.\n');return;}
   if(command==='secret'){return require('./vault-cli').run(home,rest,process.stdin,process.stdout);}
   if (command === '--version') { process.stdout.write(branding.name + ' ' + require('../package.json').version + '\n'); return; }
-  if (command === 'status') { if(local.isStopped(home))show(process.stdout,{state:'stopped'},()=> 'Airodrom is stopped. Run airodrom to start.',rest.includes('--json'));else show(process.stdout,await local.status(home),rows,rest.includes('--json')); return; }
-  if (command === 'stop') { await local.stop(home); process.stdout.write('Airodrom stopped. Personal Memory is preserved.\n'); return; }
+  if (command === 'status') {
+    // JSON stays the existing payload; the human view adds admission and MCP observations.
+    const json=rest.includes('--json');
+    if(local.isStopped(home)){show(process.stdout,{state:'stopped'},()=>cliRender.serviceStatus({stopped:true}),json);return;}
+    const st=await local.status(home);
+    if(json){show(process.stdout,st,null,true);return;}
+    process.stdout.write(terminalText(cliRender.serviceStatus(await serviceObservations(home,st)))+'\n'); return;
+  }
+  if (command === 'admission') {
+    if(rest.filter(x=>x!=='--json').some(x=>x!=='status'))throw Error('Use airodrom admission status [--json]');
+    const gate=await lifecycleGate(home);show(process.stdout,gate,cliRender.admissionStatus,rest.includes('--json'));return;
+  }
+  if (command === 'stop') { await local.stop(home); process.stdout.write('Airodrom stopped. Personal Memory is preserved.\nNext Action\nStart it again from the menu or with airodrom start.\n'); return; }
   if (command === 'restart') { await local.stop(home); process.stdout.write(rows(await local.start(home))); return; }
   if (!['start', 'open', 'memory', 'task'].includes(command) || ['start', 'open'].includes(command) && rest.length) throw Error('Unknown command. Use airodrom --help.');
   const s = await local.start(home);
-  if (command === 'start') process.stdout.write(rows(s));
+  if (command === 'start') process.stdout.write(terminalText(cliRender.serviceStatus(await serviceObservations(home,s)))+'\n');
   else if (command === 'open') { local.open(home); process.stdout.write('Control Center opened.\n'); }
   else if (command === 'memory') await memory(home, rest.filter(x=>x!=='--json').join(' '), process.stdout,rest.includes('--json'));
   else process.stdout.write('Scoped Mission dispatched: ' + await scopedTask(home, rest[0]) + '\n');

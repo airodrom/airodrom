@@ -172,6 +172,12 @@ class ControlServer {
       }
       if (!this.authorize(req)) return this.json(res, 401, { error: 'Open the private Control Center link printed by the bridge to connect' });
       if (req.method === 'GET' && url.pathname === '/api/product/native-status') return this.json(res, 200, await require('./product-observability').nativeStatus(this.bridge));
+      // Operator-only Claude Code job monitor: live state plus sanitized retained results.
+      if (req.method === 'GET' && url.pathname === '/api/devtools/jobs') {
+        const jobs = this.bridge.capabilityHost?.jobs, store = jobs?.attach(this.bridge.controlStore.db);
+        const live = [...(jobs?.jobs?.values() || [])].filter(j => j.status === 'running').map(j => ({ job_id: j.id, task_id: j.taskId, worker: 'claude_code', status: j.status, started_at: new Date(j.startedAt).toISOString(), live: true }));
+        return this.json(res, 200, { live, retained: store ? store.list(50) : [], accepted: false, execution_authority: false });
+      }
       if (req.method === 'GET' && url.pathname === '/api/product/memory') {
         const query=url.searchParams.get('query')||'';if(query.length>240)throw Error('Memory query too long');
         const result=this.interactiveMemory(query);
