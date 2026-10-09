@@ -20,6 +20,7 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0008 complete runtime removal](0008-remove-worker-runtime.md): Accepted owner decision; host primitives retain authority and OpenCode remains primary.
 
 - [0009 product observability](0009-product-observability-and-runtime-requalification.md): Proposed; bounded runtime qualification and safe product status.
+- [0034 OpenCode pin replacement requalify](0034-opencode-pin-replacement-requalify.md): Proposed; fail-closed requalification when the pinned OpenCode executable was removed by a package upgrade.
 - [0010 personal assistant and qualified routing](0010-personal-assistant-and-qualified-routing.md): Proposed; host-owned intent, data boundaries, handoff and read-only connector foundation.
 - [0011 Conversation Engine and intent routing](0011-conversation-engine-and-intent-routing.md): Proposed; replaces ordinary authenticated chat/Mission semantics of ADRs 0007 and 0010 only, preserving governed work and explicit Mission contracts.
 
