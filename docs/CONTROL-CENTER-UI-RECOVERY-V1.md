@@ -45,7 +45,12 @@ Browser: static serve of recovered `public/` at `http://127.0.0.1:8766/control-h
 
 ## Status
 
-**In source on feature branch** — not pushed, not merged, not SHIPPED IN SOURCE on main, not ACTIVE/DEPLOYED into the running operator service.
+| Field | Value |
+|-------|-------|
+| Branch | `feat/control-center-ui-recovery-v1` |
+| Local HEAD | `b5240fd0e60e96dafafa98b571b83d6b0ea8adee` |
+| PR | none (unpushed) |
+| State | **In source on feature branch** — not SHIPPED IN SOURCE on main; not ACTIVE/DEPLOYED in installed service |
 
 ## Next action
 
