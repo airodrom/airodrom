@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hosted_ci_auto_dispatch": false,
+  "heavy_ci_auto_dispatch": false,
+  "auto_push_per_mission": false,
+  "auto_merge_per_mission": false,
+  "merge_window": {
+    "timezone": "America/Vancouver",
+    "local_start": "17:00",
+    "local_end": "22:00"
+  },
+  "note": "Defaults are fail-closed. Hosted CI still runs when GitHub workflow triggers fire; Airodrom never auto-dispatches Actions. Feature-branch push CI is workflow-gated separately."
+}

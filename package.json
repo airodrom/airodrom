@@ -87,6 +87,7 @@
     "config/local-model-capability-v1.json",
     "config/local-services-v2.json",
     "config/memory-retention-fields.json",
+    "config/development-session-v1.json",
     "config/provider-gateway.json",
     "config/safe-autonomy-level1.json",
     "config/safe-autonomy-manifest.example.json",

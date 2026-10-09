@@ -359,6 +359,7 @@ class BridgeController extends EventEmitter {
       this.runtimeFingerprint=require('./runtime-fingerprint').sourceFingerprint();
       this.authorityRuntime=new (require('./authority-integration').AuthorityRuntime)(this);
       this.fixtureAcceptance = new (require('./fixture-acceptance').FixtureAcceptance)(this);
+      this.developmentSessions = new (require('./development-session').DevelopmentSession)(this, this.options.developmentSessions || {});
       this.missions = new MissionService(this);
       this.capabilityHost.missionWeb=this.missions.web;
       this.workExecution = new (require('./apps/work-execution-adapter').WorkExecutionAdapter)(this, this.options.workExecution || {});

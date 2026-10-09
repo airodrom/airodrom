@@ -27,6 +27,7 @@
   "config/local-model-capability-v1.json",
   "config/local-services-v2.json",
   "config/memory-retention-fields.json",
+  "config/development-session-v1.json",
   "config/provider-gateway.json",
   "config/safe-autonomy-level1.json",
   "config/safe-autonomy-manifest.example.json",
@@ -230,6 +231,7 @@
   "src/cursor-adapter.js",
   "src/cursor-runtime.js",
   "src/default-runtime.js",
+  "src/development-session.js",
   "src/deterministic-acceptance.js",
   "src/event-ledger.js",
   "src/execution-evidence.js",
@@ -577,5 +579,7 @@
   "docs/LIVE-AGENT-OBSERVATORY-V1.md",
   "docs/LIVE-OBSERVATORY-ACTIVATION-V1.md",
   "docs/adr/0036-live-agent-observatory-v1.md",
-  "tests/live-observatory-v1.test.js"
+  "tests/live-observatory-v1.test.js",
+  "docs/LOCAL-FIRST-BATCH-MERGE-V1.md",
+  "docs/adr/0039-local-first-batch-merge.md"
 ]

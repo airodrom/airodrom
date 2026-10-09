@@ -561,6 +561,77 @@
       "created_at": "A"
     }
   },
+  "cp_development_sessions": {
+    "fields": [
+      "id",
+      "goal",
+      "repository",
+      "branch",
+      "worktree",
+      "state",
+      "capabilities",
+      "workers",
+      "push_status",
+      "github_ci_status",
+      "pr_number",
+      "head_sha",
+      "created_at",
+      "updated_at",
+      "created_by"
+    ],
+    "source": "src/development-session.js",
+    "classification": {
+      "id": "A",
+      "goal": "B",
+      "repository": "B",
+      "branch": "B",
+      "worktree": "B",
+      "state": "A",
+      "capabilities": "A",
+      "workers": "A",
+      "push_status": "A",
+      "github_ci_status": "A",
+      "pr_number": "A",
+      "head_sha": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "created_by": "B"
+    }
+  },
+  "cp_development_session_missions": {
+    "fields": [
+      "session_id",
+      "mission_id",
+      "attached_at"
+    ],
+    "source": "src/development-session.js",
+    "classification": {
+      "session_id": "A",
+      "mission_id": "A",
+      "attached_at": "A"
+    }
+  },
+  "cp_development_session_evidence": {
+    "fields": [
+      "id",
+      "session_id",
+      "kind",
+      "command",
+      "passed",
+      "summary",
+      "recorded_at"
+    ],
+    "source": "src/development-session.js",
+    "classification": {
+      "id": "A",
+      "session_id": "A",
+      "kind": "A",
+      "command": "B",
+      "passed": "A",
+      "summary": "B",
+      "recorded_at": "A"
+    }
+  },
   "cp_slack_outbox": {
     "fields": [
       "id",
