@@ -15,3 +15,12 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Diff panels are Mission-scoped and size-capped; out-of-scope paths never appear.
 - Empty activity panes show "Detailed activity unavailable." instead of synthetic progress.
 - Installing Observatory into a running service requires an owner-authorized restart; `live_cutover_authorized` remains false until then.
+
+## Development Sessions / local-first batch merge
+
+- Source on `feat/local-first-batch-merge-v1` (feature impl `7c2217e127140e3d25fd3511e59cc4bab4e978c7` as of 2026-10-09; later docs-sync commits may tip the branch). **Not pushed**, **not merged**, **not SHIPPED IN SOURCE on main**, **not ACTIVE** as the default operator workflow until installed from main.
+- Focused evidence: `tests/development-session-v1.test.js` **9/9**. Fixture success is not live multi-Mission qualification on a production checkout.
+- Auto push, auto merge and hosted CI auto-dispatch remain fail-closed. Prepare Daily Integration never pushes or merges.
+- Feature-branch hosted CI remains gated to `main` + `workflow_dispatch` in `candidate.yml`; repository-required checks are not bypassed.
+- Standing merge authorization remains **INACTIVE**.
+- See [LOCAL-FIRST-BATCH-MERGE-V1.md](LOCAL-FIRST-BATCH-MERGE-V1.md) and [ADR 0039](adr/0039-local-first-batch-merge.md).

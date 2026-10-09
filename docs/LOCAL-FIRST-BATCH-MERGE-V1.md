@@ -2,6 +2,8 @@
 
 Host-owned Development Sessions group related Missions on one branch/worktree. Default: local implement → focused tests → local commit → next Mission. No per-Mission push, PR, merge, or hosted CI dispatch.
 
+**Status (2026-10-09):** source on `feat/local-first-batch-merge-v1`; feature impl `7c2217e127140e3d25fd3511e59cc4bab4e978c7` (later docs-sync commits may tip the branch); focused tests 9/9; **not pushed/merged**; not SHIPPED on main; standing merge grant INACTIVE.
+
 ## Cost controls
 
 Config `config/development-session-v1.json` (defaults false):
