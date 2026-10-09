@@ -24,3 +24,22 @@
 @media(prefers-reduced-motion:reduce){.lifecycle .live{animation:none}.track.active:after{animation:none;transform:none;width:30%}}
 
 .route-controls label{flex:1 1 160px;min-width:0}.route-controls select{width:100%;min-width:0}.conversation form{min-width:0}
+
+/* Live Agent Observatory V1 */
+.observatory{display:grid;gap:18px;animation:obs-enter .45s cubic-bezier(.2,.8,.2,1) both}
+.obs-top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:16px}
+.obs-controls{margin-left:auto}.obs-controls select,.obs-controls input{min-width:140px}
+.obs-grid{display:grid;grid-template-columns:minmax(240px,.9fr) minmax(0,1.4fr) minmax(260px,1fr);gap:16px;align-items:start}
+.obs-col{min-width:0;max-height:calc(100vh - 180px);overflow:auto;scroll-behavior:smooth}
+.obs-pulse{position:relative;overflow:hidden;border-radius:14px;padding:18px;margin-bottom:16px;border:1px solid #78caff40;background:linear-gradient(135deg,#122943c9,#111931ed 65%,#25234b9c)}
+.obs-pulse.live:after{content:"";position:absolute;inset:auto -20% -40% auto;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,#45c8dc55,transparent 70%);animation:obs-glow 2.4s ease-in-out infinite}
+.obs-feed{list-style:none;margin:0;padding:0}.obs-item{padding:12px 0;border-bottom:1px solid var(--border)}.obs-item.attention{border-left:2px solid #ffadb4;padding-left:10px}
+.obs-item-head{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}.obs-cat{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan)}
+.obs-output,.diff-view{white-space:pre-wrap;overflow:auto;max-height:280px;font:12px/1.45 ui-monospace,Menlo,monospace;background:#070b14;border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px}
+.obs-files{list-style:none;margin:0 0 16px;padding:0}.obs-files li{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+.obs-diff{margin:14px 0 18px}.obs-summary{margin-top:16px;grid-template-columns:1fr}
+@keyframes obs-enter{from{opacity:0;transform:translateY(10px) scale(.995)}to{opacity:1;transform:none}}
+@keyframes obs-glow{50%{transform:translate(-10px,-8px) scale(1.15);opacity:.85}}
+@media(max-width:1100px){.obs-grid{grid-template-columns:1fr 1fr}.obs-left{grid-column:1/-1;max-height:none}}
+@media(max-width:760px){.obs-grid{grid-template-columns:1fr}.obs-col{max-height:none}}
+@media(prefers-reduced-motion:reduce){.observatory,.obs-pulse.live:after{animation:none!important}}

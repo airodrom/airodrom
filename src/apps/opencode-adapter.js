@@ -98,19 +98,28 @@ function sandboxProfile(root, executable, writable) {
   for (const f of writable) profile += `(allow file-write* (literal ${quote(path.join(root, 'workspace', f))}))\n`;
   return profile;
 }
-function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable, onStart }) {
+function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable, onStart, onLine }) {
   if (process.platform !== 'darwin' && !fixtureExecutable) fail('opencode_platform_unqualified');
   const file = fixtureExecutable || '/usr/bin/sandbox-exec';
   const args = fixtureExecutable ? [] : ['-p', sandboxProfile(root, executable, writable), executable, 'run', '--standalone', '--format', 'json', '--agent', 'airodrom', '--model', env.OPENCODE_MODEL || JSON.parse(env.OPENCODE_CONFIG_CONTENT).model];
   return new Promise((resolve, reject) => {
     let child; try { child = spawn(file, args, { cwd: path.join(root, 'workspace'), env, shell: false, detached: true, stdio: ['pipe', 'pipe', 'pipe'] }); } catch { return reject(new AgentAdapterError('opencode_spawn_failed', 'opencode_spawn_failed')); }
-    let stdout = '', bytes = 0, timedOut = false, cancelled = false, overflow = false;
+    let stdout = '', bytes = 0, timedOut = false, cancelled = false, overflow = false, pending = '';
     const stop = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch {} } };
     const abort = () => { cancelled = true; stop(); };
     const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
-    child.stdout.on('data', c => { bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); } else stdout += c.toString(); });
+    child.stdout.on('data', c => {
+      bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); return; }
+      const chunk = c.toString(); stdout += chunk;
+      if (!onLine) return;
+      pending += chunk;
+      let idx; while ((idx = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, idx); pending = pending.slice(idx + 1);
+        if (line.trim()) { try { onLine(line); } catch { /* observatory must never abort execution */ } }
+      }
+    });
     // Diagnostics are never returned or persisted, including failure paths.
     child.stderr.on('data', c => { bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); } });
     child.stdin.on('error', () => {});
@@ -186,7 +195,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const p=run.result?.opencode_provenance,executable=this.executable();
     if(run.state!=='completed'||!run.termination_verified||!p||p.runtime_id!=='opencode'||p.runtime_version!==VERSION||p.authority!==false||p.workspace_bound!==true||p.termination_verified!==true||p.session_state!=='disposable'||!executable||p.executable_sha256!==hash(fs.readFileSync(executable)))fail('opencode_provenance_unavailable');
   }
-  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart, conversation = false } = {}) {
+  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart, onLine, conversation = false } = {}) {
     if (sessionId) fail('opencode_session_reuse_denied');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || deadline !== null && !Number.isSafeInteger(deadline) || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
@@ -211,7 +220,7 @@ class OpenCodeAdapter extends AgentAdapter {
       const executable = this.verifyArtifact(this.executable()), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
       const remaining = expiresAt - Date.now();
       if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
-      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart });
+      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart, onLine });
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
       if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
       if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
@@ -240,9 +249,24 @@ class OpenCodeAdapter extends AgentAdapter {
     const controller = new AbortController(); this.active.set(task.id, controller);
     const deadline = m.envelope.kind==='conversation' ? m.envelope.manifest.expires_at : null;
     const expiryTimer = deadline === null ? null : setTimeout(()=>controller.abort(), Math.max(0, deadline-Date.now()));
-    try { return await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, conversation:m.envelope.kind==='conversation', context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal,
-      onStart: () => { b.controlStore.event('runtime.execution.started',m.id,{agent_id:'opencode'},{runId:b.controlContext.inspect(context.id).run_id}); b.emit('change'); }
-    }); }
+    const runId = b.controlContext.inspect(context.id).run_id;
+    const observatory = require('../live-observatory');
+    try {
+      const result = await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, conversation:m.envelope.kind==='conversation', context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal,
+      onStart: () => {
+        b.controlStore.event('runtime.execution.started',m.id,{agent_id:'opencode'},{runId});
+        try { observatory.record(b,{eventType:'worker.started',missionId:m.id,runId,metadata:{agent_id:'opencode'},idempotencyKey:`obs-worker-start:${m.id}:${runId}`}); } catch {}
+        b.emit('change');
+      },
+      onLine: line => { try { observatory.observeOpenCodeLine(b,{missionId:m.id,runId,line,agentId:'opencode'}); b.emit('change'); } catch {} }
+    });
+      if (result?.changes?.length && m.envelope.kind !== 'conversation') {
+        try { observatory.observeOpenCodeResult(b,{missionId:m.id,runId,changes:result.changes,agentId:'opencode'}); b.emit('change'); } catch {}
+      } else {
+        try { observatory.record(b,{eventType:'worker.terminated',missionId:m.id,runId,metadata:{agent_id:'opencode',status:result?.result?.status||'completed'},idempotencyKey:`obs-worker-term:${m.id}:${runId}`}); } catch {}
+      }
+      return result;
+    }
     finally { clearTimeout(expiryTimer); this.active.delete(task.id); }
   }
   async cancel({ task } = {}) { this.active.get(task?.id)?.abort(); return { cancellation_requested: true, authority: false }; }
