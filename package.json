@@ -43,7 +43,12 @@
     "test:assistant": "node scripts/run.cjs --test tests/personal-assistant-v1.test.js",
     "test:conversation": "NODE_ENV=test node scripts/run.cjs --test tests/conversation-engine.test.js tests/conversation-routing-v1.test.js tests/conversation-cli.test.js tests/secure-vault-guide.test.js",
     "test:workers": "NODE_ENV=test node scripts/run.cjs --test tests/multi-worker-v2.test.js tests/multi-worker-ui.test.js",
-    "test:codex:live": "AIRODROM_CODEX_LIVE=1 node scripts/run.cjs tests/live-codex.cjs"
+    "test:codex:live": "AIRODROM_CODEX_LIVE=1 node scripts/run.cjs tests/live-codex.cjs",
+    "macos:service:plan": "node scripts/run.cjs scripts/macos/managed-service-agent.cjs plan",
+    "macos:service:status": "node scripts/run.cjs scripts/macos/managed-service-agent.cjs status",
+    "macos:service:install": "node scripts/run.cjs scripts/macos/managed-service-agent.cjs install",
+    "macos:service:uninstall": "node scripts/run.cjs scripts/macos/managed-service-agent.cjs uninstall",
+    "test:startup": "node scripts/run.cjs --test tests/managed-startup-v1.test.js"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -391,6 +396,15 @@
     "src/worker-registry.js",
     "docs/MULTI-WORKER-V2.md",
     "docs/adr/0018-qualified-multi-worker-v2.md",
-    "docs/adr/0019-codex-live-qualification.md"
+    "docs/adr/0019-codex-live-qualification.md",
+    "src/managed-supervisor.js",
+    "src/managed-service-runtime.js",
+    "src/managed-service-agent.js",
+    "src/startup-diagnostics.js",
+    "scripts/managed-service.cjs",
+    "scripts/macos/managed-service-agent.cjs",
+    "docs/adr/0031-managed-login-startup-supervisor.md",
+    "docs/operations/automatic-startup-reconnection-v1.md",
+    "docs/operations/startup-recovery-runbook.md"
   ]
 }
