@@ -28,6 +28,16 @@ const SLOTS = [
   }
 ];
 
+
+async function ensureService(home) {
+  const local = require('./local-bootstrap');
+  try {
+    await local.status(home, { allowOlderSource: true });
+    return;
+  } catch {}
+  await ensureService(home);
+}
+
 function vaultFor(home) {
   const local = require('./local-bootstrap');
   const data = local.privateDirectory(path.join(home, 'data'), true);
@@ -144,7 +154,7 @@ async function run(options = {}) {
   }
 
   if (startService) {
-    try { await local.start(home); } catch (error) {
+    try { await ensureService(home); } catch (error) {
       throw Error('Local Airodrom service required to configure WhatsApp references: ' + (error.message || 'unavailable'));
     }
   }
@@ -210,7 +220,7 @@ async function run(options = {}) {
 
 async function runDiscover(home, output) {
   const local = require('./local-bootstrap');
-  await local.start(home);
+  await ensureService(home);
   const live = await local.request(home, '/api/assistant/whatsapp/live-connection');
   if (!live.credentials?.access_token?.bound && !live.vault?.ready_for_graph_discovery) {
     output.write('No usable Graph access token is bound. Run: airodrom whatsapp bind\n');
@@ -225,7 +235,7 @@ async function runDiscover(home, output) {
 async function runPrepare(home, output, url) {
   const local = require('./local-bootstrap');
   if (typeof url !== 'string' || !url) throw Error('Use airodrom whatsapp prepare-callback <https://host/webhooks/whatsapp>');
-  await local.start(home);
+  await ensureService(home);
   const prepared = await local.request(home, '/api/assistant/whatsapp/inbound/prepare-callback', { confirmed: true, url });
   output.write(`Prepared callback: ${prepared.prepared_callback_url}\n`);
   output.write('Public ingress: OFF · activation inactive until owner authorization\n');
@@ -234,7 +244,7 @@ async function runPrepare(home, output, url) {
 
 async function runStatus(home, output, json = false) {
   const local = require('./local-bootstrap');
-  await local.start(home);
+  await ensureService(home);
   const live = await local.request(home, '/api/assistant/whatsapp/live-connection');
   if (json) {
     output.write(JSON.stringify({

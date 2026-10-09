@@ -25,3 +25,4 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Credential onboarding: `airodrom whatsapp bind` (labeled hidden Vault capture + automatic opaque configure). Operator Vault may still show zero active `whatsapp` refs until the operator completes bind with real Meta secrets. Public ingress remains OFF.
 - Inbound text never auto-dispatches Missions and never grants authority. Send/reply capabilities remain inactive policy categories.
 - See [WhatsApp Inbound V1](WHATSAPP-INBOUND-V1.md), [V1.1](WHATSAPP-INBOUND-V1.1.md), [Meta live connection](META-WHATSAPP-LIVE-CONNECTION-V1.md) and [ADR 0038](adr/0038-whatsapp-inbound-v1.md).
+- Global CLI WhatsApp shell commands require `npm run install:local` from a package that includes `airodrom whatsapp bind` routing. Linking only an older checkout yields `Unknown command` even when the feature branch exists in another worktree.

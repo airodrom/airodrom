@@ -124,3 +124,19 @@ After owner-authorized public ingress:
 | POST | `/api/assistant/whatsapp/inbound/discover-graph` | Authorized Graph WABA/phone discovery |
 | POST | `/api/assistant/whatsapp/inbound/prepare-callback` | Store candidate HTTPS URL |
 | POST | `/api/assistant/whatsapp/inbound/configure` | Bind refs / Meta IDs |
+
+## Global CLI activation (local)
+
+The Mac global command `~/.local/npm/bin/airodrom` must resolve to a package that includes shell `whatsapp` routing. Feature tip `e91a04b` alone is not sufficient if the npm link still points at an older checkout.
+
+Supported install path: `npm run install:local` (`scripts/install-local.cjs`) from the activated package root. Application files resolve via `__dirname` / package root, never `process.cwd()`.
+
+Verified shell commands from any directory (including `$HOME` and `/tmp`):
+
+- `airodrom whatsapp bind` — labeled hidden Vault capture (TTY required)
+- `airodrom whatsapp status[--json]`
+- `airodrom whatsapp discover`
+- `airodrom whatsapp prepare-callback <https://host/webhooks/whatsapp>`
+
+Public ingress and Mission auto-dispatch remain OFF.
+
