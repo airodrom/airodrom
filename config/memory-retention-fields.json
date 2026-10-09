@@ -561,6 +561,65 @@
       "created_at": "A"
     }
   },
+  "cp_whatsapp_inbound_config": {
+    "fields": [
+      "id",
+      "enabled",
+      "verify_token_reference",
+      "app_secret_reference",
+      "allowlist",
+      "updated_at",
+      "updated_by"
+    ],
+    "source": "src/whatsapp-inbound.js",
+    "classification": {
+      "id": "A",
+      "enabled": "A",
+      "verify_token_reference": "D",
+      "app_secret_reference": "D",
+      "allowlist": "B",
+      "updated_at": "A",
+      "updated_by": "B"
+    }
+  },
+  "cp_whatsapp_inbox": {
+    "fields": [
+      "message_id",
+      "from_id",
+      "text",
+      "status",
+      "payload_hash",
+      "duplicate",
+      "received_at",
+      "authority"
+    ],
+    "source": "src/whatsapp-inbound.js",
+    "classification": {
+      "message_id": "A",
+      "from_id": "B",
+      "text": "B",
+      "status": "A",
+      "payload_hash": "D",
+      "duplicate": "A",
+      "received_at": "A",
+      "authority": "A"
+    }
+  },
+  "cp_whatsapp_message_status": {
+    "fields": [
+      "id",
+      "message_id",
+      "status",
+      "observed_at"
+    ],
+    "source": "src/whatsapp-inbound.js",
+    "classification": {
+      "id": "A",
+      "message_id": "A",
+      "status": "A",
+      "observed_at": "A"
+    }
+  },
   "cp_slack_outbox": {
     "fields": [
       "id",

@@ -38,8 +38,8 @@ class ControlServer {
     const gmailFile=bridge.dataDir?path.join(bridge.dataDir,'gmail-oauth-config.json'):null;
     if(gmailFile&&require('./private-json').privateFileExists(gmailFile)){
       const config=require('./private-json').readPrivateJSON(gmailFile);require('./control-plane-store').object(config,['clientId','reference']);
-      this.gmailOAuth=new(require('./gmail-oauth').GmailOAuth)({clientId:config.clientId,reference:config.reference||null,vault:new(require('./secret-vault').SecretVault)(bridge.dataDir),onReference:reference=>{require('./local-bootstrap').writePrivate(gmailFile,{clientId:config.clientId,reference});bridge.assistantConnectors=new(require('./assistant-connectors').AssistantConnectors)({gmail:this.gmailOAuth.configuration(),secrets:{resolve:()=>this.gmailOAuth.resolve()}});}});
-      if(config.reference)bridge.assistantConnectors=new(require('./assistant-connectors').AssistantConnectors)({gmail:this.gmailOAuth.configuration(),secrets:{resolve:()=>this.gmailOAuth.resolve()}});
+      this.gmailOAuth=new(require('./gmail-oauth').GmailOAuth)({clientId:config.clientId,reference:config.reference||null,vault:new(require('./secret-vault').SecretVault)(bridge.dataDir),onReference:reference=>{require('./local-bootstrap').writePrivate(gmailFile,{clientId:config.clientId,reference});this.#wireAssistantConnectors();}});
+      if(config.reference)this.#wireAssistantConnectors();
     }
     this.conversationEngine=bridge.conversationEngine ||= new(require('./conversation-engine').ConversationEngine)(bridge,conversationOptions);
     this.mcpToken = mcpToken;
@@ -63,6 +63,15 @@ class ControlServer {
     const provided = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${token}`);
     return provided.length === expected.length && timingSafeEqual(provided, expected);
+  }
+  #wireAssistantConnectors() {
+    if (!this.gmailOAuth) return;
+    const { whatsappSource } = require('./whatsapp-inbound');
+    this.bridge.assistantConnectors = new (require('./assistant-connectors').AssistantConnectors)({
+      gmail: this.gmailOAuth.configuration(),
+      secrets: { resolve: () => this.gmailOAuth.resolve() },
+      ...whatsappSource(this.bridge)
+    });
   }
   assertCanRun(id) {
     const task = this.bridge.tasks.get(id);
@@ -122,13 +131,30 @@ class ControlServer {
     const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'" };
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
     try {
-      const callbackPath=new URL(req.url,this.origin).pathname==='/oauth/gmail/callback'&&req.method==='GET';
-      if (req.headers.host !== `127.0.0.1:${this.port}` || !callbackPath&&((req.headers.origin && req.headers.origin !== this.origin) || req.headers['sec-fetch-site'] === 'cross-site')) return this.json(res, 403, { error: 'Local same-origin requests only' });
+      const earlyPath=new URL(req.url,'http://127.0.0.1').pathname;
+      const callbackPath=earlyPath==='/oauth/gmail/callback'&&req.method==='GET';
+      const whatsappWebhook=earlyPath==='/webhooks/whatsapp';
+      // WhatsApp webhook is signature-authenticated (POST) or verify-token authenticated (GET).
+      // Still loopback-only; public ingress / tunnels require separate owner authorization.
+      if (req.headers.host !== `127.0.0.1:${this.port}` || !callbackPath&&!whatsappWebhook&&((req.headers.origin && req.headers.origin !== this.origin) || req.headers['sec-fetch-site'] === 'cross-site')) return this.json(res, 403, { error: 'Local same-origin requests only' });
       const url = new URL(req.url, this.origin);
       if(url.pathname==='/oauth/gmail/callback'){
         if(req.method!=='GET'||!this.gmailOAuth)throw Error('OAuth callback unavailable');
         await this.gmailOAuth.complete({state:url.searchParams.get('state'),code:url.searchParams.get('code')});
         res.setHeader('Content-Type','text/plain; charset=utf-8');res.end('Gmail read-only authorization completed. Close this tab and return to Airodrom.');return;
+      }
+      if(whatsappWebhook){
+        const inbound=this.bridge.whatsappInbound;if(!inbound)throw Error('WhatsApp inbound unavailable');
+        if(req.method==='GET'){
+          const challenge=inbound.challenge(Object.fromEntries(url.searchParams));
+          res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'});res.end(challenge);return;
+        }
+        if(req.method==='POST'){
+          const {readRaw}=require('./whatsapp-inbound');
+          const raw=await readRaw(req);
+          return this.json(res,200,inbound.ingest(raw,req.headers['x-hub-signature-256']));
+        }
+        return this.json(res,405,{error:'GET or POST required'});
       }
       if (!url.pathname.startsWith('/api/')) {
         const assets = { '/branding.js': ['branding.js','text/javascript; charset=utf-8'], '/hub': ['control-hub.html','text/html; charset=utf-8'], '/control-hub.js': ['control-hub.js','text/javascript; charset=utf-8'], '/control-hub.css': ['control-hub.css','text/css; charset=utf-8'], '/workspace': ['index.html','text/html; charset=utf-8'], '/app.js': ['app.js','text/javascript; charset=utf-8'], '/style.css': ['style.css','text/css; charset=utf-8'] };
@@ -213,6 +239,9 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/connectors')return this.json(res,200,require('./assistant-service').connectors(this.bridge).status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbound')return this.json(res,200,this.bridge.whatsappInbound.status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbox')return this.json(res,200,this.bridge.whatsappInbound.list({limit:Number(url.searchParams.get('limit')||50)||50,status:url.searchParams.get('status')||null}));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/statuses')return this.json(res,200,this.bridge.whatsappInbound.statuses({message_id:url.searchParams.get('message_id')||null,limit:Number(url.searchParams.get('limit')||50)||50}));
       if(req.method==='GET'&&url.pathname==='/api/assistant/sensitive')return this.json(res,200,require('./assistant-service').sensitiveList(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/handoff')return this.json(res,200,require('./mission-handoff').status(this.bridge,url.searchParams.get('id'),'operator'));
       if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, nickname:this.conversationEngine.nickname()||'Airo', opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'persistent local conversation; governed Work Missions; no chat tools', active_conversations:this.conversationEngine.active.size, active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n, quarantined_leases: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE state='quarantined'").get().n });
@@ -271,6 +300,7 @@ class ControlServer {
       if(url.pathname==='/api/assistant/workers/revoke'){require('./control-plane-store').object(body,['worker']);return this.json(res,200,this.bridge.workers.revoke(body.worker,'operator'));}
       if(url.pathname==='/api/assistant/risk-acceptance'){require('./control-plane-store').object(body,['enabled','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.setPreference(body,'operator'));}
       if(url.pathname==='/api/assistant/risk-acceptance/authorize'){require('./control-plane-store').object(body,['mission_id','request_id','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.authorizeExisting(body.mission_id,{request_id:body.request_id,confirmed:body.confirmed},'operator'));}
+      if(url.pathname==='/api/assistant/whatsapp/inbound/configure')return this.json(res,200,this.bridge.whatsappInbound.configure(body,'operator'));
       if(url.pathname==='/api/assistant/workspaces/register')return this.json(res,201,this.bridge.workers.registerTemplate(body,'operator'));
       if (url.pathname.startsWith('/api/product/')) {
         try {
