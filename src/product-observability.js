@@ -130,8 +130,10 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  const approvalRecords=bridge.policy.list(),pending=approvalRecords.filter(a=>a.status==='pending'&&(!a.expiresAt||a.expiresAt>Date.now())).length;
  const approvals=approvalRecords.sort((a,b)=>(a.status==='pending'?0:1)-(b.status==='pending'?0:1)).slice(0,50).map(a=>({id:id(a.id),task_id:id(a.taskId),label:'Protected operation',status:enumValue(a.status,['pending','approved','expired','rejected','revoked','used']),created_at:time(a.createdAt),expires_at:time(a.expiresAt)}));
  const runtime=runtimeView(ready),ledger=bridge.ledger.health();
- return {epoch:bridge.runtimeFingerprint?.captured_at||null,observed_at:Date.now(),version:require('../package.json').version,release_state:'PRE-RELEASE',status:bridge.closed?'Unavailable':runtime.ready&&memoryReady&&ledger?.healthy===true&&!leases.some(l=>l.state==='quarantined')?'Ready':'Degraded',
-  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client connection not checked'},runtime,memory,
+ const overviewStatus=bridge.closed?'Unavailable':runtime.ready&&memoryReady&&ledger?.healthy===true&&!leases.some(l=>l.state==='quarantined')?'Ready':'Degraded';
+ const connectivity=require('./connection-status').derive({authorized:true,reachable:true,overviewStatus,lastOkAt:Date.now(),maintenance:!!bridge.closed});
+ return {epoch:bridge.runtimeFingerprint?.captured_at||null,observed_at:Date.now(),version:require('../package.json').version,release_state:'PRE-RELEASE',status:overviewStatus,connectivity,
+  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client / MCP not checked; does not imply service disconnect'},runtime,memory,
   assistant:await require('./model-worker-router').inspect(bridge),connectors:require('./assistant-service').connectors(bridge).status(),sensitive:{disclosure:'Operator-only reveal; no worker context',encryption:'No field-level encryption claim'},vault:{backend:'macOS Keychain host port',values_displayed:false,worker_access:false},
   projects:includeMissions?bridge.projects.listProjects({limit:50}).map(p=>({id:id(p.projectId),status:enumValue(p.status,['active','paused','completed','archived']),label:'Registered project',updated_at:time(p.updatedAt)})):[],
   provider:{state:runtime.ready?'Ready':ready?.provider_ready===false?'Unavailable':'Unavailable',reason:runtime.ready?'Qualified local provider observed':'Readiness unavailable'},
@@ -145,10 +147,19 @@ async function nativeStatus(bridge) {
  const active=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying','awaiting_acceptance','waiting_for_operator') ORDER BY CASE WHEN state IN ('dispatching','running','verifying') THEN 0 ELSE 1 END,created_at DESC LIMIT 1").get();
  const m=active?missionView(bridge,bridge.controlStore.requireMission(active.id)):null;
  const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
+ const {derive,menuPresentation}=require('./connection-status');
+ const connectivity=derive({authorized:true,reachable:true,overviewStatus:s.status,lastOkAt:Date.now(),maintenance:!!bridge.closed});
+ const presentation=menuPresentation({bridgeState:bridge.closed?'Stopped':'Connected',productStatus:s.status,activeMissions:activeCount,approvals:s.approvals.waiting,missionState:m?.state||null});
+ const activity_status=presentation.tone==='working'?'Working '+activeCount:presentation.tone==='approval'?'Approval needed':presentation.label;
+ const elapsed_s=m?.started_at?Math.max(0,Math.floor((Date.now()-m.started_at)/1000)):null;
  return {status:s.status,control:s.control.state,runtime:s.runtime.state,runtimeReason:s.runtime.reason,memory:s.memory.state,provider:s.provider.state,approvals:s.approvals.waiting,active_missions:activeCount,quarantined_leases:s.leases.quarantined,
+  activity_status,connection_state:connectivity.state,connection_label:connectivity.label,menu_tone:presentation.tone,
   model:m?.model?.id||(s.runtime.ready?require('./model-worker-router').MODEL:'Unavailable'),routing:m?.model?.mode||(s.runtime.ready?'AUTO · local policy':'Unavailable'),connectors:s.connectors.items.map(c=>c.id+': '+c.state).join(' · '),
-  mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode}:null,
-  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Active Missions: '+activeCount,'Waiting Approvals: '+s.approvals.waiting,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
+  workers:'OpenCode: '+s.runtime.state+' · Provider: '+s.provider.state,
+  mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode,worker:m.runtime||null,model:m.model?.id||null,elapsed_s,progress_value:m.progress.mode==='determinate'?m.progress.value:null,progress_maximum:m.progress.mode==='determinate'?m.progress.maximum:null}:null,
+  review_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n,
+  failed_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n,
+  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Active Missions: '+activeCount,'Waiting Approvals: '+s.approvals.waiting,'Connection: '+connectivity.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
 }
 function events(bridge,url) {
  const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)throw Error('Invalid event cursor');
