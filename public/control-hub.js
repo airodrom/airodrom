@@ -240,7 +240,7 @@
    right.append(node('h3','Tests'));
    right.append(observatoryFeed(obs?.tests||[],20));
    const summary=node('div',null,'split obs-summary');
-   summary.append(glass('Verification',readable(m.verification.status)+(m.verification.current?'':' · historical'),'Host checks'),glass('Acceptance',readable(m.acceptance.status),m.acceptance.at?stamp(m.acceptance.at):'Decision required'),glass('Settlement',readable(m.settlement.status),m.settlement.at?stamp(m.settlement.at):'Separate outcome'));
+   summary.append(glass('Verification',readable(m.verification.status)+(m.verification.current?'':' · historical'),'Host checks'),glass('Acceptance',readable(m.acceptance.mode==='automatically_verified'?'Automatically verified':m.acceptance.status)+(m.acceptance.review_reason?' · '+m.acceptance.review_reason.replaceAll('_',' '):''),m.acceptance.at?stamp(m.acceptance.at):(m.acceptance.mode==='needs_operator_review'?'Operator review required':'Decision required')),glass('Settlement',readable(m.settlement.status),m.settlement.at?stamp(m.settlement.at):'Separate outcome'));
    right.append(summary);
    if(m.label==='Bounded local conversation'){
      const chat=node('section',null,'conversation');chat.append(node('h3','Conversation'));
@@ -294,8 +294,9 @@
      for(const item of (view==='Models'?snapshot.assistant?.models:snapshot.assistant?.workers)||[]){result.append(glass(item.id,item.qualification,(item.provider||item.transport)+' · '+item.locality+' · '+(item.available?'Available':'Unavailable')),node('p',item.reason?item.reason.replaceAll('_',' '):item.support||'Context limit, token usage and cost: Unavailable'));
        if(view==='Workers'&&['codex','claude_code','cursor'].includes(item.id)){
          result.append(node('p','Installed: '+(item.installed?'Yes':'No')+' · Account: '+(item.auth_state||'Not probed')+' · Version: '+(item.version||'Not verified')+' · Qualification expiry: '+(item.expires_at?stamp(item.expires_at):'None')));
+         if(item.id==='cursor'){const c=snapshot.cursor||{};result.append(node('p','Cursor Agent: '+(c.agent_availability||'unqualified').replaceAll('_',' ')+' · IDE tasks are not Agent execution'+(c.last_ide_task?.status&&c.last_ide_task.status!=='not_observed'?' · Last IDE task: '+c.last_ide_task.status+(c.last_ide_task.label?' ('+c.last_ide_task.label+')':''):''),'muted'));}
          if(item.id!=='cursor'&&item.installed&&!item.busy)result.append(button('Qualify '+item.id,async()=>{const model=window.prompt('Exact vendor model ID for a public synthetic edit check');if(!model||!window.confirm('Allow this vendor to receive one disposable public fixture? No personal Memory or repository files. Up to two minutes. This does not grant Mission execution.'))return;try{await api('/api/assistant/workers/qualify',{worker:item.id,model,confirmed:true,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}}));
-         if(item.qualified||item.busy)result.append(button('Revoke '+item.id,async()=>{try{await api('/api/assistant/workers/revoke',{worker:item.id});await refresh();}catch(e){$('notice').textContent=e.message;}}));
+         if(item.id!=='cursor'&&(item.qualified||item.busy))result.append(button('Revoke '+item.id,async()=>{try{await api('/api/assistant/workers/revoke',{worker:item.id});await refresh();}catch(e){$('notice').textContent=e.message;}}));
        }
      }result.append(routeControls());result.append(node('p','Discovery does not qualify a route. Manual preference cannot bypass privacy, expiry or availability. Optional workers require fresh independent qualification.'));return result;
    }

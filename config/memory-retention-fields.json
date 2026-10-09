@@ -2422,6 +2422,23 @@
       "policy": "B"
     }
   },
+  "cp_risk_acceptance": {
+    "fields": [
+      "mission_id",
+      "envelope_hash",
+      "policy",
+      "review_reason",
+      "updated_at"
+    ],
+    "source": "src/risk-acceptance.js",
+    "classification": {
+      "mission_id": "A",
+      "envelope_hash": "D",
+      "policy": "B",
+      "review_reason": "B",
+      "updated_at": "A"
+    }
+  },
   "project_orchestrator_meta": {
     "fields": [
       "key",

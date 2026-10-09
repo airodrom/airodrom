@@ -23,6 +23,7 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0034 OpenCode pin replacement requalify](0034-opencode-pin-replacement-requalify.md): Proposed; fail-closed requalification when the pinned OpenCode executable was removed by a package upgrade.
 - [0035 OpenCode 2.0.25 qualification](0035-opencode-2.0.25-qualification.md): Proposed; confined live qualification and package evidence cutover for OpenCode 2.0.25.
 - [0036 Live Agent Observatory V1](0036-live-agent-observatory-v1.md): Proposed; Mission-scoped live telemetry, SSE/poll transport and Control Center observatory UI on the canonical ledger.
+- [0037 Cursor IDE task vs Agent](0037-cursor-ide-task-vs-agent.md): Proposed; classified IDE tasks.json dispatch is not Cursor Agent execution; OpenCode remains the Mission coding worker.
 - [0010 personal assistant and qualified routing](0010-personal-assistant-and-qualified-routing.md): Proposed; host-owned intent, data boundaries, handoff and read-only connector foundation.
 - [0011 Conversation Engine and intent routing](0011-conversation-engine-and-intent-routing.md): Proposed; replaces ordinary authenticated chat/Mission semantics of ADRs 0007 and 0010 only, preserving governed work and explicit Mission contracts.
 

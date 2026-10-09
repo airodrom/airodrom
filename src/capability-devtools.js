@@ -157,6 +157,51 @@ function gitPorcelain(ctx, repo) {
 
 function repoFor(ctx, value, { write = false } = {}) { return ctx.scopes.approvedRepository(value, { workspace: ctx.task.workspace, write }); }
 
+// Mission workspace is an approved repository when the caller omits repo or uses the workspace sentinel.
+function ideRepoFor(ctx, input, { write = false } = {}) {
+  const workspace = ctx.task?.workspace;
+  if ((!input.repo || input.repo === '.' || input.repo === 'workspace') && workspace) {
+    return ctx.scopes.approvedRepository(workspace, { workspace, write });
+  }
+  if (!input.repo) fail('Repository required unless the task has a Mission workspace');
+  return repoFor(ctx, input.repo, { write });
+}
+
+class IdeTaskJobs {
+  constructor() { this.jobs = new Map(); this.lastByEditor = new Map(); }
+  record(editor, observation) {
+    this.lastByEditor.set(editor, { ...observation, observed_at: Date.now() });
+    return observation;
+  }
+  last(editor) { return this.lastByEditor.get(editor) || null; }
+  snapshot(job) {
+    return {
+      job_id: job.id, editor: job.editor, kind: 'ide_task', agent_execution: false,
+      status: job.status, label: job.label, repo: job.repoDisplay,
+      started_at: new Date(job.startedAt).toISOString(),
+      finished_at: job.finishedAt ? new Date(job.finishedAt).toISOString() : null,
+      duration_ms: (job.finishedAt || Date.now()) - job.startedAt,
+      exit_code: job.exitCode ?? null, command_class: job.commandClass || null,
+      timed_out: job.timedOut === true, cancelled: job.status === 'cancelled'
+    };
+  }
+  owned(taskId, jobId) {
+    const job = this.jobs.get(jobId);
+    if (!job || job.taskId !== taskId) fail('IDE task job is not owned by this task');
+    return job;
+  }
+  cancel(job, reason = 'cancelled') {
+    if (job.status !== 'running') return false;
+    job.status = reason;
+    try { job.child.kill('SIGTERM'); } catch {}
+    setTimeout(() => { try { if (job.child.exitCode === null) job.child.kill('SIGKILL'); } catch {} }, 5_000).unref();
+    return true;
+  }
+  shutdown() { for (const job of this.jobs.values()) this.cancel(job, 'cancelled'); }
+}
+
+const ideTaskJobs = new IdeTaskJobs();
+
 function editorCapabilities(prefix) {
   const editor = EDITORS[prefix];
   const cli = ctx => { const { file } = resolveTool(ctx, editor.tool); if (!file) fail(`${editor.label} command-line tool is not installed`); return file; };
@@ -235,31 +280,91 @@ function editorCapabilities(prefix) {
       perform: async (ctx, input) => { const result = await ctx.exec.run(cli(ctx), ['--uninstall-extension', input.id.split('@')[0]], { timeoutMs: 120_000 }); if (result.exitCode !== 0) fail(`Extension uninstall failed: ${redactText(result.stderr, 300)}`); return { editor: prefix, id: input.id, uninstalled: true }; }
     },
     [`${prefix}_run_task`]: {
-      validate: input => { keys(input, ['repo', 'label'], ['timeoutSeconds']); text(input.repo, 'repo'); text(input.label, 'label', { max: 200, multiline: false }); integer(input.timeoutSeconds, 'timeoutSeconds', { min: 1, max: 1_800, optional: true }); return input; },
+      validate: input => {
+        keys(input, ['label'], ['repo', 'timeoutSeconds', 'wait']);
+        if (input.repo !== undefined) text(input.repo, 'repo');
+        text(input.label, 'label', { max: 200, multiline: false });
+        integer(input.timeoutSeconds, 'timeoutSeconds', { min: 1, max: 1_800, optional: true });
+        bool(input.wait, 'wait');
+        return input;
+      },
       assess: (ctx, input) => {
-        const repo = repoFor(ctx, input.repo).canonical;
-        const plan = ideTaskPlan(ctx, repo, input.label);
+        const resolved = ideRepoFor(ctx, input);
+        const plan = ideTaskPlan(ctx, resolved.canonical, input.label, resolved);
         const dynamic = plan.error ? { decision: 'deny', kind: 'capability_denied', reason: plan.error } : plan.decision === 'auto_allow' ? null : { decision: plan.decision, riskClass: plan.decision === 'deny' ? 'PRIVILEGED' : 'DESTRUCTIVE', reason: `Task command classified ${plan.class}: ${plan.reasons.join('; ')}` };
-        return { scope: 'workspace', dynamic, facts: { command_class: plan.class || null } };
+        return { scope: resolved.scope || 'workspace', dynamic, facts: { command_class: plan.class || null, agent_execution: false } };
       },
       perform: async (ctx, input) => {
-        const repo = repoFor(ctx, input.repo).canonical;
-        const plan = ideTaskPlan(ctx, repo, input.label);
+        const resolved = ideRepoFor(ctx, input);
+        const repo = resolved.canonical;
+        const plan = ideTaskPlan(ctx, repo, input.label, resolved);
         if (plan.error || !plan.file) fail(plan.error || 'Task command cannot be executed without a shell');
         ctx.exec.allow(plan.file);
-        const runtime = require('./verification-runtime').dependencies(repo,input.label);
-        const result = await ctx.exec.run(plan.file, plan.args, { cwd: repo, timeoutMs: (input.timeoutSeconds || 600) * 1_000, maxOutput: 256 * 1024, ...runtime });
-        return { editor: prefix, label: input.label, command_class: plan.class, exit_code: result.exitCode, timed_out: result.timedOut, output: redactText(result.stdout + (result.stderr ? `\n[stderr]\n${result.stderr}` : ''), 48_000) };
+        const runtime = require('./verification-runtime').dependencies(repo, input.label);
+        const wait = input.wait !== false;
+        const base = { editor: prefix, kind: 'ide_task', agent_execution: false, label: input.label, command_class: plan.class, repo: ctx.scopes.display(repo) };
+        if (wait) {
+          ideTaskJobs.record(prefix, { ...base, status: 'running', job_id: null });
+          const result = await ctx.exec.run(plan.file, plan.args, { cwd: repo, timeoutMs: (input.timeoutSeconds || 600) * 1_000, maxOutput: 256 * 1024, ...runtime });
+          const observation = { ...base, status: result.timedOut ? 'timed_out' : result.exitCode === 0 ? 'completed' : 'failed', exit_code: result.exitCode, timed_out: result.timedOut === true };
+          ideTaskJobs.record(prefix, observation);
+          return { ...observation, output: redactText(result.stdout + (result.stderr ? `\n[stderr]\n${result.stderr}` : ''), 48_000) };
+        }
+        const jobId = randomUUID();
+        let child;
+        try { child = ctx.exec.spawnTracked(plan.file, plan.args, { cwd: repo, ...runtime }); }
+        catch (error) { ideTaskJobs.record(prefix, { ...base, status: 'failed', job_id: jobId }); throw error; }
+        const job = { id: jobId, editor: prefix, taskId: ctx.task.id, label: input.label, repoDisplay: ctx.scopes.display(repo), startedAt: Date.now(), status: 'running', child, commandClass: plan.class, stdout: '' };
+        ideTaskJobs.jobs.set(job.id, job);
+        ideTaskJobs.record(prefix, ideTaskJobs.snapshot(job));
+        child.stdout.on('data', chunk => { if (job.stdout.length < 256 * 1024) job.stdout += chunk; });
+        child.stderr.on('data', () => {});
+        const timeout = setTimeout(() => ideTaskJobs.cancel(job, 'timed_out'), (input.timeoutSeconds || 600) * 1_000);
+        timeout.unref();
+        job.done = new Promise(resolve => child.on('close', code => {
+          clearTimeout(timeout);
+          job.exitCode = code; job.finishedAt = Date.now(); job.timedOut = job.status === 'timed_out';
+          if (job.status === 'running') job.status = code === 0 ? 'completed' : 'failed';
+          ideTaskJobs.record(prefix, ideTaskJobs.snapshot(job));
+          resolve();
+        }));
+        return ideTaskJobs.snapshot(job);
+      }
+    },
+    [`${prefix}_task_status`]: {
+      validate: input => { keys(input, [], ['jobId']); if (input.jobId !== undefined) pattern(input.jobId, /^[0-9a-f-]{36}$/, 'jobId'); return input; },
+      perform: (ctx, input) => {
+        if (input.jobId) return ideTaskJobs.snapshot(ideTaskJobs.owned(ctx.task.id, input.jobId));
+        const last = ideTaskJobs.last(prefix);
+        return last || { editor: prefix, kind: 'ide_task', agent_execution: false, status: 'not_observed' };
+      }
+    },
+    [`${prefix}_task_cancel`]: {
+      validate: input => { keys(input, ['jobId']); pattern(input.jobId, /^[0-9a-f-]{36}$/, 'jobId'); return input; },
+      perform: (ctx, input) => {
+        const job = ideTaskJobs.owned(ctx.task.id, input.jobId);
+        const cancelled = ideTaskJobs.cancel(job);
+        ideTaskJobs.record(prefix, ideTaskJobs.snapshot(job));
+        return { cancelled, ...ideTaskJobs.snapshot(job) };
       }
     }
   };
 }
 
-function ideTaskPlan(ctx, repo, label) {
+function ideTaskPlan(ctx, repo, label, resolved = null) {
+  const display = resolved ? ctx.scopes.display(repo) : 'repository';
+  const tasksPath = path.join(repo, '.vscode', 'tasks.json');
+  let stat;
+  try { stat = fs.lstatSync(tasksPath); } catch {
+    return { error: `No .vscode/tasks.json in ${display}. Register process tasks in that repository (IDE task runner, not Cursor Agent).` };
+  }
+  if (!stat.isFile() || stat.isSymbolicLink()) return { error: `Unreadable .vscode/tasks.json in ${display}` };
   let tasks;
-  try { tasks = jsonc(fs.readFileSync(path.join(repo, '.vscode', 'tasks.json'), 'utf8')).tasks; } catch { return { error: 'Repository has no readable .vscode/tasks.json' }; }
-  const task = Array.isArray(tasks) ? tasks.find(item => item?.label === label) : null;
-  if (!task) return { error: `No task labelled ${label}` };
+  try { tasks = jsonc(fs.readFileSync(tasksPath, 'utf8')).tasks; }
+  catch { return { error: `Unreadable .vscode/tasks.json in ${display}` }; }
+  if (!Array.isArray(tasks)) return { error: `Invalid tasks array in ${display}` };
+  const task = tasks.find(item => item?.label === label);
+  if (!task) return { error: `No task labelled ${label} in ${display}` };
   const quote = value => /[\s'"\\$`]/.test(value) ? `'${String(value).replace(/'/g, `'\\''`)}'` : String(value);
   let command;
   if (task.type === 'npm' && typeof task.script === 'string') command = `npm run ${quote(task.script)}`;
@@ -483,4 +588,4 @@ function containerCapabilities() {
   };
 }
 
-module.exports = { developerCapabilities, ClaudeCodeJobs, DEV_TOOLS, TRUSTED_EXTENSIONS, EDITORS, installedExtensions, claudeAuth, toolStatus, resolveTool, jsonc };
+module.exports = { developerCapabilities, ClaudeCodeJobs, IdeTaskJobs, ideTaskJobs, DEV_TOOLS, TRUSTED_EXTENSIONS, EDITORS, installedExtensions, claudeAuth, toolStatus, resolveTool, jsonc, ideTaskPlan, ideRepoFor };
