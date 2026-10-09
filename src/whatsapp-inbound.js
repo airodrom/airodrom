@@ -63,7 +63,7 @@ class WhatsAppInbound {
       updated_at INTEGER NOT NULL,
       updated_by TEXT NOT NULL
     );
-    INSERT OR IGNORE INTO cp_whatsapp_inbound_config VALUES(1,0,NULL,NULL,'[]',0,'system');
+    INSERT OR IGNORE INTO cp_whatsapp_inbound_config(id,enabled,verify_token_reference,app_secret_reference,allowlist,updated_at,updated_by) VALUES(1,0,NULL,NULL,'[]',0,'system');
     CREATE TABLE IF NOT EXISTS cp_whatsapp_inbox(
       message_id TEXT PRIMARY KEY,
       from_id TEXT,
