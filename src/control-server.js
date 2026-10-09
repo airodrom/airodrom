@@ -243,6 +243,8 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/live-connection')return this.json(res,200,this.bridge.whatsappInbound.liveConnectionReadiness());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbox')return this.json(res,200,this.bridge.whatsappInbound.list({limit:Number(url.searchParams.get('limit')||50)||50,status:url.searchParams.get('status')||null}));
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/statuses')return this.json(res,200,this.bridge.whatsappInbound.statuses({message_id:url.searchParams.get('message_id')||null,limit:Number(url.searchParams.get('limit')||50)||50}));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/development-sessions')return this.json(res,200,this.bridge.developmentSessions.list({limit:Number(url.searchParams.get('limit')||20)||20}));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/development-sessions/status')return this.json(res,200,this.bridge.developmentSessions.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/sensitive')return this.json(res,200,require('./assistant-service').sensitiveList(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/handoff')return this.json(res,200,require('./mission-handoff').status(this.bridge,url.searchParams.get('id'),'operator'));
       if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, nickname:this.conversationEngine.nickname()||'Airo', opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'persistent local conversation; governed Work Missions; no chat tools', active_conversations:this.conversationEngine.active.size, active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n, quarantined_leases: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE state='quarantined'").get().n });
@@ -305,6 +307,17 @@ class ControlServer {
       if(url.pathname==='/api/assistant/whatsapp/inbound/discovery')return this.json(res,200,this.bridge.whatsappInbound.recordDiscovery(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/discover-graph')return this.json(res,200,await this.bridge.whatsappInbound.discoverGraphAccounts(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/prepare-callback')return this.json(res,200,this.bridge.whatsappInbound.preparePublicCallback(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions')return this.json(res,201,this.bridge.developmentSessions.create(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/resolve')return this.json(res,200,this.bridge.developmentSessions.resolve(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/attach')return this.json(res,200,this.bridge.developmentSessions.attach(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/observe-git')return this.json(res,200,this.bridge.developmentSessions.observeGit(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/commit')return this.json(res,200,this.bridge.developmentSessions.recordCommit(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/select-tests')return this.json(res,200,this.bridge.developmentSessions.selectTests(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/evidence')return this.json(res,200,this.bridge.developmentSessions.recordEvidence(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/publish')return this.json(res,200,this.bridge.developmentSessions.markPublished(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/checkpoint')return this.json(res,200,this.bridge.developmentSessions.checkpoint(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/prepare-daily-integration')return this.json(res,200,this.bridge.developmentSessions.prepareDailyIntegration(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/close')return this.json(res,200,this.bridge.developmentSessions.close(body,'operator'));
       if(url.pathname==='/api/assistant/workspaces/register')return this.json(res,201,this.bridge.workers.registerTemplate(body,'operator'));
       if (url.pathname.startsWith('/api/product/')) {
         try {

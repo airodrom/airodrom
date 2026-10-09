@@ -16,7 +16,7 @@ class MissionService {
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
   createResearch(input,owner='operator'){return this.research.create(input,owner);}
   create(input,owner='operator'){
-    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','data_class','model','worker']);
+    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','data_class','model','worker','development_session_id']);
     if(input.continuity!==undefined&&!['prior_context','current_prompt'].includes(input.continuity))throw Error('Invalid continuity mode');
     for(const key of ['target_domains','required_memory_keys'])if(input[key]!==undefined&&(!Array.isArray(input[key])||input[key].length>20||input[key].some(v=>typeof v!=='string'||!v||v.length>120)))throw Error('Invalid typed memory requirement');
     if(input.required_assurance!==undefined&&(!Number.isInteger(input.required_assurance)||input.required_assurance<0||input.required_assurance>3))throw Error('Invalid required assurance');
@@ -24,6 +24,16 @@ class MissionService {
     text(input.objective,'Mission objective',4000);identifier(input.request_id);
     const goal=this.bridge.projects.getGoal(input.goal_id);if(goal.projectId!==input.project_id)throw Error('Goal and Project do not match');
     const workspace=repositoryRoot(text(input.workspace,'workspace',1000));if(workspace!==fs.realpathSync(input.workspace))throw Error('Mission workspace must be repository root');
+    let developmentSessionId=null;
+    if(input.development_session_id!==undefined){
+      if(owner!=='operator')throw Error('Only operator may bind a Development Session');
+      identifier(input.development_session_id);
+      if(!this.bridge.developmentSessions)throw Error('Development Sessions unavailable');
+      const session=this.bridge.developmentSessions.require(input.development_session_id);
+      if(session.state!=='open'&&session.state!=='checkpoint')throw Error('Development Session is closed');
+      if(path.resolve(workspace)!==path.resolve(session.worktree))throw Error('Mission workspace must match Development Session worktree; Missions cannot change repository or execution permissions');
+      developmentSessionId=session.id;
+    }
     if(!Array.isArray(input.allowed_files)||!input.allowed_files.length||input.allowed_files.length>40)throw Error('Explicit allowed files required');input.allowed_files.forEach(relative);
     if(input.allowed_files.some(f=>/(^|\/)(tests?|__tests__|\.vscode)(\/|$)|(^|\/)(package(?:-lock)?\.json|[^/]+\.(?:test|spec)\.[^/]+)$/.test(f)))throw Error('Verification inputs must remain protected');
     if(input.authority!==undefined&&owner!=='operator')throw Error('Only operator may set mission authority');
@@ -65,11 +75,12 @@ class MissionService {
     const baseline=workspaceSnapshot(workspace);const verificationManifest=baseline.version===2?require('./repository-verification').manifest(baseline,input.allowed_files):null;if(baseline.dirty.some(f=>input.allowed_files.includes(f)))throw Error('Requested changes overlap pre-existing dirty work');
     return this.store.request(owner,input.request_id,{op:'create_mission',...input},()=>{
       const projectMission=this.bridge.projects.createMission({goalId:goal.goalId,name:input.objective.slice(0,180),description:input.objective,acceptanceCriteria:criteria.map(c=>c.description||`Verify ${c.id}`)});
-      const envelope={control_version:2,...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
+      const envelope={control_version:2,...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),...(developmentSessionId?{development_session_id:developmentSessionId}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
       const task=this.newTask(projectMission.missionId,goal.projectId,envelope,owner,1);
       const m=this.store.registerMission({id:projectMission.missionId,projectId:goal.projectId,goalId:goal.goalId,taskId:task.id,owner,envelope,ceiling:{...(authority?{mission_authority:authority}:{}),capability_scopes:scopes,authority:'existing SafetyPolicy and signed authority only',policy_version:this.bridge.capabilityHost.policy.policyVersion}});
       this.db.prepare('INSERT INTO cp_mission_tasks VALUES(?,?,1,NULL,NULL,?)').run(task.id,m.id,Date.now());
       this.program.register(m);this.acceptanceEngine.register(m);this.riskAcceptance.register(m,riskPolicy);
+      if(developmentSessionId)this.bridge.developmentSessions.attach({session_id:developmentSessionId,mission_id:m.id,confirmed:true},owner);
       if(fixturePolicy)this.store.event('fixture.auto_acceptance.authorized',m.id,{policy:fixturePolicy});
       this.store.event('task.created',m.id,{task_id:task.id});return this.detail(m.id,owner);
     });
@@ -84,6 +95,9 @@ class MissionService {
     if(require('./removed-runtime').removed(m)){view.runtimeRemoved=true;view.runtimeLabel='Historical runtime removed';view.next_action='inspect';}
     view.results=view.results.map(r=>({...r,result:require('./conversation-mission').projectRead(this.bridge,m.task_id,r.result,m.id)}));
     view.timeline=view.timeline.map(e=>require('./conversation-mission').projectEvent(this.bridge,e));
+    const bound=this.bridge.developmentSessions?.forMission(id)||null;
+    view.development_session_id=m.envelope.development_session_id||bound?.id||null;
+    view.development_session=bound?{id:bound.id,branch:bound.branch,worktree:bound.worktree,integration_state:bound.integration_state,assigned_worker:bound.assigned_worker}:null;
     return view;
   }
   dispatch(id,{request_id},owner='operator'){
@@ -97,6 +111,7 @@ class MissionService {
     require('./removed-runtime').assertExecutable(mission);
     if(mission.envelope.worker_contract)this.bridge.workers.assertMission(mission);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     this.program.assert(mission);
+    if(this.bridge.developmentSessions)this.bridge.developmentSessions.assertExecution(mission);
     const result=require('./mission-permissions').checkAuthority(mission.envelope.authority,requirements);
     if(!result.allow) {
       const task=this.bridge.tasks.get(mission.task_id);
