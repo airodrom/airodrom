@@ -582,5 +582,6 @@
   "scripts/whatsapp-webhook-ingress-prep.cjs",
   "docs/META-WHATSAPP-LIVE-CONNECTION-V1.md",
   "src/whatsapp-inbound.js",
+  "src/whatsapp-credential-onboarding.js",
   "config/whatsapp-inbound-v1.json"
 ]

@@ -302,6 +302,8 @@ class ControlServer {
       if(url.pathname==='/api/assistant/risk-acceptance'){require('./control-plane-store').object(body,['enabled','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.setPreference(body,'operator'));}
       if(url.pathname==='/api/assistant/risk-acceptance/authorize'){require('./control-plane-store').object(body,['mission_id','request_id','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.authorizeExisting(body.mission_id,{request_id:body.request_id,confirmed:body.confirmed},'operator'));}
       if(url.pathname==='/api/assistant/whatsapp/inbound/configure')return this.json(res,200,this.bridge.whatsappInbound.configure(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/inbound/bind-credentials')return this.json(res,200,this.bridge.whatsappInbound.bindCredentialReferences(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/inbound/validate-credentials'){require('./control-plane-store').object(body,['confirmed']);if(body.confirmed!==true)throw Error('Explicit operator confirmation required');return this.json(res,200,this.bridge.whatsappInbound.validateCredentialReferences('operator'));}
       if(url.pathname==='/api/assistant/whatsapp/inbound/discovery')return this.json(res,200,this.bridge.whatsappInbound.recordDiscovery(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/discover-graph')return this.json(res,200,await this.bridge.whatsappInbound.discoverGraphAccounts(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/prepare-callback')return this.json(res,200,this.bridge.whatsappInbound.preparePublicCallback(body,'operator'));

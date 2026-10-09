@@ -45,21 +45,30 @@ Product path: `POST /api/assistant/whatsapp/inbound/discover-graph` with `{ "con
 
 ## Credential binding
 
-Use existing Keychain Vault purpose `whatsapp` (never arguments, logs, Git, or docs):
+Guided onboarding (preferred) — labeled hidden prompts, automatic opaque configure, optional Graph discovery:
 
 ```text
-airodrom secret put whatsapp   # verify token
-airodrom secret put whatsapp   # app secret
-airodrom secret put whatsapp   # Graph / system-user access token
+airodrom whatsapp bind
+# or inside interactive CLI: /connect whatsapp · /whatsapp bind
 ```
 
-Then bind opaque references via `POST /api/assistant/whatsapp/inbound/configure` fields:
+Captures three Keychain secrets (purpose `whatsapp`, never argv/logs/Git/browser):
 
-- `verify_token_reference`
-- `app_secret_reference`
-- `access_token_reference`
+1. Webhook verification token  
+2. Meta App Secret  
+3. Graph API access token  
 
-Operator Vault disposition check (this machine): `whatsapp` purpose active references = **0** (operator 2 active, gmail 3 active). Binding interface is ready; plaintext values were not available to store in this session. Do not rotate existing credentials without explicit authorization. Status APIs report bound/unbound and disposition counts only (`vaultBindingStatus()` / live-connection report).
+Then configures `verify_token_reference`, `app_secret_reference`, and `access_token_reference` automatically and validates resolvability without displaying values.
+
+```text
+airodrom whatsapp status[--json]
+airodrom whatsapp discover          # only when access token is bound
+airodrom whatsapp prepare-callback https://<host>/webhooks/whatsapp
+```
+
+Control Center → Connectors shows binding status and non-secret actions (validate / discover / prepare callback). Secrets never enter the browser.
+
+Low-level single-slot store remains `airodrom secret put whatsapp` when needed. Do not rotate existing credentials without explicit authorization. Status APIs report bound/unbound and disposition counts only (`vaultBindingStatus()` / live-connection report).
 
 ## HTTPS callback (prepared, inactive)
 

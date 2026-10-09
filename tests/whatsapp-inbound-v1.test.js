@@ -356,3 +356,102 @@ test('webhook ingress prep script writes webhook-only cloudflared plan without a
   assert.equal(plan.activated, false);
   assert.equal(plan.exposes_control_plane, false);
 });
+
+test('credential bind validates Vault references without exposing values and keeps ingress off', async t => {
+  const { bridge, request } = await fixture(t, { enabled: false });
+  const values = new Map();
+  const vault = new (require('../src/secret-vault').SecretVault)(bridge.dataDir, (op, id, value) => {
+    if (op === 'put') values.set(id, value);
+    if (op === 'read') return values.get(id);
+    if (op === 'delete') values.delete(id);
+    return '';
+  });
+  bridge.whatsappInbound.options.vault = vault;
+  const verify = vault.put('synthetic-verify-token-bind', 'whatsapp');
+  const secret = vault.put('synthetic-app-secret-bind', 'whatsapp');
+  const access = vault.put('synthetic-graph-token-bind', 'whatsapp');
+  assert.equal(values.size, 3);
+
+  assert.throws(() => bridge.whatsappInbound.bindCredentialReferences({
+    confirmed: true,
+    verify_token_reference: verify.reference,
+    app_secret_reference: secret.reference,
+    access_token_reference: access.reference,
+    verify_token: 'plaintext-refused'
+  }, 'operator'), /Plaintext|Vault references/i);
+
+  const bound = bridge.whatsappInbound.bindCredentialReferences({
+    confirmed: true,
+    verify_token_reference: verify.reference,
+    app_secret_reference: secret.reference,
+    access_token_reference: access.reference
+  }, 'operator');
+  assert.equal(bound.credentials.references_validated, true);
+  assert.equal(bound.public_ingress, false);
+  assert.equal(bound.auto_mission_execution, false);
+  assert.doesNotMatch(JSON.stringify(bound), /synthetic-verify-token-bind|synthetic-app-secret-bind|synthetic-graph-token-bind/);
+
+  const validation = bridge.whatsappInbound.validateCredentialReferences('operator');
+  assert.equal(validation.ok, true);
+  assert.equal(validation.ready_for_live_hmac, true);
+  assert.equal(validation.ready_for_graph_discovery, true);
+  assert.equal(validation.values_displayed, false);
+
+  const api = await request('/api/assistant/whatsapp/inbound/validate-credentials', { method: 'POST', body: { confirmed: true } });
+  assert.equal(api.status, 200);
+  assert.equal(api.body.ok, true);
+  assert.doesNotMatch(JSON.stringify(api.body), /synthetic-verify-token-bind|synthetic-app-secret-bind|synthetic-graph-token-bind/);
+
+  const bindApi = await request('/api/assistant/whatsapp/inbound/bind-credentials', {
+    method: 'POST',
+    body: {
+      confirmed: true,
+      verify_token_reference: verify.reference,
+      app_secret_reference: secret.reference,
+      access_token_reference: access.reference
+    }
+  });
+  assert.equal(bindApi.status, 200);
+  assert.equal(bindApi.body.public_ingress, false);
+});
+
+test('onboarding helpers store labeled slots and summarize without secret leakage', async t => {
+  const root = fs.mkdtempSync('/private/tmp/wa-onboard-');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'data'), { mode: 0o700 });
+  const values = new Map();
+  const vault = new (require('../src/secret-vault').SecretVault)(path.join(root, 'data'), (op, id, value) => {
+    if (op === 'put') values.set(id, value);
+    if (op === 'read') return values.get(id);
+    return '';
+  });
+  const onboard = require('../src/whatsapp-credential-onboarding');
+  const a = onboard.storeSlot(vault, 'slot-verify');
+  const b = onboard.storeSlot(vault, 'slot-secret');
+  const c = onboard.storeSlot(vault, 'slot-access');
+  assert.equal(values.get(a.reference), 'slot-verify');
+  assert.equal(values.get(b.reference), 'slot-secret');
+  assert.equal(values.get(c.reference), 'slot-access');
+  const summary = onboard.summarizeBinding({
+    credentials: {
+      verify_token: { bound: true },
+      app_secret: { bound: true },
+      access_token: { bound: true },
+      references_validated: true
+    },
+    live_connection: {
+      waba_id: '111222333444555',
+      phone_number_id: '999888777666555',
+      meta: { discovery: { graph_access: 'authorized' } },
+      callback: { prepared_callback_url: 'https://hooks.example.test/webhooks/whatsapp' }
+    }
+  });
+  assert.equal(summary.waba_id, '111222333444555');
+  assert.equal(summary.phone_number_id, '999888777666555');
+  assert.equal(summary.public_ingress, false);
+  assert.equal(summary.values_displayed, false);
+  let text = '';
+  onboard.writeSummary({ write: v => { text += String(v); } }, summary);
+  assert.match(text, /WABA ID: 111222333444555/);
+  assert.doesNotMatch(text, /slot-verify|slot-secret|slot-access/);
+});

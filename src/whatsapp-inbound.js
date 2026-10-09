@@ -63,7 +63,7 @@ class WhatsAppInbound {
       updated_at INTEGER NOT NULL,
       updated_by TEXT NOT NULL
     );
-    INSERT OR IGNORE INTO cp_whatsapp_inbound_config VALUES(1,0,NULL,NULL,'[]',0,'system');
+    INSERT OR IGNORE INTO cp_whatsapp_inbound_config(id,enabled,verify_token_reference,app_secret_reference,allowlist,updated_at,updated_by) VALUES(1,0,NULL,NULL,'[]',0,'system');
     CREATE TABLE IF NOT EXISTS cp_whatsapp_inbox(
       message_id TEXT PRIMARY KEY,
       from_id TEXT,
@@ -258,19 +258,19 @@ class WhatsAppInbound {
         bound: cfg.verify_token_bound,
         vault_reference_present: Boolean(row?.verify_token_reference),
         purpose: 'whatsapp',
-        bind_command: 'airodrom secret put whatsapp'
+          bind_command: 'airodrom whatsapp bind'
       },
       app_secret: {
         bound: cfg.app_secret_bound,
         vault_reference_present: Boolean(row?.app_secret_reference),
         purpose: 'whatsapp',
-        bind_command: 'airodrom secret put whatsapp'
+        bind_command: 'airodrom whatsapp bind'
       },
       access_token: {
         bound: cfg.access_token_bound,
         vault_reference_present: Boolean(row?.access_token_reference),
         purpose: 'whatsapp',
-        bind_command: 'airodrom secret put whatsapp',
+        bind_command: 'airodrom whatsapp bind',
         note: 'System user / permanent token for Graph discovery and outbound Cloud API only. Never logged.'
       },
       vault: this.vaultBindingStatus(),
@@ -307,13 +307,79 @@ class WhatsAppInbound {
       vault_whatsapp_pending: counts.pending,
       vault_whatsapp_revoked: counts.revoked,
       configure_slots_bound: boundSlots,
-      bind_command: 'airodrom secret put whatsapp',
+      bind_command: 'airodrom whatsapp bind',
       configure_path: 'POST /api/assistant/whatsapp/inbound/configure',
+      validate_path: 'POST /api/assistant/whatsapp/inbound/validate-credentials',
       secrets_available_for_storage: counts.active > 0 || boundSlots > 0,
       ready_for_live_hmac: cfg.verify_token_bound && cfg.app_secret_bound,
       ready_for_graph_discovery: cfg.access_token_bound || typeof this.options.accessToken === 'string',
       values_displayed: false,
-      note: 'Store three purpose=whatsapp Keychain credentials via hidden CLI input, then bind opaque UUIDs through configure. Never pass secrets as argv.'
+      note: 'Run airodrom whatsapp bind for labeled hidden capture of verify token, App Secret and Graph access token. Opaque references are configured automatically. Never pass secrets as argv or through the browser.'
+    };
+  }
+
+  // Resolve each configured vault reference for purpose=whatsapp without returning values.
+  validateCredentialReferences(actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may validate WhatsApp credentials');
+    const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    const slots = [
+      ['verify_token', row?.verify_token_reference],
+      ['app_secret', row?.app_secret_reference],
+      ['access_token', row?.access_token_reference]
+    ];
+    const result = { ok: true, slots: {}, ready_for_graph_discovery: false, values_displayed: false, public_ingress: false };
+    for (const [name, ref] of slots) {
+      if (!ref) {
+        result.slots[name] = { bound: false, resolvable: false };
+        result.ok = false;
+        continue;
+      }
+      if (!this.#refOk(ref)) throw Error('Invalid vault reference for ' + name);
+      try {
+        let value = this.#vault(ref);
+        const ok = typeof value === 'string' && value.length > 0;
+        value = '';
+        result.slots[name] = { bound: true, resolvable: ok, reference_present: true };
+        if (!ok) result.ok = false;
+      } catch {
+        result.slots[name] = { bound: true, resolvable: false, reference_present: true };
+        result.ok = false;
+      }
+    }
+    result.ready_for_graph_discovery = result.slots.access_token?.resolvable === true
+      || typeof this.options.accessToken === 'string';
+    result.ready_for_live_hmac = result.slots.verify_token?.resolvable === true
+      && result.slots.app_secret?.resolvable === true;
+    return result;
+  }
+
+  // Bind opaque Keychain references after Vault storage. Rejects plaintext secret fields.
+  bindCredentialReferences(input, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may bind WhatsApp credentials');
+    object(input, ['confirmed', 'enabled', 'verify_token_reference', 'app_secret_reference', 'access_token_reference', 'verify_token', 'app_secret', 'access_token']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    for (const key of ['verify_token', 'app_secret', 'access_token']) {
+      if (input[key] !== undefined) throw Error('Plaintext WhatsApp secrets cannot be bound through this API; use Vault references');
+    }
+    for (const key of ['verify_token_reference', 'app_secret_reference', 'access_token_reference']) {
+      if (typeof input[key] !== 'string' || !this.#refOk(input[key])) throw Error('Invalid ' + key);
+      let value = this.#vault(input[key]);
+      if (typeof value !== 'string' || !value) throw Error(key + ' does not resolve in Vault');
+      value = '';
+    }
+    const status = this.configure({
+      enabled: input.enabled !== false,
+      confirmed: true,
+      verify_token_reference: input.verify_token_reference,
+      app_secret_reference: input.app_secret_reference,
+      access_token_reference: input.access_token_reference
+    }, actor);
+    const validation = this.validateCredentialReferences(actor);
+    return {
+      ...status,
+      credentials: { ...status.credentials, references_validated: validation.ok === true, validation },
+      public_ingress: false,
+      auto_mission_execution: false
     };
   }
 
