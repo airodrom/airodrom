@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { inMergeWindow, loadPolicy, selectFocusedTests } = require('../src/development-session');
 
@@ -30,26 +31,34 @@ test('smart local test selection and mandatory security when relevant', () => {
 test('related Mission reuses session and worktree without new PR', async t => {
   const f = await fixture(t);
   const sessions = f.bridge.developmentSessions;
+  const firstMission = f.create({ objective: 'Session reuse Mission A' });
   const first = sessions.resolve({
     goal: 'Session reuse fixture',
     repository: 'airodrom/airodrom',
     branch: 'feat/local-first-batch-merge-v1',
-    worktree: '/tmp/airodrom-session-reuse',
+    worktree: f.repo,
     confirmed: true,
-    mission_id: f.create().id,
+    mission_id: firstMission.id,
     assigned_worker: 'opencode'
   }, 'operator');
   assert.equal(first.reused, false);
   assert.equal(first.new_pr, false);
   assert.equal(first.assigned_worker, 'opencode');
   assert.equal(first.integration_state, 'LOCAL_ONLY');
+  assert.equal(f.bridge.missions.detail(firstMission.id).development_session_id, first.id);
 
-  const secondMission = f.create({ objective: 'Related follow-up Mission' });
+  const secondMission = f.create({
+    objective: 'Related follow-up Mission',
+    development_session_id: first.id,
+    workspace: f.repo
+  });
+  assert.equal(secondMission.development_session_id, first.id);
+  assert.equal(secondMission.envelope.development_session_id, first.id);
   const second = sessions.resolve({
     goal: 'Session reuse fixture',
     repository: 'airodrom/airodrom',
     branch: 'feat/local-first-batch-merge-v1',
-    worktree: '/tmp/airodrom-session-reuse',
+    worktree: f.repo,
     confirmed: true,
     mission_id: secondMission.id
   }, 'operator');
@@ -65,6 +74,11 @@ test('related Mission reuses session and worktree without new PR', async t => {
     confirmed: true,
     mission_id: f.create({ objective: 'Isolation mismatch Mission' }).id
   }, 'operator'), /mismatch|already exists|Isolation|worktree/i);
+  assert.throws(() => f.create({
+    objective: 'Wrong session worktree Mission',
+    development_session_id: first.id,
+    workspace: path.join(f.root, 'missing-worktree')
+  }), /worktree|repository|permissions|Mission workspace/i);
 });
 
 test('dirty-work protection and restart recovery never reset worktrees', async t => {
@@ -189,4 +203,90 @@ test('branch isolation refuses conflicting worktree reuse', async t => {
     worktree: '/tmp/iso-a',
     confirmed: true
   }, 'operator'), /already exists/);
+});
+
+test('disposable repo: two Missions share session, evidence, daily prep without push/merge/CI', async t => {
+  const f = await fixture(t);
+  const sessions = f.bridge.developmentSessions;
+  const git = (args) => execFileSync('/usr/bin/git', ['-C', f.repo, ...args], { encoding: 'utf8' }).trim();
+  git(['checkout', '-b', 'feat/session-integration-fixture']);
+  const session = sessions.create({
+    goal: 'Disposable integration fixture',
+    repository: 'fixture/local-first',
+    branch: 'feat/session-integration-fixture',
+    worktree: f.repo,
+    confirmed: true,
+    assigned_worker: 'opencode'
+  }, 'operator');
+  const m1 = f.create({
+    objective: 'Disposable Mission one for Development Session',
+    development_session_id: session.id,
+    workspace: f.repo
+  });
+  const m2 = f.create({
+    objective: 'Disposable Mission two for Development Session',
+    development_session_id: session.id,
+    workspace: f.repo
+  });
+  assert.equal(m1.envelope.development_session_id, session.id);
+  assert.equal(m2.envelope.development_session_id, session.id);
+  const reused = sessions.resolve({
+    goal: 'Disposable integration fixture',
+    repository: 'fixture/local-first',
+    branch: 'feat/session-integration-fixture',
+    worktree: f.repo,
+    confirmed: true,
+    mission_id: m2.id
+  }, 'operator');
+  assert.equal(reused.reused, true);
+  assert.equal(reused.mission_count, 2);
+  assert.equal(reused.worktree, f.repo);
+  const bind = sessions.assertExecution(f.bridge.controlStore.getMission(m1.id));
+  assert.equal(bind.bound, true);
+  assert.equal(bind.worktree, f.repo);
+  assert.equal(bind.hosted_ci_auto_dispatch, false);
+
+  fs.writeFileSync(path.join(f.repo, 'session-note.txt'), 'local-first\n');
+  git(['add', 'session-note.txt']);
+  git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'local session commit']);
+  const sha = git(['rev-parse', 'HEAD']);
+  sessions.recordCommit({ session_id: session.id, sha, subject: 'local session commit', confirmed: true }, 'operator');
+  sessions.observeGit({
+    session_id: session.id,
+    dirty_files: [],
+    confirmed: true
+  }, 'operator');
+  sessions.recordEvidence({
+    session_id: session.id,
+    kind: 'focused_test',
+    command: 'node --test tests/development-session-v1.test.js',
+    passed: true,
+    summary: 'Independent focused verification passed',
+    confirmed: true,
+    commit_sha: sha
+  }, 'operator');
+  assert.equal(sessions.inspect(session.id).integration_state, 'READY_TO_PUSH');
+  assert.equal(sessions.inspect(session.id).local_commits[0].sha, sha);
+
+  const recovery = sessions.recover();
+  assert.equal(recovery.reset_worktrees, false);
+  assert.equal(sessions.inspect(session.id).mission_count, 2);
+  assert.equal(sessions.inspect(session.id).head_sha, sha);
+
+  const prep = sessions.prepareDailyIntegration({ session_id: session.id, confirmed: true }, 'operator');
+  assert.equal(prep.push, false);
+  assert.equal(prep.merge, false);
+  assert.equal(prep.hosted_ci_dispatched, false);
+  assert.equal(prep.workflow_dispatch, false);
+  assert.equal(prep.sessions.length, 1);
+  assert.equal(prep.sessions[0].related_missions.length, 2);
+  assert.equal(prep.sessions[0].local_commits[0].sha, sha);
+  assert.ok(prep.sessions[0].focused_test_evidence.length >= 1);
+  assert.equal(prep.sessions[0].mandatory_ci.feature_branch_auto_ci, false);
+  assert.ok(prep.sessions[0].readiness.blockers.includes('operator_push_authorization_required'));
+  assert.equal(sessions.assertNoAutoDispatch('hosted_ci').allowed, false);
+
+  // No publication occurred; head remains local-only.
+  assert.equal(sessions.inspect(session.id).push_status, 'local_only');
+  assert.equal(sessions.inspect(session.id).pr_number, null);
 });

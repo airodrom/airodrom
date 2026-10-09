@@ -17,6 +17,16 @@ GitHub workflow `.github/workflows/candidate.yml` runs on `push`/`pull_request` 
 
 Default America/Vancouver 17:00–22:00. Window openness is informational. Checkpoint evaluation never merges; operator authorization is required.
 
+## Mission lifecycle
+
+Operator coding Missions may set `development_session_id` at create. The Mission workspace must equal the session worktree; the envelope records the session identity; attach is durable. Dispatch re-checks the binding. Missions cannot change repository, worktree or execution permissions through the session.
+
+Default path: Mission → Development Session → OpenCode/Qwen → focused local verification → local commit → next Mission. No per-Mission push, PR, merge or hosted CI.
+
+## Prepare Daily Integration
+
+Operator action (`prepareDailyIntegration` / Control Center **Prepare Daily Integration**) summarizes completed session work, changed files, commits, branch freshness, focused-test evidence, mandatory CI requirements and eligible PRs. It never pushes, merges or dispatches hosted CI.
+
 ## Control Center
 
-**Development Sessions** shows goal, branch/worktree, Missions, evidence counts, local vs published, CI status, merge window, and that CI cost estimates are Unavailable.
+**Development Sessions** shows active sessions, related Missions, assigned worker, branch/worktree, local changes, test evidence, local vs published status, integration readiness, pending approvals and the daily integration checkpoint. Status values are host-observed.

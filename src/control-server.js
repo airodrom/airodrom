@@ -279,6 +279,7 @@ class ControlServer {
       if(url.pathname==='/api/assistant/development-sessions/evidence')return this.json(res,200,this.bridge.developmentSessions.recordEvidence(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/publish')return this.json(res,200,this.bridge.developmentSessions.markPublished(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/checkpoint')return this.json(res,200,this.bridge.developmentSessions.checkpoint(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/prepare-daily-integration')return this.json(res,200,this.bridge.developmentSessions.prepareDailyIntegration(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/close')return this.json(res,200,this.bridge.developmentSessions.close(body,'operator'));
       if(url.pathname==='/api/assistant/workspaces/register')return this.json(res,201,this.bridge.workers.registerTemplate(body,'operator'));
       if (url.pathname.startsWith('/api/product/')) {

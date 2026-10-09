@@ -304,9 +304,27 @@
      const ds=snapshot.development_sessions||{};
      const labels={LOCAL_ONLY:'LOCAL ONLY',READY_TO_PUSH:'READY TO PUSH',PR_OPEN:'PR OPEN',READY_TO_MERGE:'READY TO MERGE',MERGED:'MERGED'};
      const pending=Object.entries(ds.integration_counts||{}).filter(([k,n])=>n&&['READY_TO_PUSH','READY_TO_MERGE'].includes(k)).map(([k,n])=>labels[k]+' '+n);
+     const daily=window.__dailyIntegration;
      result.append(glass('Local-first defaults',ds.merge_window_open?'Merge window open':'Merge window closed','auto push off · auto merge off · hosted CI auto-dispatch off'));
      result.append(node('p','Timezone '+(ds.merge_window?.timezone||'—')+' · '+(ds.merge_window?.local_start||'')+'-'+(ds.merge_window?.local_end||'')+' · open '+(ds.open_sessions||0),'muted'));
-     result.append(node('p','Next integration checkpoint requires operator authorization. Pending approvals: '+(pending.length?pending.join(' · '):'none')+'. CI cost estimate: Unavailable.','muted'));
+     result.append(node('p','Daily integration checkpoint requires operator authorization. Pending approvals: '+(pending.length?pending.join(' · '):'none')+'. CI cost estimate: Unavailable.','muted'));
+     const prepare=button('Prepare Daily Integration',async()=>{
+       try{
+         window.__dailyIntegration=await api('/api/assistant/development-sessions/prepare-daily-integration',{confirmed:true,request_id:crypto.randomUUID()});
+         conversationNotice='Daily integration prepared. No push, merge, or hosted CI dispatch.';
+         render();
+       }catch(error){conversationNotice=error.message;render();}
+     });
+     prepare.dataset.focusKey='prepare-daily-integration';
+     result.append(prepare);
+     if(daily){
+       const card=glass('Daily integration checkpoint',daily.push||daily.merge||daily.hosted_ci_dispatched?'ERROR':'Prepared local-only',(daily.session_count||0)+' session(s) · push '+(daily.push?'yes':'no')+' · merge '+(daily.merge?'yes':'no')+' · hosted CI '+(daily.hosted_ci_dispatched?'yes':'no'));
+       for(const s of daily.sessions||[]){
+         card.append(node('p',(labels[s.integration_state]||s.integration_state)+' · '+(s.branch||'')+' · missions '+(s.related_missions?.length||0)+' · commits '+(s.local_commits?.length||0)+' · changed '+(s.changed_files?.length||0)+' · focused evidence '+(s.focused_test_evidence?.length||0)+(s.eligible_prs?.length?' · PR #'+s.eligible_prs[0].number:''),'muted'));
+         if(s.readiness?.blockers?.length)card.append(node('p','Blockers: '+s.readiness.blockers.join(', '),'muted'));
+       }
+       result.append(card);
+     }
      if(ds.active)result.append(glass('Active session',labels[ds.active.integration_state]||ds.active.integration_state,(ds.active.assigned_worker||'worker')+' · '+(ds.active.repository||'')+' · '+ds.active.branch));
      for(const s of ds.recent||[]){
        const card=glass(s.goal,labels[s.integration_state]||s.integration_state,(s.assigned_worker||'—')+' · '+s.branch+' · focused tests '+(s.evidence?.passed||0)+'/'+(s.evidence?.failed||0)+' · CI '+(s.github_ci_status||'not_dispatched')+' · runs '+(s.ci_runs||0));

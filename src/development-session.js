@@ -1,9 +1,14 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { object, text, identifier } = require('./control-plane-store');
 const { transaction } = require('./control-transaction');
+
+function samePath(a, b) {
+  return path.resolve(String(a || '')) === path.resolve(String(b || ''));
+}
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BRANCH = /^[A-Za-z0-9._\/-]{1,200}$/;
@@ -312,6 +317,13 @@ class DevelopmentSession {
     return row;
   }
 
+  forMission(missionId) {
+    identifier(missionId);
+    const row = this.db.prepare('SELECT session_id FROM cp_development_session_missions WHERE mission_id=? ORDER BY attached_at DESC LIMIT 1').get(missionId);
+    return row ? this.inspect(row.session_id) : null;
+  }
+
+  // Bind a Mission to the authorized session worktree. Never changes Mission workspace or permissions.
   attach(input, actor = 'operator') {
     if (actor !== 'operator') throw Error('Only operator may attach Missions');
     object(input, ['session_id', 'mission_id', 'confirmed']);
@@ -322,13 +334,197 @@ class DevelopmentSession {
     const mission = this.store.getMission(input.mission_id);
     if (!mission) throw Error('Mission not found');
     if (mission.owner !== 'operator') throw Error('Only operator Missions may join a Development Session');
+    if (!mission.envelope?.workspace) throw Error('Mission workspace required for Development Session binding');
+    if (!samePath(mission.envelope.workspace, session.worktree)) {
+      throw Error('Mission workspace must match Development Session worktree; Missions cannot change repository or execution permissions');
+    }
+    const prior = this.db.prepare('SELECT session_id FROM cp_development_session_missions WHERE mission_id=?').get(input.mission_id);
+    if (prior && prior.session_id !== session.id) throw Error('Mission already bound to another Development Session');
+    if (mission.envelope.development_session_id && mission.envelope.development_session_id !== session.id) {
+      throw Error('Mission Development Session identity mismatch');
+    }
     transaction(this.db, () => {
       this.db.prepare('INSERT OR IGNORE INTO cp_development_session_missions VALUES(?,?,?)')
         .run(session.id, input.mission_id, this.now());
       this.db.prepare('UPDATE cp_development_sessions SET updated_at=? WHERE id=?').run(this.now(), session.id);
     });
-    this.store.event('development.session.mission_attached', input.mission_id, { session_id: session.id, new_pr: false });
+    this.store.event('development.session.mission_attached', input.mission_id, {
+      session_id: session.id,
+      worktree: session.worktree,
+      branch: session.branch,
+      new_pr: false
+    });
     return this.inspect(session.id);
+  }
+
+  // Dispatch-time guard: bound Missions must keep the session worktree. Unbound Missions are unchanged.
+  assertExecution(mission) {
+    if (!mission?.id) throw Error('Mission required');
+    const declared = mission.envelope?.development_session_id || null;
+    const bound = this.db.prepare('SELECT session_id FROM cp_development_session_missions WHERE mission_id=?').get(mission.id);
+    if (!declared && !bound) {
+      return { bound: false, session_id: null, hosted_ci_auto_dispatch: false, auto_push: false, auto_merge: false };
+    }
+    const sessionId = declared || bound.session_id;
+    if (declared && bound && bound.session_id !== declared) throw Error('Mission Development Session binding mismatch');
+    if (declared && !bound) throw Error('Mission Development Session attachment missing');
+    const session = this.require(sessionId);
+    if (session.state !== 'open' && session.state !== 'checkpoint') throw Error('Development Session is closed');
+    if (!samePath(mission.envelope.workspace, session.worktree)) {
+      throw Error('Mission cannot change Development Session worktree or repository');
+    }
+    return {
+      bound: true,
+      session_id: session.id,
+      repository: session.repository,
+      branch: session.branch,
+      worktree: session.worktree,
+      assigned_worker: session.assigned_worker || null,
+      hosted_ci_auto_dispatch: false,
+      auto_push: false,
+      auto_merge: false
+    };
+  }
+
+  #observeWorktree(session) {
+    const root = session.worktree;
+    if (!root || !fs.existsSync(root)) {
+      return {
+        worktree_present: false,
+        branch: session.branch,
+        head_sha: session.head_sha || null,
+        dirty_files: JSON.parse(session.dirty_files || '[]'),
+        ahead_behind: null,
+        note: 'Worktree path not present; using durable session observations only'
+      };
+    }
+    const git = (args) => execFileSync('/usr/bin/git', ['-C', root, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 8000
+    }).trim();
+    try {
+      const head = git(['rev-parse', 'HEAD']);
+      const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
+      const porcelain = git(['status', '--porcelain']);
+      const dirty = porcelain ? porcelain.split('\n').filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean) : [];
+      let ahead_behind = null;
+      try {
+        const ab = git(['rev-list', '--left-right', '--count', `origin/main...HEAD`]);
+        const [behind, ahead] = ab.split(/\s+/).map(n => Number(n) || 0);
+        ahead_behind = { ahead, behind, base: 'origin/main' };
+      } catch {
+        ahead_behind = null;
+      }
+      return {
+        worktree_present: true,
+        branch,
+        head_sha: head,
+        dirty_files: dirty.slice(0, 500),
+        ahead_behind,
+        branch_matches_session: branch === session.branch,
+        note: ahead_behind ? null : 'Upstream freshness unavailable without origin/main'
+      };
+    } catch (error) {
+      return {
+        worktree_present: true,
+        branch: session.branch,
+        head_sha: session.head_sha || null,
+        dirty_files: JSON.parse(session.dirty_files || '[]'),
+        ahead_behind: null,
+        note: 'Git observation failed closed; durable session state retained',
+        error_class: 'git_observe_failed'
+      };
+    }
+  }
+
+  // Operator-controlled daily integration prep. Never pushes, merges, or dispatches hosted CI.
+  prepareDailyIntegration(input = {}, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may prepare daily integration');
+    object(input, ['session_id', 'confirmed', 'request_id']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    if (this.policy.auto_push_per_mission || this.policy.auto_merge_per_mission || this.policy.hosted_ci_auto_dispatch) {
+      throw Error('Local-first cost controls must remain disabled');
+    }
+    const ids = input.session_id
+      ? [this.require(input.session_id).id]
+      : this.db.prepare("SELECT id FROM cp_development_sessions WHERE state IN ('open','checkpoint') ORDER BY updated_at DESC").all().map(r => r.id);
+    const sessions = [];
+    for (const id of ids) {
+      const row = this.require(id);
+      const inspected = this.inspect(id);
+      const git = this.#observeWorktree(row);
+      const evidence = inspected.evidence.items.filter(e => e.passed);
+      const focused = evidence.filter(e => e.kind === 'focused_test');
+      const stale = row.head_sha && focused.length && !focused.some(e => e.commit_sha === row.head_sha);
+      const blockers = [];
+      if (!focused.length) blockers.push('focused_tests_missing');
+      if (stale) blockers.push('stale_evidence_after_commit');
+      if (inspected.push_status !== 'published') blockers.push('not_published');
+      if (git.branch_matches_session === false) blockers.push('branch_mismatch');
+      blockers.push('operator_push_authorization_required');
+      blockers.push('operator_merge_authorization_required');
+      sessions.push({
+        session_id: id,
+        goal: inspected.goal,
+        repository: inspected.repository,
+        branch: inspected.branch,
+        worktree: inspected.worktree,
+        assigned_worker: inspected.assigned_worker,
+        integration_state: inspected.integration_state,
+        related_missions: inspected.missions,
+        local_commits: inspected.local_commits,
+        changed_files: git.dirty_files.length ? git.dirty_files : inspected.dirty_files,
+        git,
+        focused_test_evidence: focused.map(e => ({
+          command: e.command,
+          commit_sha: e.commit_sha,
+          recorded_at: e.recorded_at,
+          summary: e.summary
+        })),
+        mandatory_ci: {
+          hosted_auto_dispatch: false,
+          heavy_auto_dispatch: false,
+          required_on_main_checkpoint: ['secret-history', 'dependency-license'],
+          feature_branch_auto_ci: false,
+          note: 'Feature-branch Mission work does not dispatch hosted CI. Mandatory checks run on main integration or explicit workflow_dispatch.'
+        },
+        eligible_prs: inspected.pr_number ? [{
+          number: inspected.pr_number,
+          head_sha: inspected.head_sha,
+          github_ci_status: inspected.github_ci_status,
+          review: 'operator_review_required',
+          auto_merge: false
+        }] : [],
+        readiness: {
+          integration_state: inspected.integration_state,
+          pending_approval: inspected.integration_state === 'READY_TO_MERGE' || inspected.integration_state === 'READY_TO_PUSH',
+          blockers,
+          push: false,
+          merge: false,
+          hosted_ci_dispatched: false
+        }
+      });
+    }
+    const summary = {
+      prepared_at: this.now(),
+      action: 'prepare_daily_integration',
+      sessions,
+      session_count: sessions.length,
+      push: false,
+      merge: false,
+      hosted_ci_dispatched: false,
+      workflow_dispatch: false,
+      acceptance_note: 'Mission Acceptance remains host verification / risk preference (PR #43). This checkpoint never Accepts or merges.',
+      authority: false
+    };
+    this.store.event('development.session.daily_integration_prepared', null, {
+      session_count: sessions.length,
+      push: false,
+      merge: false,
+      hosted_ci_dispatched: false
+    });
+    return summary;
   }
 
   observeGit(input, actor = 'operator') {

@@ -13,7 +13,7 @@ Per-Mission push/PR/CI spend and merge overhead dominate development time. Opera
 
 ## Decision
 
-Add host-owned `DevelopmentSession` with fail-closed auto-push/merge/CI flags, configurable merge window, durable evidence that rejects worker-completion substitution, Control Center view, and workflow triggers limited to `main` integration plus dispatch.
+Add host-owned `DevelopmentSession` with fail-closed auto-push/merge/CI flags, configurable merge window, durable evidence that rejects worker-completion substitution, Control Center view, and workflow triggers limited to `main` integration plus dispatch. Coding Missions may bind `development_session_id` at create; dispatch re-validates worktree binding. Operator **Prepare Daily Integration** summarizes readiness without push, merge or hosted CI dispatch.
 
 ## Alternatives
 
