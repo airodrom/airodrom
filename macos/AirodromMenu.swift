@@ -29,6 +29,13 @@ private struct BridgeStatus: Codable {
         let quarantined_leases: Int?
     }
     let product: Product?
+    struct Menu: Codable {
+        struct Indicator: Codable { let category: String; let label: String; let description: String }
+        struct Maintenance: Codable { let state: String; let unresolved_runs: Int?; let idle: Bool }
+        struct Recovery: Codable { let at: Double; let reason: String }
+        let indicator: Indicator; let service: String; let mcp: String; let maintenance: Maintenance?; let last_recovery: Recovery?
+    }
+    let menu: Menu?
     var valid: Bool {
         tasks.active >= 0 && tasks.connected >= 0 && tasks.total >= 0 &&
         tasks.counts.values.allSatisfy { $0 >= 0 && $0 <= 1_000_000 } && (pid == nil || pid! > 0)
@@ -148,6 +155,24 @@ private func brandImage() -> NSImage {
     image.accessibilityDescription = "Airodrom connected A mark"
     return image
 }
+// Small semantic status dot beside the template mark; the mark keeps adapting to light/dark menus.
+private final class StatusDot: NSView {
+    var color: NSColor = .systemGray { didSet { needsDisplay = true } }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill(); NSBezierPath(ovalIn: bounds).fill()
+        color.setFill(); NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1)).fill()
+    }
+}
+private func dotColor(_ category: String?) -> NSColor {
+    switch category {
+    case "healthy": return .systemGreen
+    case "starting": return .systemBlue
+    case "degraded": return .systemOrange
+    case "maintenance": return .systemYellow
+    case "disconnected": return .systemRed
+    default: return .systemGray
+    }
+}
 private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let controller: Controller
     private let helperLock: Int32
@@ -161,6 +186,11 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let missionRow = NSMenuItem(title: "Active Mission: none observed", action: nil, keyEquivalent: "")
     private let approvalsRow = NSMenuItem(title: "Approvals: unavailable", action: nil, keyEquivalent: "")
     private let detailRow = NSMenuItem(title: "Checking local observations…", action: nil, keyEquivalent: "")
+    private let serviceRow = NSMenuItem(title: "Service: unavailable", action: nil, keyEquivalent: "")
+    private let mcpRow = NSMenuItem(title: "MCP: unavailable", action: nil, keyEquivalent: "")
+    private let recoveryRow = NSMenuItem(title: "Last recovery: none observed", action: nil, keyEquivalent: "")
+    private let statusDot = StatusDot(frame: NSRect(x: 13, y: 2, width: 7, height: 7))
+    private var maintenanceItem: NSMenuItem!
     private var startItem: NSMenuItem!, stopItem: NSMenuItem!, restartItem: NSMenuItem!, openItem: NSMenuItem!, qualifyItem: NSMenuItem!
     private var cliItem: NSMenuItem!, doctorItem: NSMenuItem!, copyItem: NSMenuItem!
     private var openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
@@ -221,15 +251,18 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = idleImage; statusItem.button?.setAccessibilityLabel("Airodrom")
+        statusItem.button?.addSubview(statusDot)
         statusItem.menu = menu; menu.autoenablesItems = false
         menu.addItem(NSMenuItem(title: "AIRODROM · PRE-RELEASE", action: nil, keyEquivalent: ""))
-        [stateRow, runtimeRow, modelRow, memoryRow, connectorsRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
+        [stateRow, serviceRow, mcpRow, runtimeRow, memoryRow, recoveryRow, modelRow, connectorsRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
         openItem = item("Open Control Center", #selector(openCenter), in: menu, key: "o")
         cliItem = item("New Mission / Open CLI", #selector(openCLI), in: menu)
         menu.addItem(.separator()); menu.addItem(missionRow); menu.addItem(approvalsRow)
         openMissionItem = item("Open Mission", #selector(openMission), in: menu)
         cancelMissionItem = item("Cancel Mission", #selector(cancelMission), in: menu)
         _ = item("Review Missions & Approvals", #selector(openCenter), in: menu)
+        _ = item("Run Diagnostics", #selector(runDoctor), in: menu)
+        maintenanceItem = item("Review Maintenance", #selector(reviewMaintenance), in: menu)
         menu.addItem(.separator())
         let health = NSMenu(); health.autoenablesItems = false
         ["Control Plane", "OpenCode", "Memory V2", "Local provider"].forEach { health.addItem(NSMenuItem(title: $0 + ": unavailable", action: nil, keyEquivalent: "")) }
@@ -299,9 +332,17 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         memoryRow.title = "Memory V2: " + (p?.memory ?? "Unavailable") + " · Local"
         missionRow.title = p?.mission.map { $0.label + " · " + $0.phase } ?? "Active Mission: none observed"
         approvalsRow.title = p?.approvals.map { "Approvals: " + String($0) + " waiting" } ?? "Approvals: unavailable"
-        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : animationState == "error" || animationState == "degraded" ? "!" : animationState == "waiting" ? "…" : ""
-        statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title
-        statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title)
+        // Compact: the dot carries state; only a waiting-approval count is ever shown as text.
+        let indicator = status?.menu?.indicator
+        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : ""
+        statusDot.color = dotColor(lastError != nil ? "disconnected" : indicator?.category)
+        let described = lastError != nil ? "Airodrom is disconnected" : indicator?.description ?? "Airodrom status is unknown"
+        statusItem.button?.toolTip = described + ". " + approvalsRow.title
+        statusItem.button?.setAccessibilityValue(described + ". " + approvalsRow.title)
+        serviceRow.title = "Service: " + (status?.menu?.service ?? "Unavailable")
+        mcpRow.title = "MCP: " + (status?.menu?.mcp ?? "Unavailable")
+        recoveryRow.title = status?.menu?.last_recovery.map { "Last recovery: " + $0.reason.replacingOccurrences(of: "_", with: " ") + " · " + DateFormatter.localizedString(from: Date(timeIntervalSince1970: $0.at / 1000), dateStyle: .none, timeStyle: .short) } ?? "Last recovery: none observed"
+        maintenanceItem.isEnabled = status?.menu?.maintenance != nil
         detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Local observations checked just now")
         let available = pendingAction == nil && currentAction == nil
         let navigationAvailable = pendingAction == nil && (currentAction == nil || currentAction == .status)
@@ -343,6 +384,11 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     }
     private func show(_ title: String, _ message: String) { let alert = NSAlert(); alert.messageText = title; alert.informativeText = message; alert.runModal() }
     @objc private func openCenter() { request(.open) }
+    @objc private func reviewMaintenance() {
+        guard let m = status?.menu?.maintenance else { return }
+        let runs = m.unresolved_runs.map { String($0) + " unresolved run(s)" } ?? "unresolved runs not reported"
+        show("Airodrom Maintenance", "Admission: " + (m.state == "open" ? "open" : "maintenance hold") + "\n" + runs + "\n\n" + (m.idle ? "Work is settled. Reopen admission with: airodrom admission resume" : "Review blockers with: airodrom admission status"))
+    }
     @objc private func openCLI() { request(.cli) }
     @objc private func openMission() { request(.openMission) }
     @objc private func cancelMission() { request(.cancelMission) }

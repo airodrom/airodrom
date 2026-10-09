@@ -97,7 +97,9 @@ function installedExtensions(ctx, editor) {
 }
 
 class ClaudeCodeJobs {
-  constructor() { this.jobs = new Map(); }
+  constructor() { this.jobs = new Map(); this.store = null; }
+  // Durable results attach lazily: the capability host exists before the canonical store.
+  attach(db) { if (!this.store && db) this.store = new (require('./devtools-job-store').DevtoolsJobStore)(db); return this.store; }
   snapshot(job) {
     return { job_id: job.id, status: job.status, repo: job.repoDisplay, started_at: new Date(job.startedAt).toISOString(), finished_at: job.finishedAt ? new Date(job.finishedAt).toISOString() : null, duration_ms: (job.finishedAt || Date.now()) - job.startedAt, exit_code: job.exitCode ?? null, api_key_withheld: job.apiKeyWithheld, result: job.result || null, touched_files: job.touched || [] };
   }
@@ -105,6 +107,14 @@ class ClaudeCodeJobs {
     const job = this.jobs.get(jobId);
     if (!job || job.taskId !== taskId) fail('Claude Code job is not owned by this task');
     return job;
+  }
+  // Live job if this process holds it, else the owning task's retained result.
+  status(taskId, jobId) {
+    const live = this.jobs.get(jobId);
+    if (live) return this.snapshot(this.owned(taskId, jobId));
+    const retained = this.store?.forTask(taskId, jobId);
+    if (!retained) fail('Claude Code job is not owned by this task');
+    return retained;
   }
   cancel(job, reason = 'cancelled') {
     if (job.status !== 'running') return false;
@@ -398,7 +408,13 @@ function developerCapabilities({ jobs = new ClaudeCodeJobs() } = {}) {
         catch (error) { if (controlRunId) ctx.controlExecution.failedToSpawn(controlRunId); throw error; }
         const job = { id: jobId, taskId: ctx.task.id, repo, repoDisplay: ctx.scopes.display(repo), startedAt: Date.now(), status: 'running', child, apiKeyWithheld: !env.ANTHROPIC_API_KEY && Boolean(ctx.env?.ANTHROPIC_API_KEY), stdout: '' };
         jobs.jobs.set(job.id, job);
-        child.stdout.on('data', chunk => { if (job.stdout.length < 1024 * 1024) job.stdout += chunk; });
+        const store = jobs.attach(ctx.controlExecution?.store?.db);
+        try { store?.started(job); } catch { /* durable history is best effort; execution is unaffected */ }
+        let progressAt = 0, bytes = 0;
+        child.stdout.on('data', chunk => {
+          bytes += chunk.length; if (job.stdout.length < 1024 * 1024) job.stdout += chunk;
+          if (store && Date.now() - progressAt > 10_000) { progressAt = Date.now(); try { store.progress(job.id, 'output_progress', { stdout_bytes: bytes }); } catch {} }
+        });
         child.stderr.on('data', () => {});
         const timeout = setTimeout(() => jobs.cancel(job, 'timed_out'), (input.timeoutSeconds || 1_800) * 1_000);
         timeout.unref();
@@ -414,6 +430,7 @@ function developerCapabilities({ jobs = new ClaudeCodeJobs() } = {}) {
           }
           // Settle last: a poll that sees a terminal status also sees the final result and touched files.
           if (job.status === 'running') job.status = code === 0 ? 'completed' : 'failed';
+          try { store?.settled(job, parsed); } catch { job.durable_state = 'not_recorded'; }
           try { if (controlRunId) ctx.controlExecution.settled(controlRunId, job); }
           catch { job.control_state = 'reconciliation_required'; }
           resolve();
@@ -428,7 +445,7 @@ function developerCapabilities({ jobs = new ClaudeCodeJobs() } = {}) {
         return jobs.snapshot(job);
       }
     },
-    claude_code_task_status: { validate: input => { keys(input, ['jobId']); pattern(input.jobId, /^[0-9a-f-]{36}$/, 'jobId'); return input; }, perform: (ctx, input) => jobs.snapshot(jobs.owned(ctx.task.id, input.jobId)) },
+    claude_code_task_status: { validate: input => { keys(input, ['jobId']); pattern(input.jobId, /^[0-9a-f-]{36}$/, 'jobId'); return input; }, perform: (ctx, input) => { jobs.attach(ctx.controlExecution?.store?.db); return jobs.status(ctx.task.id, input.jobId); } },
     claude_code_task_cancel: { validate: input => { keys(input, ['jobId']); pattern(input.jobId, /^[0-9a-f-]{36}$/, 'jobId'); return input; }, perform: (ctx, input) => { const job = jobs.owned(ctx.task.id, input.jobId); return { cancelled: jobs.cancel(job), ...jobs.snapshot(job) }; } },
 
     ...editorCapabilities('cursor'),
