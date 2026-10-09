@@ -16,3 +16,23 @@ test('existing dashboard route carries the exact scene source without requiring 
  assert.ok(hub.includes('// BEGIN generated atmosphere compatibility bundle; source: public/atmosphere.js\n'+source));assert.equal(hub.split('// BEGIN generated atmosphere compatibility bundle').length,2);
  assert.doesNotMatch(fs.readFileSync(require.resolve('../public/control-hub.html'),'utf8'),/src="\/atmosphere.js"/);
 });
+test('control-hub HTML keeps premium mount fingerprint to prevent silent UI replacement',()=>{
+ const html=fs.readFileSync(require.resolve('../public/control-hub.html'),'utf8');
+ const css=fs.readFileSync(require.resolve('../public/control-hub.css'),'utf8');
+ const js=fs.readFileSync(require.resolve('../public/control-hub.js'),'utf8');
+ assert.match(html,/id="atmosphere"/);
+ assert.match(html,/id="weather-switcher"/);
+ assert.match(html,/id="theme"/);
+ assert.match(html,/AIRODROM/);
+ assert.match(html,/CONTROL CENTER/);
+ assert.match(html,/aria-label="Weather atmosphere"/);
+ assert.match(html,/data-weather="auto"/);
+ assert.match(html,/data-weather="rain"/);
+ assert.match(html,/data-weather="sunrise"/);
+ assert.match(html,/data-weather="sunset"/);
+ assert.match(html,/data-weather="off"/);
+ assert.ok(html.length>=4500,'control-hub.html regresses toward stripped mount surface');
+ assert.match(css,/#weather-switcher|#atmosphere/);
+ assert.match(js,/LIVE MISSION OBSERVATORY/);
+ assert.match(js,/BEGIN generated atmosphere compatibility bundle/);
+});

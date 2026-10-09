@@ -1,5 +1,7 @@
 # Airodrom documentation
 
+Notion documentation routing: [NOTION-DOCUMENTATION-ROUTING-V1.md](NOTION-DOCUMENTATION-ROUTING-V1.md). Airodrom hub only; Pi Bridge parents refused.
+
 Control Center UI recovery (source candidate): [CONTROL-CENTER-UI-RECOVERY-V1.md](CONTROL-CENTER-UI-RECOVERY-V1.md). Restores atmosphere/theme/nav mounts lost before merge; not SHIPPED on main.
 
 Read the [architecture](ARCHITECTURE.md), [installation](INSTALLATION.md), [development guide](DEVELOPMENT.md), [runtime support](RUNTIME-SUPPORT-MATRIX.md), [Memory V2](MEMORY-V2.md), [erasure and retention](PRIVACY-ERASURE.md), [threat model](THREAT-PRIVACY-SUMMARY.md), [limitations](KNOWN-LIMITATIONS.md) and [troubleshooting](TROUBLESHOOTING.md).

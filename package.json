@@ -394,6 +394,9 @@
     "docs/adr/0018-qualified-multi-worker-v2.md",
     "docs/adr/0019-codex-live-qualification.md",
     "public/atmosphere.js",
-    "scripts/build-atmosphere.cjs"
+    "scripts/build-atmosphere.cjs",
+    "config/notion-documentation-v1.json",
+    "src/notion-documentation-routing.js",
+    "docs/NOTION-DOCUMENTATION-ROUTING-V1.md"
   ]
 }

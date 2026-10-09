@@ -579,5 +579,8 @@
   "docs/adr/0036-live-agent-observatory-v1.md",
   "tests/live-observatory-v1.test.js",
   "public/atmosphere.js",
-  "scripts/build-atmosphere.cjs"
+  "scripts/build-atmosphere.cjs",
+  "config/notion-documentation-v1.json",
+  "src/notion-documentation-routing.js",
+  "docs/NOTION-DOCUMENTATION-ROUTING-V1.md"
 ]

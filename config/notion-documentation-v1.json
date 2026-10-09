@@ -1,0 +1,46 @@
+{
+  "schema": "airodrom.notion-documentation.v1",
+  "product": "Airodrom",
+  "hub": {
+    "title": "Airodrom",
+    "page_id": "3f4593eead74818bb339d302719256a4",
+    "url": "https://app.notion.com/p/3f4593eead74818bb339d302719256a4",
+    "projects_data_source_id": "3d2593ee-ad74-80b9-a2dd-000b4d700e7f"
+  },
+  "forbidden_parents": [
+    {
+      "title": "Pi Bridge — Architecture, Memory and Verification",
+      "page_id": "3ef593eead7481d79081dab81405a34f",
+      "reason": "Historical Pi Bridge hub; must not parent new Airodrom product documentation"
+    }
+  ],
+  "owned_pages": [
+    {
+      "title": "Meta WhatsApp Live Connection V1",
+      "page_id": "3f4593eead7481bda472e3a94dc1a60f"
+    },
+    {
+      "title": "Development Sessions V1 — local-first batch merge",
+      "page_id": "3f4593eead74817f8d8ecb8d448dc88c"
+    },
+    {
+      "title": "Control Center UI Recovery V1",
+      "page_id": "3f4593eead7481018b16f930c8ce71ce"
+    }
+  ],
+  "status_vocabulary": [
+    "LOCAL IMPLEMENTATION",
+    "PR OPEN",
+    "MERGED IN SOURCE",
+    "INSTALLED LOCALLY",
+    "LIVE VERIFIED",
+    "PUBLIC ACTIVATION OFF"
+  ],
+  "rules": {
+    "require_verified_airodrom_hub": true,
+    "fail_closed_without_hub": true,
+    "forbid_pi_bridge_default_parent": true,
+    "documentation_sync_is_not_shipped": true,
+    "documentation_sync_is_not_public_activation": true
+  }
+}

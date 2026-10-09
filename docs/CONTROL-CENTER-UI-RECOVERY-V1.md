@@ -34,23 +34,31 @@ Branch `feat/control-center-ui-recovery-v1` (isolated worktree):
 
 Focused tests (isolated worktree):
 
-- `tests/atmosphere.test.js`
+- `tests/atmosphere.test.js` (includes premium mount fingerprint safeguard)
 - `tests/control-center-ui.test.js`
 - `tests/connection-status.test.js`
 - `tests/live-observatory-v1.test.js`
+- `tests/notion-documentation-routing.test.js`
 
-Result: **20/20 passed**.
+Browser: static serve of recovered `public/` at `http://127.0.0.1:8766/control-hub.html` (no secrets). Headless Chrome screenshot evidence stored outside the git tree under the Mission evidence folder. Observed: brand shell, expanded nav, theme select, SKY atmosphere switcher with animated scene, reconnecting chip when no local service API is attached. Static fixture is not LIVE VERIFIED Activation proof.
 
-Browser: static serve of recovered `public/` at `http://127.0.0.1:8766/control-hub.html` (no secrets). Headless Chrome screenshot evidence stored outside the git tree under the Mission evidence folder. Observed: brand shell, expanded nav, theme select, SKY atmosphere switcher with animated scene, reconnecting chip when no local service API is attached. Static fixture is not live Activation proof.
+## Status vocabulary
 
-## Status
+| Label | This branch |
+|-------|-------------|
+| LOCAL IMPLEMENTATION | Yes |
+| PR OPEN | No |
+| MERGED IN SOURCE | No |
+| INSTALLED LOCALLY | No (operator service still pre-recovery until authorized cutover) |
+| LIVE VERIFIED | No (static browser only) |
+| PUBLIC ACTIVATION | OFF |
 
 | Field | Value |
 |-------|-------|
 | Branch | `feat/control-center-ui-recovery-v1` |
-| Local HEAD | `b5240fd0e60e96dafafa98b571b83d6b0ea8adee` |
+| Local HEAD | verify with `git rev-parse HEAD` (feature impl `b5240fd0e60e96dafafa98b571b83d6b0ea8adee`) |
 | PR | none (unpushed) |
-| State | **In source on feature branch** — not SHIPPED IN SOURCE on main; not ACTIVE/DEPLOYED in installed service |
+| Notion hub | Projects → Airodrom (`3f4593eead74818bb339d302719256a4`) |
 
 ## Next action
 
