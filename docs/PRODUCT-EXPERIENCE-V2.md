@@ -4,7 +4,7 @@ Airodrom is a pre-release local AI operating platform. OpenCode is the primary b
 
 ## Start locally
 
-Use supported Node 22.23.3 or later in the 22.x line, macOS, Xcode command-line tools, qualified OpenCode 2.0.20 and local Ollama with qwen3-coder:30b. See [installation](INSTALLATION.md) for the exact qualified artifact and platform boundary.
+Use supported Node 22.23.3 or later in the 22.x line, macOS, Xcode command-line tools, qualified OpenCode 2.0.25 and local Ollama with qwen3-coder:30b. See [installation](INSTALLATION.md) for the exact qualified artifact and platform boundary.
 
 ```sh
 npm ci --ignore-scripts

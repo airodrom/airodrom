@@ -4,7 +4,7 @@
 
 | Runtime or capability | Support | Boundary |
 | --- | --- | --- |
-| OpenCode | Primary / default | Qualified 2.0.20 on macOS with local Ollama; disposable declared-file execution and host-applied changes |
+| OpenCode | Primary / default | Qualified 2.0.25 on macOS with local Ollama; disposable declared-file execution and host-applied changes |
 | Claude Code | Optional bounded proposal adapter; live unqualified | Explicit public subscription policy, empty Memory, signed owner qualification; confined live check failed |
 | Work / Codex | Optional live-qualified no-tools proposal boundary | V2 public owner template and fresh signed qualification required; signed bundle/public TLS roots; ChatGPT connector exposure separate |
 | Cursor | Experimental | Installation discovery only; tool/credential isolation unqualified, execution denied |

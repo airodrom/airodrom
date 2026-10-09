@@ -6,7 +6,7 @@ Verify the archive against the separately reviewed checksums. Inspect its file l
 
 ## Operator setup
 
-OpenCode 2.0.20 and the local Ollama `qwen3-coder:30b` model are the default bounded execution surface. Availability is checked before dispatch; unavailable execution waits for review. See [default runtime boundary](DEFAULT-RUNTIME-CUTOVER.md).
+OpenCode 2.0.25 and the local Ollama `qwen3-coder:30b` model are the default bounded execution surface. Availability is checked before dispatch; unavailable execution waits for review. See [default runtime boundary](DEFAULT-RUNTIME-CUTOVER.md).
 
 For the interactive local candidate, run `npm run install:local`, then `airodrom`
 from any Terminal directory. The CLI bootstraps private persistent user state,

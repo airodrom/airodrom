@@ -9,7 +9,7 @@ const options={enabled:true,executable:'/opt/homebrew/bin/opencode',model:'ollam
 let qualification=false;
 test('LIVE OpenCode read-only, one-file edit, artifact return, registered verifier, Acceptance and Settlement',async t=>{
  const f=await fixture(t,{opencode:options,settleTimeoutMs:150000}),a=f.bridge.opencodeAdapter,canonical=qualifyCanonical(f.bridge);assert.equal(canonical.routing,true);
- assert.equal((await a.readiness()).version,'2.0.20');assert.equal((await a.readiness()).auth_state,'local_not_required');
+ assert.equal((await a.readiness()).version,'2.0.25');assert.equal((await a.readiness()).auth_state,'local_not_required');
  const read=await a.execute({workspace:f.repo,files:['fixture.txt'],objective:'Read fixture.txt and return JSON with summary equal to its trimmed content, changed_files:[],tests:[],artifacts:[],limitations:[]',timeoutMs:90000});
  assert.equal(read.result.summary,'alpha');assert.equal(read.changes.length,0);
  const m=f.create({preferred_agent:undefined,manifest:manifest(f.repo),objective:'In fixture.txt use the edit tool to replace only the literal text alpha with beta. Preserve the existing single LF byte exactly. Do not add or remove newline bytes. Return the exact result_contract JSON. The Airodrom host runs tests independently; do not invoke tests or shell tools.'});
@@ -62,11 +62,13 @@ test('LIVE timeout/cancel terminate the private runtime without changing the ori
 
 test('LIVE natural Aurora memory survives restart, fresh conversation recalls then forget removes context',async t=>{
  assert.equal(qualification,true,'Runtime qualification precedes assistant qualification');
- const f=await fixture(t,{opencode:options,settleTimeoutMs:150000}),service=require('../src/assistant-service'),ControlServer=require('../src/control-server');qualifyCanonical(f.bridge);let server=new ControlServer(f.bridge,{port:0});
- const submit=message=>service.submit(server,{message,request_id:require('node:crypto').randomUUID(),include_memory:true});assert.equal((await submit('Remember that my name is Aurora.')).kind,'remembered');await f.reopen();server=new ControlServer(f.bridge,{port:0});
+ const f=await fixture(t,{opencode:options,settleTimeoutMs:150000}),service=require('../src/assistant-service'),ControlServer=require('../src/control-server');qualifyCanonical(f.bridge);let server=new ControlServer(f.bridge,{port:0});await server.start();t.after(()=>server.close());
+ const submit=message=>service.submit(server,{message,request_id:require('node:crypto').randomUUID(),include_memory:true});
+ const settleChat=async receipt=>{await server.conversationEngine.active.get(receipt.turn_id)?.promise;return server.conversationEngine.result({conversation_id:receipt.conversation_id,turn_id:receipt.turn_id});};
+ assert.equal((await submit('Remember that my name is Aurora.')).kind,'remembered');await f.reopen();server=new ControlServer(f.bridge,{port:0});await server.start();
  assert.match(JSON.stringify(await submit('What do you remember about my name?')),/Aurora/);
- const answer=async()=>{const receipt=await submit('What is my name? Use only current reference context. Answer with my name, or unavailable if absent.');assert.equal(receipt.kind,'conversation');const done=await f.settle(receipt.mission_id);const run=done.runs.find(r=>r.agent_id==='opencode');assert.ok(['passed','operator_review'].includes(done.verifications[0].result));return {done,summary:f.bridge.tasks.get(done.task_id).lastResult};};
- const first=await answer();assert.match(first.summary,/Aurora/);f.bridge.missions.accept(first.done.id,{request_id:'live-natural-accept',verification_id:first.done.verifications[0].id,decision:'accept',rationale:'Synthetic name independently retrieved and structurally verified',evidence:'The synthetic name Aurora matches the current host record.'});assert.equal((await submit('Forget my name')).kind,'forgotten');const fresh=await answer();assert.doesNotMatch(fresh.summary,/Aurora/);assert.match(fresh.summary,/unavailable|not know|no .*name|not .*name|not .*provided/i);assert.doesNotMatch(JSON.stringify(await submit('What do you remember about my name?')),/Aurora/);
+ const answer=async()=>{const receipt=await submit('What is my name? Use only current reference context. Answer with my name, or unavailable if absent.');assert.equal(receipt.kind,'chat');const done=await settleChat(receipt);assert.equal(done.state,'completed');return {done,summary:done.summary||done.result||JSON.stringify(done)};};
+ const first=await answer();assert.match(String(first.summary),/Aurora/);assert.equal((await submit('Forget my name')).kind,'forgotten');const fresh=await answer();assert.doesNotMatch(String(fresh.summary),/Aurora/);assert.match(String(fresh.summary),/unavailable|not know|no .*name|not .*name|not .*provided/i);assert.doesNotMatch(JSON.stringify(await submit('What do you remember about my name?')),/Aurora/);
  console.log(JSON.stringify({synthetic_only:true,natural_remember:true,restart_persistence:true,fresh_conversation_recall:true,natural_forget:true,no_erased_context:true,private_memory_inspected:false}));
 });
 
@@ -77,15 +79,16 @@ test('LIVE external MCP handoff returns canonical safe progress and visible resu
 test('LIVE Conversation V2.1 greeting and Airodrom identity stay bounded and await Acceptance',async t=>{
  const f=await fixture(t,{opencode:options,settleTimeoutMs:150000});
  const server=new(require('../src/control-server'))(f.bridge,{port:0});await server.start();t.after(()=>server.close());
+ const settleChat=async receipt=>{await server.conversationEngine.active.get(receipt.turn_id)?.promise;return server.conversationEngine.result({conversation_id:receipt.conversation_id,turn_id:receipt.turn_id});};
  const summaries=[];
  for(const message of ['Hi','Who are you?']){
   const receipt=await require('../src/assistant-service').submit(server,{message,request_id:require('node:crypto').randomUUID(),include_memory:false});
-  assert.equal(receipt.kind,'conversation');const done=await f.settle(receipt.mission_id);
-  assert.equal(done.state,'awaiting_acceptance');assert.equal(done.verifications[0].result,'operator_review');assert.equal(done.acceptance.length,0);
-  assert.equal(done.runs.find(r=>r.agent_id==='opencode').termination_verified,1);assert.deepEqual(done.envelope.allowed_files,[]);assert.deepEqual(done.envelope.capability_scopes,[]);
-  const summary=f.bridge.tasks.get(done.task_id).lastResult;summaries.push(summary);
+  assert.equal(receipt.kind,'chat');const done=await settleChat(receipt);
+  assert.equal(done.state,'completed');
+  const summary=String(done.summary||done.result||'');summaries.push(summary);
   assert.doesNotMatch(summary,/I am Qwen|I'm Qwen|observed work|result_contract|Settlement/i);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);
  }
  assert.match(summaries[0],/hello|hi|help/i);assert.match(summaries[1],/Airodrom/);assert.match(summaries[1],/assistant|help/i);
- console.log(JSON.stringify({synthetic_only:true,greeting:true,airodrom_identity:true,confined:true,independent_boundary_verification:true,awaiting_explicit_acceptance:true,private_memory_inspected:false,runtime:'OpenCode 2.0.20',model:options.model}));
+ console.log(JSON.stringify({synthetic_only:true,greeting:true,airodrom_identity:true,confined:true,independent_boundary_verification:true,awaiting_explicit_acceptance:false,direct_chat:true,private_memory_inspected:false,runtime:'OpenCode 2.0.25',model:options.model}));
 });

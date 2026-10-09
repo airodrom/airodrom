@@ -44,7 +44,7 @@ test('private directories/config reject public modes, symlinks and credential mi
 });
 test('runtime qualification fails closed for missing runtime, wrong model and modified pins', async () => {
   await assert.rejects(local.qualify({ executable: '/missing-opencode' }), /not ready/);
-  await assert.rejects(local.qualify({ adapter: { readiness: async () => ({ ready: true, version: '2.0.20' }), executable: () => process.execPath }, model: 'ollama/unqualified' }), /qualified local runtime/);
+  await assert.rejects(local.qualify({ adapter: { readiness: async () => ({ ready: true, version: '2.0.25' }), executable: () => process.execPath }, model: 'ollama/unqualified' }), /qualified local runtime/);
   assert.throws(() => local.validatePins({ version: 1, executables: [] }), /pins are invalid/);
 });
 test('stopped lifecycle is idempotent and missing discovery never hides a live writer', async t => {
@@ -158,7 +158,7 @@ test('registration rejects unbounded inputs, secrets and mutated task authority 
 test('unqualified executable never runs for readiness or first-use qualification', async t => {
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'airo-untrusted-')));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const marker=path.join(root,'executed'),executable=path.join(root,'runtime');
-  fs.writeFileSync(executable,'#!'+process.execPath+'\nrequire("node:fs").writeFileSync('+JSON.stringify(marker)+',"executed"); console.log("opencode v2.0.20");\n',{mode:0o700});
+  fs.writeFileSync(executable,'#!'+process.execPath+'\nrequire("node:fs").writeFileSync('+JSON.stringify(marker)+',"executed"); console.log("opencode v2.0.25");\n',{mode:0o700});
   const {OpenCodeAdapter}=require('../src/opencode-adapter');
   for(const pinsFile of [undefined,path.join(root,'missing-pins.json')]){const a=new OpenCodeAdapter(null,{enabled:true,executable,model:'ollama/qwen3-coder:30b',pinsFile});assert.equal((await a.readiness()).ready,false);assert.equal(fs.existsSync(marker),false);}
   await assert.rejects(local.qualify({executable}),/qualified local runtime/);assert.equal(fs.existsSync(marker),false);

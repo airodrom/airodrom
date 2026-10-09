@@ -36,8 +36,48 @@ function localHome(env = process.env) {
   return home;
 }
 function pin(id, file) {
-  const real = fs.realpathSync(file), record = { id, path: real, sha256: digest(real) };
+  let real;
+  try { real = fs.realpathSync(file); }
+  catch (error) {
+    if (error.code === 'ENOENT' && id === 'opencode') throw Error('OpenCode executable is missing at ' + file + '. Install the package-qualified OpenCode artifact or set AIRODROM_OPENCODE_EXECUTABLE. Previous runtime pins were preserved.');
+    throw error;
+  }
+  const record = { id, path: real, sha256: digest(real) };
   verifyExecutable(record); return record;
+}
+function openCodePinMissing(pins) {
+  const record = pins?.executables?.find(p => p.id === 'opencode');
+  if (!record || typeof record.path !== 'string' || !path.isAbsolute(record.path)) return false;
+  try { fs.lstatSync(record.path); return false; }
+  catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+}
+function missingOpenCodePinError(record) {
+  const evidence = require('../config/agent-runtime-qualification-v1.json').opencode;
+  return Error('Pinned OpenCode executable is missing at ' + record.path + '. Homebrew (or another package manager) likely removed qualified OpenCode '
+    + evidence.runtime_version + '. Install that exact qualified artifact, or install a package-qualified replacement and set AIRODROM_OPENCODE_EXECUTABLE to its absolute path, then run airodrom requalify while the service is stopped. Previous runtime pins were preserved.');
+}
+function resolveOpenCodeExecutable(env, pins, missing) {
+  const record = pins.executables.find(p => p.id === 'opencode');
+  if (!missing) return record.path;
+  const explicit = typeof env.AIRODROM_OPENCODE_EXECUTABLE === 'string' && env.AIRODROM_OPENCODE_EXECUTABLE ? env.AIRODROM_OPENCODE_EXECUTABLE : null;
+  if (explicit) {
+    try { return fs.realpathSync(explicit); }
+    catch (error) {
+      if (error.code === 'ENOENT') throw Error('Replacement OpenCode executable is missing at ' + explicit + '. Set AIRODROM_OPENCODE_EXECUTABLE to an installed package-qualified binary. Previous runtime pins were preserved.');
+      throw error;
+    }
+  }
+  const { OpenCodeAdapter } = require('./opencode-adapter');
+  const found = new OpenCodeAdapter(null, { enabled: true, model: pins.model }).executable();
+  if (!found) throw missingOpenCodePinError(record);
+  try { return fs.realpathSync(found); }
+  catch (error) {
+    if (error.code === 'ENOENT') throw missingOpenCodePinError(record);
+    throw error;
+  }
+}
+function supportedNodeFloor() {
+  return /^22\./.test(process.versions.node) && (Number(process.versions.node.split('.')[1]) > 23 || Number(process.versions.node.split('.')[1]) === 23 && Number(process.versions.node.split('.')[2]) >= 3);
 }
 async function qualify({ executable, model = 'ollama/qwen3-coder:30b', adapter = null, signal } = {}) {
   if (signal?.aborted) throw Error('Local qualification was interrupted; previous pins preserved.');
@@ -47,11 +87,11 @@ async function qualify({ executable, model = 'ollama/qwen3-coder:30b', adapter =
   const runtime = adapter || new OpenCodeAdapter(null, { enabled: true, executable, model });
   const evidence = require('../config/agent-runtime-qualification-v1.json').opencode;
   const candidate = runtime.executable();
-  if (!candidate) throw Error('OpenCode is not ready: opencode_unavailable. Install qualified OpenCode 2.0.20 and start Ollama with qwen3-coder:30b.');
+  if (!candidate) throw Error('OpenCode is not ready: opencode_unavailable. Install qualified OpenCode ' + evidence.runtime_version + ' and start Ollama with qwen3-coder:30b.');
   const opencode = pin('opencode', candidate);
-  if (process.platform + '-' + process.arch !== evidence.platform || model !== evidence.model || opencode.sha256 !== evidence.executable_sha256 || evidence.execution_qualified !== true) throw Error('Installed OpenCode artifacts do not match the qualified local runtime. Requalify them before startup.');
+  if (process.platform + '-' + process.arch !== evidence.platform || model !== evidence.model || opencode.sha256 !== evidence.executable_sha256 || evidence.execution_qualified !== true) throw Error('Installed OpenCode artifacts do not match the qualified local runtime (need OpenCode ' + evidence.runtime_version + ' with the package evidence digest). Update package qualification evidence only after a successful confined probe, then requalify. Previous runtime pins were preserved.');
   const ready = await runtime.readiness();
-  if (!ready.ready || ready.version !== VERSION) throw Error('OpenCode is not ready: ' + ready.reason + '. Install qualified OpenCode 2.0.20 and start Ollama with qwen3-coder:30b.');
+  if (!ready.ready || ready.version !== VERSION) throw Error('OpenCode is not ready: ' + ready.reason + '. Install qualified OpenCode ' + evidence.runtime_version + ' and start Ollama with qwen3-coder:30b.');
   if (signal?.aborted) throw Error('Local qualification was interrupted; previous pins preserved.');
   const node = pin('node', process.execPath), sandbox = pin('sandbox-exec', '/usr/bin/sandbox-exec');
   // Use the adapter's existing real sandbox and synthetic result parser before recording pins.
@@ -72,20 +112,31 @@ async function qualify({ executable, model = 'ollama/qwen3-coder:30b', adapter =
 }
 function repairablePins(pins) {
   const evidence = require('../config/agent-runtime-qualification-v1.json').opencode;
-  if (pins?.version !== 1 || pins.platform !== process.platform + '-' + process.arch || pins.runtime_version !== evidence.runtime_version || pins.model !== evidence.model || pins.executables?.length !== 3 || new Set(pins.executables.map(p => p.id)).size !== 3) throw Error('Unsupported runtime drift. Restore qualified artifacts before requalification.');
+  const missing = openCodePinMissing(pins);
+  // Node-only repair keeps exact OpenCode digest/version. Missing OpenCode allows an explicit
+  // replacement path: historical pin shape is retained, but the candidate must still match package evidence after probe.
+  if (pins?.version !== 1 || pins.platform !== process.platform + '-' + process.arch || pins.model !== evidence.model || pins.executables?.length !== 3 || new Set(pins.executables.map(p => p.id)).size !== 3) throw Error('Unsupported runtime drift. Restore qualified artifacts before requalification.');
+  if (!missing && pins.runtime_version !== evidence.runtime_version) throw Error('Unsupported runtime drift. Restore qualified artifacts before requalification.');
   for (const id of ['node', 'sandbox-exec', 'opencode']) {
     const record = pins.executables.find(p => p.id === id);
     if (!record || !path.isAbsolute(record.path) || !/^[a-f0-9]{64}$/.test(record.sha256)) throw Error('Unsupported runtime drift. Restore qualified artifacts before requalification.');
-    if (id !== 'node') verifyExecutable(record);
+    if (id === 'opencode' && missing) continue;
+    if (id !== 'node') {
+      try { verifyExecutable(record); }
+      catch (error) {
+        if (id === 'opencode' && (error.code === 'ENOENT' || /ENOENT|no such file/i.test(String(error.message)))) throw missingOpenCodePinError(record);
+        throw error;
+      }
+    }
   }
-  if (pins.executables.find(p => p.id === 'opencode').sha256 !== evidence.executable_sha256 || pins.executables.find(p => p.id === 'sandbox-exec').path !== fs.realpathSync('/usr/bin/sandbox-exec') || !/^22\./.test(process.versions.node) || Number(process.versions.node.split('.')[1]) < 23 || Number(process.versions.node.split('.')[1]) === 23 && Number(process.versions.node.split('.')[2]) < 3) throw Error('Unsupported runtime drift. Restore qualified artifacts before requalification.');
-  // Only the host Node pin can be stale. OpenCode and Seatbelt must remain exact.
+  if (!missing && pins.executables.find(p => p.id === 'opencode').sha256 !== evidence.executable_sha256) throw Error('Unsupported runtime drift. Restore qualified artifacts before requalification.');
+  if (pins.executables.find(p => p.id === 'sandbox-exec').path !== fs.realpathSync('/usr/bin/sandbox-exec') || !supportedNodeFloor()) throw Error('Unsupported runtime drift. Restore qualified artifacts before requalification.');
   pin('node', process.execPath);
   return pins;
 }
 async function requalify(home, env = process.env, {signal} = {}) {
-  privateDirectory(home); const file = path.join(home, 'runtime-pins.json');
-  const before = ownedJSON(file); repairablePins(before);
+  privateDirectory(home); const file = path.join(home, 'runtime-pins.json'), previousFile = path.join(home, 'runtime-pins.previous.json');
+  const before = ownedJSON(file); const missing = openCodePinMissing(before); repairablePins(before);
   const lockFile = path.join(home, 'qualification.lock'); let fd;
   try { fd = fs.openSync(lockFile, 'wx', 0o600); fs.writeFileSync(fd, String(process.pid)); }
   catch { throw Error('OpenCode requalification is already running or its private lock is unavailable.'); }
@@ -97,12 +148,16 @@ async function requalify(home, env = process.env, {signal} = {}) {
     if (!isStopped(home)) throw Error('Stop the owned service before requalification; active writers and data were preserved.');
     assertDurableIdle(home);
     const identity = digest(file);
-    const pins = await qualify({ executable: before.executables.find(p => p.id === 'opencode').path, model: before.model, signal: effectiveSignal });
+    const executable = resolveOpenCodeExecutable(env, before, missing);
+    const pins = await qualify({ executable, model: before.model, signal: effectiveSignal });
     if (!isStopped(home) || digest(file) !== identity) throw Error('Runtime state changed during requalification. Existing pins were preserved.');
     assertDurableIdle(home);
     if (effectiveSignal.aborted) throw Error('Local qualification was interrupted; previous pins preserved.');
-    validatePins(pins); writePrivate(file, pins);
-    return { qualified: true, runtime: 'opencode', version: pins.runtime_version };
+    validatePins(pins);
+    // Archive prior qualification evidence, then atomically replace pins only after success.
+    writePrivate(previousFile, before);
+    writePrivate(file, pins);
+    return { qualified: true, runtime: 'opencode', version: pins.runtime_version, replaced_missing_opencode: missing };
   } finally { process.removeListener('SIGTERM', interrupt); process.removeListener('SIGINT', interrupt); fs.closeSync(fd); fs.unlinkSync(lockFile); }
 }
 function assertDurableIdle(home) {
@@ -248,4 +303,4 @@ function open(home, {missionId} = {}) {
   const r = spawnSync('/usr/bin/osascript', ['-'], { input: 'open location ' + JSON.stringify(target) + '\n', encoding: 'utf8', timeout: 5000 });
   if (r.status !== 0) throw Error('Control Center could not open. Check the default browser.');
 }
-module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, isStopped, start, stop, open };
+module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, isStopped, start, stop, open };

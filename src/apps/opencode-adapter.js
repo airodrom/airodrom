@@ -10,7 +10,7 @@ const { randomUUID, createHash } = require('node:crypto');
 const { AgentAdapter, AgentAdapterError } = require('../agent-adapter');
 const { object, redactValue } = require('../control-plane-store');
 const MAX_CONTEXT = 24000, MAX_OUTPUT = 64000, MAX_FILE = 12000;
-const VERSION = '2.0.20';
+const VERSION = '2.0.25';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => { throw new AgentAdapterError(code, code); };
 const quote = value => JSON.stringify(value);
@@ -69,6 +69,8 @@ function parseOutput(stdout, allowedFiles) {
   object(result, ['status', 'summary', 'changed_files', 'tests', 'artifacts', 'limitations','web_requests']);
   // Omitted claims mean no claims. Host-measured file changes are authoritative.
   for(const k of ['changed_files','tests','artifacts','limitations'])if(result[k]===undefined)result[k]=[];
+  // OpenCode 2.0.25 sometimes emits status "success" for a completed turn; normalize before the allowlist.
+  if (result.status === 'success') result.status = 'completed';
   if (typeof result.summary !== 'string' || !result.summary.trim() || Buffer.byteLength(result.summary) > 8000 || result.status!==undefined&&!['completed','failed','needs_web'].includes(result.status) || !Array.isArray(result.changed_files) || result.changed_files.length > 8 || result.changed_files.some(f => !allowedFiles.includes(relative(f))) || new Set(result.changed_files).size !== result.changed_files.length) fail('opencode_malformed_result');
   for (const k of ['tests', 'artifacts', 'limitations']) if (!Array.isArray(result[k]) || result[k].length > 8) fail('opencode_malformed_result');
   if(result.web_requests!==undefined&&(!Array.isArray(result.web_requests)||result.web_requests.length>3))fail('opencode_web_request_bound');
