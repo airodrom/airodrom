@@ -3362,5 +3362,85 @@
       "workspace_alias": "B",
       "record": "B"
     }
+  },
+  "deepseek_reserve_settings": {
+    "fields": [
+      "id",
+      "enabled",
+      "monthly_budget_nano",
+      "updated_at"
+    ],
+    "source": "src/deepseek-reserve.js",
+    "classification": {
+      "id": "A",
+      "enabled": "A",
+      "monthly_budget_nano": "A",
+      "updated_at": "A"
+    }
+  },
+  "deepseek_reserve_approvals": {
+    "fields": [
+      "id",
+      "task_id",
+      "request_hash",
+      "request",
+      "record",
+      "state",
+      "created_at",
+      "expires_at",
+      "decided_at",
+      "consumed_at"
+    ],
+    "source": "src/deepseek-reserve.js",
+    "classification": {
+      "id": "A",
+      "task_id": "A",
+      "request_hash": "D",
+      "request": "B",
+      "record": "B",
+      "state": "A",
+      "created_at": "A",
+      "expires_at": "A",
+      "decided_at": "A",
+      "consumed_at": "A"
+    }
+  },
+  "deepseek_reserve_spend": {
+    "fields": [
+      "approval_id",
+      "month",
+      "reserved_nano",
+      "actual_nano",
+      "state",
+      "usage",
+      "created_at",
+      "settled_at"
+    ],
+    "source": "src/deepseek-reserve.js",
+    "classification": {
+      "approval_id": "A",
+      "month": "A",
+      "reserved_nano": "A",
+      "actual_nano": "A",
+      "state": "A",
+      "usage": "B",
+      "created_at": "A",
+      "settled_at": "A"
+    }
+  },
+  "deepseek_reserve_events": {
+    "fields": [
+      "id",
+      "at",
+      "kind",
+      "record"
+    ],
+    "source": "src/deepseek-reserve.js",
+    "classification": {
+      "id": "A",
+      "at": "A",
+      "kind": "A",
+      "record": "B"
+    }
   }
 }

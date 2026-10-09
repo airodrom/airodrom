@@ -176,3 +176,11 @@ test('29 audit evidence records every transition without content or credential',
   const text = JSON.stringify(events) + JSON.stringify(reserve.view());
   assert.doesNotMatch(text, /sky is blue|sk-test/); assert.ok(events.every(e => JSON.parse(e.record).execution_authority === false));
 });
+
+test('identity migration registry classifies every reserve table and column', () => {
+  const registry = require('../config/memory-retention-fields.json'), { reserve } = setup();
+  for (const { name } of reserve.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()) {
+    assert.ok(registry[name], name);
+    for (const c of reserve.db.prepare(`PRAGMA table_xinfo(${name})`).all()) assert.ok(registry[name].fields.includes(c.name), name + '.' + c.name);
+  }
+});
