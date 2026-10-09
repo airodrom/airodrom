@@ -1,4 +1,5 @@
 'use strict';
+const ROUTABLE=require('./fixtures/routable-provider-profiles.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const Bridge=require('./fixtures/test-bridge.cjs');
 const {policy,HostReasoningAdmission}=require('../src/host-reasoning-admission');
@@ -7,7 +8,7 @@ const {McpTools}=require('../src/mcp-tools');
 const base={providers:['ollama'],data_class:'public',privacy:'local_only',purpose:'synthetic_probe',max_output:128};
 async function fixture(t,overrides={}){
  const root=fs.mkdtempSync('/private/tmp/host-reasoning-');const profile=path.join(root,'profile');fs.mkdirSync(profile);fs.writeFileSync(path.join(profile,'settings.json'),JSON.stringify({defaultProvider:'fixture',defaultModel:'fixture'}));
- let calls=0;const bridge=await new Bridge({ defaultRuntime: 'host',dataDir:path.join(root,'data'),sourceProfile:profile,allowFixtureWorker:true,executable:path.join(__dirname,'fixtures/host-worker.cjs'),providerGateway:{config:{ollama:{enabled:true}},request:async()=>{calls++;return new Response(JSON.stringify({choices:[{message:{role:'assistant',content:'4'},finish_reason:'stop'}]}),{status:200});}}}).initialize();
+ let calls=0;const bridge=await new Bridge({ defaultRuntime: 'host',dataDir:path.join(root,'data'),sourceProfile:profile,allowFixtureWorker:true,executable:path.join(__dirname,'fixtures/host-worker.cjs'),providerGateway:{profiles:ROUTABLE(),config:{ollama:{enabled:true}},request:async()=>{calls++;return new Response(JSON.stringify({choices:[{message:{role:'assistant',content:'4'},finish_reason:'stop'}]}),{status:200});}}}).initialize();
  t.after(async()=>{await bridge.shutdown();fs.rmSync(root,{recursive:true,force:true});});bridge.providerGateway.registry.observe('ollama','available');
  const task=bridge.tasks.get(bridge.createTask('Host reasoning fixture',{reasoningOnly:true,reasoningGatewayPolicy:{...base,...overrides}}).id);return{bridge,task,calls:()=>calls};
 }

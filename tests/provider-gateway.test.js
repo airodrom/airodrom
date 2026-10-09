@@ -1,4 +1,5 @@
 'use strict';
+const ROUTABLE=require('./fixtures/routable-provider-profiles.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
 const {DatabaseSync}=require('node:sqlite');
 const {ProviderGateway,ProviderRegistry,loadConfig}=require('../src/provider-gateway');
@@ -29,7 +30,7 @@ const schema={type:'object',properties:{value:{type:'integer'}},required:['value
 const tool={name:'read',parameters:{type:'object',properties:{path:{type:'string'}},required:['path'],additionalProperties:false}};
 const response=(message={role:'assistant',content:'fixture answer'},finish_reason='stop')=>({choices:[{message,finish_reason}],usage:{prompt_tokens:4,completion_tokens:2,total_tokens:6}});
 const ok=raw=>new Response(JSON.stringify(raw),{status:200});
-function gateway(extra={}) {const g=new ProviderGateway({config:{deepseek:{enabled:true,secret_reference:'fixture/deepseek'}},secretReader:async()=>SYNTHETIC,authorize:()=>true,request:async()=>ok(response()),...extra});g.registry.observe('deepseek','available');return g;}
+function gateway(extra={}) {const g=new ProviderGateway({profiles:ROUTABLE(),config:{deepseek:{enabled:true,secret_reference:'fixture/deepseek'}},secretReader:async()=>SYNTHETIC,authorize:()=>true,request:async()=>ok(response()),...extra});g.registry.observe('deepseek','available');return g;}
 function adapter(profileId='deepseek',extra={}) {const profile=initialProfiles().find(p=>p.id===profileId);return new OpenAICompatibleProvider({profile,baseUrl:'https://api.deepseek.com',secret:new ProviderSecrets({references:{deepseek:'fixture/deepseek'},read:async()=>SYNTHETIC}).forProvider(profileId),request:async()=>ok(response()),...extra});}
 function disabled(a){return a.models().find(m=>m.thinking_mode==='disabled');}
 
@@ -46,7 +47,7 @@ for(const [name,extra,expected] of [
  ['credentials deny',{data_class:'credentials'},'waiting'],['internal deny',{data_class:'internal'},'waiting'],['unknown sides effects',{unknown_side_effects:true},'waiting']
 ])test('routing '+name,()=>{const p=gateway().plan(request(extra));assert.equal(p.status,expected);});
 test('sensitive external approval is project specific',()=>{const g=gateway();assert.equal(g.plan(request({data_class:'financial',project_policy:{approved_external:{financial:['deepseek']}}})).selected_provider,'deepseek');});
-test('no key => auth_required and no transport invocation',async()=>{let calls=0;const g=new ProviderGateway({config:{deepseek:{enabled:true}},authorize:()=>true,request:()=>{calls++;}});g.registry.observe('deepseek','available');const p=g.plan(request());assert.equal(p.status,'waiting');assert.ok(p.rejected.some(r=>r.reason==='auth_required'));assert.equal((await g.execute(request())).status,'waiting');assert.equal(calls,0);});
+test('no key => auth_required and no transport invocation',async()=>{let calls=0;const g=new ProviderGateway({profiles:ROUTABLE(),config:{deepseek:{enabled:true}},authorize:()=>true,request:()=>{calls++;}});g.registry.observe('deepseek','available');const p=g.plan(request());assert.equal(p.status,'waiting');assert.ok(p.rejected.some(r=>r.reason==='auth_required'));assert.equal((await g.execute(request())).status,'waiting');assert.equal(calls,0);});
 test('quota => fallback and cooldown',async()=>{
  const g=gateway({config:{deepseek:{enabled:true,secret_reference:'fixture/deepseek'},ollama:{enabled:true}},request:async url=>url.includes('deepseek')?new Response('',{status:429}):ok(response())});g.registry.observe('ollama','available');
  const result=await g.execute(request({reasoning_mode:undefined}));assert.equal(result.provider_id,'ollama');assert.equal(result.accepted,false);

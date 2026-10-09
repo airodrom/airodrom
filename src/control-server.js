@@ -171,6 +171,8 @@ class ControlServer {
         return this.json(res, 200, result);
       }
       if (!this.authorize(req)) return this.json(res, 401, { error: 'Open the private Control Center link printed by the bridge to connect' });
+      // Operator-only DeepSeek reserve controls (ADR 0032); the MCP credential never reaches here.
+      if (url.pathname === '/api/providers/deepseek' || url.pathname.startsWith('/api/providers/deepseek/')) return this.json(res, 200, await require('./deepseek-reserve').route(this.bridge, req.method, url.pathname, req.method === 'POST' ? await readJSON(req) : null));
       if (req.method === 'GET' && url.pathname === '/api/product/native-status') return this.json(res, 200, await require('./product-observability').nativeStatus(this.bridge));
       if (req.method === 'GET' && url.pathname === '/api/product/memory') {
         const query=url.searchParams.get('query')||'';if(query.length>240)throw Error('Memory query too long');

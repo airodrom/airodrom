@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "provider": "deepseek",
+  "base_url": "https://api.deepseek.com",
+  "secret_reference": "keychain:airodrom.deepseek/api-key",
+  "default_monthly_budget_usd": 10,
+  "approval_ttl_ms": 600000,
+  "request_timeout_ms": 120000,
+  "max_output_tokens": 8192,
+  "models": ["deepseek-flash", "deepseek-v4-pro"],
+  "pricing": {
+    "source": "https://api-docs.deepseek.com/quick_start/pricing",
+    "verified_at": "2026-10-09",
+    "max_age_days": 45,
+    "unit": "USD per 1M tokens",
+    "schedules": [
+      {
+        "effective_from": "2026-10-01T00:00:00Z",
+        "peak_weekdays_utc": [1, 2, 3, 4, 5],
+        "peak_windows_utc": [["01:00", "04:00"], ["06:00", "10:00"]],
+        "rates": {
+          "deepseek-flash": {
+            "peak": { "input_cache_hit": 0.006, "input_cache_miss": 0.3, "output": 1.2 },
+            "off_peak": { "input_cache_hit": 0.003, "input_cache_miss": 0.15, "output": 0.6 }
+          },
+          "deepseek-v4-pro": {
+            "peak": { "input_cache_hit": 0.044, "input_cache_miss": 1.32, "output": 3.96 },
+            "off_peak": { "input_cache_hit": 0.022, "input_cache_miss": 0.66, "output": 1.98 }
+          }
+        }
+      }
+    ]
+  },
+  "holidays": {
+    "source": "https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm",
+    "verified_years": [2026],
+    "dates": [
+      "2026-01-01", "2026-01-02", "2026-01-03",
+      "2026-02-15", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21", "2026-02-22", "2026-02-23",
+      "2026-04-04", "2026-04-05", "2026-04-06",
+      "2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05",
+      "2026-06-19", "2026-06-20", "2026-06-21",
+      "2026-09-25", "2026-09-26", "2026-09-27",
+      "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07"
+    ],
+    "makeup_workdays": ["2026-01-04", "2026-02-14", "2026-02-28", "2026-05-09", "2026-09-20", "2026-10-10"]
+  }
+}
