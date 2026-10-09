@@ -1,11 +1,48 @@
 'use strict';
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { object, text, identifier } = require('./control-plane-store');
 const { transaction } = require('./control-transaction');
 const { officialInbound } = require('./assistant-connectors');
 
 const PHONE = /^[0-9]{8,20}$/;
 const MSG_ID = /^[A-Za-z0-9_.:-]{1,200}$/;
+const META_ID = /^[0-9]{5,32}$/;
+const PUBLICATION = new Set(['unknown', 'development', 'live']);
+const WEBHOOK_SUB = new Set(['inactive', 'pending', 'active']);
+const MAX_BODY = 512_000;
+
+function loadMetaDefaults(root) {
+  const file = path.join(root || path.resolve(__dirname, '..'), 'config/whatsapp-inbound-v1.json');
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (raw.version !== 1) throw Error('Unsupported WhatsApp inbound config');
+    return {
+      meta_app_id: typeof raw.meta_app_id === 'string' && META_ID.test(raw.meta_app_id) ? raw.meta_app_id : null,
+      business_portfolio_id: typeof raw.business_portfolio_id === 'string' && META_ID.test(raw.business_portfolio_id) ? raw.business_portfolio_id : null,
+      waba_id: typeof raw.waba_id === 'string' && META_ID.test(raw.waba_id) ? raw.waba_id : null,
+      phone_number_id: typeof raw.phone_number_id === 'string' && META_ID.test(raw.phone_number_id) ? raw.phone_number_id : null,
+      app_publication_status: PUBLICATION.has(raw.app_publication_status) ? raw.app_publication_status : 'unknown',
+      webhook_subscription_status: WEBHOOK_SUB.has(raw.webhook_subscription_status) ? raw.webhook_subscription_status : 'inactive',
+      required_permissions: Array.isArray(raw.required_permissions) ? raw.required_permissions.filter(p => typeof p === 'string' && /^[a-z_]{3,80}$/.test(p)).slice(0, 20) : ['whatsapp_business_messaging', 'whatsapp_business_management'],
+      callback_path: raw.callback_path === '/webhooks/whatsapp' ? '/webhooks/whatsapp' : '/webhooks/whatsapp',
+      max_body_bytes: Number.isInteger(raw.max_body_bytes) && raw.max_body_bytes > 0 && raw.max_body_bytes <= MAX_BODY ? raw.max_body_bytes : MAX_BODY
+    };
+  } catch {
+    return {
+      meta_app_id: '1625559252697626',
+      business_portfolio_id: '1791528208560099',
+      waba_id: null,
+      phone_number_id: null,
+      app_publication_status: 'unknown',
+      webhook_subscription_status: 'inactive',
+      required_permissions: ['whatsapp_business_messaging', 'whatsapp_business_management'],
+      callback_path: '/webhooks/whatsapp',
+      max_body_bytes: MAX_BODY
+    };
+  }
+}
 
 // Host-owned official WhatsApp Business inbound. Messages are untrusted data.
 // They never grant authority or auto-dispatch Missions.
@@ -15,6 +52,8 @@ class WhatsAppInbound {
     this.store = bridge.controlStore;
     this.db = this.store.db;
     this.options = options;
+    this.root = options.root || path.resolve(__dirname, '..');
+    this.defaults = loadMetaDefaults(this.root);
     this.db.exec(`CREATE TABLE IF NOT EXISTS cp_whatsapp_inbound_config(
       id INTEGER PRIMARY KEY CHECK(id=1),
       enabled INTEGER NOT NULL,
@@ -42,6 +81,23 @@ class WhatsAppInbound {
       observed_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS cp_whatsapp_inbox_received ON cp_whatsapp_inbox(received_at DESC, message_id);`);
+    this.#migrate();
+  }
+
+  #migrate() {
+    const cols = new Set(this.db.prepare('PRAGMA table_info(cp_whatsapp_inbound_config)').all().map(c => c.name));
+    const add = (name, sql) => { if (!cols.has(name)) this.db.exec(`ALTER TABLE cp_whatsapp_inbound_config ADD COLUMN ${name} ${sql}`); };
+    add('meta_app_id', 'TEXT');
+    add('business_portfolio_id', 'TEXT');
+    add('waba_id', 'TEXT');
+    add('phone_number_id', 'TEXT');
+    add('app_publication_status', "TEXT NOT NULL DEFAULT 'unknown'");
+    add('webhook_subscription_status', "TEXT NOT NULL DEFAULT 'inactive'");
+    const row = this.db.prepare('SELECT meta_app_id, business_portfolio_id FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    if (row && !row.meta_app_id && this.defaults.meta_app_id) {
+      this.db.prepare('UPDATE cp_whatsapp_inbound_config SET meta_app_id=?, business_portfolio_id=? WHERE id=1')
+        .run(this.defaults.meta_app_id, this.defaults.business_portfolio_id);
+    }
   }
 
   config() {
@@ -53,6 +109,12 @@ class WhatsAppInbound {
       allowlist: JSON.parse(row?.allowlist || '[]'),
       updated_at: row?.updated_at || null,
       updated_by: row?.updated_by || null,
+      meta_app_id: row?.meta_app_id || this.defaults.meta_app_id,
+      business_portfolio_id: row?.business_portfolio_id || this.defaults.business_portfolio_id,
+      waba_id: row?.waba_id || this.defaults.waba_id,
+      phone_number_id: row?.phone_number_id || this.defaults.phone_number_id,
+      app_publication_status: PUBLICATION.has(row?.app_publication_status) ? row.app_publication_status : this.defaults.app_publication_status,
+      webhook_subscription_status: 'inactive',
       public_ingress: false,
       auto_mission_execution: false
     };
@@ -60,9 +122,10 @@ class WhatsAppInbound {
 
   configure(input, actor = 'operator') {
     if (actor !== 'operator') throw Error('Only operator may configure WhatsApp inbound');
-    object(input, ['enabled', 'confirmed', 'verify_token_reference', 'app_secret_reference', 'allowlist', 'verify_token', 'app_secret']);
+    object(input, ['enabled', 'confirmed', 'verify_token_reference', 'app_secret_reference', 'allowlist', 'verify_token', 'app_secret', 'meta_app_id', 'business_portfolio_id', 'waba_id', 'phone_number_id', 'app_publication_status', 'public_ingress']);
     if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
     if (typeof input.enabled !== 'boolean') throw Error('enabled must be boolean');
+    if (input.public_ingress === true) throw Error('Public ingress activation requires separate owner authorization');
     let allowlist = this.config().allowlist;
     if (input.allowlist !== undefined) {
       if (!Array.isArray(input.allowlist) || input.allowlist.length > 50 || input.allowlist.some(v => typeof v !== 'string' || !PHONE.test(v))) {
@@ -82,14 +145,63 @@ class WhatsAppInbound {
     const verifyRef = input.verify_token_reference !== undefined ? input.verify_token_reference : row.verify_token_reference;
     const secretRef = input.app_secret_reference !== undefined ? input.app_secret_reference : row.app_secret_reference;
     for (const ref of [verifyRef, secretRef]) if (ref != null && (typeof ref !== 'string' || !/^[A-Za-z0-9_.:-]{8,200}$/.test(ref))) throw Error('Invalid vault reference');
-    this.db.prepare('UPDATE cp_whatsapp_inbound_config SET enabled=?, verify_token_reference=?, app_secret_reference=?, allowlist=?, updated_at=?, updated_by=? WHERE id=1')
-      .run(input.enabled ? 1 : 0, verifyRef, secretRef, JSON.stringify(allowlist), Date.now(), actor);
+    const metaApp = input.meta_app_id !== undefined ? input.meta_app_id : (row.meta_app_id || this.defaults.meta_app_id);
+    const portfolio = input.business_portfolio_id !== undefined ? input.business_portfolio_id : (row.business_portfolio_id || this.defaults.business_portfolio_id);
+    const waba = input.waba_id !== undefined ? input.waba_id : row.waba_id;
+    const phone = input.phone_number_id !== undefined ? input.phone_number_id : row.phone_number_id;
+    const publication = input.app_publication_status !== undefined ? input.app_publication_status : (row.app_publication_status || 'unknown');
+    for (const [label, value] of [['meta_app_id', metaApp], ['business_portfolio_id', portfolio], ['waba_id', waba], ['phone_number_id', phone]]) {
+      if (value != null && (typeof value !== 'string' || !META_ID.test(value))) throw Error('Invalid ' + label);
+    }
+    if (!PUBLICATION.has(publication)) throw Error('Invalid app publication status');
+    this.db.prepare(`UPDATE cp_whatsapp_inbound_config SET enabled=?, verify_token_reference=?, app_secret_reference=?, allowlist=?, updated_at=?, updated_by=?,
+      meta_app_id=?, business_portfolio_id=?, waba_id=?, phone_number_id=?, app_publication_status=?, webhook_subscription_status='inactive' WHERE id=1`)
+      .run(input.enabled ? 1 : 0, verifyRef, secretRef, JSON.stringify(allowlist), Date.now(), actor,
+        metaApp, portfolio, waba, phone, publication);
     this.store.event(input.enabled ? 'whatsapp.inbound.enabled' : 'whatsapp.inbound.disabled', null, {
       allowlist_count: allowlist.length,
       verify_token_bound: Boolean(verifyRef) || Boolean(this.options.verifyToken),
-      app_secret_bound: Boolean(secretRef) || Boolean(this.options.appSecret)
+      app_secret_bound: Boolean(secretRef) || Boolean(this.options.appSecret),
+      public_ingress: false
     });
     return this.status();
+  }
+
+  metaReadiness() {
+    const cfg = this.config();
+    return {
+      meta_app_id: cfg.meta_app_id,
+      business_portfolio_id: cfg.business_portfolio_id,
+      waba_id: cfg.waba_id,
+      phone_number_id: cfg.phone_number_id,
+      app_publication_status: cfg.app_publication_status,
+      webhook_subscription_status: 'inactive',
+      required_permissions: this.defaults.required_permissions,
+      secrets_bound: cfg.verify_token_bound && cfg.app_secret_bound,
+      graph_live_query: false,
+      note: 'WABA ID, Phone Number ID, publication and webhook subscription require Meta console or authorized Graph inspection. No credentials are exposed here.'
+    };
+  }
+
+  callbackReadiness() {
+    const cfg = this.config();
+    return {
+      path: this.defaults.callback_path,
+      methods: ['GET', 'POST'],
+      tls_required: true,
+      host_binding: '127.0.0.1',
+      public_ingress: false,
+      public_url: null,
+      verify_token_bound: cfg.verify_token_bound,
+      app_secret_bound: cfg.app_secret_bound,
+      signature_header: 'X-Hub-Signature-256',
+      max_body_bytes: this.defaults.max_body_bytes,
+      sender_allowlist: cfg.allowlist.length,
+      durable_inbox: true,
+      auto_mission_execution: false,
+      activation: 'inactive_until_owner_authorization',
+      note: 'Smallest secure Meta delivery path is prepared locally. Public HTTPS URL / tunnel / Meta webhook subscription stay inactive until separately authorized.'
+    };
   }
 
   #resolve(kind) {
@@ -119,12 +231,16 @@ class WhatsAppInbound {
       protocol: 'WhatsApp Business Cloud API',
       state: cfg.enabled && cfg.verify_token_bound && cfg.app_secret_bound ? 'configured' : cfg.enabled ? 'incomplete' : 'disabled',
       ...cfg,
+      meta: this.metaReadiness(),
+      callback: this.callbackReadiness(),
+      lifecycle: ['received', 'verified', 'stored', 'available'],
       inbox: Object.fromEntries(counts.map(r => [r.status, r.n])),
       recent: this.list({ limit: 10 }).items,
       retained: this.db.prepare('SELECT count(*) n FROM cp_whatsapp_inbox').get().n,
       authority: false,
       auto_mission_execution: false,
-      note: 'Inbound text is untrusted. No Mission is dispatched from webhook receipt.'
+      public_ingress: false,
+      note: 'Inbound text is untrusted. No Mission is dispatched from webhook receipt. Public Meta callback remains inactive.'
     };
   }
 
@@ -146,29 +262,45 @@ class WhatsAppInbound {
     const cfg = this.config();
     if (!cfg.enabled) throw Error('WhatsApp inbound is disabled');
     if (!Buffer.isBuffer(raw)) throw Error('Raw body required');
+    if (raw.length > this.defaults.max_body_bytes) throw Error('Request too large');
+    this.store.event('whatsapp.inbound.received', null, { bytes: raw.length, authority: false, auto_mission: false });
     const appSecret = this.#resolve('secret');
-    const parsed = this.#parse(raw, signatureHeader, appSecret);
+    let parsed;
+    try {
+      parsed = this.#parse(raw, signatureHeader, appSecret);
+    } catch (error) {
+      this.store.event('whatsapp.inbound.rejected', null, { reason: 'signature_or_parse', authority: false });
+      throw error;
+    }
+    this.store.event('whatsapp.inbound.verified', null, { messages: parsed.messages.length, statuses: parsed.statuses.length, authority: false });
     return transaction(this.db, () => {
       const accepted = [];
       const rejected = [];
       for (const message of parsed.messages) {
         const existing = this.db.prepare('SELECT message_id, status FROM cp_whatsapp_inbox WHERE message_id=?').get(message.id);
         if (existing) {
-          rejected.push({ id: message.id, reason: 'duplicate' });
+          rejected.push({ id: message.id, reason: 'duplicate', lifecycle: { received: true, verified: true, stored: true, available: existing.status === 'received' } });
           this.store.event('whatsapp.inbound.duplicate', null, { message_id: message.id });
           continue;
         }
         if (cfg.allowlist.length && (!message.from || !cfg.allowlist.includes(message.from))) {
           this.db.prepare('INSERT INTO cp_whatsapp_inbox VALUES(?,?,?,?,?,?,?,0)')
             .run(message.id, message.from, message.text, 'unauthorized_sender', message.payload_hash, 0, Date.now());
-          rejected.push({ id: message.id, reason: 'unauthorized_sender' });
+          rejected.push({ id: message.id, reason: 'unauthorized_sender', lifecycle: { received: true, verified: true, stored: true, available: false } });
           this.store.event('whatsapp.inbound.unauthorized_sender', null, { message_id: message.id });
+          this.store.event('whatsapp.inbound.stored', null, { message_id: message.id, status: 'unauthorized_sender' });
           continue;
         }
         this.db.prepare('INSERT INTO cp_whatsapp_inbox VALUES(?,?,?,?,?,?,?,0)')
           .run(message.id, message.from, message.text, 'received', message.payload_hash, 0, Date.now());
-        accepted.push({ id: message.id, from: message.from, status: 'received' });
-        this.store.event('whatsapp.inbound.received', null, { message_id: message.id, authority: false, auto_mission: false });
+        this.store.event('whatsapp.inbound.stored', null, { message_id: message.id, status: 'received' });
+        this.store.event('whatsapp.inbound.available', null, { message_id: message.id, authority: false, auto_mission: false });
+        accepted.push({
+          id: message.id,
+          from: message.from,
+          status: 'received',
+          lifecycle: { received: true, verified: true, stored: true, available: true }
+        });
       }
       for (const status of parsed.statuses) {
         const id = crypto.randomUUID();
@@ -181,7 +313,9 @@ class WhatsAppInbound {
         statuses: parsed.statuses.length,
         items: accepted,
         rejections: rejected,
+        lifecycle: ['received', 'verified', 'stored', 'available'],
         auto_mission_execution: false,
+        public_ingress: false,
         authority: false
       };
     });
@@ -228,6 +362,12 @@ class WhatsAppInbound {
         status: r.status,
         received_at: r.received_at,
         duplicate: r.duplicate === 1,
+        lifecycle: {
+          received: true,
+          verified: true,
+          stored: true,
+          available: r.status === 'received'
+        },
         untrusted: true,
         authority: false
       })),
@@ -264,7 +404,7 @@ class WhatsAppInbound {
   }
 }
 
-async function readRaw(req, max = 512_000) {
+async function readRaw(req, max = MAX_BODY) {
   const chunks = []; let bytes = 0;
   for await (const part of req) {
     bytes += part.length;
@@ -283,4 +423,4 @@ function whatsappSource(bridge) {
   };
 }
 
-module.exports = { WhatsAppInbound, readRaw, PHONE, whatsappSource };
+module.exports = { WhatsAppInbound, readRaw, PHONE, whatsappSource, loadMetaDefaults, MAX_BODY };

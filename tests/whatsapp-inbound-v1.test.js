@@ -109,14 +109,18 @@ test('valid HMAC signature accepts text into durable inbox without Mission dispa
   assert.equal(r.body.accepted, 1);
   assert.equal(r.body.auto_mission_execution, false);
   assert.equal(r.body.authority, false);
+  assert.deepEqual(r.body.items[0].lifecycle, { received: true, verified: true, stored: true, available: true });
   const inbox = bridge.whatsappInbound.list();
   assert.equal(inbox.items.length, 1);
   assert.equal(inbox.items[0].status, 'received');
   assert.equal(inbox.items[0].authority, false);
+  assert.equal(inbox.items[0].lifecycle.available, true);
   assert.match(inbox.items[0].content, /Hello Airodrom fixture/);
   assert.equal(bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, before);
   const events = bridge.controlStore.db.prepare("SELECT event_type FROM event_ledger_events WHERE event_type LIKE 'whatsapp.inbound.%'").all().map(e => e.event_type);
-  assert.ok(events.includes('whatsapp.inbound.received'));
+  for (const need of ['whatsapp.inbound.received', 'whatsapp.inbound.verified', 'whatsapp.inbound.stored', 'whatsapp.inbound.available']) {
+    assert.ok(events.includes(need), need);
+  }
   assert.ok(!events.some(e => /mission|dispatch/.test(e)));
 });
 
@@ -132,6 +136,10 @@ test('invalid HMAC signature is refused', async t => {
   });
   assert.equal(r.status, 400);
   assert.equal(bridge.whatsappInbound.list().items.length, 0);
+  const events = bridge.controlStore.db.prepare("SELECT event_type FROM event_ledger_events WHERE event_type LIKE 'whatsapp.inbound.%'").all().map(e => e.event_type);
+  assert.ok(events.includes('whatsapp.inbound.received'));
+  assert.ok(events.includes('whatsapp.inbound.rejected'));
+  assert.ok(!events.includes('whatsapp.inbound.available'));
 });
 
 test('duplicate message id is rejected and not reinserted', async t => {
@@ -187,10 +195,38 @@ test('operator APIs expose status and inbox; webhook stays loopback', async t =>
   assert.equal(status.body.auto_mission_execution, false);
   assert.equal(status.body.public_ingress, false);
   assert.ok(status.body.retained >= 1);
+  assert.equal(status.body.meta.meta_app_id, '1625559252697626');
+  assert.equal(status.body.meta.business_portfolio_id, '1791528208560099');
+  assert.equal(status.body.meta.webhook_subscription_status, 'inactive');
+  assert.equal(status.body.callback.public_ingress, false);
+  assert.equal(status.body.callback.activation, 'inactive_until_owner_authorization');
+  assert.equal(status.body.callback.path, '/webhooks/whatsapp');
+  assert.equal(status.body.callback.tls_required, true);
   const inbox = await request('/api/assistant/whatsapp/inbox');
   assert.equal(inbox.status, 200);
   assert.equal(inbox.body.items[0].id, 'wamid.api');
   assert.equal(ui.server.address().address, '127.0.0.1');
   assert.equal((await request('/api/assistant/whatsapp/inbound', { authorized: false })).status, 401);
   assert.equal(bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+});
+
+test('public ingress cannot be enabled through configure; Meta IDs are non-secret', async t => {
+  const { bridge } = await fixture(t);
+  assert.throws(() => bridge.whatsappInbound.configure({
+    enabled: true,
+    confirmed: true,
+    public_ingress: true
+  }, 'operator'), /separate owner authorization/i);
+  const status = bridge.whatsappInbound.configure({
+    enabled: true,
+    confirmed: true,
+    waba_id: '123456789012345',
+    phone_number_id: '987654321098765',
+    app_publication_status: 'development'
+  }, 'operator');
+  assert.equal(status.meta.waba_id, '123456789012345');
+  assert.equal(status.meta.phone_number_id, '987654321098765');
+  assert.equal(status.meta.app_publication_status, 'development');
+  assert.equal(status.public_ingress, false);
+  assert.equal(status.callback.public_url, null);
 });

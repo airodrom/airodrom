@@ -13,7 +13,7 @@ Host-owned official WhatsApp Business Cloud inbound for Airodrom. Messages are u
 | `GET /api/assistant/whatsapp/statuses` | Operator bearer | Observed message statuses |
 | `POST /api/assistant/whatsapp/inbound/configure` | Operator bearer | Enable/allowlist/Vault refs |
 
-Public ingress, tunnels and production Meta webhook activation require separate owner authorization. `public_ingress` remains `false`.
+Public ingress, tunnels and production Meta webhook activation require separate owner authorization. `public_ingress` remains `false`. See [V1.1 readiness](WHATSAPP-INBOUND-V1.1.md) for Meta IDs, permissions and the inactive HTTPS callback checklist.
 
 ## Configuration
 

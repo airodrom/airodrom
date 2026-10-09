@@ -45,7 +45,7 @@ Operators can qualify Meta webhook verification and observe durable inbox/status
 
 ## Validation and evidence
 
-Focused fixture suite `tests/whatsapp-inbound-v1.test.js`: challenge, invalid token, valid/invalid HMAC, duplicate, unauthorized sender, durable inbox/status, no Mission creation. Distinguishes fixture verification from live Meta activation.
+Focused fixture suite `tests/whatsapp-inbound-v1.test.js`: challenge, invalid token, valid/invalid HMAC, duplicate, unauthorized sender, durable inbox/status, lifecycle Received→Verified→Stored→Available, Meta readiness without secrets, refused public ingress, no Mission creation. Distinguishes fixture verification from live Meta activation. V1.1 adds non-secret Meta ID fields and inactive HTTPS callback readiness (`docs/WHATSAPP-INBOUND-V1.1.md`).
 
 ## Rollback
 

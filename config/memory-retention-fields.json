@@ -569,7 +569,13 @@
       "app_secret_reference",
       "allowlist",
       "updated_at",
-      "updated_by"
+      "updated_by",
+      "meta_app_id",
+      "business_portfolio_id",
+      "waba_id",
+      "phone_number_id",
+      "app_publication_status",
+      "webhook_subscription_status"
     ],
     "source": "src/whatsapp-inbound.js",
     "classification": {
@@ -579,7 +585,13 @@
       "app_secret_reference": "D",
       "allowlist": "B",
       "updated_at": "A",
-      "updated_by": "B"
+      "updated_by": "B",
+      "meta_app_id": "A",
+      "business_portfolio_id": "A",
+      "waba_id": "A",
+      "phone_number_id": "A",
+      "app_publication_status": "A",
+      "webhook_subscription_status": "A"
     }
   },
   "cp_whatsapp_inbox": {
