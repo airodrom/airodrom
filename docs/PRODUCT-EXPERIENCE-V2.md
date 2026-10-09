@@ -27,6 +27,8 @@ airodrom menu
 
 ## Live Control Center
 
+Control Center atmosphere/theme mounts recovered on `feat/control-center-ui-recovery-v1` (see [CONTROL-CENTER-UI-RECOVERY-V1.md](CONTROL-CENTER-UI-RECOVERY-V1.md)); not yet shipped on main.
+
 `/open` and the native menu open the private Control Center through discovery kept in memory. The overview shows actual health, retained Mission counts, approvals and recent outcomes. Mission details show canonical lifecycle, attempts, budgets, Memory selection/delivery metadata, termination, independent verification checks, Acceptance and Settlement. Safe timestamped activity has category filters and cursor catch-up. A paused feed differs from a paused Mission.
 
 Memory supports explicit retrieval, remember, selected-record correction and forgetting through current canonical scope guards. Projects show a bounded priority-ordered list and backed archive controls. Approvals show bounded safe state/expiry records and task-bound exact-operation review links.

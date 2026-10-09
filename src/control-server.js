@@ -131,7 +131,7 @@ class ControlServer {
         res.setHeader('Content-Type','text/plain; charset=utf-8');res.end('Gmail read-only authorization completed. Close this tab and return to Airodrom.');return;
       }
       if (!url.pathname.startsWith('/api/')) {
-        const assets = { '/branding.js': ['branding.js','text/javascript; charset=utf-8'], '/hub': ['control-hub.html','text/html; charset=utf-8'], '/control-hub.js': ['control-hub.js','text/javascript; charset=utf-8'], '/control-hub.css': ['control-hub.css','text/css; charset=utf-8'], '/workspace': ['index.html','text/html; charset=utf-8'], '/app.js': ['app.js','text/javascript; charset=utf-8'], '/style.css': ['style.css','text/css; charset=utf-8'] };
+        const assets = { '/atmosphere.js':['atmosphere.js','text/javascript; charset=utf-8'], '/branding.js': ['branding.js','text/javascript; charset=utf-8'], '/hub': ['control-hub.html','text/html; charset=utf-8'], '/control-hub.js': ['control-hub.js','text/javascript; charset=utf-8'], '/control-hub.css': ['control-hub.css','text/css; charset=utf-8'], '/workspace': ['index.html','text/html; charset=utf-8'], '/app.js': ['app.js','text/javascript; charset=utf-8'], '/style.css': ['style.css','text/css; charset=utf-8'] };
         assets['/'] = ['control-hub.html','text/html; charset=utf-8'];
         for (const file of ['airodrom-mark.svg','airodrom-logo-horizontal-dark.svg','airodrom-3d-model-blue.svg']) assets['/brand/'+file]=['brand/'+file,'image/svg+xml'];
         const asset = assets[url.pathname];

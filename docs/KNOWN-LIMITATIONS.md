@@ -15,3 +15,9 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Diff panels are Mission-scoped and size-capped; out-of-scope paths never appear.
 - Empty activity panes show "Detailed activity unavailable." instead of synthetic progress.
 - Installing Observatory into a running service requires an owner-authorized restart; `live_cutover_authorized` remains false until then.
+
+## Control Center UI recovery
+
+- Premium atmosphere/theme/nav mounts were missing from `origin/main` HTML despite Product Experience V2 docs and local preimage assets (2026-10-08). Recovery lives on `feat/control-center-ui-recovery-v1` — **not merged**, **not SHIPPED on main**, **not ACTIVE** in the installed service until authorized cutover.
+- Focused UI evidence: atmosphere + control-center-ui + connection-status + live-observatory **20/20**. Static browser proof is not authenticated live Activation.
+- See [CONTROL-CENTER-UI-RECOVERY-V1.md](CONTROL-CENTER-UI-RECOVERY-V1.md).

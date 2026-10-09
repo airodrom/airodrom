@@ -2,14 +2,20 @@
 (() => {
  const $=id=>document.getElementById(id), node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=String(text);if(cls)e.className=cls;return e;};
  const hash=new URLSearchParams(location.hash.slice(1));let token=hash.get('token')||'';try{if(token)sessionStorage.setItem('airodromToken',token);else token=sessionStorage.getItem('airodromToken')||'';}catch{}if(hash.has('token'))history.replaceState(null,'',location.pathname+location.search);
- const views=['Conversation','Models','Workers','Connectors','Sensitive & Vault','Overview','Missions','Memory','Projects','Runtime & OpenCode','Approvals','Activity & Audit','System Health','Settings & About'];
- let selectedModel='auto',selectedWorker='auto';
+ const colorScheme=matchMedia('(prefers-color-scheme: light)');let appearance='system';const applyAppearance=()=>{document.documentElement.dataset.theme=appearance==='system'?(colorScheme.matches?'light':'dark'):appearance;};$('theme').onchange=()=>{appearance=$('theme').value;applyAppearance();};colorScheme.addEventListener?.('change',applyAppearance);applyAppearance();
+ const views=['AI & Workers','Automation & Permissions','Conversation','Models','Workers','WORK Templates','Google Connections','Connectors','Sensitive & Vault','Overview','Missions','Memory','Projects','Runtime & OpenCode','Approvals','Activity & Audit','System Health','Settings & About'];
+ let selectedModel='auto',selectedWorker='auto',onceWorker;
+ const preferenceDraft={};let preferenceNotice='',workRequestId=null;const workDraft={project:'',workspace:'',objective:''};
+ const templateDraft={duration_minutes:'60'},templateFields=[['project','Project alias'],['workspace_alias','Workspace alias'],['project_id','Registered project ID'],['goal_id','Registered goal ID'],['workspace','Exact repository root'],['allowed_files','Existing files (one per line, maximum eight)'],['diff_check','Registered diff-check task'],['tests','Focused test task labels (one per line)'],['duration_minutes','Expires after minutes (1–1440)']];
  let conversationDraft='',conversationHistory=[],conversationNotice='',activeConversationId=null,conversationSessionId=null,activeDirectTurn=null;
  const researchReports=new Map(),researchImages=new Map();
- const nav=new Map(),feed=new Map();let view='Overview',snapshot=null,missionId=(()=>{const value=new URLSearchParams(location.search).get('mission');return /^[a-f0-9-]{36}$/i.test(value||'')?value:null;})(),cursor=0,busy=false,paused=false,authorized=true,timer=null,failures=0,category='',generation=0,lastFocus=null,reviewMission=null,searchQuery='',inflight=null,currentOffset=0,memoryResults=[],memoryDraft='',memoryQuery='',selectedMemory=null,memoryEpoch=0,memoryController=null,eventMission='';
  let observatory=null,obsFollow=true,obsFilter='',obsQuery='',obsStream=null,obsCursor=0,diffCache=new Map(),expandedOutput=new Set();
  let lastOkAt=null,connectionView=null,secondaryNotice='';
+ let missionPage=null,missionFilter='All',missionOffset=0,searchTimer=null;
+ const nav=new Map(),feed=new Map();let view='Overview',snapshot=null,missionId=(()=>{const value=new URLSearchParams(location.search).get('mission');return /^[a-f0-9-]{36}$/i.test(value||'')?value:null;})(),cursor=0,busy=false,paused=false,authorized=true,timer=null,failures=0,category='',generation=0,lastFocus=null,reviewMission=null,searchQuery='',inflight=null,currentOffset=0,memoryResults=[],memoryDraft='',memoryQuery='',selectedMemory=null,memoryEpoch=0,memoryController=null,eventMission='';
  async function api(route,body,signal){const response=await fetch(route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store',redirect:'error',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(10000)]):AbortSignal.timeout(10000)});if(!response.ok){if(response.status===401){authorized=false;clearMemory();render();throw Error('Authorization expired. Reopen your private Control Center link.');}throw Error('Local request unavailable. Check System Health.');}return response.json();}
+ function loseAuthorization(){authorized=false;generation++;inflight?.abort();clearTimeout(timer);timer=null;token='';try{sessionStorage.removeItem('airodromToken');}catch{}clearMemory();snapshot=null;missionPage=null;feed.clear();reviewMission=null;for(const id of ['new-dialog','review-dialog'])if($(id).open)$(id).close();render();}
+ function authorizationView(){const panel=node('article',null,'glass');panel.setAttribute('role','alert');panel.append(node('h2','This browser session is not authorized'),node('p','Your missions and saved data have not disappeared. This tab needs its own private Control Center launch link.'),node('p','Open the Airodrom menu on your Mac and choose Open Control Center. Continue in the browser it opens. A plain address copied from another browser does not authorize this tab.'),node('p','The menu opens your default browser. Authorization cannot be transferred by copying the plain address. Do not share private links or copy session credentials between browsers.'));$('content').replaceChildren(panel);$('heading').textContent='Authorization required';$('connection').textContent='Authorization required';$('notice').textContent='Open Control Center from the local Airodrom menu to authorize a session.';$('new').disabled=true;$('pause').disabled=true;}
  function deriveConnection(input){
    // Mirrors src/connection-status.js — keep labels aligned.
    if(input.authorized===false)return {state:'AUTHORIZATION_REQUIRED',label:'Authorization required',detail:'Open Control Center from the local Airodrom menu.',chip:'unavailable'};
@@ -29,12 +35,13 @@
    document.body.dataset.connection=view.state;
  }
 
+
  const readable=value=>String(value??'Unavailable').replaceAll('_',' ');
  function chip(text){return node('span',readable(text),'chip '+({Ready:'ready',Degraded:'degraded',Unavailable:'unavailable',Waiting:'waiting',passed:'ready',failed:'failed',operator_review:'waiting',completed:'ready',blocked:'degraded',needs_rework:'degraded'}[text]||''));}
  function button(text,fn,primary=false){const b=node('button',text,primary?'primary':'');b.type='button';b.dataset.focusKey=missionId?missionId+':'+text:text;b.onclick=fn;return b;}
  function glass(title,value,detail){const c=node('article',null,'glass');c.append(node('h3',title),node('div',value,'metric'));if(detail)c.append(node('small',detail));return c;}
  function empty(text){return node('p',text,'empty');}
- const stamp=t=>t?new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}):'Unavailable';
+ const stamp=t=>t?new Date(t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'Unavailable';
  const stateText=s=>({ready:'Registered',dispatching:'Queued / dispatching',running:'Executing',verifying:'Independent verification',awaiting_acceptance:'Acceptance pending',waiting_for_operator:'Operator Decision',needs_rework:'Rework required',blocked:'Blocked',paused:'Paused',completed:'Completed',cancelled:'Cancelled'})[s]||'Unavailable';
  function phase(m){const wrap=node('div',null,'phase'),track=node('div',null,'track '+(m.progress.mode==='indeterminate'?'active':'paused'));track.setAttribute('role','progressbar');track.setAttribute('aria-label',m.progress.label);if(m.progress.mode==='determinate'){track.setAttribute('aria-valuenow',m.progress.value);track.setAttribute('aria-valuemax',m.progress.maximum);track.setAttribute('aria-valuemin','0');track.classList.add('determinate');track.style.setProperty('--progress',(m.progress.maximum>0?Math.min(100,100*m.progress.value/m.progress.maximum):0)+'%');}wrap.append(track,node('span',stateText(m.state)));return wrap;}
  function lifecycle(m){
@@ -42,7 +49,7 @@
    const advancing=['dispatching','running','verifying'].includes(m.state);
    panel.append(node('span',advancing?'DOING NOW':'CURRENT MISSION STATE','eyebrow'),node('h2',m.timeline.at(-1)?.label||stateText(m.state)));
    const labels=[['request','Request'],['context','Context'],['runtime','Runtime'],['execution','Execution'],['verification','Verification'],['acceptance','Acceptance'],['settlement','Settlement']];
-   const latest=m.timeline.filter(e=>e.stage).at(-1)?.stage,rail=node('ol',null,'lifecycle');
+   const latest=({dispatching:'execution',running:'execution',verifying:'verification',awaiting_acceptance:'acceptance',waiting_for_operator:'acceptance'})[m.state]||(m.settlement.status==='settled'?'settlement':m.timeline.filter(e=>e.stage).at(-1)?.stage),rail=node('ol',null,'lifecycle');
    for(const [key,label]of labels){const observed=m.timeline.filter(e=>e.stage===key),li=node('li',null,observed.length?'observed':'unobserved');li.dataset.stage=key;
      if(key===latest){li.classList.add(advancing?'live':'waiting');li.setAttribute('aria-current','step');}
      li.append(node('span',label),node('small',observed.length?stamp(observed.at(-1).timestamp_ms):'Not observed'));rail.append(li);
@@ -54,7 +61,7 @@
    for(const [label,items,current]of [['Model',snapshot.assistant.models,selectedModel],['Worker',snapshot.assistant.workers,selectedWorker]]){const field=node('label',label+' routing'),select=node('select');select.setAttribute('aria-label',label+' routing');select.dataset.focusKey=label+'-routing';
      for(const id of ['auto',...(label==='Model'?['local']:[]),...items.map(i=>i.id)]){const item=items.find(i=>i.id===id),option=node('option',id==='auto'?'AUTO':id==='local'?'Local only':(item.name||id)+' · '+item.qualification);option.value=id;option.disabled=!!item&&(!item.available||item.qualification!=='qualified');select.append(option);}select.value=current;
      select.onchange=()=>{if(label==='Model')selectedModel=select.value;else selectedWorker=select.value;};field.append(select);group.append(field);
-   }group.append(node('small','Vendor choices apply to explicitly public Work Missions. Conversation remains local.'));return group;
+   }group.append(node('small','These model and worker choices apply to Work Missions. Conversation uses its separate provider setting.'));return group;
  }
  async function approvePublicWeb(offer,id){
    const summary=(offer.mode==='all'?'Discover public websites from verified links.':'Visit approved public sites:')+'\n'+(offer.entries||[]).join('\n')+(offer.query?'\nPublic query: '+offer.query:'')+'\nThree minutes; eight domains/pages; 100 requests; forty actions; eight MiB. Login, private data, mutations, payments and private downloads require separate approval.';
@@ -76,18 +83,31 @@
  }
  async function loadResearchScreenshot(id,evidenceId){
    const version=generation;
-   try{const response=await fetch('/api/assistant/research/evidence?mission_id='+encodeURIComponent(id)+'&evidence_id='+encodeURIComponent(evidenceId),{headers:{Authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});if(!response.ok){if(response.status===401){authorized=false;clearMemory();render();}throw Error('Current screenshot evidence is unavailable.');}const blob=await response.blob();if(blob.type!=='image/png'||blob.size>4194304)throw Error('Screenshot integrity boundary refused.');if(version!==generation||!authorized||document.hidden||missionId!==id)return;researchImages.set(evidenceId,URL.createObjectURL(blob));render();}catch(e){$('notice').textContent=e.message;}
+   try{const response=await fetch('/api/assistant/research/evidence?mission_id='+encodeURIComponent(id)+'&evidence_id='+encodeURIComponent(evidenceId),{headers:{Authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});if(!response.ok){if(response.status===401){loseAuthorization();}throw Error('Current screenshot evidence is unavailable.');}const blob=await response.blob();if(blob.type!=='image/png'||blob.size>4194304)throw Error('Screenshot integrity boundary refused.');if(version!==generation||!authorized||document.hidden||missionId!==id)return;researchImages.set(evidenceId,URL.createObjectURL(blob));render();}catch(e){$('notice').textContent=e.message;}
  }
  function missionCard(m){
-   const c=node('article',null,'mission-card'),head=node('div',null,'mission-head');
-   const open=button(m.label,()=>selectMission(m.id));open.dataset.focusKey='mission:'+m.id;head.append(open,chip(m.state));
-   const last=m.timeline?.at?.(-1);const elapsed=m.started_at?Math.floor(((m.finished_at||snapshot.observed_at)-m.started_at)/1000)+' s':'Not started';
-   c.append(head,
-     node('small',`${m.runtime||'Unavailable'} · ${m.model?.id||'Model unavailable'} · Attempt ${m.attempts||'not started'}`),
-     node('small',`Status: ${stateText(m.state)} · Elapsed ${elapsed} · Last: ${last?last.label+' · '+stamp(last.timestamp_ms):'No activity yet'}`),
-     phase(m),researchPanel(m),
-     node('small',`Verification: ${readable(m.verification.status)}${m.verification.current?'':' (historical / not current)'} · Acceptance: ${readable(m.acceptance.status)} · Settlement: ${readable(m.settlement.status)}`));
-   return c;
+  const c=node('article',null,'mission-card'),head=node('div',null,'mission-head');c.dataset.missionId=m.id;
+  const open=button(m.label,()=>selectMission(m.id));open.dataset.focusKey='mission:'+m.id;head.append(open,chip(m.state));
+  c.append(head,node('code',m.id,'mission-id'),node('small',`Worker: ${m.runtime||'Not assigned'} · Started: ${stamp(m.started_at)} · Created: ${stamp(m.created_at)}`),phase(m),node('p',m.timeline.at(-1)?.label||'No lifecycle event observed','latest-activity'),node('small',`Independent verification: ${readable(m.verification.status)}${m.verification.current?' · current':' · historical / not current'} · Settlement: ${readable(m.settlement.status)}`));
+  const actions=node('div',null,'actions');actions.append(button('View details',()=>selectMission(m.id)));
+  if(m.actions.accept){const review=button('Review Acceptance',event=>openReview(m,event.currentTarget),true);review.dataset.focusKey='review:'+m.id;review.disabled=failures>0||paused;actions.append(review);}
+  c.append(actions);return c;
+ }
+ function missionDashboard(){
+  const result=node('div'),stats=node('div',null,'grid'),counts=missionPage?.counts||snapshot.mission_counts||{};
+  for(const name of ['Active','Awaiting Review','Failed','Settled'])stats.append(glass(name,counts[name]??'Unavailable',name==='Failed'?'Blocked or rework required':name==='Active'?'Dispatching, executing or verifying':name==='Awaiting Review'?'Operator decision required':'Durable local outcome'));
+  result.append(stats);
+  const controls=node('div',null,'filters'),search=node('input');search.type='search';search.placeholder='Search title or full / partial Mission ID';search.setAttribute('aria-label','Search Missions');search.dataset.focusKey='mission-search';search.value=searchQuery;search.maxLength=180;
+  const filter=node('select');filter.setAttribute('aria-label','Mission filter');filter.dataset.focusKey='mission-filter';
+  for(const name of ['All','Active','Awaiting Review','Completed','Failed','Settled']){const option=node('option',name+(counts[name]===undefined?'':' ('+counts[name]+')'));option.value=name;filter.append(option);}filter.value=missionFilter;
+  function changed(){generation++;inflight?.abort();missionOffset=0;missionPage=null;const stale=$('content').querySelectorAll('.mission-card');for(const card of stale)card.remove();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{render();refresh();},250);}
+  search.oninput=()=>{searchQuery=search.value;changed();};filter.onchange=()=>{missionFilter=filter.value;changed();};controls.append(search,filter);result.append(controls,node('p','All retained Missions · newest first. Completed and Settled are distinct recorded outcomes.','muted'));
+  if(!snapshot.mission_counts){result.append(empty('The running service predates full Mission history. Source is prepared; operator-authorized local activation is required.'));for(const m of snapshot.missions)result.append(missionCard(m));return result;}
+  if(!missionPage){result.append(empty(failures?'Mission history unavailable. Retry when the local service reconnects.':'Loading Mission history…'));return result;}
+  const summary=node('p',`${missionPage.total} matching Missions · ${missionPage.total?missionOffset+1:0}–${missionOffset+missionPage.missions.length} shown`,'muted');summary.setAttribute('role','status');result.append(summary);
+  if(!missionPage.missions.length)result.append(empty(searchQuery||missionFilter!=='All'?'No Missions match this search and filter.':'No Missions recorded yet.'));
+  for(const m of missionPage.missions)result.append(missionCard(m));
+  const pages=node('div',null,'actions');if(missionOffset>0)pages.append(button('Previous page',()=>{missionOffset=Math.max(0,missionOffset-25);generation++;missionPage=null;render();refresh();}));if(missionPage.has_more)pages.append(button('Next page',()=>{missionOffset+=25;generation++;missionPage=null;render();refresh();}));result.append(pages);return result;
  }
  function health(){const c=node('article',null,'glass');c.append(node('h2','System Health'));const conn=snapshot.connectivity||connectionView;if(conn){const r=node('div',null,'table-row');const text=node('div','Service connectivity');text.append(node('small',(conn.detail||conn.label)+(lastOkAt?' · Last ok '+stamp(lastOkAt):'')));r.append(text,chip(conn.label||conn.state));c.append(r);}for(const [label,item]of [['Control Plane',snapshot.control],['OpenCode · Primary',snapshot.runtime],['Memory V2 · Local',snapshot.memory],['Local provider',snapshot.provider],['Audit / events',snapshot.audit],['External client / MCP',snapshot.connection],['Disk capacity',snapshot.disk]]){const r=node('div',null,'table-row');const text=node('div',label);text.append(node('small',item.reason|| (label.startsWith('OpenCode')?'Exact artifact readiness':label.startsWith('Memory')?snapshot.memory.backend+' store observed':label==='Audit / events'?'Canonical ledger health':label.includes('MCP')?'Does not imply service disconnect':'Host observation')));r.append(text,chip(item.state));c.append(r);}c.append(node('small',`Observed ${stamp(snapshot.observed_at)} · ${snapshot.leases.held} held leases · ${snapshot.leases.quarantined} quarantined`));return c;}
  function activity(limit=500){const list=node('ol',null,'feed');for(const e of [...feed.values()].filter(e=>!category||e.category===category).slice(-limit).reverse()){const item=node('li'),at=node('time',stamp(e.timestamp_ms)),body=node('div',e.label);if(e.timestamp_ms)at.dateTime=new Date(e.timestamp_ms).toISOString();body.append(node('small',e.category+(e.outcome?' · '+e.outcome:'')));item.append(at,body);list.append(item);}return list.children.length?list:empty('No matching observed events. Unsupported stages are never inferred.');}
@@ -257,7 +277,7 @@
  async function showAssistantReceipt(receipt,version){
    if(version!==generation||!authorized||document.hidden||view!=='Conversation'){if(receipt.kind==='chat'&&authorized)await api('/api/assistant/conversation/cancel',{conversation_id:receipt.conversation_id,turn_id:receipt.turn_id}).catch(()=>{});return;}
    if(receipt.kind==='public_web_offer'){const next=await approvePublicWeb(receipt);if(next){await refresh();if(next.mission_id)selectMission(next.mission_id);}else{conversationNotice='Public web permission cancelled.';render();}return;}
-   let notice=receipt.message||(receipt.mission_id?'Mission registered.':'Request handled.');
+   let notice=receipt.display||receipt.message||(receipt.mission_id?'Mission registered.':'Request handled.');
    if(receipt.kind==='chat'){
      const turn={conversation_id:receipt.conversation_id,turn_id:receipt.turn_id};activeDirectTurn=turn;conversationNotice='Thinking…';render();
      const deadline=Date.now()+130000;
@@ -265,7 +285,7 @@
        while(Date.now()<deadline&&version===generation&&authorized&&!document.hidden&&view==='Conversation'&&activeDirectTurn===turn){
          const result=await api('/api/assistant/conversation?conversation_id='+encodeURIComponent(turn.conversation_id)+'&turn_id='+encodeURIComponent(turn.turn_id));
          if(version!==generation||activeDirectTurn!==turn)return;
-         if(result.state==='completed'){activeDirectTurn=null;await refresh();if(version===generation&&authorized&&!document.hidden&&view==='Conversation'){conversationNotice=conversationHistory.some(item=>item.turn_id===turn.turn_id&&item.response)?'':result.summary||'';render();}return;}
+         if(result.state==='completed'){activeDirectTurn=null;await refresh();if(version===generation&&authorized&&!document.hidden&&view==='Conversation'){conversationNotice=(receipt.draft_only?'Local reply preview — not saved in Gmail or sent. ':'')+(conversationHistory.some(item=>item.turn_id===turn.turn_id&&item.response)?'':result.summary||'');render();}return;}
          if(['failed','cancelled'].includes(result.state))throw Error(result.reason||'Conversation stopped.');
          await new Promise(resolve=>setTimeout(resolve,250));
        }
@@ -274,6 +294,7 @@
      return;
    }
    if(receipt.kind==='connect_required'&&receipt.can_start_oauth)notice+=' Use /connect '+receipt.connector+' in Terminal to authorize access in your browser.';
+   if(receipt.kind==='google_form')notice='Open /'+receipt.operation.replace('.', ' ')+' in Terminal for the exact private review form and local confirmation.';
    if(receipt.kind==='vault')notice='Open /vault in the Airodrom terminal for secure entry.';
    if(receipt.kind==='memory'){
      // A busy polling refresh may return early. Read current canonical metadata
@@ -288,8 +309,65 @@
  async function retrieveMemory(){const version=generation,epoch=++memoryEpoch,known=snapshot?.memory?.generation;memoryController?.abort();memoryController=new AbortController();try{const result=await api('/api/product/memory?query='+encodeURIComponent(memoryQuery),undefined,memoryController.signal);if(authorized&&epoch===memoryEpoch&&version===generation&&view==='Memory'&&!document.hidden&&known===snapshot?.memory?.generation&&result.generation===known){memoryResults=result.items;render();}}catch(e){if(epoch!==memoryEpoch)return;clearMemory();render();$('notice').textContent=e.message;}}
  async function mutateMemory(action,body){generation++;inflight?.abort();clearMemory();render();try{await api('/api/product/'+action,body);await refresh();}catch(e){$('notice').textContent=e.message;}}
  function workspaceLink(text,task){const link=node('a',text);link.href='/workspace';link.onclick=()=>{if(task)try{sessionStorage.setItem('airodromTask',task);}catch{}};return link;}
+ function workTemplatesView(){
+   const result=node('section');result.append(node('h2','Local WORK templates'),node('p','Owner registration fixes exact files, focused tests and an expiry. OpenCode stays primary. Local-only inference; no external fallback, commits, push, deploy, secrets or automatic Acceptance. Existing protected approvals still apply.'));
+   for(const item of snapshot.work_templates?.items||[]){const card=glass(item.project+' / '+item.workspace_alias,item.state,'Immutable registration');const detail=node('details');detail.append(node('summary','Inspect exact scope and capability ceiling'),node('p','Repository: '+(item.workspace||'Unavailable')),node('p','Project: '+(item.project_id||'Unavailable')+' · Goal: '+(item.goal_id||'Unavailable')),node('p','Files allowed to change:'),node('pre',(item.allowed_files||[]).join('\n')),node('p','Verification: '+[item.verification?.diff_check,...(item.verification?.tests||[])].filter(Boolean).join(', ')),node('p','Expires: '+(item.expires_at?stamp(item.expires_at):'Unavailable')),node('p','OpenCode · local_only · read and exact scoped writes · focused host tests · read-only canonical Memory · explicit Acceptance'),node('p','No external fallback, secrets, commits, push, merge, deploy or automatic Settlement.'));const record=node('details');record.append(node('summary','Registration record'),node('pre',JSON.stringify(item,null,2)));detail.append(record);card.append(detail);if(item.state!=='revoked')card.append(button('Revoke template',async()=>{if(!window.confirm('Revoke '+item.project+' / '+item.workspace_alias+'? New submissions and further authorized execution will be denied.'))return;try{await api('/api/assistant/work-templates/revoke',{project:item.project,workspace_alias:item.workspace_alias,template_hash:item.template_hash,confirmed:true});await refresh();}catch(e){$('notice').textContent=e.message;}}));result.append(card);}
+   const form=node('form');for(const [key,label]of templateFields){const field=node('label',label),input=node(['allowed_files','tests'].includes(key)?'textarea':'input');input.name=key;input.required=true;input.value=templateDraft[key]||'';input.dataset.focusKey='template-'+key;input.setAttribute('aria-label',label);input.oninput=()=>templateDraft[key]=input.value;field.append(input);form.append(field);}
+   const submit=node('button','Review and register');submit.type='submit';form.append(submit);form.onsubmit=async e=>{e.preventDefault();const body={...templateDraft,allowed_files:(templateDraft.allowed_files||'').split('\n').map(s=>s.trim()).filter(Boolean),tests:(templateDraft.tests||'').split('\n').map(s=>s.trim()).filter(Boolean),duration_minutes:Number(templateDraft.duration_minutes),confirmed:true};if(!window.confirm('Approve this exact local WORK template?\n'+JSON.stringify(body,null,2)+'\nScope cannot be edited or renewed. Use a new alias for a new registration. Explicit Acceptance remains required.'))return;submit.disabled=true;try{await api('/api/assistant/work-templates/register',body);for(const key of Object.keys(templateDraft))delete templateDraft[key];templateDraft.duration_minutes='60';await refresh();}catch(e){$('notice').textContent=e.message;}finally{submit.disabled=false;}};result.append(form);return result;
+ }
+ function googleView(){
+   const result=node('section');result.append(node('h2','Google Connections'),node('p','Google consent, API enablement and account access are separate. Status checks do not change your account.'));
+   result.append(node('p','Conversation: Search email → Find emails from Plaid → Read first message → Draft reply. Selections expire after five minutes and are bound to this session and Google account. Reply previews stay with local Qwen, even when Claude is selected. Saving a Gmail draft and sending are separate exact-review actions in Terminal.'));
+   const data=snapshot.google;if(!data){result.append(empty('Connection status unavailable. Use /google status in Terminal.'));return result;}
+   for(const [id,title,apiName,apiId]of [['gmail','Gmail','Gmail API','gmail.googleapis.com'],['calendar','Calendar','Google Calendar API','calendar-json.googleapis.com'],['drive','Drive','Google Drive API','drive.googleapis.com']]){
+    const status=data.services?.[id],card=glass(title,data.permissions?.[id]?'OAuth permission granted':'OAuth permission missing',status?.state||'API availability not checked');
+    if(status?.message)card.append(node('p',status.message));
+    card.append(node('p','Read: '+data.reads.filter(x=>x.startsWith(id+'.')).map(x=>x.split('.')[1]).join(', ')),node('p','Write with exact owner confirmation: '+data.writes.filter(x=>x.startsWith(id+'.')).map(x=>x.split('.')[1]).join(', ')));
+    if(id==='calendar')card.append(node('p','Calendar list permission: '+(data.permissions.calendar_list?'granted':'missing')));
+    const details=node('details'),summary=node('summary','Owner steps: '+apiName);details.append(summary,node('p','In Google Cloud Console, select the project that owns your desktop OAuth client. Go to APIs & Services → Library, find '+apiName+' and enable it only if you authorize that change. Confirm the project before proceeding. Airodrom does not enable APIs, modify credentials or change billing.'),node('p','If OAuth scope is missing, run /connect google in Terminal and review consent. If access is denied with scopes granted and the API enabled, check the signed-in account and access to the selected calendar or file.'));
+    const link=node('a','Open '+apiName+' in Cloud Console ↗');link.href='https://console.cloud.google.com/apis/library/'+apiId;link.target='_blank';link.rel='noopener noreferrer';details.append(link);card.append(details);result.append(card);
+   }
+   const scopes=node('details');scopes.append(node('summary','Granted OAuth scopes'),node('pre',(data.scopes||[]).join('\n')||'None observed'));result.append(scopes,node('h3','Review and activity'),node('p',data.approval),node('p','Use /gmail compose or /gmail send, /calendar create, or /drive upload in Terminal. The exact content appears before local confirmation. No approval is implied by connection or scope status. /google receipt <id> checks a prior action without repeating it.'),node('p','API observations are from this service session only; “not checked” is not a failure. Google write receipts persist in the existing activity store. Autonomous Google changes are off.'));for(const item of data.activity||[])result.append(node('p',stamp(item.created_at)+' · '+readable(item.state)+(item.error?' · '+readable(item.error):'')+' · Receipt '+item.id));return result;
+ }
+ let providerGeneration=-1;
+ function preferencesView(){
+   const result=node('section');result.append(node('h2','Choose your primary assistant'),node('p','ChatGPT is the default conversational client. Local uses this Control Center or the terminal. Selection grants no access and does not connect an account.'));
+   result.append(glass('Current conversation provider',snapshot.provider?.state||'Unavailable',snapshot.provider?.message||'Use /provider in Terminal for current host routing.'));
+   result.append(node('p','Conversation selection is separate from coding workers. External processing is OFF until the exact data policy and subscription conversation boundary are approved. No Google data, Memory, history, files or secrets are included.'));
+   const provider=snapshot.provider,providerStale=failures>0||paused||document.hidden||providerGeneration!==generation;
+   if(provider?.schema_version===1){
+     const controls=node('section',null,'glass'),label=node('label','Conversation provider'),select=node('select');select.setAttribute('aria-label','Conversation provider');
+     for(const [id,title]of [['qwen','Qwen · local only (default)'],['claude','Claude · subscription · WAIT until qualified']]){const option=node('option',title);option.value=id;select.append(option);}select.value=provider.preferences.provider;label.append(select);controls.append(label);
+     const save=button('Save conversation provider',async()=>{save.disabled=true;try{await api('/api/assistant/provider',{revision:provider.preferences.revision,provider:select.value});preferenceNotice='Conversation preference saved. No transmission authorized.';await refresh();}catch(e){preferenceNotice=e.message;render();}});
+     save.disabled=providerStale;select.disabled=providerStale;controls.append(save);
+     const consent=button('Review external data policy',async()=>{if(!window.confirm(provider.consent_text+'\n\nThis records only a data policy. Claude remains OFF until independently qualified. No inference or billing is approved. Record this policy?'))return;consent.disabled=true;try{await api('/api/assistant/provider',{revision:provider.preferences.revision,provider:'claude',consent:provider.consent_text});await refresh();}catch(e){preferenceNotice=e.message;render();}});
+     consent.disabled=providerStale;controls.append(consent);
+     const rollback=button('Use Qwen and revoke external consent',async()=>{rollback.disabled=true;try{await api('/api/assistant/provider',{revision:provider.preferences.revision,provider:'qwen',consent:null});await refresh();}catch(e){preferenceNotice=e.message;render();}});rollback.disabled=providerStale;controls.append(rollback,node('p','External data policy: '+(provider.preferences.consent?'public text, exact per-message review required':'OFF')),node('p',provider.qualification.owner_action));
+     if(provider.qualification.gates)for(const [gate,state]of Object.entries(provider.qualification.gates))controls.append(node('p',readable(gate)+': '+readable(state)));
+     controls.append(node('p','Actual Claude model: '+(provider.qualification.actual_model||'Not observed')+' · Subscription billing: '+(provider.qualification.billing?.source||'Not observed')+'. No automatic external fallback.'));
+     if(providerStale)controls.append(node('p','Settings disabled while observations are stale or updates are paused. Reconnect and refresh first.'));result.append(controls);
+   }else result.append(empty('Conversation switching requires a compatible backend. Settings are unavailable; no provider change was made.'));
+
+   result.append(routeControls());
+   const data=snapshot.orchestration;if(!data){result.append(empty('Settings require the updated backend. Existing Missions and permissions are unchanged.'));return result;}
+   const saved=data.preferences;result.append(chip(saved.onboarded?'Configured':'First-time setup'),node('p','Result delivery: authenticated retrieval after reconnecting with the original client session. ChatGPT cannot receive unsolicited push. Other clients are not listed until supported.'));
+   const form=node('form',null,'preference-form');
+   const choice=(key,label,options,value)=>{const field=node('label',label),select=node('select');select.setAttribute('aria-label',label);select.dataset.focusKey='preferences-'+key;for(const [id,title]of options){const option=node('option',title);option.value=id;select.append(option);}select.value=preferenceDraft[key]??value;select.onchange=()=>{preferenceDraft[key]=select.value;};field.append(select);form.append(field);return select;};
+   choice('primary_assistant','Primary assistant',[['chatgpt','ChatGPT · authenticated MCP'],['local','Local Control Center / terminal']],saved.primary_assistant);
+   choice('worker','Preferred coding worker',[['auto','Automatic qualified route'],...(snapshot.assistant?.workers||[]).filter(w=>['opencode','codex','claude_code'].includes(w.id)).map(w=>[w.id,w.id+' · '+(w.available?w.qualification:('Unavailable · '+(w.reason||w.qualification)))])],saved.coding_worker);
+   choice('scope','Apply preference',[['once','Once · next bounded WORK request'],['project','Project default'],['always','Always · local WORK default']],'once');
+   const aliasLabel=node('label','Project alias'),alias=node('input');alias.setAttribute('aria-label','Project alias');alias.dataset.focusKey='preferences-project';alias.value=preferenceDraft.project||'';alias.oninput=()=>preferenceDraft.project=alias.value;aliasLabel.append(alias);form.append(aliasLabel);
+   const save=node('button','Save selection');save.type='submit';form.append(save,node('p','Once is held for the next request in this tab. Project and Always persist only routing intent. Current qualification, privacy, signed template, expiry and revocation are checked on every execution.'));
+   form.onsubmit=async e=>{e.preventDefault();const worker=preferenceDraft.worker??saved.coding_worker,scope=preferenceDraft.scope||'once';if(['claude_code','codex'].includes(worker)&&!window.confirm('Save an external coding worker preference? '+worker+' may use a vendor account or incur usage charges when you later approve eligible public Work. This saves a preference only; it does not start a worker, switch local conversation or authorize email/Memory disclosure.'))return;save.disabled=true;try{const next={...saved,projects:{...saved.projects},primary_assistant:preferenceDraft.primary_assistant??saved.primary_assistant,onboarded:true};if(scope==='always')next.coding_worker=worker;if(scope==='project'){if(!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(preferenceDraft.project||''))throw Error('Enter a registered project alias.');next.projects[preferenceDraft.project]=worker;}await api('/api/assistant/preferences',next);onceWorker=scope==='once'?worker:undefined;preferenceNotice='Saved '+scope+' preference. No execution authority granted.';await refresh();}catch(error){preferenceNotice=error.message;render();}finally{save.disabled=false;}};result.append(form);
+   for(const [project,worker]of Object.entries(saved.projects)){const row=node('p',project+' → '+worker+' ');row.append(button('Remove '+project+' preference',async()=>{const projects={...saved.projects};delete projects[project];try{await api('/api/assistant/preferences',{...saved,projects});await refresh();}catch(e){preferenceNotice=e.message;render();}}));result.append(row);}
+   result.append(node('h2','Start bounded WORK'),node('p','Uses an existing signed template. No scope is inferred from this request. The result stops for independent verification and operator Acceptance.'));
+   const work=node('form',null,'preference-form');for(const [key,label]of [['project','WORK project alias'],['workspace','WORK template alias'],['objective','WORK objective']]){const field=node('label',label),input=node(key==='objective'?'textarea':'input');input.required=true;input.maxLength=key==='objective'?4000:64;input.value=workDraft[key];input.setAttribute('aria-label',label);input.dataset.focusKey='work-'+key;input.oninput=()=>{workDraft[key]=input.value;workRequestId=null;};field.append(input);work.append(field);}const run=node('button','Submit bounded WORK');run.type='submit';work.append(run);work.onsubmit=async e=>{e.preventDefault();run.disabled=true;workRequestId ||= crypto.randomUUID();try{const receipt=await api('/api/assistant/handoff',{version:2,request_id:workRequestId,...workDraft,mission_class:'WORK',data_class:'public',privacy:'local_only',...(onceWorker===undefined?{}:{worker:onceWorker}),model:'auto'});if(receipt.mission_id){onceWorker=undefined;workRequestId=null;selectMission(receipt.mission_id);}else{preferenceNotice='Waiting: '+readable(receipt.reason);render();}}catch(error){preferenceNotice=error.message;render();}finally{run.disabled=false;}};result.append(work,node('p',preferenceNotice,'notice'));return result;
+ }
  function assistantView(){
    const result=node('div');
+   if(view==='AI & Workers')return preferencesView();
+   if(view==='Automation & Permissions'){result.append(node('h2','Automation within approved boundaries'),node('p','Read access requires an authorized scope. Local edits require a signed, unexpired WORK template. Sensitive actions require their existing exact approval; destructive actions have no blanket authorization. Revocation takes effect at execution and host application. Recovery never replays an uncertain external effect. Worker preferences cannot change these rules.'),node('p','Live activity and approvals are in Missions and Approvals. Enable native notifications from the Airodrom menu; macOS permission is separate. Completion is not Acceptance.'));result.append(workTemplatesView());return result;}
+   if(view==='WORK Templates')return workTemplatesView();
    if(view==='Models'||view==='Workers'){
      for(const item of (view==='Models'?snapshot.assistant?.models:snapshot.assistant?.workers)||[]){result.append(glass(item.id,item.qualification,(item.provider||item.transport)+' · '+item.locality+' · '+(item.available?'Available':'Unavailable')),node('p',item.reason?item.reason.replaceAll('_',' '):item.support||'Context limit, token usage and cost: Unavailable'));
        if(view==='Workers'&&['codex','claude_code','cursor'].includes(item.id)){
@@ -299,10 +377,11 @@
        }
      }result.append(routeControls());result.append(node('p','Discovery does not qualify a route. Manual preference cannot bypass privacy, expiry or availability. Optional workers require fresh independent qualification.'));return result;
    }
+   if(view==='Google Connections')return googleView();
    if(view==='Connectors'){for(const c of snapshot.connectors?.items||[])result.append(glass(c.id,c.state,c.protocol),node('p',c.setup),node('p',c.mutations));result.append(node('p','Selected email and message text is untrusted data. It cannot grant permissions. Local reply drafts never send.'));return result;}
    if(view==='Sensitive & Vault'){result.append(glass('Sensitive Memory','Operator-only',snapshot.sensitive?.disclosure),node('p',snapshot.sensitive?.encryption),glass('Vault','macOS Keychain', 'Named private identifiers and credentials. Credential values stay hidden and are never sent to workers.'),node('p','In the Airodrom terminal, use /vault to save a password or API key securely. Use /secret list or /secret search <label> to find an entry. Private identifiers can be revealed only after fresh confirmation in that terminal and may remain in its scrollback. Credentials require approved capability use.'),node('p','Sensitive Memory is separate: use /remember-sensitive or /sensitive in the authenticated terminal.'));return result;}
    const layout=node('div',null,'assistant-layout'),chat=node('section',null,'glass conversation'),ops=node('aside',null,'operations');
-   chat.append(node('h2','Talk to Airodrom'),node('p','Local conversation · canonical Memory V2','muted'));
+   chat.append(node('h2','Talk to Airodrom'),node('p',snapshot.provider?.message||'Local conversation · canonical Memory V2','muted'));
    const ordered=conversationHistory.every(item=>Number.isFinite(item.created_at))?conversationHistory.slice().sort((a,b)=>a.created_at-b.created_at):conversationHistory.slice().reverse();for(const item of ordered){if(item.prompt)chat.append(node('p',item.prompt,'operator-message'));if(item.response)chat.append(node('p',item.response,'assistant-message'));}
    chat.append(routeControls());for(const [label,prefix] of [['Search public web','search the web for '],['Explore public websites','explore ']])chat.append(button(label,()=>{const value=window.prompt(label==='Search public web'?'Public search query':'Public HTTPS websites separated by spaces');if(value){conversationDraft=prefix+value;render();}}));chat.append(button('Browser connections & human login',()=>{conversationNotice='In Terminal, use /browser open https://app.monarch.com/ for seven connection choices, or /browser options for availability. Review the exact domain permission, sign in manually in the dedicated visible browser, complete MFA and confirm hand-back. Normal Chrome login is not inherited.';render();}));const form=node('form'),compose=node('textarea');compose.value=conversationDraft;compose.placeholder='Ask a question or say Remember that…';compose.setAttribute('aria-label','Conversation message');compose.dataset.focusKey='conversation-composer';compose.maxLength=4000;compose.oninput=()=>conversationDraft=compose.value;
    const submit=node('button','Send');submit.type='submit';form.append(compose,submit);form.onsubmit=async e=>{e.preventDefault();generation++;const version=generation;inflight?.abort();clearMemory();submit.disabled=true;try{const receipt=await api('/api/assistant/input',{message:conversationDraft,conversation_id:await conversationSession(),include_memory:true,model:selectedModel,worker:selectedWorker,request_id:crypto.randomUUID()});conversationDraft='';await refresh();await showAssistantReceipt(receipt,version);}catch(error){if(version===generation){conversationNotice=error.message;render();}}finally{submit.disabled=false;}};
@@ -311,47 +390,679 @@
    const work=snapshot.missions.filter(m=>m.label!=='Bounded local conversation'&&!['completed','cancelled'].includes(m.state)).slice(0,10);if(work.length){ops.append(node('h2','Work Missions'));for(const m of work)ops.append(lifecycle(m),missionCard(m));}
    layout.append(chat,ops);return layout;
  }
- function render(){if(!authorized){applyConnection(deriveConnection({authorized:false}));$('content').replaceChildren(empty('This browser session is not authorized. Open Control Center from the local Airodrom menu.'));$('heading').textContent='Authorization required';return;}if(!snapshot){$('content').replaceChildren(empty(failures?'Local service unavailable. Retrying automatically…':'Loading canonical Mission activity…'));return;}const focused=document.activeElement,key=focused?.dataset?.focusKey;const content=$('content');let result;if(missionId){const m=(snapshot.selected_mission?.id===missionId?snapshot.selected_mission:null)||snapshot.missions.find(x=>x.id===missionId);result=m?missionDetail(m):empty('Mission is outside the current snapshot. Reopen it from the task workspace.');}else if(['Conversation','Models','Workers','Connectors','Sensitive & Vault'].includes(view))result=assistantView();else if(view==='Overview')result=overview();else if(view==='Missions'){result=node('div');const search=node('input');search.type='search';search.placeholder='Filter by state or runtime';search.setAttribute('aria-label','Filter Missions');search.dataset.focusKey='mission-search';search.value=searchQuery;const list=node('div');const update=()=>{list.replaceChildren(...snapshot.missions.filter(m=>(m.label+' '+m.state+' '+m.runtime).toLowerCase().includes(search.value.toLowerCase())).map(missionCard));};search.oninput=()=>{searchQuery=search.value;update();};update();result.append(search,node('p',snapshot.counts.scope,'muted'),list);}else if(view==='System Health')result=health();else if(view==='Activity & Audit'){result=node('div');const filter=node('select');filter.setAttribute('aria-label','Event category');filter.dataset.focusKey='event-category';for(const name of ['','Mission','Runtime','Worker','Memory','Capability','File','Git','Command','Test','Verification','Approval','Settlement','System']){const o=node('option',name||'All categories');o.value=name;filter.append(o);}filter.value=category;filter.onchange=()=>{generation++;inflight?.abort();category=filter.value;cursor=0;feed.clear();refresh();render();};const missionFilter=node('select');missionFilter.setAttribute('aria-label','Activity Mission');missionFilter.dataset.focusKey='activity-mission';const all=node('option','All Missions');all.value='';missionFilter.append(all);for(const m of snapshot.missions){const o=node('option',m.label+' · '+m.id.slice(0,8));o.value=m.id;missionFilter.append(o);}missionFilter.value=eventMission;missionFilter.onchange=()=>{generation++;inflight?.abort();eventMission=missionFilter.value;cursor=0;feed.clear();refresh();render();};result.append(filter,missionFilter,node('p','Timestamped host observations · retained window: 500 safe events','muted'),activity());}else if(view==='Runtime & OpenCode'){result=node('div');result.append(glass('OpenCode · Primary',snapshot.runtime.state,snapshot.runtime.reason||'Qualified local execution'),node('p','Requalification never trusts a version string. It requires exact OpenCode and Seatbelt artifacts plus a fresh confined probe.'),node('p','Run airodrom requalify from Terminal. The owned service must be stopped; current work and quarantined leases prevent repair.'),node('pre','airodrom doctor\nairodrom requalify\nairodrom start'));}else if(view==='Approvals'){result=node('div');result.append(glass('Protected Approvals waiting',snapshot.approvals.waiting,'Decisions and Acceptance are distinct'),node('p','Review the exact governed operation in the authorized workspace.'),node('a','Review protected Approvals ↗'));result.lastChild.href='/workspace';for(const a of snapshot.approvals.records){const card=glass(a.label,a.status,'Created '+stamp(a.created_at)+' · expires '+stamp(a.expires_at));if(a.task_id)card.append(workspaceLink('Review exact operation in task workspace ↗',a.task_id));else card.append(node('small','Task-specific review unavailable'));result.append(card);}result.append(node('p',snapshot.approvals.scope,'muted'));}else if(view==='Memory'){result=memoryView();}else if(view==='Projects'){result=node('div');result.append(node('p','Up to 50 registered projects, priority ordered · private names and repository paths withheld','muted'));for(const p of snapshot.projects){const card=glass(p.label,p.status,'Updated '+stamp(p.updated_at));card.append(node('small',p.id));if(p.status!=='archived'){const archive=button('Archive project',()=>send('archive-project',{id:p.id}));archive.dataset.focusKey='project:'+p.id+':archive';card.append(archive);}result.append(card);}if(!snapshot.projects.length)result.append(empty('No registered projects.'));const a=node('a','Open task workspace ↗');a.href='/workspace';result.append(a);}else{result=node('div');result.append(node('img'));result.firstChild.src='/brand/airodrom-logo-horizontal-dark.svg';result.firstChild.alt='Airodrom';result.firstChild.className='about-logo';result.append(node('h2','Airodrom '+snapshot.version),chip('PRE-RELEASE'),node('p','OpenCode executes bounded work. Airodrom owns Mission authority, Memory V2, Capability Broker, independent verification, Acceptance, Settlement, leases, audit and erasure.'),node('p','Native service and launch-at-login settings use the separately reviewed macOS lifecycle. Quitting the menu helper leaves the control plane running.'),node('a','Documentation ↗'));result.lastChild.href='https://github.com/airodrom/airodrom#readme';}
+ function render(){if(!authorized){applyConnection(deriveConnection({authorized:false}));authorizationView();return;}if(!snapshot){$('content').replaceChildren(empty(failures?'Local service unavailable. Retrying automatically…':'Loading canonical Mission activity…'));return;}const focused=document.activeElement,key=focused?.dataset?.focusKey;const content=$('content');let result;if(missionId){const m=(snapshot.selected_mission?.id===missionId?snapshot.selected_mission:null)||snapshot.missions.find(x=>x.id===missionId);result=m?missionDetail(m):empty('Mission is outside the current snapshot. Reopen it from the task workspace.');}else if(['AI & Workers','Automation & Permissions','Conversation','Models','Workers','WORK Templates','Google Connections','Connectors','Sensitive & Vault'].includes(view))result=assistantView();else if(view==='Overview'){result=overview();if(snapshot.orchestration?.preferences?.onboarded===false){const setup=node('section',null,'glass');setup.append(node('h2','Choose your primary assistant'),node('p','ChatGPT is preferred. Choose a supported client and a qualified worker to finish setup.'),button('Set up AI & Workers',()=>nav.get('AI & Workers').click()));result.prepend(setup);}}else if(view==='Missions'){result=missionDashboard();}else if(view==='System Health')result=health();else if(view==='Activity & Audit'){result=node('div');const filter=node('select');filter.setAttribute('aria-label','Event category');filter.dataset.focusKey='event-category';for(const name of ['','Mission','Runtime','Memory','Capability','Verification','Approval','Settlement','System']){const o=node('option',name||'All categories');o.value=name;filter.append(o);}filter.value=category;filter.onchange=()=>{generation++;inflight?.abort();category=filter.value;cursor=0;feed.clear();refresh();render();};const missionFilter=node('select');missionFilter.setAttribute('aria-label','Activity Mission');missionFilter.dataset.focusKey='activity-mission';const all=node('option','All Missions');all.value='';missionFilter.append(all);for(const m of snapshot.missions){const o=node('option',m.label+' · '+m.id.slice(0,8));o.value=m.id;missionFilter.append(o);}missionFilter.value=eventMission;missionFilter.onchange=()=>{generation++;inflight?.abort();eventMission=missionFilter.value;cursor=0;feed.clear();refresh();render();};result.append(filter,missionFilter,node('p','Timestamped host observations · retained window: 500 safe events','muted'),activity());}else if(view==='Runtime & OpenCode'){result=node('div');result.append(glass('OpenCode · Primary',snapshot.runtime.state,snapshot.runtime.reason||'Qualified local execution'),node('p','Requalification never trusts a version string. It requires exact OpenCode and Seatbelt artifacts plus a fresh confined probe.'),node('p','Run airodrom requalify from Terminal. The owned service must be stopped; current work and quarantined leases prevent repair.'),node('pre','airodrom doctor\nairodrom requalify\nairodrom start'));}else if(view==='Approvals'){result=node('div');result.append(glass('Protected Approvals waiting',snapshot.approvals.waiting,'Decisions and Acceptance are distinct'),node('p','Review the exact governed operation in the authorized workspace.'),node('a','Review protected Approvals ↗'));result.lastChild.href='/workspace';for(const a of snapshot.approvals.records){const card=glass(a.label,a.status,'Created '+stamp(a.created_at)+' · expires '+stamp(a.expires_at));if(a.task_id)card.append(workspaceLink('Review exact operation in task workspace ↗',a.task_id));else card.append(node('small','Task-specific review unavailable'));result.append(card);}result.append(node('p',snapshot.approvals.scope,'muted'));}else if(view==='Memory'){result=memoryView();}else if(view==='Projects'){result=node('div');result.append(node('p','Up to 50 registered projects, priority ordered · private names and repository paths withheld','muted'));for(const p of snapshot.projects){const card=glass(p.label,p.status,'Updated '+stamp(p.updated_at));card.append(node('small',p.id));if(p.status!=='archived'){const archive=button('Archive project',()=>send('archive-project',{id:p.id}));archive.dataset.focusKey='project:'+p.id+':archive';card.append(archive);}result.append(card);}if(!snapshot.projects.length)result.append(empty('No registered projects.'));const a=node('a','Open task workspace ↗');a.href='/workspace';result.append(a);}else{result=node('div');result.append(node('img'));result.firstChild.src='/brand/airodrom-logo-horizontal-dark.svg';result.firstChild.alt='Airodrom';result.firstChild.className='about-logo';result.append(node('h2','Airodrom '+snapshot.version),chip('PRE-RELEASE'),node('p','OpenCode executes bounded work. Airodrom owns Mission authority, Memory V2, Capability Broker, independent verification, Acceptance, Settlement, leases, audit and erasure.'),node('p','Native service and launch-at-login settings use the separately reviewed macOS lifecycle. Quitting the menu helper leaves the control plane running.'),node('a','Documentation ↗'));result.lastChild.href='https://github.com/airodrom/airodrom#readme';}
  // Preserve focus and selection across an observed snapshot update.
  const selection=focused&&'selectionStart'in focused?[focused.selectionStart,focused.selectionEnd]:null;const renderKey=view+':'+(missionId||'');const changed=content.dataset.renderKey!==renderKey;content.dataset.renderKey=renderKey;content.replaceChildren(result);if(changed&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!document.hidden)content.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],{duration:300,easing:'ease-out'});if(key){const target=[...content.querySelectorAll('[data-focus-key]')].find(e=>e.dataset.focusKey===key);target?.focus({preventScroll:true});if(target&&selection&&target.setSelectionRange)try{target.setSelectionRange(...selection);}catch{}}
  }
  function selectMission(id){clearMemory();stopObsStream();observatory=null;obsCursor=0;diffCache.clear();generation++;missionId=id;view='Missions';$('heading').textContent='Live Mission Observatory';render();$('content').focus();refresh();}
  for(const name of views){const b=button(name,()=>{clearMemory();view=name;missionId=null;generation++;for(const [n,item]of nav)item.setAttribute('aria-current',n===name?'page':'false');$('heading').textContent=name;render();refresh();});nav.set(name,b);$('nav').append(b);}nav.get('Overview').setAttribute('aria-current','page');
  async function send(action,body){generation++;inflight?.abort();try{await api('/api/product/'+action,{...body,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}}
- async function refresh(){clearTimeout(timer);timer=null;if(busy||paused||document.hidden||!authorized){if(!authorized)applyConnection(deriveConnection({authorized:false}));return;}busy=true;const version=generation,filter=category;inflight=new AbortController();secondaryNotice='';try{
-   if(!token){authorized=false;applyConnection(deriveConnection({authorized:false}));busy=false;inflight=null;render();return;}
-   const current=await api('/api/product/overview?current_offset='+currentOffset,undefined,inflight.signal);
-   let history=null,live=null;
-   try{if(missionId){current.selected_mission=await api('/api/product/mission?id='+encodeURIComponent(missionId),undefined,inflight.signal);try{live=await api('/api/product/observatory?mission='+encodeURIComponent(missionId),undefined,inflight.signal);}catch(e){secondaryNotice='Observatory snapshot unavailable';live=null;}}}catch(e){secondaryNotice='Mission detail unavailable';}
-   try{if(view==='Conversation'||missionId&&current.selected_mission?.label==='Bounded local conversation')history=await api('/api/assistant/history'+(missionId?'?mission_id='+encodeURIComponent(missionId):''),undefined,inflight.signal);}catch(e){secondaryNotice='History unavailable';}
-   let nextCursor=snapshot?.epoch!==current.epoch?0:cursor;const incoming=[];let pages=0,batch={events:[],cursor:nextCursor,has_more:false};
-   try{do{batch=await api('/api/product/events?after='+nextCursor+(filter?'&category='+encodeURIComponent(filter):'')+(eventMission?'&mission='+encodeURIComponent(eventMission):''),undefined,inflight.signal);nextCursor=batch.cursor;incoming.push(...batch.events);pages++;}while(batch.has_more&&pages<4);}catch(e){secondaryNotice='Event feed unavailable';}
-   if(version!==generation||paused||document.hidden)return;
-   if(snapshot?.epoch!==current.epoch)feed.clear();
-   if(snapshot?.memory?.generation!==current.memory.generation)clearMemory();
-   snapshot=current;lastOkAt=current.observed_at||Date.now();failures=0;
-   if(live&&missionId){observatory=live;obsCursor=Math.max(obsCursor,live.cursor||0);if(!obsStream)connectObsStream(missionId);}
-   if(history&&(view==='Conversation'||missionId)&&history.generation===current.memory.generation)conversationHistory=history.items;
-   cursor=nextCursor;for(const e of incoming)if(e.event_id)feed.set(e.event_id,e);while(feed.size>500)feed.delete(feed.keys().next().value);
-   applyConnection(current.connectivity||deriveConnection({authorized:true,reachable:true,overviewStatus:current.status,failures:0}));
-   $('notice').textContent='Observed '+stamp(current.observed_at)+' · '+(live?'Live Mission Observatory · ':'')+current.counts.scope+(secondaryNotice?' · '+secondaryNotice:'');
-   render();
-   if(batch.has_more)timer=setTimeout(()=>{timer=null;refresh();},250);
- }catch(e){
-   if(version!==generation||paused||document.hidden)return;
-   if(!authorized){applyConnection(deriveConnection({authorized:false}));render();return;}
-   failures++;
-   applyConnection(deriveConnection({authorized:true,reachable:false,failures,error:e.message,lastOkAt}));
-   $('notice').textContent=e.message+(lastOkAt?' · Last successful observation '+stamp(lastOkAt)+'.':' Previous observations are stale.');
-   render();
- }finally{busy=false;inflight=null;if(!timer&&!paused&&authorized&&!document.hidden)timer=setTimeout(()=>{timer=null;refresh();},version!==generation?250:Math.min(30000,2500*2**Math.min(failures,4)));}}
+ async function refresh(){clearTimeout(timer);timer=null;if(busy||paused||document.hidden||!authorized)return;busy=true;const version=generation,filter=category;inflight=new AbortController();try{let live=null;const current=await api('/api/product/overview?current_offset='+currentOffset,undefined,inflight.signal);let history=null,nextMissionPage=null;if(view==='Missions'&&!missionId&&current.mission_counts)nextMissionPage=await api('/api/product/missions?filter='+encodeURIComponent(missionFilter)+'&query='+encodeURIComponent(searchQuery)+'&offset='+missionOffset,undefined,inflight.signal);if(view==='Google Connections')current.google=await api('/api/assistant/google',{action:'status'},inflight.signal);if(view==='AI & Workers'||view==='Conversation')current.provider=await api('/api/assistant/provider',undefined,inflight.signal);if(view==='AI & Workers'||view==='Overview'){try{current.orchestration=await api('/api/assistant/preferences',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.orchestration=null;}}if(['WORK Templates','Automation & Permissions'].includes(view))current.work_templates=await api('/api/assistant/work-templates',undefined,inflight.signal);if(missionId)current.selected_mission=await api('/api/product/mission?id='+encodeURIComponent(missionId),undefined,inflight.signal);try{live=await api('/api/product/observatory?mission='+encodeURIComponent(missionId),undefined,inflight.signal);}catch(e){secondaryNotice='Observatory snapshot unavailable';live=null;}if(view==='Conversation'||missionId&&current.selected_mission?.label==='Bounded local conversation')history=await api('/api/assistant/history'+(missionId?'?mission_id='+encodeURIComponent(missionId):''),undefined,inflight.signal);let nextCursor=snapshot?.epoch!==current.epoch?0:cursor;const incoming=[];let pages=0,batch;do{batch=await api('/api/product/events?after='+nextCursor+(filter?'&category='+encodeURIComponent(filter):'')+(eventMission?'&mission='+encodeURIComponent(eventMission):''),undefined,inflight.signal);nextCursor=batch.cursor;incoming.push(...batch.events);pages++;}while(batch.has_more&&pages<4);if(version!==generation||paused||document.hidden)return;if(snapshot?.epoch!==current.epoch)feed.clear();if(snapshot?.memory?.generation!==current.memory.generation)clearMemory();snapshot=current;if(live&&missionId){observatory=live;obsCursor=Math.max(obsCursor,live.cursor||0);if(!obsStream)connectObsStream(missionId);}if(['AI & Workers','Conversation'].includes(view)&&current.provider?.schema_version===1)providerGeneration=version;if(nextMissionPage)missionPage=nextMissionPage;if(history&&(view==='Conversation'||missionId)&&history.generation===current.memory.generation)conversationHistory=history.items;cursor=nextCursor;for(const e of incoming)if(e.event_id)feed.set(e.event_id,e);while(feed.size>500)feed.delete(feed.keys().next().value);failures=0;document.body.classList.remove('offline');lastOkAt=snapshot.observed_at;applyConnection(deriveConnection({authorized:true,reachable:true,paused:false,failures:0,overviewStatus:snapshot.status||'Ready'}));$('notice').textContent='Observed '+stamp(current.observed_at)+' · '+(view==='Missions'&&!missionId&&missionPage?missionPage.scope:current.counts.scope);render();if(batch.has_more)timer=setTimeout(()=>{timer=null;refresh();},250);}catch(e){if(version!==generation||paused||document.hidden)return;clearMemory();failures++;render();document.body.classList.add('offline');applyConnection(deriveConnection({authorized,reachable:false,paused:false,failures,error:e.message}));$('notice').textContent=e.message+(authorized?' Previous observations are stale.':'');}finally{busy=false;inflight=null;if(!timer&&!paused&&authorized&&!document.hidden)timer=setTimeout(()=>{timer=null;refresh();},version!==generation?250:Math.min(30000,2500*2**Math.min(failures,4)));}}
  $('pause').onclick=()=>{generation++;inflight?.abort();paused=!paused;$('pause').textContent=paused?'Resume updates':'Pause updates';applyConnection(deriveConnection({authorized,reachable:!!snapshot,paused,overviewStatus:snapshot?.status,failures}));if(paused){stopObsStream();clearTimeout(timer);}else{timer=null;refresh();}};
- document.addEventListener('visibilitychange',()=>{generation++;inflight?.abort();stopObsStream();clearTimeout(timer);timer=null;if(document.hidden){clearMemory();render();document.body.classList.add('offline');}else refresh();});
+ document.addEventListener('visibilitychange',()=>{generation++;inflight?.abort();clearTimeout(timer);timer=null;if(document.hidden){clearMemory();render();document.body.classList.add('offline');}else refresh();});
  function showDialog(d,trigger=document.activeElement){lastFocus=trigger;d.showModal();d.querySelector('textarea,button')?.focus();}for(const d of [$('new-dialog'),$('review-dialog')])d.addEventListener('close',()=>{const key=lastFocus?.dataset?.focusKey;const target=key?[...document.querySelectorAll('[data-focus-key]')].find(e=>e.dataset.focusKey===key):lastFocus;target?.focus();});
  $('new').onclick=()=>showDialog($('new-dialog'),$('new'));$('close-new').onclick=()=>$('new-dialog').close();$('close-review').onclick=()=>$('review-dialog').close();
  $('mission-form').onsubmit=async e=>{e.preventDefault();generation++;const version=generation;inflight?.abort();clearMemory();const b=e.submitter;b.disabled=true;$('submit-status').textContent='Registering bounded authority…';try{const m=await api('/api/assistant/mission',{action:'new',objective:$('request').value,model:selectedModel,worker:selectedWorker,request_id:crypto.randomUUID()});if(version!==generation||!authorized||document.hidden)return;$('request').value='';$('new-dialog').close();await refresh();if(version!==generation||!authorized||document.hidden)return;if(m.mission_id)selectMission(m.mission_id);else{view='Conversation';$('heading').textContent=view;await showAssistantReceipt(m,version);}}catch(error){if(version===generation)$('submit-status').textContent=error.message;}finally{b.disabled=false;}};
- function openReview(m,trigger){reviewMission=m;$('review-workspace').onclick=()=>{if(m.task_id)try{sessionStorage.setItem('airodromTask',m.task_id);}catch{}};$('review-status').textContent='';showDialog($('review-dialog'),trigger);}
- async function recordDecision(decision){try{await api('/api/product/accept-mission',{id:reviewMission.id,verification_id:reviewMission.verification.id,request_id:crypto.randomUUID(),decision,rationale:$('rationale').value,evidence:$('evidence').value});$('rationale').value='';$('evidence').value='';$('review-dialog').close();await refresh();}catch(e){$('review-status').textContent=e.message;}}
+ function openReview(m,trigger){if(!authorized||paused||failures||!m.actions.accept)return;reviewMission=m;$('review-workspace').onclick=()=>{if(m.task_id)try{sessionStorage.setItem('airodromTask',m.task_id);}catch{}};$('review-status').textContent='';showDialog($('review-dialog'),trigger);}
+ async function recordDecision(decision){if(!authorized||paused||failures){$('review-status').textContent='Reconnect and resume live observations before recording a decision.';return;}try{await api('/api/product/accept-mission',{id:reviewMission.id,verification_id:reviewMission.verification.id,request_id:crypto.randomUUID(),decision,rationale:$('rationale').value,evidence:$('evidence').value});$('rationale').value='';$('evidence').value='';$('review-dialog').close();await refresh();}catch(e){$('review-status').textContent=e.message;}}
  $('review-form').onsubmit=e=>{e.preventDefault();recordDecision('accept');};$('rework').onclick=()=>recordDecision('rework');
  refresh();
 })();
+
+// BEGIN generated atmosphere compatibility bundle; source: public/atmosphere.js
+'use strict';
+// Adapted directly from the owner's Somin WeatherAtmosphere.tsx canvas renderer.
+// Source SHA-256: 818a9d3aae9fa8e219b11e12442efe1a48e138fe333588540187c49feb9b348e
+// Drawing geometry, palettes, waves, palms, oaks, birds, rain and weather timing retained.
+// Host adaptation: no React, no network, live reduced motion, hidden-page cancellation.
+(() => {
+    const canvas = document.getElementById('atmosphere'), group = document.getElementById('weather-switcher');
+    if (!canvas || !group)
+        return;
+    const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
+    if (!ctx)
+        return;
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)'), contrast = matchMedia('(prefers-contrast: more)');
+    const modeRef = { current: 'auto' };
+    const intensity = 1;
+    const PHASE_MS = { rain: 48000, sunrise: 36000, sunset: 36000 }, NEXT = { rain: 'sunrise', sunrise: 'sunset', sunset: 'rain' };
+    try {
+        const saved = localStorage.getItem('airodrom.atmosphere.v1');
+        if (['auto', 'rain', 'sunrise', 'sunset', 'off'].includes(saved))
+            modeRef.current = saved;
+    }
+    catch { }
+    let staticFrame = false, hiddenAt = 0;
+    let w = 0;
+    let h = 0;
+    let raf = 0;
+    let drops = [];
+    let bolts = [];
+    let birds = [];
+    let palms = [];
+    let oaks = [];
+    let flash = 0;
+    let nextBoltAt = performance.now() + 2000;
+    let phase = 'rain';
+    let phaseStarted = performance.now();
+    let visible = !document.hidden;
+    let lastFrame = 0;
+    let waveT = 0;
+    let lastForced = 'auto';
+    let dprCap = window.innerWidth < 768 ? 1 : 1.5;
+    let dpr = Math.min(window.devicePixelRatio || 1, dprCap);
+    const spawnDrop = (anywhere) => ({
+        x: Math.random() * w,
+        y: anywhere ? Math.random() * h : -Math.random() * 60,
+        len: 7 + Math.random() * 14,
+        speed: 6 + Math.random() * 11 * intensity,
+        width: 0.55 + Math.random(),
+        alpha: 0.22 + Math.random() * 0.4,
+    });
+    const spawnBird = () => {
+        const x = w * (0.15 + Math.random() * 0.7);
+        const y = h * (0.28 + Math.random() * 0.28);
+        return {
+            x,
+            y,
+            vx: (Math.random() - 0.5) * 1.4,
+            vy: (Math.random() - 0.5) * 0.8,
+            wing: Math.random() * Math.PI * 2,
+            scale: 0.7 + Math.random() * 0.55,
+            hue: Math.random() > 0.5 ? 155 : 340,
+            targetX: x + (Math.random() - 0.5) * 120,
+            targetY: y + (Math.random() - 0.5) * 60,
+        };
+    };
+    const layoutScene = () => {
+        palms = [
+            { x: w * 0.06, scale: 1.15, lean: -0.08 },
+            { x: w * 0.14, scale: 0.92, lean: 0.06 },
+            { x: w * 0.22, scale: 1.05, lean: -0.04 },
+            { x: w * 0.08, scale: 0.72, lean: 0.1 },
+        ];
+        oaks = [
+            { x: w * 0.78, scale: 1.05 },
+            { x: w * 0.88, scale: 1.25 },
+            { x: w * 0.94, scale: 0.85 },
+            { x: w * 0.72, scale: 0.7 },
+        ];
+        birds = Array.from({ length: Math.min(5, Math.max(3, Math.floor(w / 420))) }, () => spawnBird());
+    };
+    const resize = () => {
+        dprCap = window.innerWidth < 768 ? 1 : 1.5;
+        dpr = Math.min(window.devicePixelRatio || 1, dprCap);
+        w = window.innerWidth;
+        h = window.innerHeight;
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const count = Math.min(90, Math.floor(((w * h) / 16000) * intensity));
+        drops = Array.from({ length: Math.max(24, count) }, () => spawnDrop(true));
+        layoutScene();
+    };
+    const makeBolt = () => {
+        const startX = w * (0.15 + Math.random() * 0.7);
+        const segments = [{ x: startX, y: 0 }];
+        let x = startX;
+        let y = 0;
+        const targetY = h * (0.4 + Math.random() * 0.25);
+        while (y < targetY) {
+            x += (Math.random() - 0.5) * 44;
+            y += 22 + Math.random() * 32;
+            segments.push({ x, y: Math.min(y, targetY) });
+        }
+        const branches = [];
+        const from = segments[Math.floor(segments.length * 0.4)];
+        if (from) {
+            const branch = [{ ...from }];
+            let bx = from.x;
+            let by = from.y;
+            const dir = Math.random() > 0.5 ? 1 : -1;
+            for (let i = 0; i < 4; i++) {
+                bx += dir * (14 + Math.random() * 24);
+                by += 16 + Math.random() * 22;
+                branch.push({ x: bx, y: by });
+            }
+            branches.push(branch);
+        }
+        return {
+            segments,
+            branches,
+            life: 1,
+            maxLife: 0.32 + Math.random() * 0.2,
+        };
+    };
+    const drawBoltPath = (points, alpha) => {
+        if (points.length < 2)
+            return;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++)
+            ctx.lineTo(points[i].x, points[i].y);
+        ctx.strokeStyle = `rgba(200, 245, 255, ${alpha * 0.45})`;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+    };
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const skyColors = (p, t) => {
+        if (p === 'rain') {
+            return [
+                'rgba(4, 14, 28, 0.72)',
+                'rgba(8, 36, 52, 0.55)',
+                'rgba(12, 40, 48, 0.35)',
+            ];
+        }
+        if (p === 'sunrise') {
+            const warm = 0.35 + t * 0.4;
+            return [
+                `rgba(${lerp(40, 255, warm)}, ${lerp(70, 170, warm)}, ${lerp(120, 100, warm)}, 0.75)`,
+                `rgba(${lerp(255, 255, t)}, ${lerp(140, 200, t)}, ${lerp(90, 140, t)}, 0.65)`,
+                `rgba(255, 220, 160, ${0.45 + t * 0.15})`,
+            ];
+        }
+        return [
+            `rgba(${lerp(255, 30, t)}, ${lerp(100, 25, t)}, ${lerp(70, 80, t)}, 0.72)`,
+            `rgba(${lerp(255, 60, t)}, ${lerp(130, 40, t)}, ${lerp(90, 100, t)}, 0.6)`,
+            `rgba(25, 15, 45, ${0.4 + t * 0.2})`,
+        ];
+    };
+    const drawSky = (p, elapsed) => {
+        const dur = PHASE_MS[p];
+        const t = Math.min(1, elapsed / dur);
+        const [c0, c1, c2] = skyColors(p, t);
+        const g = ctx.createLinearGradient(0, 0, 0, h * 0.62);
+        g.addColorStop(0, c0);
+        g.addColorStop(0.5, c1);
+        g.addColorStop(1, c2);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h * 0.62);
+        if (p === 'sunrise' || p === 'sunset') {
+            const sunX = p === 'sunrise' ? w * (0.2 + t * 0.25) : w * (0.7 - t * 0.22);
+            const sunY = p === 'sunrise' ? h * (0.55 - t * 0.28) : h * (0.28 + t * 0.3);
+            const r = Math.min(w, h) * 0.085;
+            const glow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, r * 5);
+            if (p === 'sunrise') {
+                glow.addColorStop(0, 'rgba(255, 245, 200, 0.7)');
+                glow.addColorStop(0.3, 'rgba(255, 170, 90, 0.28)');
+                glow.addColorStop(1, 'rgba(255, 100, 40, 0)');
+            }
+            else {
+                glow.addColorStop(0, 'rgba(255, 210, 140, 0.65)');
+                glow.addColorStop(0.28, 'rgba(255, 80, 110, 0.25)');
+                glow.addColorStop(1, 'rgba(60, 20, 100, 0)');
+            }
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(sunX, sunY, r * 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle =
+                p === 'sunrise' ? 'rgba(255, 248, 220, 0.95)' : 'rgba(255, 190, 130, 0.92)';
+            ctx.beginPath();
+            ctx.arc(sunX, sunY, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    };
+    const mountainTone = (p, depth) => {
+        if (p === 'rain') {
+            return `rgba(${20 + depth * 10}, ${35 + depth * 12}, ${48 + depth * 14}, ${0.55 + depth * 0.12})`;
+        }
+        if (p === 'sunrise') {
+            return `rgba(${55 + depth * 30}, ${45 + depth * 25}, ${70 + depth * 20}, ${0.5 + depth * 0.15})`;
+        }
+        return `rgba(${40 + depth * 20}, ${25 + depth * 15}, ${55 + depth * 25}, ${0.55 + depth * 0.14})`;
+    };
+    const drawMountains = (p) => {
+        const baseY = h * 0.52;
+        const layers = [
+            {
+                depth: 0,
+                peaks: [0, 0.12, 0.22, 0.35, 0.48, 0.6, 0.72, 0.85, 1],
+                heights: [0.08, 0.22, 0.14, 0.28, 0.12, 0.24, 0.16, 0.2, 0.1],
+            },
+            {
+                depth: 1,
+                peaks: [0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.88, 1],
+                heights: [0.05, 0.16, 0.26, 0.14, 0.22, 0.12, 0.18, 0.08],
+            },
+            {
+                depth: 2,
+                peaks: [0, 0.15, 0.32, 0.5, 0.68, 0.82, 1],
+                heights: [0.04, 0.14, 0.1, 0.2, 0.12, 0.16, 0.06],
+            },
+        ];
+        for (const layer of layers) {
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            ctx.lineTo(0, baseY);
+            for (let i = 0; i < layer.peaks.length; i++) {
+                const x = layer.peaks[i] * w;
+                const y = baseY - layer.heights[i] * h;
+                if (i === 0)
+                    ctx.lineTo(x, y);
+                else {
+                    const px = layer.peaks[i - 1] * w;
+                    const mid = (px + x) / 2;
+                    ctx.quadraticCurveTo(mid, y - h * 0.02, x, y);
+                }
+            }
+            ctx.lineTo(w, h);
+            ctx.closePath();
+            ctx.fillStyle = mountainTone(p, layer.depth);
+            ctx.fill();
+            // snow caps on taller peaks
+            if (layer.depth < 2) {
+                ctx.fillStyle =
+                    p === 'rain'
+                        ? 'rgba(200, 220, 235, 0.35)'
+                        : 'rgba(255, 250, 245, 0.55)';
+                for (let i = 1; i < layer.peaks.length - 1; i++) {
+                    if (layer.heights[i] < 0.18)
+                        continue;
+                    const x = layer.peaks[i] * w;
+                    const y = baseY - layer.heights[i] * h;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 18, y + 22);
+                    ctx.lineTo(x, y);
+                    ctx.lineTo(x + 16, y + 20);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+        }
+    };
+    const drawOcean = (p, t) => {
+        const top = h * 0.5;
+        const ocean = ctx.createLinearGradient(0, top, 0, h);
+        if (p === 'rain') {
+            ocean.addColorStop(0, 'rgba(20, 60, 80, 0.75)');
+            ocean.addColorStop(0.45, 'rgba(10, 40, 58, 0.85)');
+            ocean.addColorStop(1, 'rgba(4, 20, 32, 0.92)');
+        }
+        else if (p === 'sunrise') {
+            ocean.addColorStop(0, 'rgba(80, 160, 190, 0.7)');
+            ocean.addColorStop(0.4, 'rgba(40, 110, 150, 0.82)');
+            ocean.addColorStop(1, 'rgba(20, 50, 80, 0.9)');
+        }
+        else {
+            ocean.addColorStop(0, 'rgba(90, 50, 120, 0.65)');
+            ocean.addColorStop(0.4, 'rgba(30, 40, 90, 0.8)');
+            ocean.addColorStop(1, 'rgba(10, 15, 40, 0.92)');
+        }
+        ctx.fillStyle = ocean;
+        ctx.fillRect(0, top, w, h - top);
+        // sun path reflection
+        if (p === 'sunrise' || p === 'sunset') {
+            const sunX = p === 'sunrise' ? w * (0.2 + t * 0.25) : w * (0.7 - t * 0.22);
+            const refl = ctx.createLinearGradient(sunX, top, sunX, h * 0.85);
+            refl.addColorStop(0, p === 'sunrise'
+                ? 'rgba(255, 200, 120, 0.35)'
+                : 'rgba(255, 120, 90, 0.28)');
+            refl.addColorStop(1, 'rgba(255, 150, 80, 0)');
+            ctx.fillStyle = refl;
+            ctx.fillRect(sunX - 40, top, 80, h * 0.35);
+        }
+        // waves
+        const waveAlpha = p === 'rain' ? 0.22 : 0.35;
+        for (let row = 0; row < 5; row++) {
+            const y0 = top + 18 + row * 22;
+            ctx.beginPath();
+            ctx.moveTo(0, y0);
+            for (let x = 0; x <= w; x += 18) {
+                const y = y0 +
+                    Math.sin(x * 0.018 + waveT * (1.2 + row * 0.15) + row) * (3.5 + row * 0.8) +
+                    Math.sin(x * 0.04 - waveT * 0.8) * 1.5;
+                ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle =
+                p === 'rain'
+                    ? `rgba(120, 200, 220, ${waveAlpha})`
+                    : p === 'sunrise'
+                        ? `rgba(255, 230, 190, ${waveAlpha})`
+                        : `rgba(255, 180, 200, ${waveAlpha * 0.85})`;
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+        }
+        // foam near shore (left coast)
+        ctx.fillStyle =
+            p === 'rain' ? 'rgba(180, 220, 230, 0.15)' : 'rgba(255, 250, 240, 0.22)';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.72);
+        for (let x = 0; x < w * 0.38; x += 12) {
+            ctx.lineTo(x, h * 0.7 + Math.sin(x * 0.05 + waveT * 2) * 4 + Math.sin(waveT + x * 0.02) * 3);
+        }
+        ctx.lineTo(w * 0.35, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fill();
+    };
+    const drawPalm = (palm, p) => {
+        const ground = h * 0.78;
+        const s = palm.scale * Math.min(w, h) * 0.0011;
+        const trunkH = 160 * s;
+        ctx.save();
+        ctx.translate(palm.x, ground);
+        ctx.rotate(palm.lean);
+        // trunk
+        ctx.strokeStyle =
+            p === 'rain' ? 'rgba(60, 45, 30, 0.85)' : 'rgba(90, 60, 35, 0.9)';
+        ctx.lineWidth = 7 * s;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(12 * s, -trunkH * 0.5, 4 * s, -trunkH);
+        ctx.stroke();
+        // fronds
+        const crownY = -trunkH;
+        const frondColor = p === 'rain'
+            ? 'rgba(30, 90, 55, 0.8)'
+            : p === 'sunrise'
+                ? 'rgba(40, 130, 70, 0.88)'
+                : 'rgba(25, 80, 50, 0.85)';
+        for (let i = 0; i < 7; i++) {
+            const ang = -Math.PI * 0.85 + (i / 6) * Math.PI * 0.95;
+            const len = (70 + (i % 2) * 18) * s;
+            ctx.strokeStyle = frondColor;
+            ctx.lineWidth = 3 * s;
+            ctx.beginPath();
+            ctx.moveTo(4 * s, crownY);
+            ctx.quadraticCurveTo(4 * s + Math.cos(ang) * len * 0.55, crownY + Math.sin(ang) * len * 0.4 + 10 * s, 4 * s + Math.cos(ang) * len, crownY + Math.sin(ang) * len * 0.75);
+            ctx.stroke();
+            // leaflet hints
+            ctx.strokeStyle =
+                p === 'rain' ? 'rgba(50, 120, 70, 0.45)' : 'rgba(70, 160, 90, 0.5)';
+            ctx.lineWidth = 1.2 * s;
+            for (let j = 1; j <= 3; j++) {
+                const t = j / 3.5;
+                const bx = 4 * s + Math.cos(ang) * len * t;
+                const by = crownY + Math.sin(ang) * len * 0.75 * t;
+                ctx.beginPath();
+                ctx.moveTo(bx, by);
+                ctx.lineTo(bx + Math.cos(ang + 0.9) * 12 * s, by + 8 * s);
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    };
+    const drawOak = (oak, p) => {
+        const ground = h * 0.76;
+        const s = oak.scale * Math.min(w, h) * 0.00115;
+        ctx.save();
+        ctx.translate(oak.x, ground);
+        // trunk
+        ctx.fillStyle =
+            p === 'rain' ? 'rgba(45, 32, 22, 0.88)' : 'rgba(70, 48, 30, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(-10 * s, 0);
+        ctx.quadraticCurveTo(-6 * s, -90 * s, -4 * s, -130 * s);
+        ctx.lineTo(6 * s, -128 * s);
+        ctx.quadraticCurveTo(8 * s, -90 * s, 12 * s, 0);
+        ctx.closePath();
+        ctx.fill();
+        // canopy lobes
+        const canopy = p === 'rain'
+            ? 'rgba(25, 70, 40, 0.82)'
+            : p === 'sunrise'
+                ? 'rgba(45, 110, 55, 0.88)'
+                : 'rgba(30, 75, 45, 0.85)';
+        const lobes = [
+            { x: -35, y: -145, r: 42 },
+            { x: 10, y: -160, r: 48 },
+            { x: 40, y: -140, r: 38 },
+            { x: -5, y: -120, r: 36 },
+            { x: 25, y: -115, r: 32 },
+        ];
+        ctx.fillStyle = canopy;
+        for (const lobe of lobes) {
+            ctx.beginPath();
+            ctx.ellipse(lobe.x * s, lobe.y * s, lobe.r * s, lobe.r * 0.85 * s, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // highlight
+        ctx.fillStyle =
+            p === 'sunrise' ? 'rgba(120, 180, 90, 0.2)' : 'rgba(80, 140, 90, 0.12)';
+        ctx.beginPath();
+        ctx.ellipse(5 * s, -155 * s, 28 * s, 22 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    };
+    const drawColibri = (b, now) => {
+        b.wing += 0.55;
+        const dx = b.targetX - b.x;
+        const dy = b.targetY - b.y;
+        b.vx += dx * 0.0025;
+        b.vy += dy * 0.0025;
+        b.vx *= 0.96;
+        b.vy *= 0.96;
+        b.x += b.vx;
+        b.y += b.vy + Math.sin(now * 0.006 + b.hue) * 0.35;
+        if (Math.hypot(dx, dy) < 18 || Math.random() < 0.008) {
+            b.targetX = Math.max(40, Math.min(w - 40, b.x + (Math.random() - 0.5) * 160));
+            b.targetY = Math.max(h * 0.22, Math.min(h * 0.55, b.y + (Math.random() - 0.5) * 80));
+        }
+        const facing = b.vx >= 0 ? 1 : -1;
+        const s = b.scale * 1.15;
+        const flap = Math.sin(b.wing) * 0.85;
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.scale(facing * s, s);
+        // wings (blurred flutter)
+        ctx.fillStyle = `hsla(${b.hue}, 70%, 55%, 0.45)`;
+        ctx.beginPath();
+        ctx.ellipse(-2, -2, 10, 3.5, -0.6 + flap, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(-2, 2, 9, 3, 0.55 - flap, 0, Math.PI * 2);
+        ctx.fill();
+        // body
+        const body = ctx.createLinearGradient(-6, 0, 10, 0);
+        body.addColorStop(0, `hsla(${b.hue}, 75%, 42%, 0.95)`);
+        body.addColorStop(1, `hsla(${(b.hue + 40) % 360}, 80%, 55%, 0.95)`);
+        ctx.fillStyle = body;
+        ctx.beginPath();
+        ctx.ellipse(2, 0, 7, 3.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // head
+        ctx.fillStyle = `hsla(${(b.hue + 20) % 360}, 85%, 50%, 0.95)`;
+        ctx.beginPath();
+        ctx.arc(8, -1, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+        // long beak
+        ctx.strokeStyle = 'rgba(40, 30, 20, 0.9)';
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.moveTo(10, -1);
+        ctx.lineTo(18, 0.5);
+        ctx.stroke();
+        // tail
+        ctx.fillStyle = `hsla(${b.hue}, 65%, 40%, 0.85)`;
+        ctx.beginPath();
+        ctx.moveTo(-5, 0);
+        ctx.lineTo(-14, -4);
+        ctx.lineTo(-12, 0);
+        ctx.lineTo(-14, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    };
+    const rainStrength = (p, elapsed) => {
+        const dur = PHASE_MS[p];
+        const edge = 4500;
+        if (p === 'rain') {
+            if (elapsed < edge)
+                return elapsed / edge;
+            if (elapsed > dur - edge)
+                return (dur - elapsed) / edge;
+            return 1;
+        }
+        if (elapsed < 3500)
+            return 1 - elapsed / 3500;
+        return 0;
+    };
+    const frame = (now) => {
+        raf = 0;
+        if (!visible || modeRef.current === 'off' || contrast.matches)
+            return;
+        if (!staticFrame && now - lastFrame < 28) {
+            if (!staticFrame)
+                raf = requestAnimationFrame(frame);
+            return;
+        }
+        lastFrame = now;
+        waveT += 0.045;
+        const forced = staticFrame && modeRef.current === 'auto' ? phase : modeRef.current;
+        if (forced !== 'auto') {
+            if (forced !== lastForced || phase !== forced) {
+                phase = forced;
+                phaseStarted = now;
+                bolts = [];
+                flash = 0;
+                if (phase === 'rain')
+                    nextBoltAt = now + 400;
+            }
+            lastForced = forced;
+        }
+        else if (lastForced !== 'auto') {
+            // Re-enter cycle clearly from rain when AUTO is selected
+            phase = 'rain';
+            phaseStarted = now;
+            bolts = [];
+            flash = 0;
+            nextBoltAt = now + 800;
+            lastForced = 'auto';
+        }
+        else {
+            const elapsedAuto = now - phaseStarted;
+            if (elapsedAuto >= PHASE_MS[phase]) {
+                phase = NEXT[phase];
+                phaseStarted = now;
+                bolts = [];
+                flash = 0;
+                if (phase === 'rain')
+                    nextBoltAt = now + 1500;
+            }
+        }
+        let elapsed = now - phaseStarted;
+        // Manual lock: hold peak look (full rain / mid sun) — no fade-in dead zone
+        if (forced !== 'auto') {
+            const dur = PHASE_MS[phase];
+            elapsed = phase === 'rain' ? dur * 0.5 : dur * 0.42;
+        }
+        const t = Math.min(1, elapsed / PHASE_MS[phase]);
+        ctx.clearRect(0, 0, w, h);
+        drawSky(phase, elapsed);
+        drawMountains(phase);
+        drawOcean(phase, t);
+        // shore / grass strip under trees
+        const shore = ctx.createLinearGradient(0, h * 0.7, 0, h);
+        shore.addColorStop(0, phase === 'rain' ? 'rgba(35, 55, 40, 0.55)' : 'rgba(50, 90, 45, 0.5)');
+        shore.addColorStop(1, 'rgba(15, 25, 20, 0.35)');
+        ctx.fillStyle = shore;
+        ctx.fillRect(0, h * 0.7, w, h * 0.3);
+        for (const oak of oaks)
+            drawOak(oak, phase);
+        for (const palm of palms)
+            drawPalm(palm, phase);
+        // colibrí more active in clear weather
+        const birdAlpha = phase === 'rain' ? 0.55 : 1;
+        ctx.globalAlpha = birdAlpha;
+        for (const bird of birds)
+            drawColibri(bird, now);
+        ctx.globalAlpha = 1;
+        const rainAmt = rainStrength(phase, elapsed);
+        if (rainAmt > 0.02) {
+            const active = Math.floor(drops.length * Math.min(1, rainAmt * 1.1));
+            for (let i = 0; i < active; i++) {
+                const d = drops[i];
+                d.y += d.speed;
+                d.x += 0.3 + d.speed * 0.035;
+                if (d.y > h + 20 || d.x > w + 20) {
+                    drops[i] = spawnDrop(false);
+                    continue;
+                }
+                ctx.globalAlpha = d.alpha * rainAmt;
+                ctx.strokeStyle = 'rgba(160, 220, 230, 0.9)';
+                ctx.lineWidth = d.width;
+                ctx.beginPath();
+                ctx.moveTo(d.x, d.y);
+                ctx.lineTo(d.x - 1.4, d.y + d.len);
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+            if (!staticFrame && phase === 'rain' && rainAmt > 0.55 && now >= nextBoltAt) {
+                bolts.push(makeBolt());
+                if (Math.random() > 0.55)
+                    bolts.push(makeBolt());
+                flash = 0.5 + Math.random() * 0.3;
+                nextBoltAt = now + 2800 + Math.random() * 5000;
+            }
+        }
+        bolts = bolts.filter((b) => {
+            b.life -= 0.02 / b.maxLife;
+            if (b.life <= 0)
+                return false;
+            const a = Math.max(0, Math.min(1, b.life));
+            drawBoltPath(b.segments, a);
+            for (const br of b.branches)
+                drawBoltPath(br, a * 0.7);
+            return true;
+        });
+        if (flash > 0.01) {
+            ctx.fillStyle = `rgba(160, 220, 255, ${flash * 0.18})`;
+            ctx.fillRect(0, 0, w, h);
+            flash *= 0.86;
+        }
+        if (!staticFrame)
+            raf = requestAnimationFrame(frame);
+    };
+    function sync() {
+        cancelAnimationFrame(raf);
+        raf = 0;
+        visible = !document.hidden;
+        canvas.hidden = modeRef.current === 'off' || contrast.matches;
+        for (const b of group.querySelectorAll('[data-weather]'))
+            b.setAttribute('aria-pressed', String(b.dataset.weather === modeRef.current));
+        const note = group.querySelector('small');
+        if (note)
+            note.textContent = reduced.matches ? 'Visual presets · Static: Reduce Motion is enabled' : 'Visual presets · Auto cycles scenes · No live weather';
+        if (!visible || canvas.hidden)
+            return;
+        staticFrame = reduced.matches;
+        lastFrame = -Infinity;
+        if (staticFrame) {
+            bolts = [];
+            flash = 0;
+            frame(performance.now());
+        }
+        else
+            raf = requestAnimationFrame(frame);
+    }
+    for (const b of group.querySelectorAll('[data-weather]'))
+        b.addEventListener('click', () => {
+            modeRef.current = b.dataset.weather;
+            try {
+                localStorage.setItem('airodrom.atmosphere.v1', modeRef.current);
+            }
+            catch { }
+            sync();
+        });
+    document.addEventListener('visibilitychange', () => { const now = performance.now(); if (document.hidden)
+        hiddenAt = now;
+    else if (hiddenAt) {
+        phaseStarted += now - hiddenAt;
+        hiddenAt = 0;
+    } sync(); });
+    reduced.addEventListener('change', sync);
+    contrast.addEventListener('change', sync);
+    window.addEventListener('resize', () => { resize(); sync(); });
+    window.addEventListener('pagehide', () => cancelAnimationFrame(raf));
+    resize();
+    sync();
+})();
+
+// END generated atmosphere compatibility bundle
