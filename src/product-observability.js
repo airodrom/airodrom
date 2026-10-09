@@ -19,7 +19,17 @@ const STAGES = Object.freeze({
  'orchestrator.capability.requested':['Capability','Capability requested'], 'capability.failed':['Capability','Capability failed'], 'capability.denied':['Capability','Capability denied'], 'capability.requested':['Capability','Capability requested'], 'capability.completed':['Capability','Capability completed'],
  'approval.requested':['Approval','Protected approval required'], 'approval.revoked':['Approval','Protected approval revoked'], 'approval.required':['Approval','Protected approval required'], 'approval.approved':['Approval','Protected approval granted'],
  'approval.rejected':['Approval','Protected approval rejected'], 'approval.expired':['Approval','Protected approval expired'],
- 'agent.completed':['Mission','Worker result received'], 'agent.failed':['Mission','Worker failed'],
+ 'agent.completed':['Mission','Worker result received'], 'agent.failed':['Mission','Worker failed'], 'agent.started':['Worker','Worker started'],
+ 'worker.started':['Worker','Worker started'], 'worker.tool_requested':['Worker','Tool requested'], 'worker.tool_permitted':['Worker','Tool permitted'],
+ 'worker.tool_denied':['Worker','Tool denied'], 'worker.tool_completed':['Worker','Tool completed'], 'worker.waiting':['Worker','Worker waiting'],
+ 'worker.failed':['Worker','Worker failed'], 'worker.terminated':['Worker','Worker terminated'],
+ 'worker.execution_started':['Worker','Worker execution started'], 'worker.output_observed':['Worker','Worker output observed'],
+ 'worker.proxy':['Worker','Worker network proxy observed'], 'worker.proxy_denied':['Worker','Worker network proxy denied'],
+ 'fs.file_read':['File','File read'], 'fs.file_created':['File','File created'], 'fs.file_modified':['File','File modified'], 'fs.file_deleted':['File','File deleted'],
+ 'git.diff_observed':['Git','Git diff observed'], 'git.diff.observed':['Git','Git diff observed'], 'git.branch.observed':['Git','Git branch observed'], 'git.baseline.observed':['Git','Git baseline observed'],
+ 'shell.command.requested':['Command','Command started'], 'shell.command.completed':['Command','Command completed'],
+ 'test.started':['Test','Test started'], 'test.completed':['Test','Test completed'], 'test.observed':['Test','Test result observed'],
+ 'observatory.heartbeat':['System','Live observatory heartbeat'],
  'verification.started':['Verification','Independent verification running'], 'verification.completed':['Verification','Independent verification finished'],
  'verification.failed':['Verification','Independent verification failed'], 'acceptance.started':['Verification','Acceptance evaluation started'],
  'acceptance.passed':['Verification','Acceptance evaluation passed; decision still required'],
@@ -35,14 +45,20 @@ const DISPLAY_STAGE = Object.freeze({
  'context_pack.created':'context','runtime.context.delivered':'context',
  'runtime.qualification.checked':'runtime','agent.route.selected':'runtime',
  'mission.dispatching':'execution','run.started':'execution','runtime.execution.started':'execution','mission.running':'execution','agent.completed':'execution','agent.failed':'execution',
+ 'agent.started':'execution','worker.started':'execution','worker.tool_requested':'execution','worker.tool_permitted':'execution','worker.tool_denied':'execution','worker.tool_completed':'execution','worker.waiting':'execution','worker.failed':'execution','worker.terminated':'execution','worker.execution_started':'execution','worker.output_observed':'execution','worker.proxy':'execution','worker.proxy_denied':'execution',
+ 'fs.file_read':'execution','fs.file_created':'execution','fs.file_modified':'execution','fs.file_deleted':'execution','git.diff_observed':'execution','git.diff.observed':'execution','git.branch.observed':'execution','git.baseline.observed':'execution',
+ 'shell.command.requested':'execution','shell.command.completed':'execution','test.started':'execution','test.completed':'execution','test.observed':'execution',
  'verification.started':'verification','verification.completed':'verification','verification.failed':'verification','acceptance.started':'verification','acceptance.passed':'verification','acceptance.operator_review':'acceptance',
  'mission.awaiting_acceptance':'acceptance','mission.waiting_for_operator':'acceptance','mission.accepted':'acceptance','mission.settled':'settlement'
 });
 function eventView(event) {
  const mapping = STAGES[event.event_type]; if (!mapping) return null;
- const label=event.event_type==='run.started'&&event.metadata?.execution_role==='verifier'?'Independent verifier starting':event.event_type==='run.started'&&event.metadata?.agent_id==='host'&&event.metadata?.execution_role!=='worker'?'Host run starting; purpose unobserved':event.event_type==='mission.accepted'&&event.metadata?.decision==='rework'?'Rework decision recorded':event.event_type==='mission.settled'&&event.metadata?.state!=='settled'?'Settlement requires rework':mapping[1];
- return {event_id:id(event.event_id),sequence:count(event.sequence),timestamp_ms:time(event.timestamp_ms),mission_id:id(event.mission_id),mission_revision:count(event.metadata?.mission_revision),run_id:id(event.run_id),category:mapping[0],stage:event.event_type==='run.started'&&event.metadata?.execution_role==='verifier'?'verification':DISPLAY_STAGE[event.event_type]||null,label,branch:/(failed|blocked|rework|rejected|expired|cancelled)$/.test(event.event_type)?'attention':'observed',
-  outcome:enumValue(event.metadata?.status,['passed','failed','operator_review','unavailable'],null),
+ const tool=typeof event.metadata?.tool==='string'?event.metadata.tool:null;
+ const job=typeof event.metadata?.job_name==='string'?event.metadata.job_name:null;
+ const file=typeof event.metadata?.path==='string'?event.metadata.path:null;
+ const label=event.event_type==='run.started'&&event.metadata?.execution_role==='verifier'?'Independent verifier starting':event.event_type==='run.started'&&event.metadata?.agent_id==='host'&&event.metadata?.execution_role!=='worker'?'Host run starting; purpose unobserved':event.event_type==='mission.accepted'&&event.metadata?.decision==='rework'?'Rework decision recorded':event.event_type==='mission.settled'&&event.metadata?.state!=='settled'?'Settlement requires rework':event.event_type==='worker.tool_requested'&&tool?`Tool requested · ${tool}`:event.event_type==='shell.command.requested'&&job?`Command started · ${job}`:event.event_type==='shell.command.completed'&&job?`Command completed · ${job}`:event.event_type==='test.completed'&&job?`Test completed · ${job}`:event.event_type.startsWith('fs.file_')&&file?`${mapping[1]} · ${file}`:mapping[1];
+ return {event_id:id(event.event_id),event_type:event.event_type,sequence:count(event.sequence),timestamp_ms:time(event.timestamp_ms),mission_id:id(event.mission_id),mission_revision:count(event.metadata?.mission_revision),run_id:id(event.run_id),category:mapping[0],stage:event.event_type==='run.started'&&event.metadata?.execution_role==='verifier'?'verification':DISPLAY_STAGE[event.event_type]||null,label,branch:/(failed|blocked|rework|rejected|expired|cancelled|denied)$/.test(event.event_type)?'attention':'observed',
+  outcome:enumValue(event.metadata?.status,['passed','failed','operator_review','unavailable','completed'],null),
   runtime:enumValue(event.metadata?.agent_id,['opencode','host','claude_code','codex','cursor'],null)};
 }
 function timeline(events) {
@@ -86,7 +102,7 @@ function missionView(bridge, mission) {
 }
 function runtimeView(ready) {
  const reason=enumValue(ready?.reason,['opencode_runtime_pins_changed','opencode_unavailable','opencode_version_unqualified','opencode_local_provider_unavailable','opencode_local_provider_not_configured'],ready?.ready===true?null:'opencode_unavailable');
- return {state:ready?.ready===true?'Ready':reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable',ready:ready?.ready===true,role:'Primary',version:ready?.version==='2.0.20'?'2.0.20':null,reason,requalification:reason==='opencode_runtime_pins_changed'?'Required':'Not running'};
+ return {state:ready?.ready===true?'Ready':reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable',ready:ready?.ready===true,role:'Primary',version:ready?.version==='2.0.25'?'2.0.25':null,reason,requalification:reason==='opencode_runtime_pins_changed'?'Required':'Not running'};
 }
 function memoryStatus(bridge){
  const db=bridge.controlStore.db;
@@ -137,7 +153,7 @@ async function nativeStatus(bridge) {
 function events(bridge,url) {
  const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)throw Error('Invalid event cursor');
  const mission=url.searchParams.get('mission');if(mission&&!id(mission))throw Error('Invalid Mission ID');
- const category=url.searchParams.get('category');if(category&&!['Mission','Runtime','Memory','Capability','Verification','Approval','Settlement','System'].includes(category))throw Error('Invalid category');
+ const category=url.searchParams.get('category');if(category&&!['Mission','Runtime','Memory','Capability','Verification','Approval','Settlement','System','Worker','File','Git','Command','Test'].includes(category))throw Error('Invalid category');
  const batch=bridge.ledger.list({afterSequence:after,limit:200,...(mission?{missionId:mission}:{})});
  return {events:timeline(batch.events).filter(e=>!category||e.category===category),cursor:batch.events.at(-1)?.sequence||after,has_more:batch.has_more,observed_at:Date.now()};
 }

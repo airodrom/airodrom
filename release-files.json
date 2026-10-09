@@ -567,5 +567,13 @@
   "tests/fixtures/bounded-worker-fixture.cjs",
   "docs/adr/0019-codex-live-qualification.md",
   "tests/codex-live-qualification.test.js",
-  "tests/live-codex.cjs"
+  "tests/live-codex.cjs",
+  "tests/opencode-pin-replacement.test.js",
+  "docs/adr/0034-opencode-pin-replacement-requalify.md",
+  "docs/adr/0035-opencode-2.0.25-qualification.md",
+  "src/live-observatory.js",
+  "docs/LIVE-AGENT-OBSERVATORY-V1.md",
+  "docs/LIVE-OBSERVATORY-ACTIVATION-V1.md",
+  "docs/adr/0036-live-agent-observatory-v1.md",
+  "tests/live-observatory-v1.test.js"
 ]

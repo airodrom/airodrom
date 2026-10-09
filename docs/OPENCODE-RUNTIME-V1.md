@@ -2,7 +2,7 @@
 
 The adapter implements [ADR 0005](adr/0005-opencode-execution-boundary.md). Its identity is `opencode`; its output is execution evidence only.
 
-The initial supported surface is OpenCode CLI **2.0.20**, macOS, and local Ollama inference. Official [v2 commands](https://opencode.ai/v2/docs/cli/commands/), [configuration](https://opencode.ai/v2/docs/config/), [permissions](https://opencode.ai/v2/docs/permissions/) and [local model discovery](https://opencode.ai/v2/docs/models/) describe the upstream interfaces. The installed CLI's help and the official `v2.0.20` source tag were checked as well. V1 CLI flags and configuration are incompatible with this surface. Other versions, operating systems and external providers fail closed pending their own qualification.
+The supported surface is OpenCode CLI **2.0.25**, macOS, and local Ollama inference. Official [v2 commands](https://opencode.ai/v2/docs/cli/commands/), [configuration](https://opencode.ai/v2/docs/config/), [permissions](https://opencode.ai/v2/docs/permissions/) and [local model discovery](https://opencode.ai/v2/docs/models/) describe the upstream interfaces. The installed CLI's help and the official `v2.0.20` source tag were checked as well. V1 CLI flags and configuration are incompatible with this surface. Other versions, operating systems and external providers fail closed pending their own qualification.
 
 Host composition accepts an `opencode` option with `enabled: true`, an installed absolute `executable`, a model such as `ollama/qwen3-coder:30b`, and an optional timeout of at most 120000 milliseconds. Availability requires the installed version and selected local model. No login is required for the local provider; status returns a category, never credentials. The [official installation page](https://opencode.ai/v2/docs) lists supported installers. Installing remains separate from enabling an adapter.
 
@@ -17,6 +17,8 @@ Upstream supports native session continuation. This adapter intentionally reject
 Qualification uses synthetic stores and a temporary repository. It exercises read-only work, one-file editing, artifact return, a registered test, independent repository checks, Acceptance and Settlement. Deterministic adversarial checks cover unavailable versions, workspace and scope violations, nonzero and malformed output, timeout, cancellation, duplicates, secret handling and authority escalation. The Memory V2 test stores one synthetic preference, supplies only its authorized retrieval, corrects it, forgets and erases it, rejects old packs, and checks fresh-session non-delivery. It does not inspect the operator's real private memory or activate production.
 
 ## Qualification evidence
+
+On 2026-10-09, OpenCode 2.0.25 (`ollama/qwen3-coder:30b`, macOS arm64, Homebrew `homebrew/core`) passed the same confined live synthetic Mission and Memory V2 qualification suite used for 2.0.20. The executable SHA-256 is recorded in [runtime qualification metadata](../config/agent-runtime-qualification-v1.json).
 
 On 2026-10-06, OpenCode 2.0.20 (`ollama/qwen3-coder:30b`, macOS arm64) passed isolated live read-only and one-file edit tasks, host-measured artifact return, protected registered tests, independent repository verification, explicit Acceptance and subsequent Settlement. Real timeout and cancellation terminated the private process group. The executable SHA-256 is recorded in [runtime qualification metadata](../config/agent-runtime-qualification-v1.json).
 

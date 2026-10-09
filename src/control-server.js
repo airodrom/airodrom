@@ -193,6 +193,13 @@ class ControlServer {
       }
       if (req.method === 'GET' && url.pathname === '/api/product/overview') return this.json(res, 200, await require('./product-observability').overview(this.bridge,{currentOffset:Number(url.searchParams.get('current_offset')||0)}));
       if (req.method === 'GET' && url.pathname === '/api/product/events') return this.json(res, 200, require('./product-observability').events(this.bridge, url));
+      if (req.method === 'GET' && url.pathname === '/api/product/live-events') return this.json(res, 200, require('./live-observatory').liveEvents(this.bridge, url));
+      if (req.method === 'GET' && url.pathname === '/api/product/observatory') return this.json(res, 200, require('./live-observatory').snapshot(this.bridge, url.searchParams.get('mission')));
+      if (req.method === 'GET' && url.pathname === '/api/product/observatory/diff') return this.json(res, 200, require('./live-observatory').authorizedDiff(this.bridge, url.searchParams.get('mission'), url.searchParams.get('path')));
+      if (req.method === 'GET' && url.pathname === '/api/product/live-stream') {
+        req.setTimeout(0); res.setTimeout(0);
+        return require('./live-observatory').attachSse(req, res, this.bridge, url);
+      }
       if (req.method === 'GET' && url.pathname === '/api/product/mission') return this.json(res, 200, require('./product-observability').missionView(this.bridge, this.bridge.missions.require(url.searchParams.get('id'))));
       if(req.method==='GET'&&url.pathname==='/api/assistant/history'){
         const selected=url.searchParams.get('mission_id');
