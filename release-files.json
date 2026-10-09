@@ -589,5 +589,10 @@
   "docs/adr/0039-local-first-batch-merge.md",
   "tests/development-session-v1.test.js",
   "docs/WHATSAPP-INBOUND-V1.md",
-  "docs/adr/0038-whatsapp-inbound-v1.md"
+  "docs/adr/0038-whatsapp-inbound-v1.md",
+  "public/atmosphere.js",
+  "scripts/build-atmosphere.cjs",
+  "config/notion-documentation-v1.json",
+  "src/notion-documentation-routing.js",
+  "docs/NOTION-DOCUMENTATION-ROUTING-V1.md"
 ]

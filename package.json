@@ -43,7 +43,8 @@
     "test:assistant": "node scripts/run.cjs --test tests/personal-assistant-v1.test.js",
     "test:conversation": "NODE_ENV=test node scripts/run.cjs --test tests/conversation-engine.test.js tests/conversation-routing-v1.test.js tests/conversation-cli.test.js tests/secure-vault-guide.test.js",
     "test:workers": "NODE_ENV=test node scripts/run.cjs --test tests/multi-worker-v2.test.js tests/multi-worker-ui.test.js",
-    "test:codex:live": "AIRODROM_CODEX_LIVE=1 node scripts/run.cjs tests/live-codex.cjs"
+    "test:codex:live": "AIRODROM_CODEX_LIVE=1 node scripts/run.cjs tests/live-codex.cjs",
+    "build:atmosphere": "node scripts/build-atmosphere.cjs"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -397,6 +398,11 @@
     "scripts/whatsapp-webhook-ingress-prep.cjs",
     "docs/META-WHATSAPP-LIVE-CONNECTION-V1.md",
     "src/whatsapp-inbound.js",
-    "config/whatsapp-inbound-v1.json"
+    "config/whatsapp-inbound-v1.json",
+    "public/atmosphere.js",
+    "scripts/build-atmosphere.cjs",
+    "config/notion-documentation-v1.json",
+    "src/notion-documentation-routing.js",
+    "docs/NOTION-DOCUMENTATION-ROUTING-V1.md"
   ]
 }
