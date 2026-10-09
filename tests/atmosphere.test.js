@@ -34,5 +34,12 @@ test('control-hub HTML keeps premium mount fingerprint to prevent silent UI repl
  assert.ok(html.length>=4500,'control-hub.html regresses toward stripped mount surface');
  assert.match(css,/#weather-switcher|#atmosphere/);
  assert.match(js,/LIVE MISSION OBSERVATORY/);
+ assert.match(js,/obs-grid/);
  assert.match(js,/BEGIN generated atmosphere compatibility bundle/);
+ assert.match(js,/\/api\/product\/overview/);
+ assert.match(js,/\/api\/product\/observatory/);
+ assert.match(js,/\/api\/product\/accept-mission/);
+ assert.match(js,/Google Connections/);
+ assert.match(js,/deriveConnection/);
+ assert.match(js,/const views=\['AI & Workers'/);
 });

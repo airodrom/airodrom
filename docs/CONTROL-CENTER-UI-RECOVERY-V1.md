@@ -34,13 +34,16 @@ Branch `feat/control-center-ui-recovery-v1` (isolated worktree):
 
 Focused tests (isolated worktree):
 
-- `tests/atmosphere.test.js` (includes premium mount fingerprint safeguard)
+- `tests/atmosphere.test.js` (premium mount fingerprint + Observatory/API guards)
+- `tests/control-center-premium-contract.test.js` (fixture ControlServer API + static mounts; not installed-service evidence)
 - `tests/control-center-ui.test.js`
 - `tests/connection-status.test.js`
 - `tests/live-observatory-v1.test.js`
 - `tests/notion-documentation-routing.test.js`
 
-Browser: static serve of recovered `public/` at `http://127.0.0.1:8766/control-hub.html` (no secrets). Headless Chrome screenshot evidence stored outside the git tree under the Mission evidence folder. Observed: brand shell, expanded nav, theme select, SKY atmosphere switcher with animated scene, reconnecting chip when no local service API is attached. Static fixture is not LIVE VERIFIED Activation proof.
+Browser: static serve of recovered `public/` at `http://127.0.0.1:8766/control-hub.html` (no secrets). Headless Chrome screenshot evidence stored outside the git tree under the Mission evidence folder. Observed: brand shell, expanded nav, theme select, SKY atmosphere switcher with animated scene, reconnecting chip when no local service API is attached.
+
+API contract preview: temporary fixture ControlServer in `control-center-premium-contract` verifies `/control-hub.html` mounts plus `/api/product/overview` and `/api/product/observatory`. This is **not** INSTALLED LOCALLY or LIVE VERIFIED evidence for the operator service (service was not restarted).
 
 ## Status vocabulary
 
@@ -50,8 +53,7 @@ Browser: static serve of recovered `public/` at `http://127.0.0.1:8766/control-h
 | PR OPEN | No |
 | MERGED IN SOURCE | No |
 | INSTALLED LOCALLY | No (operator service still pre-recovery until authorized cutover) |
-| LIVE VERIFIED | No (static browser only) |
-| PUBLIC ACTIVATION | OFF |
+| LIVE VERIFIED | No (static browser + fixture API only) |
 
 | Field | Value |
 |-------|-------|

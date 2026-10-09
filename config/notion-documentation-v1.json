@@ -26,6 +26,18 @@
     {
       "title": "Control Center UI Recovery V1",
       "page_id": "3f4593eead7481018b16f930c8ce71ce"
+    },
+    {
+      "title": "Automatic Acceptance V1",
+      "page_id": "3f4593eead7481c6a2c0c6afe7779718"
+    },
+    {
+      "title": "Live Observatory V1",
+      "page_id": "3f4593eead748141a767ca2ef6b8e402"
+    },
+    {
+      "title": "Menu Bar V2",
+      "page_id": "3f4593eead74811fba37d40378388d11"
     }
   ],
   "status_vocabulary": [
@@ -33,8 +45,7 @@
     "PR OPEN",
     "MERGED IN SOURCE",
     "INSTALLED LOCALLY",
-    "LIVE VERIFIED",
-    "PUBLIC ACTIVATION OFF"
+    "LIVE VERIFIED"
   ],
   "rules": {
     "require_verified_airodrom_hub": true,

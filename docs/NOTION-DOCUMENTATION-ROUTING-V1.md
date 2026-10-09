@@ -35,10 +35,18 @@ Use these labels explicitly:
 - LIVE VERIFIED
 - PUBLIC ACTIVATION OFF
 
-## Owned pages (moved 2026-10-09)
+## Owned pages (under Airodrom hub)
+
+Moved (IDs preserved):
 
 - Meta WhatsApp Live Connection V1 — `3f4593eead7481bda472e3a94dc1a60f`
 - Development Sessions V1 — `3f4593eead74817f8d8ecb8d448dc88c`
 - Control Center UI Recovery V1 — `3f4593eead7481018b16f930c8ce71ce`
 
-Original page IDs preserved; pages were moved, not duplicated or deleted.
+Created under hub (no prior Airodrom-owned page):
+
+- Automatic Acceptance V1 — `3f4593eead7481c6a2c0c6afe7779718`
+- Live Observatory V1 — `3f4593eead748141a767ca2ef6b8e402`
+- Menu Bar V2 — `3f4593eead74811fba37d40378388d11`
+
+Pages were not duplicated under Pi Bridge. Historical Pi Bridge material remains intact.
