@@ -233,15 +233,40 @@ test('IDE tasks run only when classified safe and never through a shell', async 
     ]
   }`);
   execFileSync(GIT, ['init', '-q', '-b', 'main'], { cwd: repo });
+  const emptyRepo = path.join(home, 'code/empty-tasks');
+  fs.mkdirSync(emptyRepo, { recursive: true });
+  execFileSync(GIT, ['init', '-q', '-b', 'main'], { cwd: emptyRepo });
+  const missing = await call(host, { ...task, workspace: emptyRepo }, 'cursor_run_task', { label: 'status' });
+  assert.equal(missing.decision, 'deny');
+  assert.match(missing.reason, /No \.vscode\/tasks\.json/);
+  assert.match(missing.reason, /not Cursor Agent/);
   const ok = await call(host, task, 'cursor_run_task', { repo: '~/code/repo', label: 'status' });
   assert.equal(ok.decision, 'auto_allow');
   assert.equal(ok.result.exit_code, 0);
+  assert.equal(ok.result.agent_execution, false);
+  assert.equal(ok.result.kind, 'ide_task');
+  const workspaceOnly = await call(host, task, 'cursor_run_task', { label: 'status' });
+  assert.equal(workspaceOnly.decision, 'auto_allow');
+  assert.equal(workspaceOnly.result.exit_code, 0);
+  const unknown = await call(host, task, 'cursor_run_task', { repo: '~/code/repo', label: 'missing-label' });
+  assert.equal(unknown.decision, 'deny');
+  assert.match(unknown.reason, /No task labelled missing-label/);
   const wipe = await call(host, task, 'cursor_run_task', { repo: '~/code/repo', label: 'wipe' });
   assert.equal(wipe.decision, 'deny', 'destructive commands without an allowlisted executor fail closed');
   assert.match(wipe.reason, /not allowlisted/);
   assert.equal((await call(host, task, 'cursor_run_task', { repo: '~/code/repo', label: 'installer' })).decision, 'deny');
   assert.equal((await call(host, task, 'cursor_run_task', { repo: '~/code/repo', label: 'sudo' })).decision, 'deny');
   assert.equal(fs.existsSync(path.join(repo, '.vscode/tasks.json')), true, 'wipe never ran');
+  const status = await call(host, task, 'cursor_task_status', {});
+  assert.equal(status.result.kind, 'ide_task');
+  assert.equal(status.result.agent_execution, false);
+  assert.equal(status.result.status, 'completed');
+  const agents = await host.agentStatus();
+  assert.equal(agents.cursor.agent_execution, false);
+  assert.equal(agents.cursor.agent_availability, 'unqualified');
+  assert.notEqual(agents.cursor.availability, 'available');
+  assert.ok(agents.cursor.last_ide_task);
+  assert.equal(agents.cursor.last_ide_task.agent_execution, false);
 });
 
 test('apps and processes: registry-only lifecycle, classified stop, self and system protection', async t => {

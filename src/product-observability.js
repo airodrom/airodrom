@@ -37,7 +37,14 @@ const STAGES = Object.freeze({
  'mission.awaiting_acceptance':['Mission','Waiting for Acceptance'], 'mission.waiting_for_operator':['Mission','Waiting for operator Decision'],
  'mission.paused':['Mission','Mission paused'], 'mission.blocked':['Mission','Mission blocked'], 'mission.needs_rework':['Mission','Rework required'],
  'mission.cancelled':['Mission','Cancellation recorded; termination checked separately'], 'mission.completed':['Mission','Mission completed'],
- 'mission.accepted':['Settlement','Acceptance recorded'], 'mission.settled':['Settlement','Local Settlement recorded']
+ 'mission.accepted':['Settlement','Acceptance recorded'], 'mission.settled':['Settlement','Local Settlement recorded'],
+ 'whatsapp.inbound.received':['System','WhatsApp webhook received'], 'whatsapp.inbound.verified':['System','WhatsApp signature verified'],
+ 'whatsapp.inbound.stored':['System','WhatsApp message stored'], 'whatsapp.inbound.available':['System','WhatsApp message available in inbox'],
+ 'whatsapp.inbound.rejected':['System','WhatsApp webhook rejected'], 'whatsapp.inbound.duplicate':['System','WhatsApp duplicate ignored'],
+ 'whatsapp.inbound.unauthorized_sender':['System','WhatsApp sender not allowlisted'], 'whatsapp.inbound.status':['System','WhatsApp delivery status observed'],
+ 'whatsapp.inbound.challenge_ok':['System','WhatsApp verify challenge accepted'], 'whatsapp.inbound.enabled':['System','WhatsApp inbound enabled'],
+ 'whatsapp.inbound.disabled':['System','WhatsApp inbound disabled'],
+ 'whatsapp.inbound.discovery_recorded':['System','WhatsApp Meta discovery recorded'], 'whatsapp.inbound.callback_prepared':['System','WhatsApp HTTPS callback prepared']
 });
 const DISPLAY_STAGE = Object.freeze({
  'research.browser_started':'execution','research.browser_closed':'execution','research.network_denied':'execution','research.network_stopped':'execution','research.permission_granted':'execution','research.permission_revoked':'execution','mission.web.granted':'execution','mission.web.revoked':'execution','mission.web.evidence':'execution',
@@ -94,7 +101,16 @@ function missionView(bridge, mission) {
   budget:{actions_used:count(used?.actions),actions_limit:count(budget?.maxActions),retries_used:count(used?.retries),retries_limit:count(budget?.maxRetries),runtime_limit_ms:count(budget?.maxRuntimeMs)},
   memory:{selected_count:selected,delivery:delivered?'delivered this turn':contextCurrent?'selected; delivery not observed':'unavailable or invalidated',used_this_turn:'Model use is not observable',provenance:contextCurrent?'Current authorized canonical context':'Unavailable'},
   verification:{current:verificationCurrent,id:id(verification?.id),status:enumValue(verification?.result,['passed','failed','operator_review','unavailable'],'not_observed'),checks,run_id:id(verification?.run_id)},
-  acceptance:{status:enumValue(acceptance?.decision,['accept','rework'],'pending'),at:time(acceptance?.created_at)},
+  acceptance:(()=>{
+    const auto=!!(acceptance?.decision==='accept'&&(mission.envelope.risk_auto_acceptance?.authorized||mission.envelope.fixture_auto_acceptance?.authorized||mission.envelope.automatic_acceptance));
+    const reviewReason=state==='awaiting_acceptance'?(bridge.missions.riskAcceptance?.reviewReason(mission.id)||null):null;
+    return{
+      status:enumValue(acceptance?.decision,['accept','rework'],'pending'),
+      at:time(acceptance?.created_at),
+      mode:enumValue(auto?'automatically_verified':state==='awaiting_acceptance'||state==='waiting_for_operator'?'needs_operator_review':'not_applicable',['automatically_verified','needs_operator_review','not_applicable']),
+      review_reason:typeof reviewReason==='string'&&reviewReason.length<=120?reviewReason:null
+    };
+  })(),
   settlement:{status:enumValue(settlement?.state,['waiting_acceptance','needs_rework','settled'],'not_observed'),at:time(settlement?.updated_at)},
   termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','unknown','not_started'])},
   progress:progress({state}),timeline:history,history_truncated:ev.has_more,
@@ -130,11 +146,29 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  const approvalRecords=bridge.policy.list(),pending=approvalRecords.filter(a=>a.status==='pending'&&(!a.expiresAt||a.expiresAt>Date.now())).length;
  const approvals=approvalRecords.sort((a,b)=>(a.status==='pending'?0:1)-(b.status==='pending'?0:1)).slice(0,50).map(a=>({id:id(a.id),task_id:id(a.taskId),label:'Protected operation',status:enumValue(a.status,['pending','approved','expired','rejected','revoked','used']),created_at:time(a.createdAt),expires_at:time(a.expiresAt)}));
  const runtime=runtimeView(ready),ledger=bridge.ledger.health();
+ let cursor={agent_availability:'unqualified',agent_execution:false,agent_reason:'cursor_execution_unqualified',editor_available:false,last_ide_task:null};
+ try{
+  const agents=await bridge.capabilityHost.agentStatus();
+  const c=agents?.cursor||{};
+  cursor={
+    agent_availability:enumValue(c.agent_availability||c.availability,['unqualified','unavailable','auth_required','quota_limited','available'],'unqualified'),
+    agent_execution:c.agent_execution===true,
+    agent_reason:typeof c.agent_reason==='string'?c.agent_reason.slice(0,120):(typeof c.runtime?.reason==='string'?c.runtime.reason.slice(0,120):'cursor_execution_unqualified'),
+    editor_available:c.editor_available===true||c.installed===true,
+    last_ide_task:c.last_ide_task&&typeof c.last_ide_task==='object'?{
+      status:enumValue(c.last_ide_task.status,['running','completed','failed','timed_out','cancelled','not_observed'],'not_observed'),
+      label:typeof c.last_ide_task.label==='string'?c.last_ide_task.label.slice(0,80):null,
+      exit_code:Number.isInteger(c.last_ide_task.exit_code)?c.last_ide_task.exit_code:null,
+      agent_execution:false
+    }:null
+  };
+ }catch{/* Cursor projection is best-effort. */}
  const overviewStatus=bridge.closed?'Unavailable':runtime.ready&&memoryReady&&ledger?.healthy===true&&!leases.some(l=>l.state==='quarantined')?'Ready':'Degraded';
  const connectivity=require('./connection-status').derive({authorized:true,reachable:true,overviewStatus,lastOkAt:Date.now(),maintenance:!!bridge.closed});
+ const acceptanceConfig=(()=>{try{return bridge.missions.riskAcceptance.status();}catch{return{preference:{enabled:false},waits:require('./wait-presentation').status(bridge)};}})();
  return {epoch:bridge.runtimeFingerprint?.captured_at||null,observed_at:Date.now(),version:require('../package.json').version,release_state:'PRE-RELEASE',status:overviewStatus,connectivity,
-  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client / MCP not checked; does not imply service disconnect'},runtime,memory,
-  assistant:await require('./model-worker-router').inspect(bridge),connectors:require('./assistant-service').connectors(bridge).status(),sensitive:{disclosure:'Operator-only reveal; no worker context',encryption:'No field-level encryption claim'},vault:{backend:'macOS Keychain host port',values_displayed:false,worker_access:false},
+  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client / MCP not checked; does not imply service disconnect'},runtime,cursor,acceptance_config:acceptanceConfig,memory,
+  assistant:await require('./model-worker-router').inspect(bridge),connectors:require('./assistant-service').connectors(bridge).status(),whatsapp_inbound:(()=>{try{return bridge.whatsappInbound?.status()||null;}catch{return null;}})(),sensitive:{disclosure:'Operator-only reveal; no worker context',encryption:'No field-level encryption claim'},vault:{backend:'macOS Keychain host port',values_displayed:false,worker_access:false},
   projects:includeMissions?bridge.projects.listProjects({limit:50}).map(p=>({id:id(p.projectId),status:enumValue(p.status,['active','paused','completed','archived']),label:'Registered project',updated_at:time(p.updatedAt)})):[],
   provider:{state:runtime.ready?'Ready':ready?.provider_ready===false?'Unavailable':'Unavailable',reason:runtime.ready?'Qualified local provider observed':'Readiness unavailable'},
   approvals:{waiting:pending,records:includeMissions?approvals:[],scope:'Up to 50 retained protected Approvals, pending first'},leases:{held:leases.find(l=>l.state==='held')?.count||0,quarantined:leases.find(l=>l.state==='quarantined')?.count||0},
@@ -155,7 +189,9 @@ async function nativeStatus(bridge) {
  return {status:s.status,control:s.control.state,runtime:s.runtime.state,runtimeReason:s.runtime.reason,memory:s.memory.state,provider:s.provider.state,approvals:s.approvals.waiting,active_missions:activeCount,quarantined_leases:s.leases.quarantined,
   activity_status,connection_state:connectivity.state,connection_label:connectivity.label,menu_tone:presentation.tone,
   model:m?.model?.id||(s.runtime.ready?require('./model-worker-router').MODEL:'Unavailable'),routing:m?.model?.mode||(s.runtime.ready?'AUTO · local policy':'Unavailable'),connectors:s.connectors.items.map(c=>c.id+': '+c.state).join(' · '),
-  workers:'OpenCode: '+s.runtime.state+' · Provider: '+s.provider.state,
+  workers:'OpenCode: '+s.runtime.state+' · Provider: '+s.provider.state+' · Cursor Agent: '+(s.cursor?.agent_availability||'unqualified'),
+  cursor:s.cursor,
+  acceptance_config:s.acceptance_config,
   mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode,worker:m.runtime||null,model:m.model?.id||null,elapsed_s,progress_value:m.progress.mode==='determinate'?m.progress.value:null,progress_maximum:m.progress.mode==='determinate'?m.progress.maximum:null}:null,
   review_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n,
   failed_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n,

@@ -75,5 +75,5 @@ async function connectorInput(server,{connector,action,input={},conversation_id,
  const created=await server.conversationEngine.start({request_id:require('node:crypto').randomUUID(),model,message:instruction,context:selected,include_memory:false});
  return {...created,route:'CONNECTOR',connector,provenance:'Explicitly selected bounded untrusted connector data',draft_only:action==='draft_reply',sent:false};
 }
-function connectors(bridge){return bridge.assistantConnectors ||= new (require('./assistant-connectors').AssistantConnectors)(bridge.options.assistantConnectors||{});}
+function connectors(bridge){return bridge.assistantConnectors ||= new (require('./assistant-connectors').AssistantConnectors)({...(bridge.options.assistantConnectors||{}),...require('./whatsapp-inbound').whatsappSource(bridge)});}
 module.exports={submit,forget,sensitiveRecord,sensitiveList,reveal,connectors,connectorInput};

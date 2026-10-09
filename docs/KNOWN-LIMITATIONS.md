@@ -15,3 +15,13 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Diff panels are Mission-scoped and size-capped; out-of-scope paths never appear.
 - Empty activity panes show "Detailed activity unavailable." instead of synthetic progress.
 - Installing Observatory into a running service requires an owner-authorized restart; `live_cutover_authorized` remains false until then.
+
+## WhatsApp Inbound V1 / Meta live connection
+
+- Source implementation exists on `feat/whatsapp-inbound-v1` (feature impl `5e2574bd0ca340e5f56bdda11a608553e61c36b0` as of 2026-10-09; later binding-readiness commits may tip the branch). PR [#44](https://github.com/airodrom/airodrom/pull/44) remains open and stacked on PR #43; **not merged**, **not SHIPPED IN SOURCE on main**, **not ACTIVE/DEPLOYED**.
+- Webhook remains loopback-bound (`127.0.0.1`). `public_ingress` is forced false; ordinary configure cannot enable it. Webhook-only ingress prep (`scripts/whatsapp-webhook-ingress-prep.cjs`) writes cloudflared plans without starting tunnels; ChatGPT MCP stdio tunnel is unsuitable.
+- Focused fixture evidence: `tests/whatsapp-inbound-v1.test.js` **13/13** (challenge, HMAC, dedupe, allowlist, lifecycle, readiness, Graph discovery mocks, ingress prep). Fixture success is not live Meta delivery proof.
+- Meta App ID `1625559252697626` publicly resolves as app name `Airodrom`. Business Portfolio, WABA ID, Phone Number ID, publication status, webhook subscription and granted permissions are **unknown** without an authorized Graph credential (OAuthException 104 on protected reads). Do not invent those identifiers.
+- Operator Vault currently has **zero** active `whatsapp`-purpose references. Binding interface ready (`airodrom secret put whatsapp` ×3 + configure refs); plaintext values were not available to store in the binding session.
+- Inbound text never auto-dispatches Missions and never grants authority. Send/reply capabilities remain inactive policy categories.
+- See [WhatsApp Inbound V1](WHATSAPP-INBOUND-V1.md), [V1.1](WHATSAPP-INBOUND-V1.1.md), [Meta live connection](META-WHATSAPP-LIVE-CONNECTION-V1.md) and [ADR 0038](adr/0038-whatsapp-inbound-v1.md).
