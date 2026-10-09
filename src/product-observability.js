@@ -43,7 +43,8 @@ const STAGES = Object.freeze({
  'whatsapp.inbound.rejected':['System','WhatsApp webhook rejected'], 'whatsapp.inbound.duplicate':['System','WhatsApp duplicate ignored'],
  'whatsapp.inbound.unauthorized_sender':['System','WhatsApp sender not allowlisted'], 'whatsapp.inbound.status':['System','WhatsApp delivery status observed'],
  'whatsapp.inbound.challenge_ok':['System','WhatsApp verify challenge accepted'], 'whatsapp.inbound.enabled':['System','WhatsApp inbound enabled'],
- 'whatsapp.inbound.disabled':['System','WhatsApp inbound disabled']
+ 'whatsapp.inbound.disabled':['System','WhatsApp inbound disabled'],
+ 'whatsapp.inbound.discovery_recorded':['System','WhatsApp Meta discovery recorded'], 'whatsapp.inbound.callback_prepared':['System','WhatsApp HTTPS callback prepared']
 });
 const DISPLAY_STAGE = Object.freeze({
  'research.browser_started':'execution','research.browser_closed':'execution','research.network_denied':'execution','research.network_stopped':'execution','research.permission_granted':'execution','research.permission_revoked':'execution','mission.web.granted':'execution','mission.web.revoked':'execution','mission.web.evidence':'execution',

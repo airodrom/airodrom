@@ -93,11 +93,18 @@ class WhatsAppInbound {
     add('phone_number_id', 'TEXT');
     add('app_publication_status', "TEXT NOT NULL DEFAULT 'unknown'");
     add('webhook_subscription_status', "TEXT NOT NULL DEFAULT 'inactive'");
+    add('access_token_reference', 'TEXT');
+    add('prepared_callback_url', 'TEXT');
+    add('discovery_json', 'TEXT');
     const row = this.db.prepare('SELECT meta_app_id, business_portfolio_id FROM cp_whatsapp_inbound_config WHERE id=1').get();
     if (row && !row.meta_app_id && this.defaults.meta_app_id) {
       this.db.prepare('UPDATE cp_whatsapp_inbound_config SET meta_app_id=?, business_portfolio_id=? WHERE id=1')
         .run(this.defaults.meta_app_id, this.defaults.business_portfolio_id);
     }
+  }
+
+  #refOk(ref) {
+    return ref == null || (typeof ref === 'string' && /^[A-Za-z0-9_.:-]{8,200}$/.test(ref));
   }
 
   config() {
@@ -106,6 +113,7 @@ class WhatsAppInbound {
       enabled: row?.enabled === 1,
       verify_token_bound: Boolean(row?.verify_token_reference) || typeof this.options.verifyToken === 'string',
       app_secret_bound: Boolean(row?.app_secret_reference) || typeof this.options.appSecret === 'string',
+      access_token_bound: Boolean(row?.access_token_reference) || typeof this.options.accessToken === 'string',
       allowlist: JSON.parse(row?.allowlist || '[]'),
       updated_at: row?.updated_at || null,
       updated_by: row?.updated_by || null,
@@ -115,6 +123,7 @@ class WhatsAppInbound {
       phone_number_id: row?.phone_number_id || this.defaults.phone_number_id,
       app_publication_status: PUBLICATION.has(row?.app_publication_status) ? row.app_publication_status : this.defaults.app_publication_status,
       webhook_subscription_status: 'inactive',
+      prepared_callback_url: row?.prepared_callback_url || null,
       public_ingress: false,
       auto_mission_execution: false
     };
@@ -122,7 +131,7 @@ class WhatsAppInbound {
 
   configure(input, actor = 'operator') {
     if (actor !== 'operator') throw Error('Only operator may configure WhatsApp inbound');
-    object(input, ['enabled', 'confirmed', 'verify_token_reference', 'app_secret_reference', 'allowlist', 'verify_token', 'app_secret', 'meta_app_id', 'business_portfolio_id', 'waba_id', 'phone_number_id', 'app_publication_status', 'public_ingress']);
+    object(input, ['enabled', 'confirmed', 'verify_token_reference', 'app_secret_reference', 'access_token_reference', 'allowlist', 'verify_token', 'app_secret', 'meta_app_id', 'business_portfolio_id', 'waba_id', 'phone_number_id', 'app_publication_status', 'public_ingress']);
     if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
     if (typeof input.enabled !== 'boolean') throw Error('enabled must be boolean');
     if (input.public_ingress === true) throw Error('Public ingress activation requires separate owner authorization');
@@ -144,7 +153,8 @@ class WhatsAppInbound {
     const row = this.db.prepare('SELECT * FROM cp_whatsapp_inbound_config WHERE id=1').get();
     const verifyRef = input.verify_token_reference !== undefined ? input.verify_token_reference : row.verify_token_reference;
     const secretRef = input.app_secret_reference !== undefined ? input.app_secret_reference : row.app_secret_reference;
-    for (const ref of [verifyRef, secretRef]) if (ref != null && (typeof ref !== 'string' || !/^[A-Za-z0-9_.:-]{8,200}$/.test(ref))) throw Error('Invalid vault reference');
+    const accessRef = input.access_token_reference !== undefined ? input.access_token_reference : row.access_token_reference;
+    for (const ref of [verifyRef, secretRef, accessRef]) if (!this.#refOk(ref)) throw Error('Invalid vault reference');
     const metaApp = input.meta_app_id !== undefined ? input.meta_app_id : (row.meta_app_id || this.defaults.meta_app_id);
     const portfolio = input.business_portfolio_id !== undefined ? input.business_portfolio_id : (row.business_portfolio_id || this.defaults.business_portfolio_id);
     const waba = input.waba_id !== undefined ? input.waba_id : row.waba_id;
@@ -154,21 +164,126 @@ class WhatsAppInbound {
       if (value != null && (typeof value !== 'string' || !META_ID.test(value))) throw Error('Invalid ' + label);
     }
     if (!PUBLICATION.has(publication)) throw Error('Invalid app publication status');
-    this.db.prepare(`UPDATE cp_whatsapp_inbound_config SET enabled=?, verify_token_reference=?, app_secret_reference=?, allowlist=?, updated_at=?, updated_by=?,
+    this.db.prepare(`UPDATE cp_whatsapp_inbound_config SET enabled=?, verify_token_reference=?, app_secret_reference=?, access_token_reference=?, allowlist=?, updated_at=?, updated_by=?,
       meta_app_id=?, business_portfolio_id=?, waba_id=?, phone_number_id=?, app_publication_status=?, webhook_subscription_status='inactive' WHERE id=1`)
-      .run(input.enabled ? 1 : 0, verifyRef, secretRef, JSON.stringify(allowlist), Date.now(), actor,
+      .run(input.enabled ? 1 : 0, verifyRef, secretRef, accessRef, JSON.stringify(allowlist), Date.now(), actor,
         metaApp, portfolio, waba, phone, publication);
     this.store.event(input.enabled ? 'whatsapp.inbound.enabled' : 'whatsapp.inbound.disabled', null, {
       allowlist_count: allowlist.length,
       verify_token_bound: Boolean(verifyRef) || Boolean(this.options.verifyToken),
       app_secret_bound: Boolean(secretRef) || Boolean(this.options.appSecret),
+      access_token_bound: Boolean(accessRef) || Boolean(this.options.accessToken),
       public_ingress: false
     });
     return this.status();
   }
 
+  // Persist non-secret Graph/console discovery. Never accepts tokens.
+  recordDiscovery(input, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may record Meta discovery');
+    object(input, ['confirmed', 'app_name', 'graph_access', 'permission_prerequisite', 'business_verification', 'waba_id', 'phone_number_id', 'app_publication_status', 'permissions_granted', 'notes']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    if (input.graph_access !== undefined && !['unavailable', 'refused', 'authorized'].includes(input.graph_access)) {
+      throw Error('Invalid graph_access');
+    }
+    const waba = input.waba_id === undefined ? undefined : input.waba_id;
+    const phone = input.phone_number_id === undefined ? undefined : input.phone_number_id;
+    for (const [label, value] of [['waba_id', waba], ['phone_number_id', phone]]) {
+      if (value != null && (typeof value !== 'string' || !META_ID.test(value))) throw Error('Invalid ' + label);
+    }
+    if (input.app_publication_status !== undefined && !PUBLICATION.has(input.app_publication_status)) throw Error('Invalid app publication status');
+    if (input.permissions_granted !== undefined) {
+      if (!Array.isArray(input.permissions_granted) || input.permissions_granted.length > 40 || input.permissions_granted.some(p => typeof p !== 'string' || !/^[a-z_]{3,80}$/.test(p))) {
+        throw Error('Invalid permissions_granted');
+      }
+    }
+    if (input.app_name != null) text(input.app_name, 'app name', 120);
+    if (input.permission_prerequisite != null) text(input.permission_prerequisite, 'permission prerequisite', 400);
+    if (input.business_verification != null) text(input.business_verification, 'business verification', 400);
+    if (input.notes != null) text(input.notes, 'discovery notes', 1000);
+    const discovery = {
+      recorded_at: Date.now(),
+      meta_app_id: this.config().meta_app_id,
+      business_portfolio_id: this.config().business_portfolio_id,
+      app_name: input.app_name || null,
+      graph_access: input.graph_access || 'unavailable',
+      permission_prerequisite: input.permission_prerequisite || null,
+      business_verification: input.business_verification || null,
+      permissions_granted: input.permissions_granted || [],
+      notes: input.notes || null,
+      secrets_exported: false
+    };
+    const sets = ['discovery_json=?', 'updated_at=?', "webhook_subscription_status='inactive'"];
+    const args = [JSON.stringify(discovery), Date.now()];
+    if (waba !== undefined) { sets.push('waba_id=?'); args.push(waba); }
+    if (phone !== undefined) { sets.push('phone_number_id=?'); args.push(phone); }
+    if (input.app_publication_status !== undefined) { sets.push('app_publication_status=?'); args.push(input.app_publication_status); }
+    args.push(1);
+    this.db.prepare(`UPDATE cp_whatsapp_inbound_config SET ${sets.join(', ')} WHERE id=?`).run(...args);
+    this.store.event('whatsapp.inbound.discovery_recorded', null, {
+      graph_access: discovery.graph_access,
+      waba_bound: Boolean(waba || this.config().waba_id),
+      phone_bound: Boolean(phone || this.config().phone_number_id),
+      secrets_exported: false
+    });
+    return this.liveConnectionReadiness();
+  }
+
+  // Store a candidate HTTPS callback URL without activating public ingress.
+  preparePublicCallback(input, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may prepare public callback');
+    object(input, ['confirmed', 'url']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    if (typeof input.url !== 'string' || input.url.length > 500) throw Error('Invalid callback URL');
+    let parsed;
+    try { parsed = new URL(input.url); } catch { throw Error('Invalid callback URL'); }
+    if (parsed.protocol !== 'https:') throw Error('Callback URL must use HTTPS');
+    if (parsed.username || parsed.password) throw Error('Callback URL must not embed credentials');
+    if (parsed.pathname !== '/webhooks/whatsapp') throw Error('Callback path must be exactly /webhooks/whatsapp');
+    if (parsed.search || parsed.hash) throw Error('Callback URL must not include query or fragment');
+    // Refuse paths that would advertise control-plane surfaces.
+    if (/\/api\/|\/mcp|\/hub|\/workspace/i.test(input.url)) throw Error('Callback URL must not expose control plane surfaces');
+    const url = parsed.origin + '/webhooks/whatsapp';
+    this.db.prepare("UPDATE cp_whatsapp_inbound_config SET prepared_callback_url=?, webhook_subscription_status='inactive', updated_at=? WHERE id=1")
+      .run(url, Date.now());
+    this.store.event('whatsapp.inbound.callback_prepared', null, { public_ingress: false, activated: false });
+    return this.callbackReadiness();
+  }
+
+  credentialReadiness() {
+    const cfg = this.config();
+    const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    return {
+      verify_token: {
+        bound: cfg.verify_token_bound,
+        vault_reference_present: Boolean(row?.verify_token_reference),
+        purpose: 'whatsapp',
+        bind_command: 'airodrom secret put whatsapp'
+      },
+      app_secret: {
+        bound: cfg.app_secret_bound,
+        vault_reference_present: Boolean(row?.app_secret_reference),
+        purpose: 'whatsapp',
+        bind_command: 'airodrom secret put whatsapp'
+      },
+      access_token: {
+        bound: cfg.access_token_bound,
+        vault_reference_present: Boolean(row?.access_token_reference),
+        purpose: 'whatsapp',
+        bind_command: 'airodrom secret put whatsapp',
+        note: 'System user / permanent token for Graph discovery and outbound Cloud API only. Never logged.'
+      },
+      plaintext_in_git: false,
+      values_displayed: false,
+      rotation_authorized: false
+    };
+  }
+
   metaReadiness() {
     const cfg = this.config();
+    const row = this.db.prepare('SELECT discovery_json FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    let discovery = null;
+    try { discovery = row?.discovery_json ? JSON.parse(row.discovery_json) : null; } catch { discovery = null; }
     return {
       meta_app_id: cfg.meta_app_id,
       business_portfolio_id: cfg.business_portfolio_id,
@@ -178,7 +293,9 @@ class WhatsAppInbound {
       webhook_subscription_status: 'inactive',
       required_permissions: this.defaults.required_permissions,
       secrets_bound: cfg.verify_token_bound && cfg.app_secret_bound,
-      graph_live_query: false,
+      access_token_bound: cfg.access_token_bound,
+      graph_live_query: discovery?.graph_access === 'authorized',
+      discovery,
       note: 'WABA ID, Phone Number ID, publication and webhook subscription require Meta console or authorized Graph inspection. No credentials are exposed here.'
     };
   }
@@ -192,6 +309,7 @@ class WhatsAppInbound {
       host_binding: '127.0.0.1',
       public_ingress: false,
       public_url: null,
+      prepared_callback_url: cfg.prepared_callback_url,
       verify_token_bound: cfg.verify_token_bound,
       app_secret_bound: cfg.app_secret_bound,
       signature_header: 'X-Hub-Signature-256',
@@ -199,8 +317,74 @@ class WhatsAppInbound {
       sender_allowlist: cfg.allowlist.length,
       durable_inbox: true,
       auto_mission_execution: false,
+      exposes_control_plane: false,
+      exposes_mcp: false,
+      exposes_memory_apis: false,
+      mcp_tunnel_suitable: false,
       activation: 'inactive_until_owner_authorization',
-      note: 'Smallest secure Meta delivery path is prepared locally. Public HTTPS URL / tunnel / Meta webhook subscription stay inactive until separately authorized.'
+      note: 'Terminate TLS at a dedicated reverse proxy that forwards only /webhooks/whatsapp to 127.0.0.1. Do not reuse the ChatGPT MCP tunnel. Public activation requires separate owner authorization.'
+    };
+  }
+
+  subscriptionPrep() {
+    const cfg = this.config();
+    const blockers = [];
+    if (!cfg.verify_token_bound) blockers.push('verify_token_unbound');
+    if (!cfg.app_secret_bound) blockers.push('app_secret_unbound');
+    if (!cfg.waba_id) blockers.push('waba_id_unknown');
+    if (!cfg.phone_number_id) blockers.push('phone_number_id_unknown');
+    if (!cfg.prepared_callback_url) blockers.push('prepared_callback_url_missing');
+    if (cfg.public_ingress !== true) blockers.push('public_ingress_inactive');
+    return {
+      execute_external_changes: false,
+      callback_url: cfg.prepared_callback_url,
+      verify_token: 'vault:whatsapp verify_token_reference',
+      subscribed_fields: ['messages'],
+      optional_fields: ['message_status'],
+      waba_id: cfg.waba_id,
+      phone_number_id: cfg.phone_number_id,
+      meta_app_id: cfg.meta_app_id,
+      steps: [
+        'Bind Vault references for verify token, app secret, and Graph access token (purpose whatsapp).',
+        'Record verified WABA ID and Phone Number ID via configure/recordDiscovery (non-secret).',
+        'preparePublicCallback with the owner-chosen HTTPS URL ending at /webhooks/whatsapp.',
+        'Owner-authorize public ingress separately (not available through ordinary configure).',
+        'In Meta App → WhatsApp → Configuration, set Callback URL + Verify token and subscribe messages.',
+        'Send one allowlisted test message; confirm inbox and zero Mission growth.'
+      ],
+      blockers,
+      authority: false
+    };
+  }
+
+  liveConnectionReadiness() {
+    const cfg = this.config();
+    const meta = this.metaReadiness();
+    const credentials = this.credentialReadiness();
+    const callback = this.callbackReadiness();
+    const subscription = this.subscriptionPrep();
+    const realTest = {
+      authorized: false,
+      executed: false,
+      reason: 'Public HTTPS callback not owner-authorized; live Meta delivery deferred',
+      mission_auto_execution: false
+    };
+    return {
+      meta_app_id: cfg.meta_app_id,
+      business_portfolio_id: cfg.business_portfolio_id,
+      app_name: meta.discovery?.app_name || null,
+      waba_id: cfg.waba_id,
+      phone_number_id: cfg.phone_number_id,
+      app_publication_status: cfg.app_publication_status,
+      webhook_subscription_status: 'inactive',
+      meta,
+      credentials,
+      callback,
+      subscription,
+      real_message_test: realTest,
+      public_ingress: false,
+      auto_mission_execution: false,
+      authority: false
     };
   }
 
@@ -233,6 +417,8 @@ class WhatsAppInbound {
       ...cfg,
       meta: this.metaReadiness(),
       callback: this.callbackReadiness(),
+      credentials: this.credentialReadiness(),
+      live_connection: this.liveConnectionReadiness(),
       lifecycle: ['received', 'verified', 'stored', 'available'],
       inbox: Object.fromEntries(counts.map(r => [r.status, r.n])),
       recent: this.list({ limit: 10 }).items,

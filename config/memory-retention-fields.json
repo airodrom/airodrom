@@ -575,7 +575,10 @@
       "waba_id",
       "phone_number_id",
       "app_publication_status",
-      "webhook_subscription_status"
+      "webhook_subscription_status",
+      "access_token_reference",
+      "prepared_callback_url",
+      "discovery_json"
     ],
     "source": "src/whatsapp-inbound.js",
     "classification": {
@@ -591,7 +594,10 @@
       "waba_id": "A",
       "phone_number_id": "A",
       "app_publication_status": "A",
-      "webhook_subscription_status": "A"
+      "webhook_subscription_status": "A",
+      "access_token_reference": "D",
+      "prepared_callback_url": "B",
+      "discovery_json": "B"
     }
   },
   "cp_whatsapp_inbox": {

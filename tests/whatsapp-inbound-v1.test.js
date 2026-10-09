@@ -230,3 +230,59 @@ test('public ingress cannot be enabled through configure; Meta IDs are non-secre
   assert.equal(status.public_ingress, false);
   assert.equal(status.callback.public_url, null);
 });
+
+test('live connection readiness, discovery record, HTTPS prepare, vault refs without secrets', async t => {
+  const { bridge, request } = await fixture(t);
+  const discovery = bridge.whatsappInbound.recordDiscovery({
+    confirmed: true,
+    app_name: 'Airodrom',
+    graph_access: 'refused',
+    permission_prerequisite: 'OAuthException 104: authorized Graph credential required for portfolio and WABA reads.',
+    business_verification: 'Not observed without Business Manager access',
+    notes: 'Public Graph returned app id/name only. Portfolio, WABA, phone, and subscriptions require authorized Graph credential.'
+  }, 'operator');
+  assert.equal(discovery.meta.discovery.app_name, 'Airodrom');
+  assert.equal(discovery.meta.discovery.graph_access, 'refused');
+  assert.equal(discovery.waba_id, null);
+  assert.equal(discovery.phone_number_id, null);
+  assert.equal(discovery.real_message_test.authorized, false);
+  assert.equal(discovery.real_message_test.executed, false);
+  assert.equal(discovery.credentials.plaintext_in_git, false);
+  assert.equal(discovery.callback.mcp_tunnel_suitable, false);
+  assert.equal(discovery.callback.exposes_control_plane, false);
+
+  assert.throws(() => bridge.whatsappInbound.preparePublicCallback({
+    confirmed: true,
+    url: 'http://example.test/webhooks/whatsapp'
+  }, 'operator'), /HTTPS/i);
+  assert.throws(() => bridge.whatsappInbound.preparePublicCallback({
+    confirmed: true,
+    url: 'https://example.test/api/assistant/whatsapp'
+  }, 'operator'), /exactly \/webhooks\/whatsapp|control plane/i);
+  const prepared = bridge.whatsappInbound.preparePublicCallback({
+    confirmed: true,
+    url: 'https://hooks.example.test/webhooks/whatsapp'
+  }, 'operator');
+  assert.equal(prepared.prepared_callback_url, 'https://hooks.example.test/webhooks/whatsapp');
+  assert.equal(prepared.public_ingress, false);
+  assert.equal(prepared.public_url, null);
+
+  const bound = bridge.whatsappInbound.configure({
+    enabled: true,
+    confirmed: true,
+    verify_token_reference: '11111111-2222-4333-a444-555555555555',
+    app_secret_reference: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    access_token_reference: 'ffffffff-0000-4111-8222-333333333333'
+  }, 'operator');
+  assert.equal(bound.credentials.verify_token.vault_reference_present, true);
+  assert.equal(bound.credentials.app_secret.vault_reference_present, true);
+  assert.equal(bound.credentials.access_token.vault_reference_present, true);
+  assert.equal(bound.live_connection.subscription.execute_external_changes, false);
+  assert.ok(bound.live_connection.subscription.blockers.includes('public_ingress_inactive'));
+
+  const api = await request('/api/assistant/whatsapp/live-connection');
+  assert.equal(api.status, 200);
+  assert.equal(api.body.public_ingress, false);
+  assert.equal(api.body.auto_mission_execution, false);
+  assert.doesNotMatch(JSON.stringify(api.body), /synthetic-app-secret|synthetic-verify-token/);
+});
