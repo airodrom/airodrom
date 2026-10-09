@@ -102,7 +102,7 @@ function missionView(bridge, mission) {
 }
 function runtimeView(ready) {
  const reason=enumValue(ready?.reason,['opencode_runtime_pins_changed','opencode_unavailable','opencode_version_unqualified','opencode_local_provider_unavailable','opencode_local_provider_not_configured'],ready?.ready===true?null:'opencode_unavailable');
- return {state:ready?.ready===true?'Ready':reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable',ready:ready?.ready===true,role:'Primary',version:ready?.version==='2.0.20'?'2.0.20':null,reason,requalification:reason==='opencode_runtime_pins_changed'?'Required':'Not running'};
+ return {state:ready?.ready===true?'Ready':reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable',ready:ready?.ready===true,role:'Primary',version:ready?.version==='2.0.25'?'2.0.25':null,reason,requalification:reason==='opencode_runtime_pins_changed'?'Required':'Not running'};
 }
 function memoryStatus(bridge){
  const db=bridge.controlStore.db;

@@ -14,7 +14,7 @@ with `npm unlink -g airodrom`; private service data remains available.
 
 `airodrom` shows the compact brand and runtime status, starts or attaches to the
 private local control plane and opens a terminal conversation. The browser is
-optional. Bootstrap requires installed qualified OpenCode 2.0.20 and local Ollama
+optional. Bootstrap requires installed qualified OpenCode 2.0.25 and local Ollama
 with `qwen3-coder:30b`. It generates actual host pins and runs a disposable
 synthetic sandbox probe. No provider credentials are copied or printed. First
 startup can take longer while the local model warms. Failed prerequisites give an

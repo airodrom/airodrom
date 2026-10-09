@@ -6,7 +6,7 @@ const {runtime,manifest,qualifyCanonical}=require('./fixtures/opencode-fixture.c
 function event(result,sessionID='ses_fixture'){return JSON.stringify({type:'text',sessionID,part:{messageID:'m',text:JSON.stringify(result)}})+'\n';}
 const result={summary:'observed',changed_files:[],tests:[],artifacts:[],limitations:[]};
 test('OpenCode version/auth observation reports categories and fails closed on unknown formats',()=>{
- assert.equal(version('opencode v2.0.20\n'),'2.0.20');assert.equal(version('token=synthetic'),null);
+ assert.equal(version('opencode v2.0.20\n'),'2.0.20');assert.equal(version('opencode v2.0.25\n'),'2.0.25');assert.equal(version('token=synthetic'),null);
  assert.equal(authCategory('[]'),'auth_required');assert.equal(authCategory('[{"id":"fixture","connections":[{"type":"credential","label":"synthetic"}]}]'),'session_observed');assert.equal(authCategory('{}'),'unknown');
  assert.equal(JSON.stringify({category:authCategory('[{"id":"fixture","connections":[{"type":"credential","label":"synthetic"}]}]')}).includes('synthetic'),false);
 });
@@ -43,8 +43,10 @@ test('redaction drops raw runtime tools, credentials and self-attested tests; se
  assert.throws(()=>parseOutput(event(result)+'{"type":"error"}\n',[]),/malformed/);
  assert.throws(()=>parseOutput(event(result)+event(result,'ses_wrong'),[]),/session_mismatch/);
  assert.throws(()=>parseOutput(event({...result,changed_files:['other.txt']}),[]),/malformed/);
- assert.deepEqual(parseOutput(event({summary:'unavailable'}),[]).result.changed_files,[]);
- assert.throws(()=>parseOutput(event({...result,limitations:'untrusted'}),[]),/malformed/);
+  assert.deepEqual(parseOutput(event({summary:'unavailable'}),[]).result.changed_files,[]);
+  assert.equal(parseOutput(event({summary:'azure',status:'success'}),[]).result.status,'completed');
+  assert.throws(()=>parseOutput(event({summary:'azure',status:'ok'}),[]),/malformed/);
+  assert.throws(()=>parseOutput(event({...result,limitations:'untrusted'}),[]),/malformed/);
 });
 test('child environment is isolated and tools deny memory, shell, network, subagents and MCP by default',async t=>{
  const f=runtime(t),e=disposableEnv('/tmp/fixture','/tmp/fixture/workspace',{});assert.equal(e.OPENAI_API_KEY,undefined);assert.equal(e.HOME,undefined);assert.equal(e.NODE_OPTIONS,undefined);

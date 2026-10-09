@@ -9,16 +9,19 @@
     "auth_state": "session_observed"
   },
   "opencode": {
-    "runtime_version": "2.0.20",
-    "observed_date": "2026-10-06",
+    "runtime_version": "2.0.25",
+    "observed_date": "2026-10-09",
     "platform": "darwin-arm64",
     "model": "ollama/qwen3-coder:30b",
-    "executable_sha256": "da6c61cd188189a0bd44450ae3e19cb654a958f0b1615c83ebe47a48d0b519ae",
+    "executable_sha256": "7b05019947d9eaff7b5c3412038a466908e9dc78e166b9316ec0588cee375664",
     "probe": "isolated_standalone_synthetic_mission_and_memory_v2",
     "execution_qualified": true,
     "auth_state": "local_not_required",
     "scope": "declared_existing_files_local_inference_only",
     "private_memory_inspected": false,
-    "production_activated": false
+    "production_activated": false,
+    "package_manager": "homebrew/core",
+    "package_version": "2.0.25",
+    "executable_path_class": "homebrew_cellar_opencode_bin"
   }
 }

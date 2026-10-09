@@ -50,11 +50,11 @@ Hidden pages and paused feeds stop SSE. Events are deduplicated by `event_id` an
 
 Production credentials, Memory, Mission state, and private discovery must not change during activation.
 
-## Soft dependencies
+## Runtime integration
 
+- OpenCode **2.0.25** qualification and pin-replacement requalify from PR #40 are merged into this branch.
 - Observatory capture does not require PR #38.
-- Production Mission execution with OpenCode 2.0.25 still needs that runtime qualification on the installed service (PR #40 or equivalent dirty pin).
-- Authorized WORK-template live Missions require host-approved WORK templates (not part of this PR).
+- Authorized WORK-template live Missions still require host-approved WORK templates available on the installed service (may exist in the operator checkout separately from this PR).
 
 ## Focused tests
 
