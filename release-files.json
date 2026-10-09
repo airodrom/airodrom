@@ -567,5 +567,15 @@
   "tests/fixtures/bounded-worker-fixture.cjs",
   "docs/adr/0019-codex-live-qualification.md",
   "tests/codex-live-qualification.test.js",
-  "tests/live-codex.cjs"
+  "tests/live-codex.cjs",
+  "src/managed-supervisor.js",
+  "src/managed-service-runtime.js",
+  "src/managed-service-agent.js",
+  "src/startup-diagnostics.js",
+  "scripts/managed-service.cjs",
+  "scripts/macos/managed-service-agent.cjs",
+  "docs/adr/0031-managed-login-startup-supervisor.md",
+  "docs/operations/automatic-startup-reconnection-v1.md",
+  "docs/operations/startup-recovery-runbook.md",
+  "tests/managed-startup-v1.test.js"
 ]

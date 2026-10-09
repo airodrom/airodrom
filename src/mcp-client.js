@@ -14,13 +14,66 @@ function discovery(dataDir = process.env.AIRODROM_DATA_DIR || path.join(__dirnam
   return value;
 }
 
-function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,sessionFile=process.env.AIRODROM_MCP_SESSION_FILE } = {}) {
+// ADR 0031 supervisor heartbeat. Freshness, not a PID probe: some desktop client
+// sandboxes deny signalling. An unsafe or unknown file is ignored.
+function supervisorState(dataDir = process.env.AIRODROM_DATA_DIR || path.join(__dirname, '../.runtime'), now = Date.now()) {
+  try {
+    const file = path.join(dataDir, 'managed-supervisor.json'), stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) || stat.uid !== process.getuid() || stat.size > 16384) return null;
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (value.version !== 1 || typeof value.state !== 'string' || !Number.isSafeInteger(value.updated_at)) return null;
+    return now - value.updated_at <= 90000 ? value.state : null;
+  } catch { return null; }
+}
+function unavailable(state) {
+  const error = new Error('Bridge discovery failed');
+  error.publicMessage = state === 'BLOCKED' ? 'Airodrom needs attention on this Mac. Run airodrom doctor there to see the blocking condition.'
+    : state === 'STOPPED' ? 'Airodrom is stopped on this Mac. Start it from the Airodrom menu or with airodrom start.'
+    : ['STARTING', 'RECOVERING', 'HEALTHY', 'DEGRADED'].includes(state) ? 'Airodrom is still starting on this Mac. Retry shortly.'
+    : 'Local Airodrom service unavailable: it is not running on this Mac. Start it from the Airodrom menu or with airodrom start, or run airodrom doctor.';
+  return error;
+}
+function requestFailed() {
+  const message = 'Local bridge request failed; inspect status before retrying';
+  return Object.assign(new Error(message), { publicMessage: message });
+}
+// Waits only while the supervisor reports a launch in progress. `previous` requires a
+// replacement endpoint, never the one that just refused the connection.
+async function awaitDiscovery(dataDir, { waitMs, pollMs, previous = null }) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try { const next = discovery(dataDir); if (!previous || next.pid !== previous.pid || next.port !== previous.port) return next; } catch {}
+    if (!['STARTING', 'RECOVERING', 'HEALTHY'].includes(supervisorState(dataDir)) || Date.now() >= deadline) return null;
+    await new Promise(resolve => setTimeout(resolve, pollMs));
+  }
+}
+
+function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,sessionFile=process.env.AIRODROM_MCP_SESSION_FILE,waitMs=20000,pollMs=250 } = {}) {
   let session=null,sessionPromise=null;
   if(sessionFile){if(!path.isAbsolute(sessionFile))throw Error('Absolute private session file required');if(require('./private-json').privateFileExists(sessionFile)){const saved=require('./private-json').readPrivateJSON(sessionFile);if(saved.version!==1||!require('./product-observability').id(saved.session_id))throw Error('Invalid client session file');resumeSession=saved.session_id;}}
+  const directory = () => dataDir || process.env.AIRODROM_DATA_DIR || path.join(__dirname, '../.runtime');
   return async (name, args, clientInfo) => {
     let connection;
     try { connection = discovery(dataDir); }
-    catch { const error = new Error('Bridge discovery failed'); error.publicMessage = 'Local bridge unavailable or private discovery invalid. Start the bridge with npm start.'; throw error; }
+    catch {
+      // Without a launch in progress, fail at once exactly as before; never wait speculatively.
+      const state = supervisorState(directory());
+      if (!['STARTING', 'RECOVERING', 'HEALTHY'].includes(state)) throw unavailable(state);
+      connection = await awaitDiscovery(directory(), { waitMs, pollMs });
+      if (!connection) throw unavailable(supervisorState(directory()));
+    }
+    try { return await send(connection, name, args, clientInfo); }
+    catch (error) {
+      // Only a refused connection proves the request was never delivered.
+      if (error.code !== 'NOT_DELIVERED') throw error;
+      if (!['STARTING', 'RECOVERING', 'HEALTHY'].includes(supervisorState(directory()))) throw requestFailed();
+      const next = await awaitDiscovery(directory(), { waitMs, pollMs, previous: connection });
+      if (!next) throw unavailable(supervisorState(directory()));
+      try { return await send(next, name, args, clientInfo); }
+      catch (retry) { throw retry.code === 'NOT_DELIVERED' ? unavailable(supervisorState(directory())) : retry; }
+    }
+  };
+  async function send(connection, name, args, clientInfo) {
     if(['submit_mission','get_mission_handoff','cancel_mission_handoff'].includes(name)&&(!session||session.pid!==connection.pid||session.port!==connection.port||session.token!==connection.token||session.expires_at<Date.now())){
       if(!sessionPromise)sessionPromise=(async()=>{
       const response=await fetch('http://127.0.0.1:'+connection.port+'/api/mcp/session',{method:'POST',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},body:JSON.stringify(session?.session_id?{session_id:session.session_id}:resumeSession?{session_id:resumeSession}:{}),redirect:'error',signal:AbortSignal.timeout(5000)});
@@ -48,10 +101,15 @@ function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,s
         });
       });
       const timer = setTimeout(() => { fail('Bridge request timed out; use the same request_id to recover, never blindly replay'); req.destroy(); }, 15000);
-      req.on('error', () => fail('Local bridge request failed; inspect status before retrying'));
+      let connected = false;
+      req.on('socket', socket => socket.once('connect', () => { connected = true; }));
+      req.on('error', error => {
+        if (!connected && error.code === 'ECONNREFUSED' && !settled) { settled = true; clearTimeout(timer); return reject(Object.assign(new Error('Bridge connection refused'), { code: 'NOT_DELIVERED' })); }
+        fail('Local bridge request failed; inspect status before retrying');
+      });
       req.on('close', () => clearTimeout(timer));
       req.end(body);
     });
-  };
+  }
 }
-module.exports = { createClient, discovery };
+module.exports = { createClient, discovery, supervisorState };
