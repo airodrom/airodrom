@@ -212,6 +212,7 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/connectors')return this.json(res,200,require('./assistant-service').connectors(this.bridge).status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/sensitive')return this.json(res,200,require('./assistant-service').sensitiveList(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/handoff')return this.json(res,200,require('./mission-handoff').status(this.bridge,url.searchParams.get('id'),'operator'));
       if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, nickname:this.conversationEngine.nickname()||'Airo', opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'persistent local conversation; governed Work Missions; no chat tools', active_conversations:this.conversationEngine.active.size, active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n, quarantined_leases: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE state='quarantined'").get().n });
@@ -268,6 +269,8 @@ class ControlServer {
       const body = await readJSON(req);
       if(url.pathname==='/api/assistant/workers/qualify'){require('./control-plane-store').object(body,['worker','model','confirmed','request_id']);return this.json(res,200,await this.bridge.workers.qualify(body.worker,body,'operator'));}
       if(url.pathname==='/api/assistant/workers/revoke'){require('./control-plane-store').object(body,['worker']);return this.json(res,200,this.bridge.workers.revoke(body.worker,'operator'));}
+      if(url.pathname==='/api/assistant/risk-acceptance'){require('./control-plane-store').object(body,['enabled','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.setPreference(body,'operator'));}
+      if(url.pathname==='/api/assistant/risk-acceptance/authorize'){require('./control-plane-store').object(body,['mission_id','request_id','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.authorizeExisting(body.mission_id,{request_id:body.request_id,confirmed:body.confirmed},'operator'));}
       if(url.pathname==='/api/assistant/workspaces/register')return this.json(res,201,this.bridge.workers.registerTemplate(body,'operator'));
       if (url.pathname.startsWith('/api/product/')) {
         try {

@@ -1,11 +1,12 @@
 'use strict';
-const { fingerprint } = require('./control-plane-store');
+const { fingerprint, object, identifier } = require('./control-plane-store');
 const { transaction } = require('./control-transaction');
 const { workspaceSnapshot } = require('./control-context');
 
 // Host-owned risk-based automatic Acceptance for opt-in low-risk local WORK.
-// Untrusted packets cannot set automatic_acceptance; this engine requires an
-// operator-authorized risk_auto_acceptance (or work_template) envelope mark.
+// Untrusted packets cannot set automatic_acceptance. Operator preference and
+// per-Mission marks are evaluated freshly; historical Missions are never
+// silently accepted without authorizeExisting.
 const SAFE_SCOPES = new Set(['repo', 'developer_environment']);
 
 class RiskAcceptance {
@@ -20,11 +21,69 @@ class RiskAcceptance {
       policy TEXT NOT NULL,
       review_reason TEXT,
       updated_at INTEGER NOT NULL
-    );`);
+    );
+    CREATE TABLE IF NOT EXISTS cp_risk_acceptance_preference(
+      id INTEGER PRIMARY KEY CHECK(id=1),
+      enabled INTEGER NOT NULL,
+      privacy TEXT NOT NULL,
+      data_class TEXT NOT NULL,
+      workers TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      updated_by TEXT NOT NULL
+    );
+    INSERT OR IGNORE INTO cp_risk_acceptance_preference VALUES(1,0,'local_only','public','["opencode"]',0,'system');`);
+  }
+
+  preference() {
+    const row = this.db.prepare('SELECT * FROM cp_risk_acceptance_preference WHERE id=1').get();
+    return {
+      enabled: row?.enabled === 1,
+      privacy: row?.privacy || 'local_only',
+      data_class: row?.data_class || 'public',
+      workers: JSON.parse(row?.workers || '["opencode"]'),
+      updated_at: row?.updated_at || null,
+      updated_by: row?.updated_by || null,
+      inheritable: false,
+      applies_to: 'new_eligible_opencode_work',
+      historical_missions: 'require_authorize_existing'
+    };
+  }
+
+  setPreference(input, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may change risk auto acceptance preference');
+    object(input, ['enabled', 'confirmed']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    if (typeof input.enabled !== 'boolean') throw Error('enabled must be boolean');
+    this.db.prepare('UPDATE cp_risk_acceptance_preference SET enabled=?, privacy=?, data_class=?, workers=?, updated_at=?, updated_by=? WHERE id=1')
+      .run(input.enabled ? 1 : 0, 'local_only', 'public', JSON.stringify(['opencode']), Date.now(), actor);
+    this.store.event(input.enabled ? 'risk.auto_acceptance.preference_enabled' : 'risk.auto_acceptance.preference_disabled', null, {
+      enabled: input.enabled,
+      privacy: 'local_only',
+      data_class: 'public'
+    });
+    return this.preference();
+  }
+
+  status() {
+    return {
+      preference: this.preference(),
+      waits: require('./wait-presentation').status(this.bridge),
+      eligibility: {
+        privacy: 'local_only',
+        data_class: 'public',
+        workers: ['opencode'],
+        scopes: [...SAFE_SCOPES],
+        verification: 'airodrom:host-verifier passed at current revision',
+        pending_approvals: 'block',
+        historical: 'authorizeExisting with confirmed operator consent only'
+      }
+    };
   }
 
   validateCreation(input, owner) {
-    const opted = input.risk_auto_acceptance === true || Boolean(input.work_template);
+    const explicit = input.risk_auto_acceptance;
+    const preferenceOn = this.preference().enabled === true;
+    const opted = explicit === true || Boolean(input.work_template) || (explicit !== false && preferenceOn);
     if (!opted) return null;
     if (owner !== 'operator') throw Error('Risk auto acceptance requires operator authorization');
     if (input.automatic_acceptance === true) throw Error('Risk auto acceptance cannot combine with coding-plan automatic Acceptance');
@@ -46,6 +105,7 @@ class RiskAcceptance {
       workers: ['opencode'],
       scopes: [...scopes],
       criteria_hash: fingerprint(input.criteria || []),
+      source: explicit === true || input.work_template ? 'mission_mark' : 'operator_preference',
       inheritable: false
     };
   }
@@ -54,7 +114,40 @@ class RiskAcceptance {
     if (!policy?.authorized) return;
     this.db.prepare('INSERT OR REPLACE INTO cp_risk_acceptance VALUES(?,?,?,?,?)')
       .run(mission.id, fingerprint(mission.envelope), JSON.stringify(policy), null, Date.now());
-    this.store.event('risk.auto_acceptance.authorized', mission.id, { privacy: policy.privacy, data_class: policy.data_class });
+    this.store.event('risk.auto_acceptance.authorized', mission.id, { privacy: policy.privacy, data_class: policy.data_class, source: policy.source || 'mission_mark' });
+  }
+
+  // Fresh evaluation for an existing awaiting Mission. Never silent from preference alone.
+  authorizeExisting(id, input, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may authorize risk auto acceptance on an existing Mission');
+    object(input, ['request_id', 'confirmed']);
+    identifier(input.request_id);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    // Bind policy inside the request; attempt Acceptance outside so missions.accept is not nested.
+    this.store.request(actor, input.request_id, { op: 'risk_authorize_existing', id }, () => {
+      const m = this.store.requireMission(id);
+      if (m.state !== 'awaiting_acceptance') throw Error('Mission must be awaiting acceptance for fresh risk authorization');
+      const policy = this.validateCreation({
+        risk_auto_acceptance: true,
+        preferred_agent: m.envelope.preferred_agent,
+        fallback_agents: m.envelope.fallback_agents || [],
+        capability_scopes: m.envelope.capability_scopes,
+        dispatch_policy: m.envelope.dispatch_policy,
+        data_class: m.envelope.data_class || 'public',
+        criteria: m.envelope.criteria,
+        coding_plan: m.envelope.coding_plan,
+        automatic_acceptance: m.envelope.automatic_acceptance,
+        fixture_auto_acceptance: false
+      }, actor);
+      if (!policy) throw Error('Mission is not eligible for risk auto acceptance');
+      const envelope = { ...m.envelope, risk_auto_acceptance: policy, data_class: policy.data_class };
+      this.db.prepare('UPDATE cp_missions SET envelope=?, updated_at=? WHERE id=?').run(JSON.stringify(envelope), Date.now(), id);
+      const updated = this.store.requireMission(id);
+      this.register(updated, policy);
+      this.store.event('risk.auto_acceptance.existing_authorized', id, { source: 'authorize_existing' });
+      return { authorized: true, mission_id: id };
+    });
+    return this.attempt(id);
   }
 
   remember(id, reason) {
@@ -144,6 +237,7 @@ class RiskAcceptance {
   }
 
   reconcile() {
+    // Preference alone never binds historical Missions; only envelope-authorized rows.
     for (const { id } of this.db.prepare("SELECT id FROM cp_missions WHERE state='awaiting_acceptance'").all()) {
       if (this.store.getMission(id).envelope.risk_auto_acceptance?.authorized) this.attempt(id);
     }

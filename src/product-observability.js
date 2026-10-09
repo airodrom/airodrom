@@ -158,8 +158,9 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  }catch{/* Cursor projection is best-effort. */}
  const overviewStatus=bridge.closed?'Unavailable':runtime.ready&&memoryReady&&ledger?.healthy===true&&!leases.some(l=>l.state==='quarantined')?'Ready':'Degraded';
  const connectivity=require('./connection-status').derive({authorized:true,reachable:true,overviewStatus,lastOkAt:Date.now(),maintenance:!!bridge.closed});
+ const acceptanceConfig=(()=>{try{return bridge.missions.riskAcceptance.status();}catch{return{preference:{enabled:false},waits:require('./wait-presentation').status(bridge)};}})();
  return {epoch:bridge.runtimeFingerprint?.captured_at||null,observed_at:Date.now(),version:require('../package.json').version,release_state:'PRE-RELEASE',status:overviewStatus,connectivity,
-  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client / MCP not checked; does not imply service disconnect'},runtime,cursor,memory,
+  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client / MCP not checked; does not imply service disconnect'},runtime,cursor,acceptance_config:acceptanceConfig,memory,
   assistant:await require('./model-worker-router').inspect(bridge),connectors:require('./assistant-service').connectors(bridge).status(),sensitive:{disclosure:'Operator-only reveal; no worker context',encryption:'No field-level encryption claim'},vault:{backend:'macOS Keychain host port',values_displayed:false,worker_access:false},
   projects:includeMissions?bridge.projects.listProjects({limit:50}).map(p=>({id:id(p.projectId),status:enumValue(p.status,['active','paused','completed','archived']),label:'Registered project',updated_at:time(p.updatedAt)})):[],
   provider:{state:runtime.ready?'Ready':ready?.provider_ready===false?'Unavailable':'Unavailable',reason:runtime.ready?'Qualified local provider observed':'Readiness unavailable'},
@@ -183,6 +184,7 @@ async function nativeStatus(bridge) {
   model:m?.model?.id||(s.runtime.ready?require('./model-worker-router').MODEL:'Unavailable'),routing:m?.model?.mode||(s.runtime.ready?'AUTO · local policy':'Unavailable'),connectors:s.connectors.items.map(c=>c.id+': '+c.state).join(' · '),
   workers:'OpenCode: '+s.runtime.state+' · Provider: '+s.provider.state+' · Cursor Agent: '+(s.cursor?.agent_availability||'unqualified'),
   cursor:s.cursor,
+  acceptance_config:s.acceptance_config,
   mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode,worker:m.runtime||null,model:m.model?.id||null,elapsed_s,progress_value:m.progress.mode==='determinate'?m.progress.value:null,progress_maximum:m.progress.mode==='determinate'?m.progress.maximum:null}:null,
   review_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n,
   failed_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n,

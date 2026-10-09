@@ -2439,6 +2439,27 @@
       "updated_at": "A"
     }
   },
+  "cp_risk_acceptance_preference": {
+    "fields": [
+      "id",
+      "enabled",
+      "privacy",
+      "data_class",
+      "workers",
+      "updated_at",
+      "updated_by"
+    ],
+    "source": "src/risk-acceptance.js",
+    "classification": {
+      "id": "A",
+      "enabled": "A",
+      "privacy": "A",
+      "data_class": "A",
+      "workers": "B",
+      "updated_at": "A",
+      "updated_by": "B"
+    }
+  },
   "project_orchestrator_meta": {
     "fields": [
       "key",

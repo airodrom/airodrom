@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "description": "Presentation and execution wait bounds only. Never extends protected approval TTL or security grant validity.",
+  "execution_timeout_ms": {
+    "default": 600000,
+    "min": 30000,
+    "max": 3600000,
+    "configurable": true,
+    "authority": false
+  },
+  "worker_heartbeat_timeout_ms": {
+    "default": 120000,
+    "min": 15000,
+    "max": 600000,
+    "configurable": true,
+    "authority": false
+  },
+  "acceptance_review_presentation_ms": {
+    "default": 86400000,
+    "min": 60000,
+    "max": 604800000,
+    "configurable": true,
+    "authority": false,
+    "note": "UI wait presentation only; does not auto-accept or renew approvals"
+  },
+  "approval_expiry_ms": {
+    "configurable": false,
+    "authority": true,
+    "note": "Owned by SafetyPolicy TTL; not adjustable through wait presentation"
+  }
+}
