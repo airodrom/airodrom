@@ -286,3 +286,73 @@ test('live connection readiness, discovery record, HTTPS prepare, vault refs wit
   assert.equal(api.body.auto_mission_execution, false);
   assert.doesNotMatch(JSON.stringify(api.body), /synthetic-app-secret|synthetic-verify-token/);
 });
+
+test('vault binding status and webhook-only ingress plan stay inactive', async t => {
+  const { bridge, request } = await fixture(t);
+  const vault = bridge.whatsappInbound.vaultBindingStatus();
+  assert.equal(vault.purpose, 'whatsapp');
+  assert.equal(vault.required_slots, 3);
+  assert.equal(vault.values_displayed, false);
+  assert.equal(vault.vault_whatsapp_active, 0);
+  const plan = bridge.whatsappInbound.ingressRoutingPlan();
+  assert.equal(plan.public_ingress, false);
+  assert.equal(plan.activated, false);
+  assert.equal(plan.mcp_tunnel_suitable, false);
+  assert.deepEqual(plan.allow_only, ['/webhooks/whatsapp']);
+  assert.ok(plan.example_cloudflared_ingress.some(line => line.includes('/webhooks/whatsapp')));
+  const live = await request('/api/assistant/whatsapp/live-connection');
+  assert.equal(live.status, 200);
+  assert.equal(live.body.vault.required_slots, 3);
+  assert.equal(live.body.ingress.public_ingress, false);
+});
+
+test('Graph discovery without token records unavailable; with mock token binds WABA and phone IDs', async t => {
+  const { bridge, request } = await fixture(t);
+  const unavailable = await bridge.whatsappInbound.discoverGraphAccounts({ confirmed: true }, 'operator');
+  assert.equal(unavailable.meta.discovery.graph_access, 'unavailable');
+  assert.equal(unavailable.waba_id, null);
+  assert.equal(unavailable.phone_number_id, null);
+
+  const calls = [];
+  bridge.whatsappInbound.options.accessToken = 'synthetic-graph-token';
+  bridge.whatsappInbound.options.graphFetch = async (url) => {
+    const href = String(url);
+    calls.push(href.replace(/access_token=[^&]+/, 'access_token=[redacted]'));
+    if (href.includes('1625559252697626') && href.includes('fields=id,name')) {
+      return { ok: true, json: async () => ({ id: '1625559252697626', name: 'Airodrom' }) };
+    }
+    if (href.includes('owned_whatsapp_business_accounts')) {
+      return { ok: true, json: async () => ({ data: [{ id: '111222333444555', name: 'Fixture WABA' }] }) };
+    }
+    if (href.includes('/phone_numbers')) {
+      return { ok: true, json: async () => ({ data: [{ id: '999888777666555', display_phone_number: '+1 555-0100', verified_name: 'Fixture' }] }) };
+    }
+    return { ok: false, status: 404, json: async () => ({ error: { message: 'missing', type: 'GraphMethodException', code: 100 } }) };
+  };
+  const found = await bridge.whatsappInbound.discoverGraphAccounts({ confirmed: true }, 'operator');
+  assert.equal(found.meta.discovery.graph_access, 'authorized');
+  assert.equal(found.waba_id, '111222333444555');
+  assert.equal(found.phone_number_id, '999888777666555');
+  assert.ok(calls.every(c => !c.includes('synthetic-graph-token')));
+  assert.doesNotMatch(JSON.stringify(found), /synthetic-graph-token|\+1 555/);
+
+  const api = await request('/api/assistant/whatsapp/inbound/discover-graph', { method: 'POST', body: { confirmed: true } });
+  assert.equal(api.status, 200);
+  assert.equal(api.body.public_ingress, false);
+});
+
+test('webhook ingress prep script writes webhook-only cloudflared plan without activating', async t => {
+  const root = fs.mkdtempSync('/private/tmp/wa-ingress-');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prep = require('../scripts/whatsapp-webhook-ingress-prep.cjs');
+  assert.equal(prep.main(['--hostname', 'hooks.example.test', '--port', '43117', '--write', root]), 0);
+  const yaml = fs.readFileSync(path.join(root, 'whatsapp-webhook-only.cloudflared.yml'), 'utf8');
+  assert.match(yaml, /path: \/webhooks\/whatsapp/);
+  assert.match(yaml, /http:\/\/127\.0\.0\.1:43117/);
+  assert.match(yaml, /http_status:404/);
+  assert.doesNotMatch(yaml, /\/api\/|mcp-tunnel/);
+  const plan = JSON.parse(fs.readFileSync(path.join(root, 'whatsapp-webhook-ingress-plan.json'), 'utf8'));
+  assert.equal(plan.public_ingress, false);
+  assert.equal(plan.activated, false);
+  assert.equal(plan.exposes_control_plane, false);
+});

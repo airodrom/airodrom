@@ -391,6 +391,11 @@
     "src/worker-registry.js",
     "docs/MULTI-WORKER-V2.md",
     "docs/adr/0018-qualified-multi-worker-v2.md",
-    "docs/adr/0019-codex-live-qualification.md"
+    "docs/adr/0019-codex-live-qualification.md",
+    "src/whatsapp-meta-graph.js",
+    "scripts/whatsapp-webhook-ingress-prep.cjs",
+    "docs/META-WHATSAPP-LIVE-CONNECTION-V1.md",
+    "src/whatsapp-inbound.js",
+    "config/whatsapp-inbound-v1.json"
   ]
 }

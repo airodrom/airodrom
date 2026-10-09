@@ -38,9 +38,9 @@ Rejected signatures emit `whatsapp.inbound.rejected` and leave the inbox empty f
 
 ## Activation checklist (exact remaining)
 
-1. Bind Vault verify token + app secret (`whatsapp` purpose).
-2. Record WABA ID and Phone Number ID via configure (non-secret IDs).
+1. Bind Vault verify token + app secret + Graph access token (`whatsapp` purpose; three opaque refs).
+2. Run `POST /api/assistant/whatsapp/inbound/discover-graph` (or Meta console) to record WABA ID and Phone Number ID.
 3. Confirm Meta app publication / WhatsApp product subscription in Meta console.
-4. Owner-authorize a TLS public URL that terminates at this host webhook path.
-5. Subscribe Meta webhook to that URL with fields `messages` (and statuses as needed).
-6. Keep Mission auto-dispatch off.
+4. Prepare webhook-only HTTPS routing (`scripts/whatsapp-webhook-ingress-prep.cjs`); owner-authorize the terminator (do not expose `/api`, MCP, Memory, or Mission).
+5. `prepare-callback` with the HTTPS URL; subscribe Meta webhook with fields `messages` (and statuses as needed).
+6. Keep Mission auto-dispatch off; keep `public_ingress` false until separate owner authorization.

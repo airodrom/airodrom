@@ -273,10 +273,152 @@ class WhatsAppInbound {
         bind_command: 'airodrom secret put whatsapp',
         note: 'System user / permanent token for Graph discovery and outbound Cloud API only. Never logged.'
       },
+      vault: this.vaultBindingStatus(),
       plaintext_in_git: false,
       values_displayed: false,
       rotation_authorized: false
     };
+  }
+
+  vaultBindingStatus() {
+    const counts = { active: 0, pending: 0, revoked: 0 };
+    const dataDir = this.bridge?.dataDir;
+    if (dataDir) {
+      try {
+        const file = path.join(dataDir, 'vault-dispositions.json');
+        if (require('./private-json').privateFileExists(file)) {
+          const state = require('./private-json').readPrivateJSON(file, 256000);
+          for (const row of Object.values(state.refs || {})) {
+            if (row?.purpose !== 'whatsapp') continue;
+            if (row.state === 'active') counts.active += 1;
+            else if (row.state === 'pending') counts.pending += 1;
+            else if (row.state === 'revoked') counts.revoked += 1;
+          }
+        }
+      } catch { /* dispositions unavailable — report zeros */ }
+    }
+    const cfg = this.config();
+    const boundSlots = [cfg.verify_token_bound, cfg.app_secret_bound, cfg.access_token_bound].filter(Boolean).length;
+    return {
+      purpose: 'whatsapp',
+      required_slots: 3,
+      slot_labels: ['verify_token', 'app_secret', 'access_token'],
+      vault_whatsapp_active: counts.active,
+      vault_whatsapp_pending: counts.pending,
+      vault_whatsapp_revoked: counts.revoked,
+      configure_slots_bound: boundSlots,
+      bind_command: 'airodrom secret put whatsapp',
+      configure_path: 'POST /api/assistant/whatsapp/inbound/configure',
+      secrets_available_for_storage: counts.active > 0 || boundSlots > 0,
+      ready_for_live_hmac: cfg.verify_token_bound && cfg.app_secret_bound,
+      ready_for_graph_discovery: cfg.access_token_bound || typeof this.options.accessToken === 'string',
+      values_displayed: false,
+      note: 'Store three purpose=whatsapp Keychain credentials via hidden CLI input, then bind opaque UUIDs through configure. Never pass secrets as argv.'
+    };
+  }
+
+  ingressRoutingPlan() {
+    const cfg = this.config();
+    return {
+      public_ingress: false,
+      activated: false,
+      mcp_tunnel_suitable: false,
+      local_bind: '127.0.0.1',
+      path: '/webhooks/whatsapp',
+      methods: ['GET', 'POST'],
+      prepared_callback_url: cfg.prepared_callback_url,
+      deny_prefixes: ['/api/', '/mcp', '/hub', '/workspace', '/'],
+      allow_only: ['/webhooks/whatsapp'],
+      recommended_terminators: ['cloudflared_named_tunnel', 'dedicated_reverse_proxy'],
+      cloudflared_present_on_host: fs.existsSync('/opt/homebrew/bin/cloudflared') || fs.existsSync('/usr/local/bin/cloudflared'),
+      example_cloudflared_ingress: [
+        'ingress:',
+        '  - hostname: <owner-chosen-host>',
+        '    path: /webhooks/whatsapp',
+        '    service: http://127.0.0.1:<control-port>',
+        '  - service: http_status:404'
+      ],
+      prep_script: 'scripts/whatsapp-webhook-ingress-prep.cjs',
+      note: 'Generate webhook-only ingress config. Do not start tunnels or change Meta production settings without separate owner authorization.'
+    };
+  }
+
+  async discoverGraphAccounts(input = {}, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may run Graph discovery');
+    object(input, ['confirmed']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    const cfg = this.config();
+    const portfolio = cfg.business_portfolio_id;
+    const appId = cfg.meta_app_id;
+    const { discoverOwnedWhatsApp, probePublicApp, redactError } = require('./whatsapp-meta-graph');
+    // Tests may inject graphFetch on the inbound options; HTTP clients cannot supply fetch_impl.
+    const fetchImpl = typeof this.options.graphFetch === 'function' ? this.options.graphFetch : fetch;
+    const publicApp = await probePublicApp(appId, { fetchImpl }).catch(error => ({
+      graph_access: 'refused',
+      app_id: null,
+      app_name: null,
+      error: redactError(error)
+    }));
+    let token = typeof this.options.accessToken === 'string' && this.options.accessToken ? this.options.accessToken : null;
+    if (!token) {
+      const ref = this.db.prepare('SELECT access_token_reference FROM cp_whatsapp_inbound_config WHERE id=1').get()?.access_token_reference;
+      if (ref) {
+        try { token = this.#vault(ref); } catch {
+          return this.recordDiscovery({
+            confirmed: true,
+            app_name: publicApp.app_name || 'Airodrom',
+            graph_access: 'unavailable',
+            permission_prerequisite: 'Vault whatsapp access token reference could not be resolved.',
+            notes: 'Public app probe only. Bind an active purpose=whatsapp access token before portfolio/WABA reads.'
+          }, actor);
+        }
+      }
+    }
+    if (!token) {
+      return this.recordDiscovery({
+        confirmed: true,
+        app_name: publicApp.app_name || 'Airodrom',
+        graph_access: 'unavailable',
+        permission_prerequisite: 'OAuthException 104 class: authorized Graph credential required for portfolio and WABA reads.',
+        notes: 'No Vault whatsapp access token bound. Public Graph returned app id/name only.'
+      }, actor);
+    }
+    try {
+      const discovered = await discoverOwnedWhatsApp({
+        accessToken: token,
+        businessPortfolioId: portfolio,
+        fetchImpl,
+        appId
+      });
+      token = null;
+      if (discovered.waba_id || discovered.phone_number_id) {
+        this.configure({
+          enabled: cfg.enabled,
+          confirmed: true,
+          waba_id: discovered.waba_id || undefined,
+          phone_number_id: discovered.phone_number_id || undefined
+        }, actor);
+      }
+      return this.recordDiscovery({
+        confirmed: true,
+        app_name: publicApp.app_name || 'Airodrom',
+        graph_access: 'authorized',
+        waba_id: discovered.waba_id || undefined,
+        phone_number_id: discovered.phone_number_id || undefined,
+        permissions_granted: discovered.permissions_readable ? this.defaults.required_permissions : undefined,
+        notes: discovered.note
+      }, actor);
+    } catch (error) {
+      token = null;
+      const redacted = redactError(error);
+      return this.recordDiscovery({
+        confirmed: true,
+        app_name: publicApp.app_name || 'Airodrom',
+        graph_access: 'refused',
+        permission_prerequisite: `Graph refused (${redacted.type || 'error'} ${redacted.code || 'n/a'}): ${redacted.message_class}`,
+        notes: 'Access token present but portfolio/WABA discovery failed. Confirm WhatsApp business permissions and system-user scope.'
+      }, actor);
+    }
   }
 
   metaReadiness() {
@@ -363,6 +505,8 @@ class WhatsAppInbound {
     const credentials = this.credentialReadiness();
     const callback = this.callbackReadiness();
     const subscription = this.subscriptionPrep();
+    const vault = this.vaultBindingStatus();
+    const ingress = this.ingressRoutingPlan();
     const realTest = {
       authorized: false,
       executed: false,
@@ -379,7 +523,9 @@ class WhatsAppInbound {
       webhook_subscription_status: 'inactive',
       meta,
       credentials,
+      vault,
       callback,
+      ingress,
       subscription,
       real_message_test: realTest,
       public_ingress: false,

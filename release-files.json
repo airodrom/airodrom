@@ -577,5 +577,10 @@
   "docs/LIVE-AGENT-OBSERVATORY-V1.md",
   "docs/LIVE-OBSERVATORY-ACTIVATION-V1.md",
   "docs/adr/0036-live-agent-observatory-v1.md",
-  "tests/live-observatory-v1.test.js"
+  "tests/live-observatory-v1.test.js",
+  "src/whatsapp-meta-graph.js",
+  "scripts/whatsapp-webhook-ingress-prep.cjs",
+  "docs/META-WHATSAPP-LIVE-CONNECTION-V1.md",
+  "src/whatsapp-inbound.js",
+  "config/whatsapp-inbound-v1.json"
 ]
