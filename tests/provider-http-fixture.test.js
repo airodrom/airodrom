@@ -1,4 +1,5 @@
 'use strict';
+const ROUTABLE=require('./fixtures/routable-provider-profiles.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),http=require('node:http');
 const {OpenAICompatibleProvider}=require('../src/openai-compatible-provider');
 const {initialProfiles}=require('../src/provider-profiles');
@@ -27,11 +28,11 @@ test('actual Capability Broker denies candidate execution under reasoning admiss
  const policy=new SafetyPolicy();policy.registerTask(task);const broker=new CapabilityBroker({policy,diagnostics:new SafeDiagnostics(policy),getTask:()=>task});
  const denied=await broker.execute(task.id,{toolName:c.toolName,toolCallId:c.toolCallId,input:c.input});assert.equal(denied.allow,false);assert.equal(denied.decision.kind,'reasoning_execution_denied');assert.equal(task.mission.id,'fixture-mission');
 });
-test('authorization input frozen across async admission',async()=>{const g=new ProviderGateway({authorize:async input=>{assert.equal(Object.isFrozen(input.messages),true);return false;}});assert.equal((await g.execute(req())).error_class,'reasoning_admission_denied');});
+test('authorization input frozen across async admission',async()=>{const g=new ProviderGateway({profiles:ROUTABLE(),authorize:async input=>{assert.equal(Object.isFrozen(input.messages),true);return false;}});assert.equal((await g.execute(req())).error_class,'reasoning_admission_denied');});
 test('unknown HTTP error body cannot leak secrets',async()=>{const profile=initialProfiles().find(p=>p.id==='deepseek');const a=new OpenAICompatibleProvider({profile,baseUrl:'https://api.deepseek.com',secret:new ProviderSecrets({references:{deepseek:'fixture/ref'},read:async()=> 'fixture-http-only'}).forProvider('deepseek'),request:async()=>new Response('Bearer fixture-http-only https://api.test/?token=fixture-http-only',{status:418})});const r=await a.execute(req(),a.models()[0]);assert.equal(r.error_class,'unknown_error');assert.ok(!JSON.stringify(r).includes('fixture-http-only'));});
 test('provider operations require operator auth and cannot reset active inference',async t=>{
  const {DatabaseSync}=require('node:sqlite'),{EventLedger}=require('../src/event-ledger'),{ControlPlaneStore}=require('../src/control-plane-store'),ControlServer=require('../src/control-server');
- const db=new DatabaseSync(':memory:'),ledger=new EventLedger(db);db.exec('CREATE TABLE project_missions(mission_id TEXT,status TEXT,updated_at INTEGER)');const store=new ControlPlaneStore({db,ledger}),g=new ProviderGateway({db});
+ const db=new DatabaseSync(':memory:'),ledger=new EventLedger(db);db.exec('CREATE TABLE project_missions(mission_id TEXT,status TEXT,updated_at INTEGER)');const store=new ControlPlaneStore({db,ledger}),g=new ProviderGateway({profiles:ROUTABLE(),db});
  const bridge={controlStore:store,providerGateway:g,ledger,closed:false,policy:{list:()=>[]}},server=new ControlServer(bridge,{port:0,token:'operator-fixture',mcpToken:'mcp-fixture'});await server.start();t.after(async()=>{await new Promise(r=>server.server.close(r));db.close();});
  const post=(action,value,token='operator-fixture')=>fetch(server.origin+'/api/control-v2/'+action,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(value)});
  const observe={id:'deepseek',state:'available',request_id:'observe-fixture'};

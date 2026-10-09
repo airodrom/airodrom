@@ -567,5 +567,12 @@
   "tests/fixtures/bounded-worker-fixture.cjs",
   "docs/adr/0019-codex-live-qualification.md",
   "tests/codex-live-qualification.test.js",
-  "tests/live-codex.cjs"
+  "tests/live-codex.cjs",
+  "config/deepseek-reserve-v1.json",
+  "src/deepseek-pricing.js",
+  "src/deepseek-reserve.js",
+  "docs/DEEPSEEK-RESERVE-V1.md",
+  "docs/adr/0032-deepseek-reserve-provider.md",
+  "tests/deepseek-reserve-v1.test.js",
+  "tests/fixtures/routable-provider-profiles.cjs"
 ]

@@ -13,6 +13,7 @@ function initialProfiles() { return [
   {id:'anthropic_subscription',protocol:'anthropic_runtime',locality:'external',privacy_class:'approved_external_only',implemented:true,runtime_only:true,models:[model('claude-runtime',{chat:true,reasoning:true,coding:null,tool_calling:false,streaming:false,cancellation:true},{max_output:8192})]},
   {id:'codex_openai',protocol:'openai_runtime',locality:'external',privacy_class:'approved_external_only',implemented:true,runtime_only:true,models:[model('codex-runtime',{coding:true},{max_output:null})]},
   {id:'openai_compatible',protocol:'openai_compatible',locality:'external',privacy_class:'approved_external_only',implemented:true,auth_required:true,models:[]},
-  {id:'deepseek',protocol:'openai_compatible',locality:'external',privacy_class:'approved_external_only',implemented:true,auth_required:true,models:[...deepseek('deepseek-flash'),...deepseek('deepseek-v4-pro')]}
+  // Reserve: reachable only through a single-use operator approval (ADR 0032), never by routing.
+  {id:'deepseek',protocol:'openai_compatible',locality:'external',privacy_class:'approved_external_only',implemented:true,auth_required:true,reserve:true,models:[...deepseek('deepseek-flash'),...deepseek('deepseek-v4-pro')]}
 ]; }
 module.exports = { initialProfiles, model };

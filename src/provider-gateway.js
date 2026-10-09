@@ -37,6 +37,7 @@ function rejectionClass(reason) {
   if(reason==='auth_required')return reason;
   if(['circuit_open','half_open_probe_active'].includes(reason))return 'circuit_open';
   if(reason==='admission_provider_not_approved')return 'task_class_ineligible';
+  if(reason==='reserve_explicit_approval_only')return 'reserve_requires_operator_approval';
   return 'provider_unavailable';
 }
 function freeze(v){if(v&&typeof v==='object'){Object.values(v).forEach(freeze);Object.freeze(v);}return v;}
@@ -89,6 +90,8 @@ class ProviderRouter {
     for(const e of this.registry.entries())for(const m of e.profile.models) {
       const id=e.profile.id,key=id+':'+(m.profile_id||m.id),circuit=this.reliability.view(key),policy=dataPolicy(input,e.profile);let reason=null;
       if(input.allowed_providers && !input.allowed_providers.includes(id))reason='admission_provider_not_approved';
+      // Reserve providers are never chosen by routing or fallback, whatever their config or health.
+      else if(e.profile.reserve)reason='reserve_explicit_approval_only';
       else if(!policy.allow)reason=policy.reason;
       else if(input.required_provider&&id!==input.required_provider||input.required_model&&m.id!==input.required_model)reason='provider_model_requirement';
       else if(e.adapter?.health().state==='auth_required')reason='auth_required';
@@ -118,11 +121,11 @@ class ProviderRouter {
 }
 class ProviderGateway {
   #authorize;
-  constructor({db=null,config={},secretReader=null,request=fetch,authorize=()=>false,now=Date.now}={}) {
+  constructor({db=null,config={},secretReader=null,request=fetch,authorize=()=>false,now=Date.now,profiles=undefined}={}) {
     this.db=db;this.now=now;this.#authorize=authorize;
     const references=Object.fromEntries(Object.entries(config).filter(([,c])=>c.secret_reference).map(([id,c])=>[id,c.secret_reference]));
     const secrets=new ProviderSecrets({references,read:secretReader});
-    this.registry=new ProviderRegistry({config,secrets,request,now});this.reliability=new ProviderReliability({db,now});this.decisions=[];
+    this.registry=new ProviderRegistry({config,secrets,request,now,...(profiles?{profiles}:{})});this.reliability=new ProviderReliability({db,now});this.decisions=[];
     db?.exec(`CREATE TABLE IF NOT EXISTS cp_provider_routes(id INTEGER PRIMARY KEY,run_id TEXT NOT NULL,request_id TEXT NOT NULL,record TEXT NOT NULL,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS cp_provider_requests(run_id TEXT NOT NULL,request_id TEXT NOT NULL,state TEXT NOT NULL,record_id TEXT,PRIMARY KEY(run_id,request_id));`);
     if(db)prepareProviderRequestIdentitySchema(db);
