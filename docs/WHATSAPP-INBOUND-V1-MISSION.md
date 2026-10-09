@@ -1,31 +1,39 @@
-# WhatsApp Inbound V1 — next OpenCode Mission prep
+# WhatsApp Inbound V1 — Mission status
 
-## Current boundary (main / PR #43 base)
+## Status (2026-10-09)
 
-- Connector status: official WhatsApp Business Cloud API inbound only; personal WhatsApp history unsupported.
+| Field | Value |
+|-------|-------|
+| Branch | `feat/whatsapp-inbound-v1` |
+| Feature impl SHA | `5e2574bd0ca340e5f56bdda11a608553e61c36b0` |
+| Docs sync | Later local commit on same branch; verify with `git rev-parse HEAD` |
+| PR | [#44](https://github.com/airodrom/airodrom/pull/44) open, stacked on `feat/cursor-exec-auto-acceptance-v1` (#43) |
+| State | **Implementation in source (feature branch)** — not merged to `main`, not SHIPPED IN SOURCE on main, not ACTIVE/DEPLOYED |
+| Focused tests | `tests/whatsapp-inbound-v1.test.js` **10/10** |
+| Public ingress | Inactive |
+
+Remote PR head may lag local commits until an authorized push. Do not treat PR head alone as the latest local evidence.
+
+## Boundary
+
+- Official WhatsApp Business Cloud API inbound only; personal WhatsApp history unsupported.
 - Capabilities declared: `whatsapp_read`, `whatsapp_send`, `whatsapp_reply` (send/reply gated; not live-qualified).
-- Assistant connect path states WhatsApp needs an official host webhook transport.
-- **Do not** expose a public webhook in this Mission.
+- Loopback `GET`/`POST /webhooks/whatsapp` with verify-token challenge and raw-body HMAC.
+- Durable allowlisted inbox; lifecycle Received → Verified → Stored → Available.
+- **No** Mission auto-dispatch; **no** public webhook activation without separate owner authorization.
 
-## Recommended Mission branch
+## Operational docs
 
-`feat/whatsapp-inbound-v1` from current `origin/main` (or post-merge main after PR #43), in a **new isolated worktree**. Do not use the dirty operator checkout.
+- [WHATSAPP-INBOUND-V1.md](WHATSAPP-INBOUND-V1.md)
+- [WHATSAPP-INBOUND-V1.1.md](WHATSAPP-INBOUND-V1.1.md)
+- [META-WHATSAPP-LIVE-CONNECTION-V1.md](META-WHATSAPP-LIVE-CONNECTION-V1.md)
+- [ADR 0038](adr/0038-whatsapp-inbound-v1.md)
+- Limitations: [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md)
 
-## Bounded WORK template (operator-owned)
+## Next action
 
-Suggested local-only OpenCode WORK (public fixture only):
-
-- Worker: OpenCode / Qwen3 Coder 30B
-- Privacy: `local_only`; data_class: `public`
-- Scopes: `repo`, `developer_environment` only
-- Allowed files: synthetic inbound parser + fixture webhook payloads under a disposable repo
-- Criteria: exact_file / registered tests proving signature verification, fail-closed unknown payloads, no outbound send
-- Explicit non-goals: public tunnel, production webhook URL, send mutations, personal chat history
-
-## Acceptance
-
-If risk auto-Acceptance preference is enabled, eligible fixture WORK can settle automatically after host verification. Otherwise remain awaiting Acceptance.
-
-## Authorization still required
-
-Owner must approve Mission creation/dispatch, any network grant for a future private webhook receiver, and any credential binding. This note does not authorize live Meta app configuration.
+1. Bind Vault `whatsapp` secrets (verify token, app secret, Graph credential).
+2. Record WABA ID and Phone Number ID from Meta console / authorized Graph.
+3. Owner-authorize dedicated HTTPS callback for `/webhooks/whatsapp` only.
+4. Subscribe Meta `messages`; run one allowlisted live message test.
+5. Merge only under daily-integration / standing-merge rules (currently inactive).

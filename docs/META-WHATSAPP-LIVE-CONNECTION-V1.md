@@ -2,6 +2,19 @@
 
 Operator checklist for the first real Meta → Airodrom webhook delivery. Builds on [WhatsApp Inbound V1.1](WHATSAPP-INBOUND-V1.1.md).
 
+## Milestone record (2026-10-09)
+
+| Field | Value |
+|-------|-------|
+| Development Session | Meta WhatsApp Live Connection V1 (local worktree) |
+| Git branch | `feat/whatsapp-inbound-v1` |
+| Actual commit SHA | Feature implementation `5e2574bd0ca340e5f56bdda11a608553e61c36b0` (docs sync is later local commit on same branch; verify with `git rev-parse HEAD`; ahead of PR remote) |
+| PR | https://github.com/airodrom/airodrom/pull/44 (open; stacked on #43) |
+| Implementation status | **In source on feature branch** — not merged; not SHIPPED IN SOURCE on main; not ACTIVE/DEPLOYED |
+| Test results | `tests/whatsapp-inbound-v1.test.js` **10/10** |
+| Known limitations | Public ingress refused; Vault `whatsapp` refs = 0; WABA/Phone Number ID unknown without Graph token |
+| Next action | Bind Vault secrets → Graph discovery → owner-authorize HTTPS callback → one allowlisted live message |
+
 ## Discovery (non-secret)
 
 | Field | Result |
