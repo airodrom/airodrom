@@ -23,10 +23,16 @@ private struct BridgeStatus: Codable {
     let now: Double
     let managed: Bool
     struct Product: Codable {
-        struct Mission: Codable { let id: String?; let label: String; let state: String; let phase: String; let progress: String }
+        struct Mission: Codable {
+            let id: String?; let label: String; let state: String; let phase: String; let progress: String
+            let worker: String?; let model: String?; let elapsed_s: Int?
+            let progress_value: Int?; let progress_maximum: Int?
+        }
         let model: String?; let routing: String?; let connectors: String?; let control: String?; let status: String; let runtime: String; let runtimeReason: String?; let memory: String; let provider: String
         let active_missions: Int?; let approvals: Int?; let mission: Mission?; let diagnostic: String
         let quarantined_leases: Int?
+        let activity_status: String?; let connection_state: String?; let connection_label: String?; let menu_tone: String?
+        let workers: String?; let review_missions: Int?; let failed_missions: Int?
     }
     let product: Product?
     var valid: Bool {
@@ -130,6 +136,32 @@ private final class Controller {
         }
     }
 }
+
+/// Compact semantic status indicator. Template mark stays monochrome; the dot carries tone + accessibility text.
+private final class StatusDot: NSView {
+    var tone: String = "stopped" { didSet { needsDisplay = true } }
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let color: NSColor
+        switch tone {
+        case "healthy": color = NSColor.systemGreen
+        case "working": color = NSColor.systemBlue
+        case "reconnecting", "degraded": color = NSColor.systemOrange
+        case "approval": color = NSColor.systemYellow
+        case "disconnected": color = NSColor.systemRed
+        default: color = NSColor.secondaryLabelColor
+        }
+        ctx.setFillColor(color.cgColor)
+        ctx.fillEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+        // Shape cue independent of color: ring for working, square-ish for approval via thicker stroke
+        if tone == "working" || tone == "approval" {
+            ctx.setStrokeColor(color.withAlphaComponent(0.9).cgColor)
+            ctx.setLineWidth(tone == "approval" ? 1.6 : 1.1)
+            ctx.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+        }
+    }
+}
+
 private func brandImage() -> NSImage {
     let polygons: [[CGPoint]] = [[CGPoint(x: 12.000, y: 223.348),CGPoint(x: 106.431, y: 32.652),CGPoint(x: 152.323, y: 136.423),CGPoint(x: 162.203, y: 136.423),CGPoint(x: 131.860, y: 70.607),CGPoint(x: 149.893, y: 32.706),CGPoint(x: 244.000, y: 223.348),CGPoint(x: 180.020, y: 223.348),CGPoint(x: 163.175, y: 189.334),CGPoint(x: 92.825, y: 189.334),CGPoint(x: 76.465, y: 223.348),CGPoint(x: 12.000, y: 223.348)],[CGPoint(x: 150.109, y: 62.617),CGPoint(x: 145.304, y: 72.281),CGPoint(x: 182.234, y: 148.301),CGPoint(x: 97.738, y: 148.301),CGPoint(x: 121.386, y: 99.709),CGPoint(x: 105.837, y: 62.509),CGPoint(x: 33.057, y: 210.930),CGPoint(x: 42.667, y: 210.930),CGPoint(x: 106.970, y: 81.352),CGPoint(x: 113.395, y: 97.225),CGPoint(x: 84.294, y: 156.399),CGPoint(x: 186.121, y: 156.399),CGPoint(x: 213.171, y: 210.930),CGPoint(x: 223.429, y: 210.930),CGPoint(x: 150.109, y: 62.617)],[CGPoint(x: 128.459, y: 113.692),CGPoint(x: 118.147, y: 136.423),CGPoint(x: 139.095, y: 136.423),CGPoint(x: 128.459, y: 113.692)],[CGPoint(x: 78.355, y: 168.817),CGPoint(x: 57.677, y: 210.930),CGPoint(x: 68.043, y: 210.930),CGPoint(x: 84.834, y: 176.916),CGPoint(x: 171.760, y: 176.916),CGPoint(x: 188.389, y: 210.930),CGPoint(x: 198.701, y: 210.930),CGPoint(x: 178.023, y: 168.817),CGPoint(x: 78.355, y: 168.817)]]
     let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { rect in
@@ -152,6 +184,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let controller: Controller
     private let helperLock: Int32
     private var statusItem: NSStatusItem!
+    private let statusDot = StatusDot(frame: NSRect(x: 13, y: 2, width: 7, height: 7))
     private let menu = NSMenu()
     private let stateRow = NSMenuItem(title: "Status: Waiting", action: nil, keyEquivalent: "")
     private let modelRow = NSMenuItem(title: "Model: Unavailable", action: nil, keyEquivalent: "")
@@ -161,6 +194,12 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let missionRow = NSMenuItem(title: "Active Mission: none observed", action: nil, keyEquivalent: "")
     private let approvalsRow = NSMenuItem(title: "Approvals: unavailable", action: nil, keyEquivalent: "")
     private let detailRow = NSMenuItem(title: "Checking local observations…", action: nil, keyEquivalent: "")
+    private let workersRow = NSMenuItem(title: "Workers: Unavailable", action: nil, keyEquivalent: "")
+    private let providerRow = NSMenuItem(title: "Provider: Unavailable", action: nil, keyEquivalent: "")
+    private let mcpRow = NSMenuItem(title: "MCP: Unavailable", action: nil, keyEquivalent: "")
+    private let progressRow = NSMenuItem(title: "Mission progress: none", action: nil, keyEquivalent: "")
+    private let elapsedRow = NSMenuItem(title: "Elapsed: —", action: nil, keyEquivalent: "")
+    private let errorsRow = NSMenuItem(title: "Recent failures: none", action: nil, keyEquivalent: "")
     private var startItem: NSMenuItem!, stopItem: NSMenuItem!, restartItem: NSMenuItem!, openItem: NSMenuItem!, qualifyItem: NSMenuItem!
     private var cliItem: NSMenuItem!, doctorItem: NSMenuItem!, copyItem: NSMenuItem!
     private var openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
@@ -221,13 +260,17 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = idleImage; statusItem.button?.setAccessibilityLabel("Airodrom")
+        statusItem.button?.addSubview(statusDot)
         statusItem.menu = menu; menu.autoenablesItems = false
-        menu.addItem(NSMenuItem(title: "AIRODROM · PRE-RELEASE", action: nil, keyEquivalent: ""))
-        [stateRow, runtimeRow, modelRow, memoryRow, connectorsRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "AIRODROM", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Personal AI Operations", action: nil, keyEquivalent: ""))
+        [stateRow, detailRow, missionRow, progressRow, elapsedRow, workersRow, runtimeRow, providerRow, memoryRow, mcpRow, approvalsRow, errorsRow, modelRow, connectorsRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
+        _ = item("Refresh Status", #selector(refreshStatus), in: menu)
+        _ = item("Reconnect", #selector(reconnect), in: menu)
         openItem = item("Open Control Center", #selector(openCenter), in: menu, key: "o")
         cliItem = item("New Mission / Open CLI", #selector(openCLI), in: menu)
-        menu.addItem(.separator()); menu.addItem(missionRow); menu.addItem(approvalsRow)
-        openMissionItem = item("Open Mission", #selector(openMission), in: menu)
+        menu.addItem(.separator())
+        openMissionItem = item("View Active Mission", #selector(openMission), in: menu)
         cancelMissionItem = item("Cancel Mission", #selector(cancelMission), in: menu)
         _ = item("Review Missions & Approvals", #selector(openCenter), in: menu)
         menu.addItem(.separator())
@@ -245,10 +288,10 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         restartItem = item("Restart Service", #selector(restartBridge), in: service)
         service.addItem(NSMenuItem(title: "Launch at Login: managed by optional macOS installer", action: nil, keyEquivalent: ""))
         let serviceRow = NSMenuItem(title: "Service", action: nil, keyEquivalent: ""); serviceRow.submenu = service; menu.addItem(serviceRow)
-        menu.addItem(.separator()); menu.addItem(detailRow)
-        _ = item("Help / Documentation", #selector(documentation), in: menu)
+        menu.addItem(.separator())
+        _ = item("Open Settings / Documentation", #selector(documentation), in: menu)
         _ = item("About Airodrom", #selector(about), in: menu)
-        _ = item("Quit Menu Bar (service stays running)", #selector(quitHelper), in: menu, key: "q")
+        _ = item("Quit Menu (service stays running)", #selector(quitHelper), in: menu, key: "q")
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(motionPreferenceChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         request(.status)
         timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -289,20 +332,32 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private func render() {
         let changing = pendingAction != nil || currentAction != nil && currentAction != .status
         let p = status?.product, state = status?.state
-        let visible = changing ? "Waiting" : p?.status ?? "Unavailable"
+        // Never map optional provider/MCP gaps or a nil product alone to Disconnected.
+        let tone = menuTone(changing: changing)
+        let visible = changing ? "Waiting" : (p?.connection_label ?? p?.activity_status ?? presentationLabel(tone: tone))
         updateAnimation(changing: changing)
-        stateRow.title = "Status: " + visible
-        modelRow.title = "Model: " + (p?.model ?? "Unavailable") + " · " + (p?.routing ?? "Unavailable")
-        connectorsRow.title = "Connectors: " + (p?.connectors ?? "Unavailable")
-        runtimeRow.title = "OpenCode: " + (p?.runtime ?? "Unavailable") + " · Primary"
+        statusDot.tone = tone
+        stateRow.title = "SYSTEM STATUS  " + visible
+        detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Last check · just now" + (status?.endpoint.map { " · \($0)" } ?? ""))
+        missionRow.title = p?.mission.map { "ACTIVE MISSION  \($0.label)" } ?? "ACTIVE MISSION  none"
+        progressRow.title = missionProgressTitle(p?.mission)
+        elapsedRow.title = p?.mission?.elapsed_s.map { "Elapsed  \($0)s · \((p?.mission?.worker ?? "worker")) · \((p?.mission?.model ?? p?.model ?? "model"))" } ?? "Elapsed  —"
+        if let phase = p?.mission?.phase { elapsedRow.title += " · \(phase)" }
+        workersRow.title = "WORKERS  " + (p?.workers ?? ("OpenCode " + (p?.runtime ?? "Unavailable")))
+        runtimeRow.title = "OpenCode  " + (p?.runtime ?? "Unavailable")
         if p?.runtimeReason == "opencode_runtime_pins_changed" { runtimeRow.title += " · Requalification required" }
-        memoryRow.title = "Memory V2: " + (p?.memory ?? "Unavailable") + " · Local"
-        missionRow.title = p?.mission.map { $0.label + " · " + $0.phase } ?? "Active Mission: none observed"
-        approvalsRow.title = p?.approvals.map { "Approvals: " + String($0) + " waiting" } ?? "Approvals: unavailable"
-        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : animationState == "error" || animationState == "degraded" ? "!" : animationState == "waiting" ? "…" : ""
+        providerRow.title = "Provider  " + (p?.provider ?? "Unavailable")
+        memoryRow.title = "MEMORY  Memory V2  " + (p?.memory ?? "Unavailable")
+        mcpRow.title = "MCP  " + (status?.mcp.ready == true ? "Connected" : "Not checked / unavailable")
+        approvalsRow.title = p?.approvals.map { "Approvals  \($0) waiting" } ?? "Approvals  unavailable"
+        errorsRow.title = "Recent failures  " + String(p?.failed_missions ?? 0) + " · review " + String(p?.review_missions ?? 0)
+        modelRow.title = "Model  " + (p?.model ?? "Unavailable") + " · " + (p?.routing ?? "Unavailable")
+        connectorsRow.title = "Connectors  " + (p?.connectors ?? "Unavailable")
+        // Compact bar: approvals badge or symbolic cue — not a long Disconnected string.
+        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : tone == "disconnected" || tone == "degraded" ? "!" : tone == "reconnecting" ? "…" : ""
         statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title
         statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title)
-        detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Local observations checked just now")
+        statusItem.button?.setAccessibilityLabel("Airodrom")
         let available = pendingAction == nil && currentAction == nil
         let navigationAvailable = pendingAction == nil && (currentAction == nil || currentAction == .status)
         startItem.isEnabled = available && state == .stopped
@@ -320,11 +375,46 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
             for (index, item) in health.items.enumerated() { item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + (values[index] ?? "Unavailable") }
         }
     }
+
+    private func menuTone(changing: Bool) -> String {
+        if lastError != nil || status?.state == .error { return "disconnected" }
+        if status?.state == .stopped { return "stopped" }
+        if status?.state == .starting || changing || failures > 0 && status == nil { return "reconnecting" }
+        if let tone = status?.product?.menu_tone, !tone.isEmpty { return tone }
+        let p = status?.product
+        if (p?.approvals ?? 0) > 0 { return "approval" }
+        if (p?.active_missions ?? 0) > 0 || ["dispatching", "running", "verifying"].contains(p?.mission?.state ?? "") { return "working" }
+        if p?.status == "Degraded" || p?.status == "Unavailable" { return "degraded" }
+        if status?.state == .connected { return "healthy" }
+        return "disconnected"
+    }
+    private func presentationLabel(tone: String) -> String {
+        switch tone {
+        case "healthy": return "Connected · Healthy"
+        case "working": return "Working"
+        case "reconnecting": return "Reconnecting"
+        case "degraded": return "Degraded"
+        case "approval": return "Approval needed"
+        case "stopped": return "Stopped"
+        default: return "Disconnected"
+        }
+    }
+    private func missionProgressTitle(_ mission: BridgeStatus.Product.Mission?) -> String {
+        guard let mission else { return "Mission progress  none" }
+        if mission.progress == "determinate", let value = mission.progress_value, let max = mission.progress_maximum, max > 0 {
+            let pct = min(100, Int((Double(value) / Double(max)) * 100))
+            return "Mission progress  \(pct)% · \(value)/\(max) checks"
+        }
+        if ["dispatching", "running", "verifying"].contains(mission.state) {
+            return "Mission progress  indeterminate · \(mission.phase)"
+        }
+        return "Mission progress  " + mission.state.replacingOccurrences(of: "_", with: " ")
+    }
+
     @objc private func motionPreferenceChanged() { render() }
     private func updateAnimation(changing: Bool) {
-        let p = status?.product
-        let executing = (p?.active_missions ?? 0) > 0 || ["dispatching", "running", "verifying"].contains(p?.mission?.state ?? "")
-        animationState = lastError != nil || status?.state == .error ? "error" : changing ? "waiting" : (p?.approvals ?? 0) > 0 ? "approval" : executing ? "busy" : ["awaiting_acceptance", "waiting_for_operator"].contains(p?.mission?.state ?? "") ? "waiting" : p?.status == "Degraded" ? "degraded" : "idle"
+        let tone = menuTone(changing: changing)
+        animationState = tone == "disconnected" ? "error" : tone == "reconnecting" || changing ? "waiting" : tone == "approval" ? "approval" : tone == "working" ? "busy" : tone == "degraded" ? "degraded" : "idle"
         let animate = animationState == "busy" && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if !animate {
             animationTimer?.invalidate(); animationTimer = nil; animationIndex = 0
@@ -342,6 +432,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         if let animationTimer { RunLoop.main.add(animationTimer, forMode: .common) }
     }
     private func show(_ title: String, _ message: String) { let alert = NSAlert(); alert.messageText = title; alert.informativeText = message; alert.runModal() }
+    @objc private func refreshStatus() { request(.status) }
+    @objc private func reconnect() { failures = 0; lastError = nil; request(.status) }
     @objc private func openCenter() { request(.open) }
     @objc private func openCLI() { request(.cli) }
     @objc private func openMission() { request(.openMission) }

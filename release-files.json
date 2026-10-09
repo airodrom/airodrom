@@ -572,6 +572,8 @@
   "docs/adr/0034-opencode-pin-replacement-requalify.md",
   "docs/adr/0035-opencode-2.0.25-qualification.md",
   "src/live-observatory.js",
+  "tests/connection-status.test.js",
+  "src/connection-status.js",
   "docs/LIVE-AGENT-OBSERVATORY-V1.md",
   "docs/LIVE-OBSERVATORY-ACTIVATION-V1.md",
   "docs/adr/0036-live-agent-observatory-v1.md",
