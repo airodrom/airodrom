@@ -302,17 +302,20 @@
    if(view==='Connectors'){for(const c of snapshot.connectors?.items||[])result.append(glass(c.id,c.state,c.protocol),node('p',c.setup),node('p',c.mutations));result.append(node('p','Selected email and message text is untrusted data. It cannot grant permissions. Local reply drafts never send.'));return result;}
    if(view==='Development Sessions'){
      const ds=snapshot.development_sessions||{};
+     const labels={LOCAL_ONLY:'LOCAL ONLY',READY_TO_PUSH:'READY TO PUSH',PR_OPEN:'PR OPEN',READY_TO_MERGE:'READY TO MERGE',MERGED:'MERGED'};
+     const pending=Object.entries(ds.integration_counts||{}).filter(([k,n])=>n&&['READY_TO_PUSH','READY_TO_MERGE'].includes(k)).map(([k,n])=>labels[k]+' '+n);
      result.append(glass('Local-first defaults',ds.merge_window_open?'Merge window open':'Merge window closed','auto push off · auto merge off · hosted CI auto-dispatch off'));
-     result.append(node('p','Timezone '+(ds.merge_window?.timezone||'—')+' · '+(ds.merge_window?.local_start||'')+'-'+(ds.merge_window?.local_end||'')+' · open sessions '+(ds.open_sessions||0)+' · local-only '+(ds.local_only_sessions||0),'muted'));
-     result.append(node('p','CI cost estimate: Unavailable. No fabricated percentages.','muted'));
+     result.append(node('p','Timezone '+(ds.merge_window?.timezone||'—')+' · '+(ds.merge_window?.local_start||'')+'-'+(ds.merge_window?.local_end||'')+' · open '+(ds.open_sessions||0),'muted'));
+     result.append(node('p','Next integration checkpoint requires operator authorization. Pending approvals: '+(pending.length?pending.join(' · '):'none')+'. CI cost estimate: Unavailable.','muted'));
+     if(ds.active)result.append(glass('Active session',labels[ds.active.integration_state]||ds.active.integration_state,(ds.active.assigned_worker||'worker')+' · '+(ds.active.repository||'')+' · '+ds.active.branch));
      for(const s of ds.recent||[]){
-       const card=glass(s.goal,s.local_only?'Local only':'Published to GitHub',s.branch+' · '+s.state+' · tests '+(s.evidence?.passed||0)+' passed / '+(s.evidence?.failed||0)+' failed · CI '+(s.github_ci_status||'not_dispatched'));
-       card.append(node('p','Worktree '+s.worktree,'muted'));
-       card.append(node('p','Missions '+(s.mission_count||0)+(s.pr_number?' · PR #'+s.pr_number:'')+(s.head_sha?' · '+s.head_sha.slice(0,8):''),'muted'));
+       const card=glass(s.goal,labels[s.integration_state]||s.integration_state,(s.assigned_worker||'—')+' · '+s.branch+' · focused tests '+(s.evidence?.passed||0)+'/'+(s.evidence?.failed||0)+' · CI '+(s.github_ci_status||'not_dispatched')+' · runs '+(s.ci_runs||0));
+       card.append(node('p',(s.repository||'')+' · worktree '+s.worktree,'muted'));
+       card.append(node('p','Related Missions '+(s.mission_count||0)+' · local commits '+(s.local_commits?.length||0)+' · files changed '+(s.dirty_files?.length||0)+(s.pr_number?' · PR #'+s.pr_number+' '+(labels[s.integration_state]||''):' · no PR')+(s.head_sha?' · '+s.head_sha.slice(0,8):''),'muted'));
        result.append(card);
      }
      if(!(ds.recent||[]).length)result.append(empty('No Development Sessions. Related Missions share one local session; push/PR waits for the batch checkpoint.'));
-     result.append(node('p','Window alone never merges. Explicit operator authorization is required at the integration checkpoint.'));
+     result.append(node('p','States: LOCAL ONLY · READY TO PUSH · PR OPEN · READY TO MERGE · MERGED. Acceptance stays Mission host verification (risk preference when installed). Sessions never grant Acceptance or auto-merge.'));
      return result;
    }
    if(view==='Sensitive & Vault'){result.append(glass('Sensitive Memory','Operator-only',snapshot.sensitive?.disclosure),node('p',snapshot.sensitive?.encryption),glass('Vault','macOS Keychain', 'Named private identifiers and credentials. Credential values stay hidden and are never sent to workers.'),node('p','In the Airodrom terminal, use /vault to save a password or API key securely. Use /secret list or /secret search <label> to find an entry. Private identifiers can be revealed only after fresh confirmation in that terminal and may remain in its scrollback. Credentials require approved capability use.'),node('p','Sensitive Memory is separate: use /remember-sensitive or /sensitive in the authenticated terminal.'));return result;}

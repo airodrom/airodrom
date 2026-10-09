@@ -271,7 +271,11 @@ class ControlServer {
       if(url.pathname==='/api/assistant/workers/qualify'){require('./control-plane-store').object(body,['worker','model','confirmed','request_id']);return this.json(res,200,await this.bridge.workers.qualify(body.worker,body,'operator'));}
       if(url.pathname==='/api/assistant/workers/revoke'){require('./control-plane-store').object(body,['worker']);return this.json(res,200,this.bridge.workers.revoke(body.worker,'operator'));}
       if(url.pathname==='/api/assistant/development-sessions')return this.json(res,201,this.bridge.developmentSessions.create(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/resolve')return this.json(res,200,this.bridge.developmentSessions.resolve(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/attach')return this.json(res,200,this.bridge.developmentSessions.attach(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/observe-git')return this.json(res,200,this.bridge.developmentSessions.observeGit(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/commit')return this.json(res,200,this.bridge.developmentSessions.recordCommit(body,'operator'));
+      if(url.pathname==='/api/assistant/development-sessions/select-tests')return this.json(res,200,this.bridge.developmentSessions.selectTests(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/evidence')return this.json(res,200,this.bridge.developmentSessions.recordEvidence(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/publish')return this.json(res,200,this.bridge.developmentSessions.markPublished(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/checkpoint')return this.json(res,200,this.bridge.developmentSessions.checkpoint(body,'operator'));

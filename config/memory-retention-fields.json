@@ -577,7 +577,11 @@
       "head_sha",
       "created_at",
       "updated_at",
-      "created_by"
+      "created_by",
+      "assigned_worker",
+      "integration_state",
+      "dirty_files",
+      "evidence_commit_sha"
     ],
     "source": "src/development-session.js",
     "classification": {
@@ -595,7 +599,28 @@
       "head_sha": "A",
       "created_at": "A",
       "updated_at": "A",
-      "created_by": "B"
+      "created_by": "B",
+      "assigned_worker": "A",
+      "integration_state": "A",
+      "dirty_files": "B",
+      "evidence_commit_sha": "A"
+    }
+  },
+  "cp_development_session_commits": {
+    "fields": [
+      "id",
+      "session_id",
+      "sha",
+      "subject",
+      "recorded_at"
+    ],
+    "source": "src/development-session.js",
+    "classification": {
+      "id": "A",
+      "session_id": "A",
+      "sha": "A",
+      "subject": "B",
+      "recorded_at": "A"
     }
   },
   "cp_development_session_missions": {
@@ -619,7 +644,8 @@
       "command",
       "passed",
       "summary",
-      "recorded_at"
+      "recorded_at",
+      "commit_sha"
     ],
     "source": "src/development-session.js",
     "classification": {
@@ -629,7 +655,8 @@
       "command": "B",
       "passed": "A",
       "summary": "B",
-      "recorded_at": "A"
+      "recorded_at": "A",
+      "commit_sha": "A"
     }
   },
   "cp_slack_outbox": {
