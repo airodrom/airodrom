@@ -113,6 +113,10 @@ Rollback: restore prior source tree or previous archive; keep databases and Keyc
 - Hosted candidate workflow remained idle (no checks required; no heavy suites).  
 - **Local operator install activated** from verified package; rollback backup under `~/.airodrom/backups/integrated-release-v1-activation-20261010T005021Z`.
 
+## Pending V1.0.1 upgrade
+
+Canonical package fixes land on `fix/v1.0.1-install-hotfix` ([INSTALL-HOTFIX-V1.0.1.md](INSTALL-HOTFIX-V1.0.1.md)). The healthy V1 install remains on `install/airodrom-77724f8` until an authorized maintenance cutover.
+
 ## Known blockers
 
 1. WhatsApp production HOLD (Meta AI policy).  

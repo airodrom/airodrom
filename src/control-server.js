@@ -37,8 +37,15 @@ class ControlServer {
     this.bridge = bridge; this.port = port; this.token = token ?? operatorToken(bridge.dataDir); this.webRequests = new Map();
     const gmailFile=bridge.dataDir?path.join(bridge.dataDir,'gmail-oauth-config.json'):null;
     if(gmailFile&&require('./private-json').privateFileExists(gmailFile)){
-      const config=require('./private-json').readPrivateJSON(gmailFile);require('./control-plane-store').object(config,['clientId','reference']);
-      this.gmailOAuth=new(require('./gmail-oauth').GmailOAuth)({clientId:config.clientId,reference:config.reference||null,vault:new(require('./secret-vault').SecretVault)(bridge.dataDir),onReference:reference=>{require('./local-bootstrap').writePrivate(gmailFile,{clientId:config.clientId,reference});this.#wireAssistantConnectors();}});
+      const config=require('./private-json').readPrivateJSON(gmailFile);
+      // Optional clientSecretReference is retained for older local Gmail installs; unknown keys still fail closed.
+      const gmailKeys=['clientId','reference'].concat(Object.prototype.hasOwnProperty.call(config,'clientSecretReference')?['clientSecretReference']:[]);
+      require('./control-plane-store').object(config,gmailKeys);
+      this.gmailOAuth=new(require('./gmail-oauth').GmailOAuth)({clientId:config.clientId,reference:config.reference||null,vault:new(require('./secret-vault').SecretVault)(bridge.dataDir),onReference:reference=>{
+        const next={clientId:config.clientId,reference};
+        if(config.clientSecretReference)next.clientSecretReference=config.clientSecretReference;
+        require('./local-bootstrap').writePrivate(gmailFile,next);this.#wireAssistantConnectors();
+      }});
       if(config.reference)this.#wireAssistantConnectors();
     }
     this.conversationEngine=bridge.conversationEngine ||= new(require('./conversation-engine').ConversationEngine)(bridge,conversationOptions);

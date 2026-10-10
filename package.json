@@ -1,6 +1,6 @@
 {
   "name": "airodrom",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.1-rc.1",
   "private": true,
   "description": "Airodrom AI operating platform with mission orchestration, fail-closed approvals and Control Center",
   "main": "src/bridge-controller.js",
@@ -431,6 +431,10 @@
     "docs/adr/0038-whatsapp-inbound-v1.md",
     "docs/adr/0039-local-first-batch-merge.md",
     "docs/INTEGRATED-RELEASE-V1.md",
-    "docs/CURRENT-STATE.md"
+    "docs/CURRENT-STATE.md",
+    "src/wait-presentation.js",
+    "config/wait-presentation-v1.json",
+    "docs/INSTALL-HOTFIX-V1.0.1.md",
+    "tests/install-hotfix-v101.test.js"
   ]
 }
