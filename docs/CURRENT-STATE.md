@@ -1,5 +1,16 @@
 # Current state (2026-10-10)
 
+## WhatsApp Verify Token Staged Rotation — SHIPPED + INSTALLED (2026-10-10)
+
+- **PR:** [#62](https://github.com/airodrom/airodrom/pull/62) **MERGED**
+- **Feature tip:** `02067eba651b74abe057a13b801da6217a327afd` · security tip `e31d1c9` (explicit owner commit only; GET never finalizes)
+- **Merge on `origin/main`:** `879daa38e759b3e7c616d6575f04fae8f60a148e`
+- **Installed:** `…/airodrom-whatsapp-verify-token-safe-rotation/install/airodrom-whatsapp-verify-safe-879daa3` (runtime from main `879daa3`; docs ship adds shipped-status pack file — see PR for allowlist)
+- **Backup/rollback:** `…/airodrom-whatsapp-verify-token-safe-rotation/backup/pre-whatsapp-verify-safe-20261010T205019Z` (prior source `…/airodrom-conversation-ux-bugfix-52e1003`)
+- **Migration:** `staged_verify_token_reference` / `staged_verify_expires_at` present; staging idle; verify/app-secret/access Keychain refs bound and resolvable
+- **Live:** Control Healthy · admission open · test tunnel retargeted · prepared callback refreshed · public ingress OFF · outbound OFF · auto-Mission OFF · production HOLD · Meta Verify **owner-pending** (no token staged by installer)
+- Evidence: [WHATSAPP-VERIFY-TOKEN-STAGED-ROTATION-SHIPPED.md](WHATSAPP-VERIFY-TOKEN-STAGED-ROTATION-SHIPPED.md), ADR 0045. Operator checkout preserved.
+
 ## Conversation UX Bugfix V1 — SHIPPED + INSTALLED (2026-10-10)
 
 - **PR:** [#60](https://github.com/airodrom/airodrom/pull/60) **MERGED**
@@ -56,10 +67,10 @@
 
 ## Installed release (running)
 
-- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003`
-- **Health:** Ready — OpenCode Ready, Memory Ready, Provider Ready (Qwen)
-- **Includes:** Conversation UX Bugfix V1 on `52e1003` (ancestry includes Grounded Accuracy `fe918cc`)
-- **Prior Grounded Accuracy install:** `…/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc` (retained; backup `pre-conversation-ux-bugfix-20261010T193433Z`)
+- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-whatsapp-verify-token-safe-rotation/install/airodrom-whatsapp-verify-safe-879daa3`
+- **Health:** Ready — managed local service healthy; admission open
+- **Includes:** WhatsApp verify-token staged rotation on `879daa3` (ancestry includes Conversation UX Bugfix `52e1003`)
+- **Prior Conversation UX install:** `…/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003` (retained; backup `pre-whatsapp-verify-safe-20261010T205019Z`)
 - **Manual patches required:** No
 
 ## Distinctions
@@ -116,6 +127,6 @@
 - **Live:** Control/OpenCode/Memory/Provider Ready · panel `/development-sessions-panel.js` HTTP 200 · hub coding admission `sourceContextSensitive=false` · timeout 120000 · Automatic Acceptance OFF · WhatsApp HOLD
 - Evidence: [SELF-DEVELOPMENT-RELIABILITY-V1.1.md](SELF-DEVELOPMENT-RELIABILITY-V1.1.md). Operator checkout preserved.
 
-## WhatsApp verify-token staged rotation (source candidate)
+## WhatsApp verify-token staged rotation — see SHIPPED + INSTALLED above
 
-Staged Keychain verify-token recovery is implemented on `feature/whatsapp-verify-token-safe-rotation` (ADR 0045). Installed runtime may still use irreversible replace until this branch is installed. Production WhatsApp remains HOLD; no live credential rotation in this change.
+Owner Meta test callback verification remains pending: stage in owner TTY → Meta Verify/Save → explicit `commit-verify-token` (or `rollback-verify-token`).

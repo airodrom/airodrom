@@ -93,6 +93,7 @@
   "docs/WHATSAPP-CONVERSATIONS-V1.md",
   "docs/WHATSAPP-INBOUND-V1.md",
   "docs/WHATSAPP-PRODUCTION-CONNECTION-V1.md",
+  "docs/WHATSAPP-VERIFY-TOKEN-STAGED-ROTATION-SHIPPED.md",
   "docs/adr/0001-execution-qualification.md",
   "docs/adr/0002-work-execution-adapter-v1.md",
   "docs/adr/0003-runtime-support-freeze.md",

@@ -134,6 +134,7 @@
     "docs/UNIVERSAL-MISSION-WEB-V1.md",
     "docs/WHATSAPP-CONVERSATIONS-V1.md",
     "docs/WHATSAPP-PRODUCTION-CONNECTION-V1.md",
+    "docs/WHATSAPP-VERIFY-TOKEN-STAGED-ROTATION-SHIPPED.md",
     "docs/adr/0005-opencode-execution-boundary.md",
     "docs/adr/0007-local-interactive-missions.md",
     "docs/adr/0008-remove-worker-runtime.md",
