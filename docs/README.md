@@ -1,5 +1,7 @@
 # Airodrom documentation
 
+**Menu Status & WhatsApp Connection Closeout V1** (LOCAL IMPLEMENTATION): [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md).
+
 **Control Center & Premium macOS Experience V4** (SHIPPED + INSTALLED): [CONTROL-CENTER-MACOS-UX-V4.md](CONTROL-CENTER-MACOS-UX-V4.md).
 
 **macOS Desktop Activation V1** (Menu V3 + login startup — SHIPPED + INSTALLED): [MACOS-DESKTOP-ACTIVATION-V1.md](MACOS-DESKTOP-ACTIVATION-V1.md).

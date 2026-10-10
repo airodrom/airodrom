@@ -1,5 +1,11 @@
 ## Unreleased — macOS Desktop Activation V1 (shipped locally)
 
+## Unreleased — Menu Status & WhatsApp Connection Closeout V1
+
+- Menu tone: historical Mission review backlog stays CONNECTED/healthy; gold ACTION REQUIRED reserved for pending protected Approvals.
+- Document WhatsApp test-path status and Meta eligibility HOLD for general-purpose personal AI messaging. See [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](docs/MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md).
+
+
 ## Unreleased — Control Center & Premium macOS Experience V4 (shipped locally)
 
 - Merged PR #67 to `origin/main` (`1105659`); installed `airodrom-ux-v4-1105659` with Menu CFBundleVersion **4** and Mission history / Needs review presentation. See [CONTROL-CENTER-MACOS-UX-V4.md](docs/CONTROL-CENTER-MACOS-UX-V4.md).

@@ -14,9 +14,17 @@ test('Mission activity searches all retained IDs/titles, paginates recent first 
  assert.equal(display.missionHistory(b,url('query=not-found')).total,0);
  assert.throws(()=>display.missionHistory(b,url('filter=invalid')));assert.throws(()=>display.missionHistory(b,url('offset=-1')));
  const native=await display.nativeStatus(b);assert.equal(native.active_missions,2);assert.equal(native.review_missions,2);assert.equal(native.failed_missions,2);
- assert.equal(native.menu_tone,'approval');assert.match(native.connection_label,/ACTION REQUIRED|Needs Approval/i);
+ // Live execution wins over historical review; review backlog alone does not force gold.
+ assert.equal(native.menu_tone,'working');assert.equal(native.connection_label,'CONNECTED');
  assert.equal(native.mission?.id,created[1],'featured Mission is newest live execution only');
  assert.doesNotMatch(JSON.stringify(native),/Activity fixture/);
+ // Review-only backlog remains healthy while Control Center still reports review counts.
+ state(0,'awaiting_acceptance');state(1,'awaiting_acceptance');
+ const reviewOnly=await display.nativeStatus(b);assert.equal(reviewOnly.active_missions,0);assert.equal(reviewOnly.review_missions,4);
+ assert.equal(reviewOnly.menu_tone,'healthy');assert.equal(reviewOnly.connection_label,'CONNECTED');
+ assert.equal((await display.overview(b)).mission_counts['Awaiting Review'],4);
+ // Restore live pair for canonical Active override proof (paused storage must not count as Active).
+ state(0,'running');state(1,'verifying');
  const overview=await display.overview(b);assert.equal(overview.mission_counts.Active,2);assert.equal(overview.mission_counts['Awaiting Review'],2);assert.equal(overview.counts.review,2);
  const requireMission=b.missions.require.bind(b.missions);b.missions.require=(id,owner)=>{const m=requireMission(id,owner);return id===created[0]?{...m,state:'paused'}:m;};assert.equal(display.missionCounts(b).Active,1,'canonical read overrides stale storage state');assert.equal(display.missionHistory(b,url('filter=Active')).total,1);assert.equal((await display.overview(b)).counts.active,1);
 });

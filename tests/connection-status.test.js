@@ -22,6 +22,18 @@ test('menu presentation never treats provider-only gaps as disconnected when bri
   assert.notEqual(degraded.tone, 'disconnected');
 });
 
+test('menu presentation: historical review backlog stays healthy; only pending Approvals force gold', () => {
+  const backlog = menuPresentation({ bridgeState: 'Connected', productStatus: 'Ready', activeMissions: 0, approvals: 0, reviewMissions: 45 });
+  assert.equal(backlog.tone, 'healthy');
+  assert.equal(backlog.label, 'CONNECTED');
+  const approval = menuPresentation({ bridgeState: 'Connected', productStatus: 'Ready', activeMissions: 0, approvals: 2, reviewMissions: 45 });
+  assert.equal(approval.tone, 'approval');
+  assert.equal(approval.label, 'ACTION REQUIRED');
+  const activeOverReview = menuPresentation({ bridgeState: 'Connected', productStatus: 'Ready', activeMissions: 1, approvals: 0, reviewMissions: 10, missionState: 'running' });
+  assert.equal(activeOverReview.tone, 'working');
+  assert.equal(menuPresentation({ bridgeState: 'Error' }).tone, 'disconnected');
+});
+
 test('control hub exposes authoritative connection helpers', () => {
   const js = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/control-hub.js'), 'utf8');
   assert.match(js, /deriveConnection/);
