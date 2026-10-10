@@ -112,6 +112,7 @@
     "docs/BROWSER-RESEARCH-V1.md",
     "docs/BROWSER-SESSION-HANDOFF-V1.md",
     "docs/CONVERSATION-ENGINE-V1.md",
+    "docs/CONTROL-CENTER-MACOS-UX-V4.md",
     "docs/CURRENT-STATE.md",
     "docs/FINAL-PRODUCT-CONSOLIDATION-V1.md",
     "docs/DEFAULT-RUNTIME-CUTOVER.md",
@@ -452,6 +453,7 @@
     "src/work-execution-adapter.js",
     "src/worker-registry.js",
     "tests/conversation-grounding-v1.test.js",
-    "tests/install-hotfix-v101.test.js"
+    "tests/install-hotfix-v101.test.js",
+    "tests/mission-activity.test.js"
   ]
 }

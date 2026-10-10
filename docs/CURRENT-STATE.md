@@ -1,5 +1,14 @@
 # Current state (2026-10-10)
 
+## Control Center & Premium macOS Experience V4 — LOCAL IMPLEMENTATION (2026-10-10)
+
+- **Branch:** `feat/control-center-macos-ux-v4` (isolated worktree from `origin/main` `9376629`)
+- **Status:** LOCAL IMPLEMENTATION only — **not** merged, **not** installed over tip `airodrom-menu-v3-1cff95d`
+- **Control Center:** Mission history API + Overview Needs review; review banner; humanized chips; Acceptance independent of transport failures
+- **Menu V4:** full-logo gradient status mark (no status disk) · CFBundleVersion **4** · section header `Mission`
+- **Authority unchanged:** Automatic Acceptance OFF · WhatsApp HOLD · Mission Acceptance / Settlement / Vault untouched
+- Evidence: [CONTROL-CENTER-MACOS-UX-V4.md](CONTROL-CENTER-MACOS-UX-V4.md). Operator checkout preserved.
+
 ## macOS Desktop Activation V1 — SHIPPED + INSTALLED (2026-10-10)
 
 - **PR:** [#65](https://github.com/airodrom/airodrom/pull/65) **MERGED**
