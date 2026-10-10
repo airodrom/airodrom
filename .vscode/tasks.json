@@ -12,6 +12,12 @@
       "type": "process",
       "command": "node",
       "args": ["--test", "tests/development-session-summary-v1.test.js"]
+    },
+    {
+      "label": "development-session-continue-v1",
+      "type": "process",
+      "command": "node",
+      "args": ["--test", "tests/development-session-continue-v1.test.js"]
     }
   ]
 }

@@ -57,6 +57,14 @@
 - Focused contract: `tests/development-session-summary-v1.test.js` via registered task `development-session-summary-v1`.
 - Local-first: no push / no per-Mission PR / Automatic Acceptance OFF.
 
+## Continue Development Session V1 (LOCAL — READY FOR DAILY BATCH)
+
+- Control Center Development Sessions panel adds **Continue Development Session**: shows selected session, authorized repository/worktree, last completed Mission, next permitted action, and Observatory-backed execution state; reuses host `resolve` + `observe-git` + `native-status`; blocks duplicate active execution for the session.
+- OpenCode/Qwen draft Mission `79a170b2-1407-41b9-88ab-5eff102f3a6b` (cancelled after trailing-whitespace / invented `/continue` route); host coding-plan settlement Mission `a286ca1d-1096-42f3-b3ed-b38c6d369f43` **completed · settled**.
+- Development Session `2eb98c6a-88f8-4478-bee0-e867e1ce8dac` · branch `feat/ds-continue-session-v1` · worktree Documents/Codex `…/airodrom-ds-continue/work/airodrom-ds-continue`.
+- Focused contract: `tests/development-session-continue-v1.test.js` · task `development-session-continue-v1`.
+- Local-first: no push / no per-Mission PR / Automatic Acceptance OFF. Operator checkout preserved.
+
 ## Self-Development Reliability V1.1 — SHIPPED + INSTALLED (2026-10-10)
 
 - **PRs:** [#49](https://github.com/airodrom/airodrom/pull/49) (feature) · [#50](https://github.com/airodrom/airodrom/pull/50) (package allowlist `connection-status.js`)

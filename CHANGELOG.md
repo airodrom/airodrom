@@ -1,3 +1,8 @@
+## Unreleased — Continue Development Session V1
+
+- Add Continue Development Session action to the Control Center Development Sessions panel: session identity, authorized repository/worktree, last Mission, next permitted action, Observatory execution state; reuse existing session via host resolve; block duplicate active execution.
+- OpenCode/Qwen draft Mission `79a170b2-…`; host coding-plan settlement Mission `a286ca1d-…` accepted and settled. Focused contract `development-session-continue-v1`. Local-only; ready for daily batch integration.
+
 ## Unreleased — Self-Development Reliability V1.1 shipped and installed
 
 - Merged PRs #49/#50 to `origin/main` (`61d0b0d`); installed `airodrom-self-dev-af5fce8`; live Control Center serves Development Sessions panel; coding admission and 120s timeout active.
