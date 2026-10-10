@@ -45,7 +45,11 @@
 
 
  const readable=value=>String(value??'Unavailable').replaceAll('_',' ');
- function chip(text){return node('span',readable(text),'chip '+({Ready:'ready',Degraded:'degraded',Unavailable:'unavailable',Waiting:'waiting',passed:'ready',failed:'failed',operator_review:'waiting',completed:'ready',blocked:'degraded',needs_rework:'degraded'}[text]||''));}
+ function chip(text){
+  const missionLabel=({dispatching:'Queued / dispatching',running:'Executing',verifying:'Independent verification',awaiting_acceptance:'Acceptance pending',waiting_for_operator:'Operator Decision',needs_rework:'Rework required',blocked:'Blocked',paused:'Paused',completed:'Completed',cancelled:'Cancelled',ready:'Registered'})[text];
+  const cls=({Ready:'ready',Degraded:'degraded',Unavailable:'unavailable',Waiting:'waiting',passed:'ready',failed:'failed',operator_review:'waiting',completed:'ready',blocked:'degraded',needs_rework:'degraded',awaiting_acceptance:'waiting',waiting_for_operator:'waiting',dispatching:'ready',running:'ready',verifying:'ready'})[text]||'';
+  return node('span',missionLabel||readable(text),'chip '+cls+(text==='awaiting_acceptance'||text==='waiting_for_operator'?' review':''));
+ }
  function button(text,fn,primary=false){const b=node('button',text,primary?'primary':'');b.type='button';b.dataset.focusKey=missionId?missionId+':'+text:text;b.onclick=fn;return b;}
  function glass(title,value,detail){const c=node('article',null,'glass');c.append(node('h3',title),node('div',value,'metric'));if(detail)c.append(node('small',detail));return c;}
  function empty(text){return node('p',text,'empty');}
@@ -110,18 +114,24 @@
   const actions=node('div',null,'actions');
   actions.append(button('Open Observatory',()=>selectMission(m.id),true));
   actions.append(button('View details',()=>selectMission(m.id)));
-  if(m.actions.accept){const review=button('Review Acceptance',event=>openReview(m,event.currentTarget),true);review.dataset.focusKey='review:'+m.id;review.disabled=failures>0||paused;actions.append(review);}
+  if(m.actions.accept){const review=button('Review Acceptance',event=>openReview(m,event.currentTarget),true);review.dataset.focusKey='review:'+m.id;review.disabled=paused;if(paused)review.title='Live updates paused — resume to review';actions.append(review);}
   c.append(actions);return c;
  }
  function missionDashboard(){
   const result=node('div'),stats=node('div',null,'grid'),counts=missionPage?.counts||snapshot.mission_counts||{};
-  for(const name of ['Active','Awaiting Review','Failed','Settled'])stats.append(glass(name,counts[name]??'Unavailable',name==='Failed'?'Blocked or rework required':name==='Active'?'Dispatching, executing or verifying':name==='Awaiting Review'?'Operator decision required':'Durable local outcome'));
+  for(const name of ['Active','Awaiting Review','Completed','Failed','Settled'])stats.append(glass(name,counts[name]??'Unavailable',name==='Failed'?'Blocked or rework required':name==='Active'?'Live execution only':name==='Awaiting Review'?'Historical operator decision — not active work':name==='Completed'?'Accepted outcomes':'Durable local Settlement'));
   result.append(stats);
+  const reviewN=counts['Awaiting Review'];
+  if(Number.isFinite(reviewN)&&reviewN>0){
+   const banner=node('aside',null,'review-banner');
+   banner.append(node('h3','Needs review'),node('p',`${reviewN} retained Mission${reviewN===1?'':'s'} await Acceptance or an operator Decision. These are not actively executing.`),node('small','Filter “Awaiting Review” to work the queue. Mass accept/cancel is never offered.'));
+   result.append(banner);
+  }
   const controls=node('div',null,'filters'),search=node('input');search.type='search';search.placeholder='Search title or full / partial Mission ID';search.setAttribute('aria-label','Search Missions');search.dataset.focusKey='mission-search';search.value=searchQuery;search.maxLength=180;
   const filter=node('select');filter.setAttribute('aria-label','Mission filter');filter.dataset.focusKey='mission-filter';
   for(const name of ['All','Active','Awaiting Review','Completed','Failed','Settled']){const option=node('option',name+(counts[name]===undefined?'':' ('+counts[name]+')'));option.value=name;filter.append(option);}filter.value=missionFilter;
   function changed(){generation++;inflight?.abort();missionOffset=0;missionPage=null;const stale=$('content').querySelectorAll('.mission-card');for(const card of stale)card.remove();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{render();refresh();},250);}
-  search.oninput=()=>{searchQuery=search.value;changed();};filter.onchange=()=>{missionFilter=filter.value;changed();};controls.append(search,filter);result.append(controls,node('p','All retained Missions · newest first. Completed and Settled are distinct recorded outcomes.','muted'));
+  search.oninput=()=>{searchQuery=search.value;changed();};filter.onchange=()=>{missionFilter=filter.value;changed();};controls.append(search,filter);result.append(controls,node('p','All retained Missions · newest first. Active means live execution. Awaiting Review is historical operator work. Completed and Settled are distinct outcomes.','muted'));
   if(!snapshot.mission_counts){result.append(empty('The running service predates full Mission history. Source is prepared; operator-authorized local activation is required.'));for(const m of snapshot.missions)result.append(missionCard(m));return result;}
   if(!missionPage){result.append(empty(failures?'Mission history unavailable. Retry when the local service reconnects.':'Loading Mission history…'));return result;}
   const summary=node('p',`${missionPage.total} matching Missions · ${missionPage.total?missionOffset+1:0}–${missionOffset+missionPage.missions.length} shown`,'muted');summary.setAttribute('role','status');result.append(summary);
@@ -134,14 +144,15 @@
  function overview(){const f=document.createDocumentFragment(),hero=node('article',null,'hero'),image=node('img');image.src='/brand/airodrom-3d-model-blue.svg';image.alt='Dimensional Airodrom mark';const copy=node('div');copy.append(node('span','MANY AGENTS. ONE CONTROL PLANE.','eyebrow'),node('h2','Work you can see. Outcomes you can trust.'),node('p','Airodrom governs bounded work from request to independent verification, Acceptance and local Settlement.'),chip(snapshot.status));hero.append(image,copy);f.append(hero);
    const active=snapshot.missions.filter(m=>snapshot.current_mission_ids.includes(m.id));
    const working=active.filter(m=>['dispatching','running','verifying'].includes(m.state));
-   const failures=snapshot.missions.filter(m=>['blocked','needs_rework','failed'].includes(m.state)||m.verification?.status==='failed').slice(0,5);
+   const failures=snapshot.missions.filter(m=>['blocked','needs_rework'].includes(m.state)||m.verification?.status==='failed').slice(0,5);
    const agents=[...new Set(working.map(m=> (m.runtime||'Unavailable')+' · '+(m.model?.id||'model unavailable')))];
+   const reviewTotal=snapshot.mission_counts?.['Awaiting Review']??snapshot.counts.review??0;
    const grid=node('div',null,'grid');
    grid.append(
-     glass('Active Missions',snapshot.counts.active,snapshot.counts.scope),
-     glass('Working agents',working.length,agents.length?agents.slice(0,3).join(' · '):'No workers executing'),
+     glass('Active Missions',snapshot.counts.active,'Live execution only · dispatching / running / verifying'),
+     glass('Needs review',reviewTotal,reviewTotal?'Retained Acceptance / Decision — not active work':'No operator review queue'),
      glass('Approvals waiting',snapshot.approvals.waiting,'Protected Approvals remain separate'),
-     glass('Recent failures',failures.length,failures.length?failures.map(m=>stateText(m.state)).slice(0,3).join(' · '):'None on this page')
+     glass('Blocked / rework',snapshot.counts.failed??failures.length,failures.length?failures.map(m=>stateText(m.state)).slice(0,3).join(' · '):'None on this page')
    );f.append(grid);
    const ready=node('div',null,'grid');
    ready.append(
@@ -151,8 +162,8 @@
      glass('Provider',snapshot.provider.state,snapshot.provider.reason||'Local inference readiness')
    );f.append(ready);
    const cols=node('div',null,'columns'),left=node('div'),right=node('div');
-   left.append(node('h2','Live Missions'));for(const m of active)left.append(lifecycle(m),missionCard(m));
-   if(!active.length)left.append(empty(snapshot.counts.current?'No current work on this page.':'Ready for your next Mission. Each request registers fresh bounded authority.'));
+   left.append(node('h2','Live Missions'));for(const m of working)left.append(lifecycle(m),missionCard(m));
+   if(!working.length)left.append(empty(reviewTotal?`${reviewTotal} Mission${reviewTotal===1?'':'s'} need review — open Missions → Awaiting Review.`:snapshot.counts.current?'No live execution right now. Current (non-terminal) records remain under Missions.':'Ready for your next Mission. Each request registers fresh bounded authority.'));
    const paging=node('div',null,'actions');
    if(currentOffset>0)paging.append(button('Previous current Missions',()=>{currentOffset=Math.max(0,currentOffset-50);generation++;refresh();}));
    if(snapshot.counts.current_has_more)paging.append(button('More current Missions',()=>{currentOffset+=50;generation++;refresh();}));

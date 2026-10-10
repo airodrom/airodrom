@@ -133,6 +133,46 @@ function memoryStatus(bridge){
  }catch{}
  return {state:memoryReady?'Ready':'Unavailable',local:true,backend:bridge.authorityRuntime?.active?'Governed canonical':'Personal canonical',generation:memoryGeneration,active_records:memoryReady?(count(memoryStats?.byStatus?.active)||0):null,expired_records:memoryReady?(count(memoryStats?.byStatus?.expired)||0):null,superseded_records:memoryReady?(count(memoryStats?.byStatus?.superseded)||0):null};
 }
+// Operator-only title projection. Aggregate/native surfaces never receive objectives.
+function operatorTitle(bridge, mission) {
+ if(mission.envelope.kind==='conversation')return 'Bounded local conversation';
+ try {
+  const projected=mission.task_id?require('./conversation-mission').projectRead(bridge,mission.task_id,mission.envelope.objective,mission.id):mission.envelope.kind==='work_request'?mission.envelope.objective:null;
+  if(typeof projected!=='string')return 'Scoped Mission';
+  return require('./event-ledger').redactPayload(projected).value.replace(/[\x00-\x1f\x7f]/g,' ').slice(0,180)||'Scoped Mission';
+ }catch{return 'Title unavailable';}
+}
+const FILTERS=['All','Active','Awaiting Review','Completed','Failed','Settled'];
+function missionIndex(bridge){return bridge.controlStore.db.prepare('SELECT id FROM cp_missions ORDER BY created_at DESC,id DESC').all().map(row=>bridge.missions.require(row.id,'operator'));}
+function matchesFilter(m,filter,settled){return filter==='All'||filter==='Active'&&ACTIVE.includes(m.state)||filter==='Awaiting Review'&&['awaiting_acceptance','waiting_for_operator'].includes(m.state)||filter==='Completed'&&m.state==='completed'||filter==='Failed'&&['blocked','needs_rework'].includes(m.state)||filter==='Settled'&&settled.has(m.id);}
+function settledIds(bridge){return new Set(bridge.controlStore.db.prepare("SELECT mission_id FROM cp_mission_settlements WHERE state='settled'").all().map(r=>r.mission_id));}
+function missionCounts(bridge,missions=missionIndex(bridge)){
+ const settled=settledIds(bridge);
+ return Object.fromEntries(FILTERS.map(name=>[name,missions.filter(m=>matchesFilter(m,name,settled)).length]));
+}
+function missionHistory(bridge,url){
+ require('./memory-content-erasure').assertReadable(bridge.controlStore.db);
+ const filter=url.searchParams.get('filter')||'All',query=(url.searchParams.get('query')||'').trim().toLowerCase(),offset=Number(url.searchParams.get('offset')||0);
+ if(!FILTERS.includes(filter)||query.length>180||!Number.isSafeInteger(offset)||offset<0)throw Error('Invalid Mission history query');
+ const matches=[],missions=missionIndex(bridge),settled=settledIds(bridge);let total=0;
+ // Search the current display projection, never erased raw text; page every retained record.
+ for(const mission of missions){
+  if(!matchesFilter(mission,filter,settled))continue;
+  const title=operatorTitle(bridge,mission);
+  if(query&&![mission.id,title,mission.state,mission.envelope.preferred_agent||''].join(' ').toLowerCase().includes(query))continue;
+  if(total>=offset&&matches.length<25)matches.push({...missionView(bridge,mission),label:title});
+  total++;
+ }
+ return {missions:matches,total,offset,has_more:offset+matches.length<total,filter,query,counts:missionCounts(bridge,missions),observed_at:Date.now(),scope:'All retained Missions · newest first · 25 per page'};
+}
+function notificationEvents(bridge,after){
+ const epoch=bridge.runtimeFingerprint?.captured_at||null,latest=bridge.controlStore.db.prepare('SELECT coalesce(max(seq),0) n FROM event_ledger_events').get().n;
+ if(after===null||after>latest)return {epoch,cursor:latest,events:[],reset:true};
+ if(!Number.isSafeInteger(after)||after<0)throw Error('Invalid notification cursor');
+ const batch=bridge.ledger.list({afterSequence:after,limit:200});
+ const kinds={'approval.requested':'review','approval.required':'review','mission.completed':'completed','mission.awaiting_acceptance':'review','mission.waiting_for_operator':'review','mission.needs_rework':'failed','mission.blocked':'failed'};
+ return {epoch,cursor:batch.events.at(-1)?.sequence??after,has_more:batch.has_more,events:batch.events.filter(e=>kinds[e.event_type]&&id(e.mission_id)).map(e=>({id:e.event_id,mission_id:e.mission_id,kind:kinds[e.event_type]}))};
+}
 async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  if(!Number.isSafeInteger(currentOffset)||currentOffset<0)throw Error('Invalid current Mission page');
  require('./memory-content-erasure').assertReadable(bridge.controlStore.db);
@@ -140,7 +180,11 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  const leases=db.prepare("SELECT state,count(*) count FROM cp_leases WHERE state IN ('held','quarantined') GROUP BY state").all();
  const memory=memoryStatus(bridge),memoryReady=memory.state==='Ready';
  const currentCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state NOT IN ('completed','cancelled')").get().n;
- const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
+ const mission_counts=includeMissions?missionCounts(bridge):null;
+ // Prefer canonical Mission reads for Active/Review/Failed so stale storage cannot overstate live work.
+ const activeCount=mission_counts?mission_counts.Active:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
+ const reviewCount=mission_counts?mission_counts['Awaiting Review']:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n;
+ const failedCount=mission_counts?mission_counts.Failed:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n;
  const current=(includeMissions?db.prepare("SELECT id FROM cp_missions WHERE state NOT IN ('completed','cancelled') ORDER BY CASE WHEN state IN ('dispatching','running','verifying') THEN 0 ELSE 1 END,created_at DESC,id LIMIT 50 OFFSET ?").all(currentOffset):[]).map(m=>missionView(bridge,bridge.controlStore.requireMission(m.id)));
  const recent=(includeMissions?bridge.controlStore.listMissions({limit:50}):[]).map(m=>missionView(bridge,m));
  const missions=[...new Map([...current,...recent].map(m=>[m.id,m])).values()];
@@ -174,7 +218,7 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
   provider:{state:runtime.ready?'Ready':ready?.provider_ready===false?'Unavailable':'Unavailable',reason:runtime.ready?'Qualified local provider observed':'Readiness unavailable'},
   approvals:{waiting:pending,records:includeMissions?approvals:[],scope:'Up to 50 retained protected Approvals, pending first'},leases:{held:leases.find(l=>l.state==='held')?.count||0,quarantined:leases.find(l=>l.state==='quarantined')?.count||0},
   audit:{state:ledger?.healthy===true?'Ready':ledger?.state==='degraded'?'Degraded':'Unavailable',retained_events:count(db.prepare('SELECT count(*) n FROM event_ledger_events').get().n)},disk:{state:'Unavailable',reason:'Not checked'},
-  missions,current_mission_ids:current.map(m=>m.id),counts:{scope:'Recent 50 retained Missions plus a separate current Mission page',visible:missions.length,active:activeCount,current:currentCount,current_offset:currentOffset,current_page_size:current.length,current_has_more:currentOffset+current.length<currentCount},
+  missions,mission_counts,current_mission_ids:current.map(m=>m.id),counts:{scope:'Recent 50 retained Missions plus a separate current Mission page',visible:missions.length,active:activeCount,review:reviewCount,failed:failedCount,current:currentCount,current_offset:currentOffset,current_page_size:current.length,current_has_more:currentOffset+current.length<currentCount},
   core_contracts:(()=>{try{return require('./core-contracts').manifest();}catch{return null;}})(),
   runtime_security:(()=>{try{return require('./runtime-security-conformance').evaluate(bridge);}catch{return null;}})(),
   installation_compatibility:(()=>{try{return require('./installation-compatibility').evaluate(bridge);}catch{return null;}})(),
@@ -214,4 +258,4 @@ function events(bridge,url) {
  const batch=bridge.ledger.list({afterSequence:after,limit:200,...(mission?{missionId:mission}:{})});
  return {events:timeline(batch.events).filter(e=>!category||e.category===category),cursor:batch.events.at(-1)?.sequence||after,has_more:batch.has_more,observed_at:Date.now()};
 }
-module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus};
+module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus,operatorTitle,missionHistory,missionCounts,notificationEvents};

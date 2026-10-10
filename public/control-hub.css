@@ -75,3 +75,22 @@ body:after{content:"";position:fixed;inset:24% 0 0;z-index:-1;pointer-events:non
 .facts>div{display:grid;grid-template-columns:minmax(9rem,14rem) 1fr;gap:.75rem;align-items:start}
 .facts small{color:var(--muted,#8b93a7);letter-spacing:.04em;text-transform:uppercase;font-size:.68rem;padding-top:.2rem}
 .facts span{line-height:1.45}
+
+/* Control Center & Premium macOS Experience V4 — restrained polish */
+.grid{gap:16px}.glass{padding:18px 20px;transition:border-color .18s ease,box-shadow .18s ease}.glass:hover{border-color:#5091ff40;box-shadow:0 10px 28px #0004,inset 0 1px #fff08}
+.glass h3{letter-spacing:.06em;text-transform:uppercase;font-size:11px;margin-bottom:10px}.metric{font-size:22px;font-variant-numeric:tabular-nums}
+.mission-card{transition:border-color .18s ease,transform .18s ease}.mission-card:hover{border-color:#5091ff45}
+.mission-card .chip.review{color:#e0b56a;border-color:#c4923a66;background:#c4923a12}
+.review-banner{margin:0 0 18px;padding:16px 18px;border-radius:14px;border:1px solid #c4923a55;background:linear-gradient(135deg,#2a2214cc,#141820ee);color:var(--text)}
+.review-banner h3{margin:0 0 6px;font-size:14px;letter-spacing:.04em;color:#e0b56a}
+.review-banner p{margin:0 0 6px;font-size:13px;color:#d5c7a8}.review-banner small{color:var(--muted)}
+.filters{align-items:center;gap:14px;padding:4px 0 2px}.filters input,.filters select{transition:border-color .15s ease,box-shadow .2s ease}
+nav button{transition:color .15s ease,background-color .15s ease,border-color .15s ease}
+.chip{transition:color .15s ease,border-color .15s ease,background-color .15s ease}
+.empty{line-height:1.55}
+:root[data-theme="light"] .review-banner{background:linear-gradient(135deg,#fff8eb,#f5f0e6);border-color:#c4923a66}
+:root[data-theme="light"] .review-banner h3{color:#8a6518}:root[data-theme="light"] .review-banner p{color:#5c4a28}
+:root[data-theme="light"] .mission-card .chip.review{color:#8a6518;border-color:#c4923a77;background:#f3e6c8}
+@media(prefers-reduced-motion:reduce){.glass,.mission-card,.chip,.filters input,.filters select,nav button{transition:none}.glass:hover,.mission-card:hover{transform:none;box-shadow:none}}
+@media(max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.review-banner{padding:14px}}

@@ -1,5 +1,13 @@
 ## Unreleased — macOS Desktop Activation V1 (shipped locally)
 
+## Unreleased — Control Center & Premium macOS Experience V4
+
+- Port Mission history + `mission_counts` so Control Center Missions / Overview show Active, Needs review, Failed, Completed, and Settled correctly.
+- Menu bar uses full-logo status gradients (healthy / working / approval / degraded / disconnected) instead of a colored status disk; CFBundleVersion **4**.
+- Review banner, humanized mission chips, and restrained CSS polish; Acceptance not blocked by transient transport failures.
+- See [CONTROL-CENTER-MACOS-UX-V4.md](docs/CONTROL-CENTER-MACOS-UX-V4.md). Local branch only — not installed over Menu V3 tip.
+
+
 - Record Premium Menu V3 + `local.airodrom.desktop-login` installed on tip `airodrom-menu-v3-1cff95d` (merge `1cff95d` / PR #65). Login rehearsal verified. See [MACOS-DESKTOP-ACTIVATION-V1.md](docs/MACOS-DESKTOP-ACTIVATION-V1.md).
 
 ## Unreleased — Premium macOS Menu V3

@@ -49,7 +49,7 @@ control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'))
 p=run('--inspect-menu')
 assert p.returncode==0,(p.stderr,p.stdout)
 menu=json.loads(p.stdout)
-assert menu['template_icon'] is True
+assert menu['template_icon'] is False and menu.get('gradient_icon') is True
 def rows(items):
  for item in items:
   yield item
@@ -57,14 +57,15 @@ def rows(items):
 native={item['title']:item for item in rows(menu['items'])}
 assert 'SYSTEM STATUS  ACTION REQUIRED' in native
 assert 'Approvals  2 waiting' in native
-assert any(title.startswith('ACTIVE MISSION  ') for title in native)
+assert any(title.startswith('ACTIVE MISSION  ') or title.startswith('MISSION  ') for title in native)
+assert any(title == 'Mission' for title in native), 'V4 section header Mission (not Active Mission)'
 assert native['View Active Mission']['enabled'] is False # Legacy fixture has no local CLI home.
 assert native['Stop Service']['enabled'] is False
 assert native['Start Service']['enabled'] is False
 assert native['Quit Menu (service stays running)']['key']=='q'
 assert any('Requalification required' in title for title in native)
 assert 'token=' not in p.stdout and '127.0.0.1' not in p.stdout
-print('PASS: actual native menu uses template identity, canonical degraded runtime, approval count and state-aware service controls')
+print('PASS: actual native menu uses gradient status mark, canonical degraded runtime, approval count and state-aware service controls')
 info['AirodromHome']=str(root)
 with (contents/'Info.plist').open('wb') as f: plistlib.dump(info,f)
 p=run('--inspect-menu');assert p.returncode==0
@@ -95,6 +96,9 @@ assert review['animation_state']=='approval' and not review['animation_running']
 review_titles={item['title'] for item in rows(review['items'])}
 assert any(title.startswith('NEEDS REVIEW  ') for title in review_titles)
 assert not any(title.startswith('ACTIVE MISSION  ') and 'none' not in title and 'NEEDS' not in title for title in review_titles)
+assert review.get('mark_canvas') == 18 and review.get('mark_inset') == 1.5
+assert review.get('template_icon') is False and review.get('gradient_icon') is True
+assert review.get('icon_tone') == 'approval'
 assert {item['title']:item for item in rows(review['items'])}['View Active Mission']['enabled'] is False
 status['product']['mission']=None
 status['product']['review_missions']=0

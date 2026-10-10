@@ -253,6 +253,7 @@ class ControlServer {
         res.writeHead(200,{'Content-Type':evidence.mime,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(evidence.buffer);
       }
       if (req.method === 'GET' && url.pathname === '/api/product/overview') return this.json(res, 200, await require('./product-observability').overview(this.bridge,{currentOffset:Number(url.searchParams.get('current_offset')||0)}));
+      if (req.method === 'GET' && url.pathname === '/api/product/missions') return this.json(res,200,require('./product-observability').missionHistory(this.bridge,url));
       if (req.method === 'GET' && url.pathname === '/api/product/events') return this.json(res, 200, require('./product-observability').events(this.bridge, url));
       if (req.method === 'GET' && url.pathname === '/api/product/live-events') return this.json(res, 200, require('./live-observatory').liveEvents(this.bridge, url));
       if (req.method === 'GET' && url.pathname === '/api/product/observatory') return this.json(res, 200, require('./live-observatory').snapshot(this.bridge, url.searchParams.get('mission')));

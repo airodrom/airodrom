@@ -141,60 +141,103 @@ private final class Controller {
     }
 }
 
-/// Compact semantic status indicator. Template mark stays monochrome; the dot carries tone only when meaningful.
-private final class StatusDot: NSView {
-    var tone: String = "stopped" { didSet { needsDisplay = true } }
-    /// Restrained warm gold / bronze — readable on light and dark menu bars without pale yellow wash.
-    private static let warmGold = NSColor(calibratedRed: 0.62, green: 0.44, blue: 0.10, alpha: 1)
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let color: NSColor
-        switch tone {
-        case "healthy": color = NSColor.systemGreen
-        case "working": color = NSColor.systemBlue
-        case "reconnecting", "degraded": color = NSColor.systemOrange
-        case "approval": color = StatusDot.warmGold
-        case "disconnected": color = NSColor.systemRed
-        default: color = NSColor.secondaryLabelColor
+/// Symmetric 18pt mark geometry — shared by idle and busy frames.
+private enum MenuMarkGeometry {
+    static let canvas: CGFloat = 18
+    static let inset: CGFloat = 1.5
+    static var drawRect: NSRect { NSRect(x: inset, y: inset, width: canvas - inset * 2, height: canvas - inset * 2) }
+}
+
+private func brandPolygons() -> [[CGPoint]] {
+    [[CGPoint(x: 12.000, y: 223.348),CGPoint(x: 106.431, y: 32.652),CGPoint(x: 152.323, y: 136.423),CGPoint(x: 162.203, y: 136.423),CGPoint(x: 131.860, y: 70.607),CGPoint(x: 149.893, y: 32.706),CGPoint(x: 244.000, y: 223.348),CGPoint(x: 180.020, y: 223.348),CGPoint(x: 163.175, y: 189.334),CGPoint(x: 92.825, y: 189.334),CGPoint(x: 76.465, y: 223.348),CGPoint(x: 12.000, y: 223.348)],[CGPoint(x: 150.109, y: 62.617),CGPoint(x: 145.304, y: 72.281),CGPoint(x: 182.234, y: 148.301),CGPoint(x: 97.738, y: 148.301),CGPoint(x: 121.386, y: 99.709),CGPoint(x: 105.837, y: 62.509),CGPoint(x: 33.057, y: 210.930),CGPoint(x: 42.667, y: 210.930),CGPoint(x: 106.970, y: 81.352),CGPoint(x: 113.395, y: 97.225),CGPoint(x: 84.294, y: 156.399),CGPoint(x: 186.121, y: 156.399),CGPoint(x: 213.171, y: 210.930),CGPoint(x: 223.429, y: 210.930),CGPoint(x: 150.109, y: 62.617)],[CGPoint(x: 128.459, y: 113.692),CGPoint(x: 118.147, y: 136.423),CGPoint(x: 139.095, y: 136.423),CGPoint(x: 128.459, y: 113.692)],[CGPoint(x: 78.355, y: 168.817),CGPoint(x: 57.677, y: 210.930),CGPoint(x: 68.043, y: 210.930),CGPoint(x: 84.834, y: 176.916),CGPoint(x: 171.760, y: 176.916),CGPoint(x: 188.389, y: 210.930),CGPoint(x: 198.701, y: 210.930),CGPoint(x: 178.023, y: 168.817),CGPoint(x: 78.355, y: 168.817)]]
+}
+
+private func brandPath(in draw: NSRect) -> NSBezierPath {
+    let path = NSBezierPath(); path.windingRule = .evenOdd
+    for polygon in brandPolygons() {
+        for (index, point) in polygon.enumerated() {
+            let p = CGPoint(x: draw.minX + point.x / 256 * draw.width, y: draw.minY + (256 - point.y) / 256 * draw.height)
+            if index == 0 { path.move(to: p) } else { path.line(to: p) }
         }
-        let disk = bounds.insetBy(dx: 0.75, dy: 0.75)
-        ctx.setFillColor(color.cgColor)
-        ctx.fillEllipse(in: disk)
-        // Shape cue independent of color: thin ring for working / action-required.
-        if tone == "working" || tone == "approval" {
-            ctx.setStrokeColor(NSColor.black.withAlphaComponent(tone == "approval" ? 0.35 : 0.25).cgColor)
-            ctx.setLineWidth(tone == "approval" ? 1.25 : 1.0)
-            ctx.strokeEllipse(in: disk)
-        }
+        path.close()
+    }
+    return path
+}
+
+/// Full-logo status palette — the entire A mark carries meaning; no separate status dot.
+private func statusGradientColors(_ tone: String) -> (NSColor, NSColor) {
+    switch tone {
+    case "healthy":
+        // SKY: mint → blue
+        return (NSColor(calibratedRed: 0.33, green: 0.82, blue: 0.69, alpha: 1),
+                NSColor(calibratedRed: 0.31, green: 0.57, blue: 1.00, alpha: 1))
+    case "working":
+        // Active work: blue → indigo
+        return (NSColor(calibratedRed: 0.31, green: 0.57, blue: 1.00, alpha: 1),
+                NSColor(calibratedRed: 0.43, green: 0.41, blue: 0.86, alpha: 1))
+    case "approval":
+        // Action required: warm gold → bronze
+        return (NSColor(calibratedRed: 0.82, green: 0.64, blue: 0.28, alpha: 1),
+                NSColor(calibratedRed: 0.55, green: 0.38, blue: 0.12, alpha: 1))
+    case "reconnecting", "degraded":
+        return (NSColor(calibratedRed: 0.95, green: 0.70, blue: 0.28, alpha: 1),
+                NSColor(calibratedRed: 0.90, green: 0.48, blue: 0.18, alpha: 1))
+    case "disconnected":
+        return (NSColor(calibratedRed: 0.95, green: 0.55, blue: 0.58, alpha: 1),
+                NSColor(calibratedRed: 0.78, green: 0.28, blue: 0.34, alpha: 1))
+    default:
+        // Stopped / idle gray
+        return (NSColor(calibratedRed: 0.62, green: 0.66, blue: 0.74, alpha: 1),
+                NSColor(calibratedRed: 0.40, green: 0.44, blue: 0.52, alpha: 1))
     }
 }
 
-private func brandImage() -> NSImage {
-    // Canonical connected-A geometry, optically padded for 18pt menu-bar Retina clarity.
-    let polygons: [[CGPoint]] = [[CGPoint(x: 12.000, y: 223.348),CGPoint(x: 106.431, y: 32.652),CGPoint(x: 152.323, y: 136.423),CGPoint(x: 162.203, y: 136.423),CGPoint(x: 131.860, y: 70.607),CGPoint(x: 149.893, y: 32.706),CGPoint(x: 244.000, y: 223.348),CGPoint(x: 180.020, y: 223.348),CGPoint(x: 163.175, y: 189.334),CGPoint(x: 92.825, y: 189.334),CGPoint(x: 76.465, y: 223.348),CGPoint(x: 12.000, y: 223.348)],[CGPoint(x: 150.109, y: 62.617),CGPoint(x: 145.304, y: 72.281),CGPoint(x: 182.234, y: 148.301),CGPoint(x: 97.738, y: 148.301),CGPoint(x: 121.386, y: 99.709),CGPoint(x: 105.837, y: 62.509),CGPoint(x: 33.057, y: 210.930),CGPoint(x: 42.667, y: 210.930),CGPoint(x: 106.970, y: 81.352),CGPoint(x: 113.395, y: 97.225),CGPoint(x: 84.294, y: 156.399),CGPoint(x: 186.121, y: 156.399),CGPoint(x: 213.171, y: 210.930),CGPoint(x: 223.429, y: 210.930),CGPoint(x: 150.109, y: 62.617)],[CGPoint(x: 128.459, y: 113.692),CGPoint(x: 118.147, y: 136.423),CGPoint(x: 139.095, y: 136.423),CGPoint(x: 128.459, y: 113.692)],[CGPoint(x: 78.355, y: 168.817),CGPoint(x: 57.677, y: 210.930),CGPoint(x: 68.043, y: 210.930),CGPoint(x: 84.834, y: 176.916),CGPoint(x: 171.760, y: 176.916),CGPoint(x: 188.389, y: 210.930),CGPoint(x: 198.701, y: 210.930),CGPoint(x: 178.023, y: 168.817),CGPoint(x: 78.355, y: 168.817)]]
-    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-        NSColor.black.setFill()
-        // Slight inset + 0.5pt optical lift keeps the mark crisp beside the status dot.
-        let draw = NSRect(x: rect.minX + 1.25, y: rect.minY + 1.5, width: rect.width - 2.5, height: rect.height - 2.5)
-        let path = NSBezierPath(); path.windingRule = .evenOdd
-        for polygon in polygons {
-            for (index, point) in polygon.enumerated() {
-                let p = CGPoint(x: draw.minX + point.x / 256 * draw.width, y: draw.minY + (256 - point.y) / 256 * draw.height)
-                if index == 0 { path.move(to: p) } else { path.line(to: p) }
-            }
-            path.close()
+private func brandImage(tone: String) -> NSImage {
+    // Colored gradient mark (not a template) so light/dark menu bars keep status color.
+    let draw = MenuMarkGeometry.drawRect
+    let colors = statusGradientColors(tone)
+    let image = NSImage(size: NSSize(width: MenuMarkGeometry.canvas, height: MenuMarkGeometry.canvas), flipped: false) { _ in
+        let path = brandPath(in: draw)
+        NSGraphicsContext.current?.cgContext.saveGState()
+        path.addClip()
+        if let gradient = NSGradient(starting: colors.0, ending: colors.1) {
+            gradient.draw(in: draw, angle: 95)
+        } else {
+            colors.0.setFill(); path.fill()
         }
-        path.fill(); return true
+        NSGraphicsContext.current?.cgContext.restoreGState()
+        return true
     }
-    image.isTemplate = true
+    image.isTemplate = false
     image.accessibilityDescription = "Airodrom"
+    return image
+}
+
+private func brandBusyImage(frame: Int) -> NSImage {
+    let draw = MenuMarkGeometry.drawRect
+    let colors = statusGradientColors("working")
+    let image = NSImage(size: NSSize(width: MenuMarkGeometry.canvas, height: MenuMarkGeometry.canvas), flipped: false) { _ in
+        let path = brandPath(in: draw)
+        NSGraphicsContext.current?.cgContext.saveGState()
+        path.addClip()
+        if let gradient = NSGradient(starting: colors.0, ending: colors.1) {
+            gradient.draw(in: draw, angle: 95 + CGFloat(frame * 8))
+        }
+        NSGraphicsContext.current?.cgContext.restoreGState()
+        colors.1.withAlphaComponent(0.85).setStroke()
+        let arc = NSBezierPath(); arc.lineWidth = 1.15
+        arc.appendArc(withCenter: NSPoint(x: draw.midX, y: draw.midY), radius: min(draw.width, draw.height) * 0.52, startAngle: CGFloat(frame * 30), endAngle: CGFloat(frame * 30 + 220))
+        arc.stroke()
+        return true
+    }
+    image.isTemplate = false
+    image.accessibilityDescription = "Airodrom working"
     return image
 }
 private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let controller: Controller
     private let helperLock: Int32
     private var statusItem: NSStatusItem!
-    private let statusDot = StatusDot(frame: NSRect(x: 12.5, y: 1.5, width: 5, height: 5))
     private let menu = NSMenu()
     private let stateRow = NSMenuItem(title: "SYSTEM STATUS  Waiting", action: nil, keyEquivalent: "")
     private let modelRow = NSMenuItem(title: "Model  Unavailable", action: nil, keyEquivalent: "")
@@ -215,16 +258,13 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private var cliItem: NSMenuItem!, doctorItem: NSMenuItem!, copyItem: NSMenuItem!
     private var openConversationItem: NSMenuItem!, openMissionsItem: NSMenuItem!, openDevSessionsItem: NSMenuItem!, openSystemHealthItem: NSMenuItem!, openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
     private var animationTimer: Timer?, animationIndex = 0, animationTicks = 0
-    private let idleImage = brandImage()
-    private lazy var busyImages: [NSImage] = (0..<12).map { frame in
-        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { [idleImage] rect in
-            idleImage.draw(in: NSRect(x: 2.5, y: 2.5, width: 13, height: 13))
-            NSColor.black.setStroke()
-            let arc = NSBezierPath(); arc.lineWidth = 1.1
-            arc.appendArc(withCenter: NSPoint(x: 9, y: 9), radius: 8, startAngle: CGFloat(frame * 30), endAngle: CGFloat(frame * 30 + 220))
-            arc.stroke(); return true
-        }
-        image.isTemplate = true; image.accessibilityDescription = "Airodrom working"; return image
+    private var toneImages: [String: NSImage] = [:]
+    private lazy var busyImages: [NSImage] = (0..<12).map { brandBusyImage(frame: $0) }
+    private func icon(for tone: String) -> NSImage {
+        if let cached = toneImages[tone] { return cached }
+        let image = brandImage(tone: tone)
+        toneImages[tone] = image
+        return image
     }
     private var animationState = "idle"
     private var timer: Timer?, status: BridgeStatus?, currentAction: ControlAction?
@@ -237,6 +277,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         // a window or executing an item. The process exits after its snapshot.
         applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
         status = value; currentAction = nil; render()
+        let capturedTone = menuTone(changing: false)
         func entries(_ source: NSMenu) -> [[String: Any]] {
             source.items.filter { !$0.isSeparatorItem }.map { item in
                 var row: [String: Any] = ["title": item.title, "enabled": item.isEnabled, "key": item.keyEquivalent]
@@ -261,8 +302,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let selectedMissionPreserved = pendingAction?.action == .openMission && pendingAction?.missionId == status?.product?.mission?.id
         pendingAction = nil; currentAction = nil
         status = nil; render()
-        let stoppedOnIdle = animationTimer == nil && statusItem.button?.image === idleImage
-        return ["refresh_items": refreshItems, "queued_mission_matches_selection": selectedMissionPreserved, "open_during_refresh": openDuringRefresh, "open_queued": openQueued, "frame_changed": frameChanged, "stopped_on_idle": stoppedOnIdle, "template_icon": statusItem.button?.image?.isTemplate == true, "items": displayed, "animation_state": originalState, "animation_running": running, "animation_ticks": ticks, "reduced_motion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion]
+        let stoppedOnIdle = animationTimer == nil && statusItem.button?.image?.isTemplate == false
+        return ["refresh_items": refreshItems, "queued_mission_matches_selection": selectedMissionPreserved, "open_during_refresh": openDuringRefresh, "open_queued": openQueued, "frame_changed": frameChanged, "stopped_on_idle": stoppedOnIdle, "template_icon": false, "gradient_icon": statusItem.button?.image?.isTemplate == false, "icon_tone": capturedTone, "items": displayed, "animation_state": originalState, "animation_running": running, "animation_ticks": ticks, "reduced_motion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "mark_canvas": Double(MenuMarkGeometry.canvas), "mark_inset": Double(MenuMarkGeometry.inset)]
     }
     private func item(_ title: String, _ selector: Selector, in target: NSMenu, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key); item.target = self; target.addItem(item); return item
@@ -281,8 +322,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = idleImage; statusItem.button?.setAccessibilityLabel("Airodrom")
-        statusItem.button?.addSubview(statusDot)
+        statusItem.button?.image = icon(for: "stopped"); statusItem.button?.setAccessibilityLabel("Airodrom")
+        statusItem.button?.imagePosition = .imageLeft
         statusItem.menu = menu; menu.autoenablesItems = false
         menu.addItem(sectionHeader("AIRODROM"))
         menu.addItem(sectionHeader("Personal AI Operations"))
@@ -290,7 +331,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         menu.addItem(sectionHeader("System Status"))
         [stateRow, detailRow].forEach { menu.addItem($0) }
         menu.addItem(.separator())
-        menu.addItem(sectionHeader("Active Mission"))
+        menu.addItem(sectionHeader("Mission"))
         [conversationRow, missionRow, progressRow, elapsedRow].forEach { menu.addItem($0) }
         menu.addItem(.separator())
         menu.addItem(sectionHeader("Workers"))
@@ -380,7 +421,6 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let tone = menuTone(changing: changing)
         let visible = primaryStatusLabel(changing: changing, tone: tone, product: p)
         updateAnimation(changing: changing)
-        statusDot.tone = tone
         stateRow.title = "SYSTEM STATUS  " + visible
         detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Last check · just now" + (status?.endpoint.map { " · \($0)" } ?? ""))
         if let conversation = p?.conversation {
@@ -448,7 +488,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
             elapsedRow.title = "Elapsed  — · historical work is not active"
             return
         }
-        missionRow.title = "ACTIVE MISSION  none"
+        missionRow.title = "MISSION  none"
         progressRow.title = "Mission progress  none"
         elapsedRow.title = "Elapsed  —"
     }
@@ -508,7 +548,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let animate = animationState == "busy" && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if !animate {
             animationTimer?.invalidate(); animationTimer = nil; animationIndex = 0
-            statusItem.button?.image = idleImage
+            statusItem.button?.image = icon(for: tone)
             return
         }
         guard animationTimer == nil else { return }
@@ -581,33 +621,20 @@ private func writePNG(_ image: NSImage, to url: URL) -> Bool {
           let png = rep.representation(using: .png, properties: [:]) else { return false }
     do { try png.write(to: url); return true } catch { return false }
 }
-private func appearanceIcon(template: NSImage, dark: Bool, tone: String) -> NSImage {
+private func appearanceIcon(dark: Bool, tone: String) -> NSImage {
+    // 2× export of the status-gradient logo on light/dark menu-bar chrome.
     let size = NSSize(width: 36, height: 36)
-    let inverted = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { mark in
-        NSColor.white.setFill(); NSBezierPath(rect: mark).fill()
-        template.draw(in: mark, from: .zero, operation: .destinationIn, fraction: 1)
-        return true
-    }
+    let mark = brandImage(tone: tone)
     return NSImage(size: size, flipped: false) { rect in
         (dark ? NSColor(calibratedWhite: 0.14, alpha: 1) : NSColor(calibratedWhite: 0.92, alpha: 1)).setFill()
         NSBezierPath(rect: rect).fill()
-        let mark = NSRect(x: 7, y: 7, width: 18, height: 18)
-        if dark { inverted.draw(in: mark) } else { template.draw(in: mark) }
-        let dot = StatusDot(frame: NSRect(x: 24, y: 8, width: 10, height: 10))
-        dot.tone = tone
-        if let ctx = NSGraphicsContext.current {
-            NSGraphicsContext.saveGraphicsState()
-            ctx.cgContext.translateBy(x: dot.frame.minX, y: dot.frame.minY)
-            dot.draw(NSRect(origin: .zero, size: dot.frame.size))
-            NSGraphicsContext.restoreGraphicsState()
-        }
+        mark.draw(in: NSRect(x: 9, y: 9, width: MenuMarkGeometry.canvas, height: MenuMarkGeometry.canvas))
         return true
     }
 }
 private func exportVisualEvidence(_ directory: String) -> Int32 {
     let root = URL(fileURLWithPath: directory, isDirectory: true)
     do { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) } catch { return 1 }
-    let template = brandImage()
     let pairs: [(String, String, Bool)] = [
         ("icon-light-connected.png", "healthy", false),
         ("icon-dark-connected.png", "healthy", true),
@@ -616,12 +643,14 @@ private func exportVisualEvidence(_ directory: String) -> Int32 {
         ("icon-light-degraded.png", "degraded", false),
         ("icon-dark-degraded.png", "degraded", true),
         ("icon-light-disconnected.png", "disconnected", false),
-        ("icon-dark-disconnected.png", "disconnected", true)
+        ("icon-dark-disconnected.png", "disconnected", true),
+        ("icon-light-working.png", "working", false),
+        ("icon-dark-working.png", "working", true)
     ]
     for (name, tone, dark) in pairs {
-        guard writePNG(appearanceIcon(template: template, dark: dark, tone: tone), to: root.appendingPathComponent(name)) else { return 1 }
+        guard writePNG(appearanceIcon(dark: dark, tone: tone), to: root.appendingPathComponent(name)) else { return 1 }
     }
-    guard writePNG(template, to: root.appendingPathComponent("icon-template-mark.png")) else { return 1 }
+    guard writePNG(brandImage(tone: "healthy"), to: root.appendingPathComponent("icon-gradient-connected.png")) else { return 1 }
     fputs("Exported menu visual evidence.\n", stderr)
     return 0
 }
