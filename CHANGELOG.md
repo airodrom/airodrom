@@ -1,7 +1,11 @@
+## Unreleased — Continue Development Session V1 shipped and installed
+
+- Merged PR #52 to `origin/main` (`c701289`); installed `airodrom-ds-continue-c701289`; live Control Center serves Continue Development Session using host `resolve` / `observe-git` / `native-status` (no invented `/continue` route).
+
 ## Unreleased — Continue Development Session V1
 
 - Add Continue Development Session action to the Control Center Development Sessions panel: session identity, authorized repository/worktree, last Mission, next permitted action, Observatory execution state; reuse existing session via host resolve; block duplicate active execution.
-- OpenCode/Qwen draft Mission `79a170b2-…`; host coding-plan settlement Mission `a286ca1d-…` accepted and settled. Focused contract `development-session-continue-v1`. Local-only; ready for daily batch integration.
+- OpenCode/Qwen draft Mission `79a170b2-…`; host coding-plan settlement Mission `a286ca1d-…` accepted and settled. Focused contract `development-session-continue-v1`.
 
 ## Unreleased — Self-Development Reliability V1.1 shipped and installed
 

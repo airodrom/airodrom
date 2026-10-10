@@ -57,13 +57,16 @@
 - Focused contract: `tests/development-session-summary-v1.test.js` via registered task `development-session-summary-v1`.
 - Local-first: no push / no per-Mission PR / Automatic Acceptance OFF.
 
-## Continue Development Session V1 (LOCAL — READY FOR DAILY BATCH)
+## Continue Development Session V1 — SHIPPED + INSTALLED (2026-10-10)
 
-- Control Center Development Sessions panel adds **Continue Development Session**: shows selected session, authorized repository/worktree, last completed Mission, next permitted action, and Observatory-backed execution state; reuses host `resolve` + `observe-git` + `native-status`; blocks duplicate active execution for the session.
-- OpenCode/Qwen draft Mission `79a170b2-1407-41b9-88ab-5eff102f3a6b` (cancelled after trailing-whitespace / invented `/continue` route); host coding-plan settlement Mission `a286ca1d-1096-42f3-b3ed-b38c6d369f43` **completed · settled**.
-- Development Session `2eb98c6a-88f8-4478-bee0-e867e1ce8dac` · branch `feat/ds-continue-session-v1` · worktree Documents/Codex `…/airodrom-ds-continue/work/airodrom-ds-continue`.
-- Focused contract: `tests/development-session-continue-v1.test.js` · task `development-session-continue-v1`.
-- Local-first: no push / no per-Mission PR / Automatic Acceptance OFF. Operator checkout preserved.
+- **PR:** [#52](https://github.com/airodrom/airodrom/pull/52) **MERGED**
+- **Feature tip:** `06e80cff21e694546224d629ed0f7101ffcaf772`
+- **Merge on `origin/main`:** `c7012899ed5e5be43d5708cd01f5311d3225bb3c`
+- **Installed:** `…/airodrom-ds-continue/install/airodrom-ds-continue-c701289` (npm pack 366 files; dual archive SHA-256 `8761d2b00bb11840e84098c5524ed322bdc7410de05f9ce48136311c98c8afac`)
+- **Backup/rollback:** `~/.airodrom/backups/ds-continue-v1-20261010T180123Z` (prior source `…/airodrom-self-dev-v1/install/airodrom-self-dev-af5fce8`)
+- **Live:** Control/OpenCode/Memory/Provider Ready · `/development-sessions-panel.js` HTTP 200 with Continue Development Session · host APIs `resolve` / `observe-git` / `native-status` · no invented `/continue` · Automatic Acceptance OFF · WhatsApp HOLD
+- OpenCode draft Mission `79a170b2-…` (cancelled) · host settlement `a286ca1d-…` settled · Development Session `2eb98c6a-…`
+- Operator checkout preserved.
 
 ## Self-Development Reliability V1.1 — SHIPPED + INSTALLED (2026-10-10)
 
