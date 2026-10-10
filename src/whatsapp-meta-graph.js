@@ -8,9 +8,12 @@ const GRAPH = 'https://graph.facebook.com/v21.0';
 function redactError(error) {
   const code = error && (error.code || error.error_subcode || null);
   const type = error && error.type ? String(error.type).slice(0, 64) : null;
-  const message = error && error.message
-    ? String(error.message).replace(/[A-Za-z0-9_\-]{12,}/g, '[redacted]').slice(0, 160)
-    : 'graph_request_failed';
+  let message = error && error.message ? String(error.message) : 'graph_request_failed';
+  // Keep known Meta permission names readable; redact long opaque credential-like tokens.
+  message = message
+    .replace(/\bEAA[A-Za-z0-9]+/g, '[redacted]')
+    .replace(/\b[A-Za-z0-9]{32,}\b/g, '[redacted]')
+    .slice(0, 200);
   return { code: code == null ? null : Number(code) || null, type, message_class: message };
 }
 
@@ -30,55 +33,105 @@ async function graphGet(pathname, accessToken, { fetchImpl = fetch, fields } = {
   return body;
 }
 
-async function discoverOwnedWhatsApp({
-  accessToken,
-  businessPortfolioId,
-  fetchImpl = fetch,
-  appId = null
-} = {}) {
-  if (!META_ID.test(String(businessPortfolioId || ''))) {
-    throw Object.assign(new Error('Business Portfolio ID required'), { code: null, type: 'ConfigError' });
+async function readWabaAndPhones(accessToken, wabaId, { fetchImpl = fetch, appId = null, businessPortfolioId = null, note, preferredPhoneNumberId = null } = {}) {
+  if (!META_ID.test(String(wabaId || ''))) {
+    throw Object.assign(new Error('WABA ID required'), { code: null, type: 'ConfigError' });
   }
-  const accounts = await graphGet(
-    `/${businessPortfolioId}/owned_whatsapp_business_accounts`,
-    accessToken,
-    { fetchImpl, fields: 'id,name' }
-  );
-  const list = Array.isArray(accounts.data) ? accounts.data : [];
-  const waba = list.find(a => META_ID.test(String(a.id || ''))) || null;
-  if (!waba) {
-    return {
-      graph_access: 'authorized',
-      waba_id: null,
-      phone_number_id: null,
-      waba_count: list.length,
-      phone_count: 0,
-      app_id: appId,
-      business_portfolio_id: businessPortfolioId,
-      permissions_readable: false,
-      note: 'Graph authorized but no owned WhatsApp Business Account was returned for this portfolio.'
-    };
+  const waba = await graphGet(`/${wabaId}`, accessToken, { fetchImpl, fields: 'id,name' });
+  if (!META_ID.test(String(waba.id || '')) || String(waba.id) !== String(wabaId)) {
+    throw Object.assign(new Error('Graph WABA id mismatch'), { code: null, type: 'GraphError' });
   }
   const phones = await graphGet(`/${waba.id}/phone_numbers`, accessToken, {
     fetchImpl,
     fields: 'id,display_phone_number,verified_name'
   });
   const phoneList = Array.isArray(phones.data) ? phones.data : [];
-  const phone = phoneList.find(p => META_ID.test(String(p.id || ''))) || null;
+  let phone = null;
+  if (preferredPhoneNumberId != null && META_ID.test(String(preferredPhoneNumberId))) {
+    phone = phoneList.find(p => String(p.id || '') === String(preferredPhoneNumberId)) || null;
+  }
+  if (!phone) phone = phoneList.find(p => META_ID.test(String(p.id || ''))) || null;
   return {
     graph_access: 'authorized',
     waba_id: String(waba.id),
     phone_number_id: phone ? String(phone.id) : null,
-    waba_count: list.length,
+    preferred_phone_matched: preferredPhoneNumberId != null && phone != null && String(phone.id) === String(preferredPhoneNumberId),
+    waba_count: 1,
     phone_count: phoneList.length,
     app_id: appId,
     business_portfolio_id: businessPortfolioId,
-    // Never return display phone numbers into durable docs/events — ID only.
     permissions_readable: true,
-    note: phone
+    note: note || (phone
       ? 'WABA and Phone Number ID discovered via authorized Graph. Display numbers withheld.'
-      : 'WABA discovered; no phone number ID returned for this account.'
+      : 'WABA verified via Graph; phone_numbers edge authorized but empty. Likely no phone on this WABA, a test number on another WABA, or the system user lacks phone-asset visibility—check WhatsApp Manager before inventing an ID.')
   };
+}
+
+async function discoverOwnedWhatsApp({
+  accessToken,
+  businessPortfolioId,
+  fetchImpl = fetch,
+  appId = null,
+  wabaId = null
+} = {}) {
+  if (!META_ID.test(String(businessPortfolioId || ''))) {
+    throw Object.assign(new Error('Business Portfolio ID required'), { code: null, type: 'ConfigError' });
+  }
+  let ownedError = null;
+  try {
+    const accounts = await graphGet(
+      `/${businessPortfolioId}/owned_whatsapp_business_accounts`,
+      accessToken,
+      { fetchImpl, fields: 'id,name' }
+    );
+    const list = Array.isArray(accounts.data) ? accounts.data : [];
+    const waba = list.find(a => META_ID.test(String(a.id || ''))) || null;
+    if (!waba) {
+      if (META_ID.test(String(wabaId || ''))) {
+        return readWabaAndPhones(accessToken, wabaId, {
+          fetchImpl,
+          appId,
+          businessPortfolioId,
+          note: 'Portfolio owned-WABA list empty; verified configured/hint WABA via Graph.'
+        });
+      }
+      return {
+        graph_access: 'authorized',
+        waba_id: null,
+        phone_number_id: null,
+        waba_count: list.length,
+        phone_count: 0,
+        app_id: appId,
+        business_portfolio_id: businessPortfolioId,
+        permissions_readable: false,
+        note: 'Graph authorized but no owned WhatsApp Business Account was returned for this portfolio.'
+      };
+    }
+    return readWabaAndPhones(accessToken, waba.id, {
+      fetchImpl,
+      appId,
+      businessPortfolioId,
+      note: undefined
+    });
+  } catch (error) {
+    ownedError = error;
+  }
+
+  // System-user tokens often have whatsapp_business_management but not business_management.
+  // Portfolio owned-list then fails with OAuthException 200; a Graph-readable WABA hint still works.
+  if (ownedError && META_ID.test(String(wabaId || ''))) {
+    try {
+      return await readWabaAndPhones(accessToken, wabaId, {
+        fetchImpl,
+        appId,
+        businessPortfolioId,
+        note: 'Portfolio owned-WABA list refused; verified WABA hint via Graph. business_management may still be required for portfolio enumeration.'
+      });
+    } catch {
+      /* fall through to original portfolio error */
+    }
+  }
+  throw ownedError;
 }
 
 async function probePublicApp(appId, { fetchImpl = fetch } = {}) {
@@ -98,4 +151,4 @@ async function probePublicApp(appId, { fetchImpl = fetch } = {}) {
   };
 }
 
-module.exports = { discoverOwnedWhatsApp, probePublicApp, redactError, GRAPH, META_ID };
+module.exports = { discoverOwnedWhatsApp, probePublicApp, redactError, readWabaAndPhones, GRAPH, META_ID };

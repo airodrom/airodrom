@@ -34,11 +34,14 @@ function main(argv = process.argv.slice(2)) {
   const yaml = [
     '# Airodrom WhatsApp webhook-only ingress — NOT activated by this script.',
     '# Forward only GET|POST /webhooks/whatsapp. All other paths return 404.',
+    '# httpHostHeader keeps the loopback Host gate (127.0.0.1:<port>); Control Center/API stay private.',
     '# Do not reuse the ChatGPT MCP stdio tunnel helper under scripts/macos/.',
     'ingress:',
     `  - hostname: ${args.hostname}`,
     '    path: /webhooks/whatsapp',
     `    service: http://127.0.0.1:${port}`,
+    '    originRequest:',
+    `      httpHostHeader: 127.0.0.1:${port}`,
     '  - service: http_status:404',
     ''
   ].join('\n');

@@ -396,6 +396,11 @@
     "scripts/whatsapp-webhook-ingress-prep.cjs",
     "docs/META-WHATSAPP-LIVE-CONNECTION-V1.md",
     "src/whatsapp-inbound.js",
+    "docs/adr/0039-whatsapp-conversations-v1.md",
+    "docs/WHATSAPP-CONVERSATIONS-V1.md",
+    "config/whatsapp-conversations-v1.json",
+    "src/whatsapp-outbound.js",
+    "src/whatsapp-conversations.js",
     "src/whatsapp-credential-onboarding.js",
     "config/whatsapp-inbound-v1.json"
   ]

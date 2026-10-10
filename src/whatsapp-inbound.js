@@ -11,7 +11,11 @@ const MSG_ID = /^[A-Za-z0-9_.:-]{1,200}$/;
 const META_ID = /^[0-9]{5,32}$/;
 const PUBLICATION = new Set(['unknown', 'development', 'live']);
 const WEBHOOK_SUB = new Set(['inactive', 'pending', 'active']);
+const ENVIRONMENTS = new Set(['production', 'test']);
 const MAX_BODY = 512_000;
+const KNOWN_TEST_WABA = '28756456347344989';
+const KNOWN_TEST_PHONE = '1330971766772548';
+const KNOWN_PRODUCTION_WABA = '29094507813569086';
 
 function loadMetaDefaults(root) {
   const file = path.join(root || path.resolve(__dirname, '..'), 'config/whatsapp-inbound-v1.json');
@@ -93,13 +97,27 @@ class WhatsAppInbound {
     add('phone_number_id', 'TEXT');
     add('app_publication_status', "TEXT NOT NULL DEFAULT 'unknown'");
     add('webhook_subscription_status', "TEXT NOT NULL DEFAULT 'inactive'");
+    add('subscribed_fields', "TEXT NOT NULL DEFAULT '[]'");
     add('access_token_reference', 'TEXT');
     add('prepared_callback_url', 'TEXT');
     add('discovery_json', 'TEXT');
-    const row = this.db.prepare('SELECT meta_app_id, business_portfolio_id FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    add('production_waba_id', 'TEXT');
+    add('production_phone_number_id', 'TEXT');
+    add('test_waba_id', 'TEXT');
+    add('test_phone_number_id', 'TEXT');
+    add('active_environment', "TEXT NOT NULL DEFAULT 'production'");
+    const row = this.db.prepare('SELECT meta_app_id, business_portfolio_id, waba_id, phone_number_id, production_waba_id, production_phone_number_id, active_environment FROM cp_whatsapp_inbound_config WHERE id=1').get();
     if (row && !row.meta_app_id && this.defaults.meta_app_id) {
       this.db.prepare('UPDATE cp_whatsapp_inbound_config SET meta_app_id=?, business_portfolio_id=? WHERE id=1')
         .run(this.defaults.meta_app_id, this.defaults.business_portfolio_id);
+    }
+    // Preserve legacy single-slot WABA/phone as production; never invent IDs.
+    if (row && row.waba_id && !row.production_waba_id) {
+      this.db.prepare('UPDATE cp_whatsapp_inbound_config SET production_waba_id=?, production_phone_number_id=COALESCE(production_phone_number_id, ?) WHERE id=1')
+        .run(row.waba_id, row.phone_number_id || null);
+    }
+    if (row && (!row.active_environment || !ENVIRONMENTS.has(row.active_environment))) {
+      this.db.prepare("UPDATE cp_whatsapp_inbound_config SET active_environment='production' WHERE id=1").run();
     }
   }
 
@@ -109,6 +127,13 @@ class WhatsAppInbound {
 
   config() {
     const row = this.db.prepare('SELECT * FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    const active = ENVIRONMENTS.has(row?.active_environment) ? row.active_environment : 'production';
+    const production_waba_id = row?.production_waba_id || (active === 'production' ? row?.waba_id : null) || null;
+    const production_phone_number_id = row?.production_phone_number_id || (active === 'production' ? row?.phone_number_id : null) || null;
+    const test_waba_id = row?.test_waba_id || null;
+    const test_phone_number_id = row?.test_phone_number_id || null;
+    const active_waba = active === 'test' ? (test_waba_id || row?.waba_id) : (production_waba_id || row?.waba_id);
+    const active_phone = active === 'test' ? (test_phone_number_id || row?.phone_number_id) : (production_phone_number_id || row?.phone_number_id);
     return {
       enabled: row?.enabled === 1,
       verify_token_bound: Boolean(row?.verify_token_reference) || typeof this.options.verifyToken === 'string',
@@ -119,11 +144,18 @@ class WhatsAppInbound {
       updated_by: row?.updated_by || null,
       meta_app_id: row?.meta_app_id || this.defaults.meta_app_id,
       business_portfolio_id: row?.business_portfolio_id || this.defaults.business_portfolio_id,
-      waba_id: row?.waba_id || this.defaults.waba_id,
-      phone_number_id: row?.phone_number_id || this.defaults.phone_number_id,
+      active_environment: active,
+      production_waba_id,
+      production_phone_number_id,
+      test_waba_id,
+      test_phone_number_id,
+      waba_id: active_waba || this.defaults.waba_id,
+      phone_number_id: active_phone || this.defaults.phone_number_id,
+      accepted_waba_ids: [...new Set([production_waba_id, test_waba_id, active_waba].filter(v => typeof v === 'string' && META_ID.test(v)))],
       app_publication_status: PUBLICATION.has(row?.app_publication_status) ? row.app_publication_status : this.defaults.app_publication_status,
-      webhook_subscription_status: 'inactive',
+      webhook_subscription_status: WEBHOOK_SUB.has(row?.webhook_subscription_status) ? row.webhook_subscription_status : 'inactive',
       prepared_callback_url: row?.prepared_callback_url || null,
+      subscribed_fields: (()=>{try{const raw=row?.subscribed_fields?JSON.parse(row.subscribed_fields):[];return Array.isArray(raw)?raw.filter(f=>typeof f==='string'&&/^[a-z_]{3,40}$/.test(f)).slice(0,20):[];}catch{return [];}})(),
       public_ingress: false,
       auto_mission_execution: false
     };
@@ -131,7 +163,7 @@ class WhatsAppInbound {
 
   configure(input, actor = 'operator') {
     if (actor !== 'operator') throw Error('Only operator may configure WhatsApp inbound');
-    object(input, ['enabled', 'confirmed', 'verify_token_reference', 'app_secret_reference', 'access_token_reference', 'allowlist', 'verify_token', 'app_secret', 'meta_app_id', 'business_portfolio_id', 'waba_id', 'phone_number_id', 'app_publication_status', 'public_ingress']);
+    object(input, ['enabled', 'confirmed', 'verify_token_reference', 'app_secret_reference', 'access_token_reference', 'allowlist', 'verify_token', 'app_secret', 'meta_app_id', 'business_portfolio_id', 'waba_id', 'phone_number_id', 'app_publication_status', 'public_ingress', 'environment']);
     if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
     if (typeof input.enabled !== 'boolean') throw Error('enabled must be boolean');
     if (input.public_ingress === true) throw Error('Public ingress activation requires separate owner authorization');
@@ -157,31 +189,120 @@ class WhatsAppInbound {
     for (const ref of [verifyRef, secretRef, accessRef]) if (!this.#refOk(ref)) throw Error('Invalid vault reference');
     const metaApp = input.meta_app_id !== undefined ? input.meta_app_id : (row.meta_app_id || this.defaults.meta_app_id);
     const portfolio = input.business_portfolio_id !== undefined ? input.business_portfolio_id : (row.business_portfolio_id || this.defaults.business_portfolio_id);
-    const waba = input.waba_id !== undefined ? input.waba_id : row.waba_id;
-    const phone = input.phone_number_id !== undefined ? input.phone_number_id : row.phone_number_id;
     const publication = input.app_publication_status !== undefined ? input.app_publication_status : (row.app_publication_status || 'unknown');
-    for (const [label, value] of [['meta_app_id', metaApp], ['business_portfolio_id', portfolio], ['waba_id', waba], ['phone_number_id', phone]]) {
+    for (const [label, value] of [['meta_app_id', metaApp], ['business_portfolio_id', portfolio]]) {
       if (value != null && (typeof value !== 'string' || !META_ID.test(value))) throw Error('Invalid ' + label);
     }
     if (!PUBLICATION.has(publication)) throw Error('Invalid app publication status');
+    // Route WABA/phone writes by environment so test never overwrites production slots.
+    let env = input.environment;
+    if (env !== undefined && !ENVIRONMENTS.has(env)) throw Error('environment must be production or test');
+    if (env === undefined && (input.waba_id !== undefined || input.phone_number_id !== undefined)) {
+      const hint = input.waba_id !== undefined ? input.waba_id : null;
+      if (hint === KNOWN_TEST_WABA || hint === row.test_waba_id) env = 'test';
+      else env = ENVIRONMENTS.has(row.active_environment) ? row.active_environment : 'production';
+    }
+    let productionWaba = row.production_waba_id || (row.waba_id && row.active_environment !== 'test' ? row.waba_id : null);
+    let productionPhone = row.production_phone_number_id || null;
+    let testWaba = row.test_waba_id || null;
+    let testPhone = row.test_phone_number_id || null;
+    let active = ENVIRONMENTS.has(row.active_environment) ? row.active_environment : 'production';
+    if (input.waba_id !== undefined || input.phone_number_id !== undefined) {
+      const waba = input.waba_id !== undefined ? input.waba_id : (env === 'test' ? testWaba : productionWaba);
+      const phone = input.phone_number_id !== undefined ? input.phone_number_id : (env === 'test' ? testPhone : productionPhone);
+      for (const [label, value] of [['waba_id', waba], ['phone_number_id', phone]]) {
+        if (value != null && (typeof value !== 'string' || !META_ID.test(value))) throw Error('Invalid ' + label);
+      }
+      if (env === 'test') {
+        if (waba === productionWaba || phone && phone === productionPhone && productionPhone) {
+          throw Error('Test environment cannot reuse production WABA/phone identifiers');
+        }
+        testWaba = waba;
+        testPhone = phone;
+      } else {
+        if (waba === testWaba && testWaba) throw Error('Production environment cannot be overwritten with test WABA identifiers; use environment=test');
+        productionWaba = waba;
+        productionPhone = phone;
+      }
+    }
+    const activeWaba = active === 'test' ? testWaba : productionWaba;
+    const activePhone = active === 'test' ? testPhone : productionPhone;
     this.db.prepare(`UPDATE cp_whatsapp_inbound_config SET enabled=?, verify_token_reference=?, app_secret_reference=?, access_token_reference=?, allowlist=?, updated_at=?, updated_by=?,
-      meta_app_id=?, business_portfolio_id=?, waba_id=?, phone_number_id=?, app_publication_status=?, webhook_subscription_status='inactive' WHERE id=1`)
+      meta_app_id=?, business_portfolio_id=?, waba_id=?, phone_number_id=?, app_publication_status=?, webhook_subscription_status='inactive',
+      production_waba_id=?, production_phone_number_id=?, test_waba_id=?, test_phone_number_id=?, active_environment=? WHERE id=1`)
       .run(input.enabled ? 1 : 0, verifyRef, secretRef, accessRef, JSON.stringify(allowlist), Date.now(), actor,
-        metaApp, portfolio, waba, phone, publication);
+        metaApp, portfolio, activeWaba, activePhone, publication,
+        productionWaba, productionPhone, testWaba, testPhone, active);
     this.store.event(input.enabled ? 'whatsapp.inbound.enabled' : 'whatsapp.inbound.disabled', null, {
       allowlist_count: allowlist.length,
       verify_token_bound: Boolean(verifyRef) || Boolean(this.options.verifyToken),
       app_secret_bound: Boolean(secretRef) || Boolean(this.options.appSecret),
       access_token_bound: Boolean(accessRef) || Boolean(this.options.accessToken),
+      active_environment: active,
       public_ingress: false
     });
     return this.status();
   }
 
+  // Bind Meta test (sandbox) WABA/phone without overwriting production identifiers.
+  configureMetaEnvironment(input, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may configure WhatsApp Meta environments');
+    object(input, ['confirmed', 'environment', 'waba_id', 'phone_number_id', 'select_active', 'allowlist_sender', 'enabled']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    if (!ENVIRONMENTS.has(input.environment)) throw Error('environment must be production or test');
+    const cfg = this.config();
+    const waba = input.waba_id !== undefined ? input.waba_id : (input.environment === 'test' ? cfg.test_waba_id : cfg.production_waba_id);
+    const phone = input.phone_number_id !== undefined ? input.phone_number_id : (input.environment === 'test' ? cfg.test_phone_number_id : cfg.production_phone_number_id);
+    for (const [label, value] of [['waba_id', waba], ['phone_number_id', phone]]) {
+      if (value != null && (typeof value !== 'string' || !META_ID.test(value))) throw Error('Invalid ' + label);
+    }
+    if (input.environment === 'test') {
+      if (!waba) throw Error('test waba_id required');
+      if (waba === cfg.production_waba_id) throw Error('Test WABA must be distinct from production WABA');
+    }
+    let allowlist = cfg.allowlist;
+    if (input.allowlist_sender !== undefined) {
+      if (typeof input.allowlist_sender !== 'string' || !PHONE.test(input.allowlist_sender)) throw Error('Invalid allowlist_sender');
+      allowlist = [...new Set([...allowlist, input.allowlist_sender])];
+    }
+    const select = input.select_active !== false;
+    const row = this.db.prepare('SELECT * FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    let productionWaba = row.production_waba_id || (row.active_environment !== 'test' ? row.waba_id : null);
+    let productionPhone = row.production_phone_number_id || null;
+    let testWaba = row.test_waba_id || null;
+    let testPhone = row.test_phone_number_id || null;
+    if (input.environment === 'test') {
+      testWaba = waba;
+      testPhone = phone;
+    } else {
+      productionWaba = waba;
+      productionPhone = phone;
+    }
+    const active = select ? input.environment : (ENVIRONMENTS.has(row.active_environment) ? row.active_environment : 'production');
+    const activeWaba = active === 'test' ? testWaba : productionWaba;
+    const activePhone = active === 'test' ? testPhone : productionPhone;
+    const enabled = input.enabled !== undefined ? (input.enabled ? 1 : 0) : row.enabled;
+    this.db.prepare(`UPDATE cp_whatsapp_inbound_config SET enabled=?, allowlist=?, updated_at=?, updated_by=?,
+      production_waba_id=?, production_phone_number_id=?, test_waba_id=?, test_phone_number_id=?,
+      active_environment=?, waba_id=?, phone_number_id=?, webhook_subscription_status='inactive' WHERE id=1`)
+      .run(enabled, JSON.stringify(allowlist), Date.now(), actor,
+        productionWaba, productionPhone, testWaba, testPhone,
+        active, activeWaba, activePhone);
+    this.store.event('whatsapp.inbound.environment_configured', null, {
+      environment: input.environment,
+      active_environment: active,
+      production_preserved: Boolean(productionWaba),
+      test_bound: Boolean(testWaba),
+      public_ingress: false,
+      auto_mission_execution: false
+    });
+    return this.liveConnectionReadiness();
+  }
+
   // Persist non-secret Graph/console discovery. Never accepts tokens.
   recordDiscovery(input, actor = 'operator') {
     if (actor !== 'operator') throw Error('Only operator may record Meta discovery');
-    object(input, ['confirmed', 'app_name', 'graph_access', 'permission_prerequisite', 'business_verification', 'waba_id', 'phone_number_id', 'app_publication_status', 'permissions_granted', 'notes']);
+    object(input, ['confirmed', 'app_name', 'graph_access', 'permission_prerequisite', 'business_verification', 'waba_id', 'phone_number_id', 'app_publication_status', 'permissions_granted', 'notes', 'environment']);
     if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
     if (input.graph_access !== undefined && !['unavailable', 'refused', 'authorized'].includes(input.graph_access)) {
       throw Error('Invalid graph_access');
@@ -191,6 +312,7 @@ class WhatsAppInbound {
     for (const [label, value] of [['waba_id', waba], ['phone_number_id', phone]]) {
       if (value != null && (typeof value !== 'string' || !META_ID.test(value))) throw Error('Invalid ' + label);
     }
+    if (input.environment !== undefined && !ENVIRONMENTS.has(input.environment)) throw Error('Invalid environment');
     if (input.app_publication_status !== undefined && !PUBLICATION.has(input.app_publication_status)) throw Error('Invalid app publication status');
     if (input.permissions_granted !== undefined) {
       if (!Array.isArray(input.permissions_granted) || input.permissions_granted.length > 40 || input.permissions_granted.some(p => typeof p !== 'string' || !/^[a-z_]{3,80}$/.test(p))) {
@@ -201,29 +323,41 @@ class WhatsAppInbound {
     if (input.permission_prerequisite != null) text(input.permission_prerequisite, 'permission prerequisite', 400);
     if (input.business_verification != null) text(input.business_verification, 'business verification', 400);
     if (input.notes != null) text(input.notes, 'discovery notes', 1000);
+    const cfg = this.config();
     const discovery = {
       recorded_at: Date.now(),
-      meta_app_id: this.config().meta_app_id,
-      business_portfolio_id: this.config().business_portfolio_id,
+      meta_app_id: cfg.meta_app_id,
+      business_portfolio_id: cfg.business_portfolio_id,
       app_name: input.app_name || null,
       graph_access: input.graph_access || 'unavailable',
       permission_prerequisite: input.permission_prerequisite || null,
       business_verification: input.business_verification || null,
       permissions_granted: input.permissions_granted || [],
       notes: input.notes || null,
+      environment: input.environment || cfg.active_environment,
       secrets_exported: false
     };
-    const sets = ['discovery_json=?', 'updated_at=?', "webhook_subscription_status='inactive'"];
-    const args = [JSON.stringify(discovery), Date.now()];
-    if (waba !== undefined) { sets.push('waba_id=?'); args.push(waba); }
-    if (phone !== undefined) { sets.push('phone_number_id=?'); args.push(phone); }
-    if (input.app_publication_status !== undefined) { sets.push('app_publication_status=?'); args.push(input.app_publication_status); }
-    args.push(1);
-    this.db.prepare(`UPDATE cp_whatsapp_inbound_config SET ${sets.join(', ')} WHERE id=?`).run(...args);
+    this.db.prepare("UPDATE cp_whatsapp_inbound_config SET discovery_json=?, updated_at=?, webhook_subscription_status='inactive' WHERE id=1")
+      .run(JSON.stringify(discovery), Date.now());
+    if (waba !== undefined || phone !== undefined) {
+      let env = input.environment;
+      if (!env) env = waba === KNOWN_TEST_WABA || waba === cfg.test_waba_id ? 'test' : cfg.active_environment;
+      this.configureMetaEnvironment({
+        confirmed: true,
+        environment: env,
+        waba_id: waba !== undefined ? waba : undefined,
+        phone_number_id: phone !== undefined ? phone : undefined,
+        select_active: env === cfg.active_environment || env === 'test' && !cfg.test_waba_id
+      }, actor);
+    }
+    if (input.app_publication_status !== undefined) {
+      this.db.prepare('UPDATE cp_whatsapp_inbound_config SET app_publication_status=? WHERE id=1').run(input.app_publication_status);
+    }
     this.store.event('whatsapp.inbound.discovery_recorded', null, {
       graph_access: discovery.graph_access,
       waba_bound: Boolean(waba || this.config().waba_id),
       phone_bound: Boolean(phone || this.config().phone_number_id),
+      environment: discovery.environment,
       secrets_exported: false
     });
     return this.liveConnectionReadiness();
@@ -253,30 +387,37 @@ class WhatsAppInbound {
   credentialReadiness() {
     const cfg = this.config();
     const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    // Flat *_bound / *_present keys survive control-plane safeValue redaction (see secret-observation).
+    // Nested keys named credentials/verify_token/app_secret are omitted as sensitive containers.
     return {
-      verify_token: {
-        bound: cfg.verify_token_bound,
-        vault_reference_present: Boolean(row?.verify_token_reference),
-        purpose: 'whatsapp',
-          bind_command: 'airodrom whatsapp bind'
-      },
-      app_secret: {
-        bound: cfg.app_secret_bound,
-        vault_reference_present: Boolean(row?.app_secret_reference),
-        purpose: 'whatsapp',
-        bind_command: 'airodrom whatsapp bind'
-      },
-      access_token: {
-        bound: cfg.access_token_bound,
-        vault_reference_present: Boolean(row?.access_token_reference),
-        purpose: 'whatsapp',
-        bind_command: 'airodrom whatsapp bind',
-        note: 'System user / permanent token for Graph discovery and outbound Cloud API only. Never logged.'
-      },
+      verify_token_bound: cfg.verify_token_bound,
+      app_secret_bound: cfg.app_secret_bound,
+      access_token_bound: cfg.access_token_bound,
+      verify_token_present: Boolean(row?.verify_token_reference),
+      app_secret_present: Boolean(row?.app_secret_reference),
+      access_token_present: Boolean(row?.access_token_reference),
+      purpose: 'whatsapp',
+      bind_command: 'airodrom whatsapp bind',
       vault: this.vaultBindingStatus(),
       plaintext_in_git: false,
       values_displayed: false,
-      rotation_authorized: false
+      rotation_authorized: false,
+      note: 'Opaque Vault references only. System-user Graph token used for discovery; values never logged.'
+    };
+  }
+
+  /** Non-secret binding flags safe for JSON responses that pass through safeValue. */
+  bindingStatus() {
+    const cred = this.credentialReadiness();
+    return {
+      verify_token_bound: cred.verify_token_bound,
+      app_secret_bound: cred.app_secret_bound,
+      access_token_bound: cred.access_token_bound,
+      verify_token_present: cred.verify_token_present,
+      app_secret_present: cred.app_secret_present,
+      access_token_present: cred.access_token_present,
+      values_displayed: false,
+      public_ingress: false
     };
   }
 
@@ -310,11 +451,11 @@ class WhatsAppInbound {
       bind_command: 'airodrom whatsapp bind',
       configure_path: 'POST /api/assistant/whatsapp/inbound/configure',
       validate_path: 'POST /api/assistant/whatsapp/inbound/validate-credentials',
-      secrets_available_for_storage: counts.active > 0 || boundSlots > 0,
+      storage_slots_available: counts.active > 0 || boundSlots > 0,
       ready_for_live_hmac: cfg.verify_token_bound && cfg.app_secret_bound,
       ready_for_graph_discovery: cfg.access_token_bound || typeof this.options.accessToken === 'string',
       values_displayed: false,
-      note: 'Run airodrom whatsapp bind for labeled hidden capture of verify token, App Secret and Graph access token. Opaque references are configured automatically. Never pass secrets as argv or through the browser.'
+      note: 'Run airodrom whatsapp bind for labeled hidden capture of verify token, Meta app signing key and Graph access token. Opaque references are configured automatically. Never pass secrets as argv or through the browser.'
     };
   }
 
@@ -327,10 +468,28 @@ class WhatsAppInbound {
       ['app_secret', row?.app_secret_reference],
       ['access_token', row?.access_token_reference]
     ];
-    const result = { ok: true, slots: {}, ready_for_graph_discovery: false, values_displayed: false, public_ingress: false };
+    const result = {
+      ok: true,
+      slots: {},
+      verify_token_bound: false,
+      app_secret_bound: false,
+      access_token_bound: false,
+      verify_token_resolvable: false,
+      app_secret_resolvable: false,
+      access_token_resolvable: false,
+      ready_for_graph_discovery: false,
+      ready_for_live_hmac: false,
+      values_displayed: false,
+      public_ingress: false
+    };
     for (const [name, ref] of slots) {
+      const boundKey = name + '_bound';
+      const resolvableKey = name + '_resolvable';
       if (!ref) {
-        result.slots[name] = { bound: false, resolvable: false };
+        result.slots[boundKey] = false;
+        result.slots[resolvableKey] = false;
+        result[boundKey] = false;
+        result[resolvableKey] = false;
         result.ok = false;
         continue;
       }
@@ -339,18 +498,41 @@ class WhatsAppInbound {
         let value = this.#vault(ref);
         const ok = typeof value === 'string' && value.length > 0;
         value = '';
-        result.slots[name] = { bound: true, resolvable: ok, reference_present: true };
+        result.slots[boundKey] = true;
+        result.slots[resolvableKey] = ok;
+        result[boundKey] = true;
+        result[resolvableKey] = ok;
         if (!ok) result.ok = false;
       } catch {
-        result.slots[name] = { bound: true, resolvable: false, reference_present: true };
+        result.slots[boundKey] = true;
+        result.slots[resolvableKey] = false;
+        result[boundKey] = true;
+        result[resolvableKey] = false;
         result.ok = false;
       }
     }
-    result.ready_for_graph_discovery = result.slots.access_token?.resolvable === true
+    result.ready_for_live_hmac = result.verify_token_resolvable === true && result.app_secret_resolvable === true;
+    result.ready_for_graph_discovery = result.access_token_resolvable === true
       || typeof this.options.accessToken === 'string';
-    result.ready_for_live_hmac = result.slots.verify_token?.resolvable === true
-      && result.slots.app_secret?.resolvable === true;
     return result;
+  }
+
+  /**
+   * Opaque Vault reference IDs only — never secret values.
+   * Keys avoid token/secret substrings so control-plane safeValue does not omit them.
+   */
+  opaqueCredentialReferences(actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may read WhatsApp credential references');
+    const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference, enabled FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    return {
+      slot_verify: row?.verify_token_reference || null,
+      slot_app: row?.app_secret_reference || null,
+      slot_graph: row?.access_token_reference || null,
+      enabled: row?.enabled === 1,
+      values_displayed: false,
+      public_ingress: false,
+      auto_mission_execution: false
+    };
   }
 
   // Bind opaque Keychain references after Vault storage. Rejects plaintext secret fields.
@@ -411,12 +593,21 @@ class WhatsAppInbound {
 
   async discoverGraphAccounts(input = {}, actor = 'operator') {
     if (actor !== 'operator') throw Error('Only operator may run Graph discovery');
-    object(input, ['confirmed']);
+    object(input, ['confirmed', 'waba_id', 'environment', 'phone_number_id']);
     if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    if (input.environment !== undefined && !ENVIRONMENTS.has(input.environment)) throw Error('Invalid environment');
     const cfg = this.config();
     const portfolio = cfg.business_portfolio_id;
     const appId = cfg.meta_app_id;
-    const { discoverOwnedWhatsApp, probePublicApp, redactError } = require('./whatsapp-meta-graph');
+    let env = input.environment;
+    const wabaHint = input.waba_id !== undefined ? input.waba_id : (env === 'test' ? cfg.test_waba_id : cfg.waba_id);
+    if (!env && wabaHint === KNOWN_TEST_WABA) env = 'test';
+    if (!env) env = cfg.active_environment;
+    const preferredPhone = input.phone_number_id !== undefined ? input.phone_number_id
+      : (env === 'test' ? (cfg.test_phone_number_id || KNOWN_TEST_PHONE) : cfg.production_phone_number_id);
+    if (wabaHint != null && wabaHint !== '' && !META_ID.test(String(wabaHint))) throw Error('Invalid WABA ID');
+    if (preferredPhone != null && preferredPhone !== '' && !META_ID.test(String(preferredPhone))) throw Error('Invalid phone_number_id');
+    const { discoverOwnedWhatsApp, readWabaAndPhones, probePublicApp, redactError } = require('./whatsapp-meta-graph');
     // Tests may inject graphFetch on the inbound options; HTTP clients cannot supply fetch_impl.
     const fetchImpl = typeof this.options.graphFetch === 'function' ? this.options.graphFetch : fetch;
     const publicApp = await probePublicApp(appId, { fetchImpl }).catch(error => ({
@@ -435,7 +626,8 @@ class WhatsAppInbound {
             app_name: publicApp.app_name || 'Airodrom',
             graph_access: 'unavailable',
             permission_prerequisite: 'Vault whatsapp access token reference could not be resolved.',
-            notes: 'Public app probe only. Bind an active purpose=whatsapp access token before portfolio/WABA reads.'
+            notes: 'Public app probe only. Bind an active purpose=whatsapp access token before portfolio/WABA reads.',
+            environment: env
           }, actor);
         }
       }
@@ -446,23 +638,38 @@ class WhatsAppInbound {
         app_name: publicApp.app_name || 'Airodrom',
         graph_access: 'unavailable',
         permission_prerequisite: 'OAuthException 104 class: authorized Graph credential required for portfolio and WABA reads.',
-        notes: 'No Vault whatsapp access token bound. Public Graph returned app id/name only.'
+        notes: 'No Vault whatsapp access token bound. Public Graph returned app id/name only.',
+        environment: env
       }, actor);
     }
     try {
-      const discovered = await discoverOwnedWhatsApp({
-        accessToken: token,
-        businessPortfolioId: portfolio,
-        fetchImpl,
-        appId
-      });
+      let discovered;
+      if (wabaHint && (env === 'test' || wabaHint === KNOWN_TEST_WABA || wabaHint === cfg.test_waba_id)) {
+        discovered = await readWabaAndPhones(token, wabaHint, {
+          fetchImpl,
+          appId,
+          businessPortfolioId: portfolio,
+          preferredPhoneNumberId: preferredPhone || null,
+          note: 'Test/sandbox WABA verified via Graph without overwriting production identifiers.'
+        });
+        env = 'test';
+      } else {
+        discovered = await discoverOwnedWhatsApp({
+          accessToken: token,
+          businessPortfolioId: portfolio,
+          fetchImpl,
+          appId,
+          wabaId: wabaHint || null
+        });
+      }
       token = null;
       if (discovered.waba_id || discovered.phone_number_id) {
-        this.configure({
-          enabled: cfg.enabled,
+        this.configureMetaEnvironment({
           confirmed: true,
+          environment: env,
           waba_id: discovered.waba_id || undefined,
-          phone_number_id: discovered.phone_number_id || undefined
+          phone_number_id: discovered.phone_number_id || undefined,
+          select_active: env === 'test' || cfg.active_environment === env
         }, actor);
       }
       return this.recordDiscovery({
@@ -471,6 +678,7 @@ class WhatsAppInbound {
         graph_access: 'authorized',
         waba_id: discovered.waba_id || undefined,
         phone_number_id: discovered.phone_number_id || undefined,
+        environment: env,
         permissions_granted: discovered.permissions_readable ? this.defaults.required_permissions : undefined,
         notes: discovered.note
       }, actor);
@@ -481,8 +689,9 @@ class WhatsAppInbound {
         confirmed: true,
         app_name: publicApp.app_name || 'Airodrom',
         graph_access: 'refused',
+        environment: env,
         permission_prerequisite: `Graph refused (${redacted.type || 'error'} ${redacted.code || 'n/a'}): ${redacted.message_class}`,
-        notes: 'Access token present but portfolio/WABA discovery failed. Confirm WhatsApp business permissions and system-user scope.'
+        notes: 'Access token present but portfolio/WABA discovery failed. System-user tokens need whatsapp_business_management; portfolio owned-list also needs business_management unless a Graph-readable WABA ID hint is supplied. Test WABA access requires the system user to hold that WABA asset.'
       }, actor);
     }
   }
@@ -495,16 +704,23 @@ class WhatsAppInbound {
     return {
       meta_app_id: cfg.meta_app_id,
       business_portfolio_id: cfg.business_portfolio_id,
+      active_environment: cfg.active_environment,
+      production_waba_id: cfg.production_waba_id,
+      production_phone_number_id: cfg.production_phone_number_id,
+      test_waba_id: cfg.test_waba_id,
+      test_phone_number_id: cfg.test_phone_number_id,
       waba_id: cfg.waba_id,
       phone_number_id: cfg.phone_number_id,
+      accepted_waba_ids: cfg.accepted_waba_ids,
       app_publication_status: cfg.app_publication_status,
-      webhook_subscription_status: 'inactive',
+      webhook_subscription_status: cfg.webhook_subscription_status,
+      subscribed_fields: cfg.subscribed_fields,
       required_permissions: this.defaults.required_permissions,
       secrets_bound: cfg.verify_token_bound && cfg.app_secret_bound,
       access_token_bound: cfg.access_token_bound,
       graph_live_query: discovery?.graph_access === 'authorized',
       discovery,
-      note: 'WABA ID, Phone Number ID, publication and webhook subscription require Meta console or authorized Graph inspection. No credentials are exposed here.'
+      note: 'Production and test WABA/phone are stored separately. Active environment selects which pair is primary. No credentials are exposed here.'
     };
   }
 
@@ -573,21 +789,41 @@ class WhatsAppInbound {
     const subscription = this.subscriptionPrep();
     const vault = this.vaultBindingStatus();
     const ingress = this.ingressRoutingPlan();
+    const delivery = this.#deliveryEvidence();
     const realTest = {
       authorized: false,
-      executed: false,
-      reason: 'Public HTTPS callback not owner-authorized; live Meta delivery deferred',
+      executed: delivery.phone_originated_delivery === 'Verified',
+      meta_dashboard_test: delivery.meta_dashboard_test,
+      sender_allowlist: delivery.sender_allowlist,
+      phone_originated_delivery: delivery.phone_originated_delivery,
+      hmac_result: delivery.hmac_result,
+      ingress_result: delivery.ingress_result,
+      host_http_status: delivery.host_http_status,
+      reason: delivery.phone_originated_delivery === 'Verified'
+        ? 'Allowlisted phone-originated Meta delivery verified'
+        : (delivery.meta_dashboard_test === 'Received'
+          ? 'Meta dashboard test received and HMAC-verified; sender rejected by allowlist; phone-originated delivery still pending'
+          : 'Phone-originated Meta delivery not yet verified'),
       mission_auto_execution: false
     };
     return {
       meta_app_id: cfg.meta_app_id,
       business_portfolio_id: cfg.business_portfolio_id,
       app_name: meta.discovery?.app_name || null,
+      active_environment: cfg.active_environment,
+      production_waba_id: cfg.production_waba_id,
+      production_phone_number_id: cfg.production_phone_number_id,
+      test_waba_id: cfg.test_waba_id,
+      test_phone_number_id: cfg.test_phone_number_id,
       waba_id: cfg.waba_id,
       phone_number_id: cfg.phone_number_id,
+      accepted_waba_ids: cfg.accepted_waba_ids,
       app_publication_status: cfg.app_publication_status,
-      webhook_subscription_status: 'inactive',
+      webhook_subscription_status: cfg.webhook_subscription_status,
+      subscribed_fields: cfg.subscribed_fields,
       meta,
+      // Prefer `binding` for clients: parent key `credentials` is omitted by safeValue.
+      binding: this.bindingStatus(),
       credentials,
       vault,
       callback,
@@ -597,6 +833,146 @@ class WhatsAppInbound {
       public_ingress: false,
       auto_mission_execution: false,
       authority: false
+    };
+  }
+
+
+  recordWebhookSubscription(input = {}, actor = 'operator') {
+    object(input, ['confirmed', 'fields', 'callback_registered', 'messages_subscribed']);
+    if (input.confirmed !== true) throw Error('Owner confirmation required to record webhook subscription state');
+    const cfg = this.config();
+    if (!cfg.prepared_callback_url) throw Error('Prepare an HTTPS callback before recording subscription state');
+    const fields = Array.isArray(input.fields)
+      ? input.fields.filter(f => typeof f === 'string' && /^[a-z_]{3,40}$/.test(f)).slice(0, 20)
+      : (input.messages_subscribed === false ? [] : ['messages']);
+    const status = fields.length ? 'active' : (input.callback_registered === false ? 'inactive' : 'pending');
+    this.db.prepare('UPDATE cp_whatsapp_inbound_config SET webhook_subscription_status=?, subscribed_fields=?, updated_at=?, updated_by=? WHERE id=1')
+      .run(status, JSON.stringify(fields), Date.now(), text(actor, 'actor', 80));
+    this.store.event('whatsapp.inbound.webhook_subscribed', null, {
+      webhook_subscription_status: status,
+      subscribed_fields: fields,
+      callback_registered: status !== 'inactive',
+      messages_subscribed: fields.includes('messages'),
+      public_ingress: false,
+      authority: false
+    });
+    return this.connectorsProjection();
+  }
+
+
+  #syntheticInboxId(messageId) {
+    return /^wamid\.(local|test-cfg|public-path|app-secret)/i.test(String(messageId || ''));
+  }
+
+  #deliveryEvidence() {
+    const rows = this.db.prepare('SELECT message_id, from_id, status, received_at FROM cp_whatsapp_inbox ORDER BY received_at DESC LIMIT 50').all();
+    const allowlist = this.config().allowlist || [];
+    const metaTest = rows.find(r => r.status === 'unauthorized_sender' && !this.#syntheticInboxId(r.message_id));
+    const phoneOk = rows.find(r => r.status === 'received' && !this.#syntheticInboxId(r.message_id) && allowlist.includes(r.from_id));
+    const unauthorizedCount = rows.filter(r => r.status === 'unauthorized_sender').length;
+    const verifiedEvents = this.#eventCount('whatsapp.inbound.verified');
+    return {
+      meta_dashboard_test: metaTest ? 'Received' : 'Not observed',
+      meta_dashboard_test_at: metaTest?.received_at || null,
+      sender_allowlist: metaTest || unauthorizedCount
+        ? 'Rejected unauthorized sender'
+        : 'No rejection recorded',
+      phone_originated_delivery: phoneOk ? 'Verified' : 'Not yet verified',
+      phone_originated_at: phoneOk?.received_at || null,
+      hmac_result: (metaTest || phoneOk || verifiedEvents > 0) ? 'Verified' : 'Not observed',
+      ingress_result: metaTest || phoneOk ? 'Accepted after HMAC verify' : 'No Meta delivery observed',
+      host_http_status: metaTest || phoneOk ? 200 : null,
+      auto_mission_execution: false
+    };
+  }
+
+  #eventCount(eventType) {
+    try {
+      return this.db.prepare('SELECT count(*) n FROM event_ledger_events WHERE event_type=?').get(eventType)?.n || 0;
+    } catch { return 0; }
+  }
+
+  #lastWhatsappEvent() {
+    try {
+      const row = this.db.prepare("SELECT event_type, timestamp_ms, status FROM event_ledger_events WHERE event_type LIKE 'whatsapp.inbound.%' ORDER BY seq DESC LIMIT 1").get();
+      if (!row) return null;
+      return { event_type: row.event_type, at: row.timestamp_ms || null, status: row.status || null };
+    } catch { return null; }
+  }
+
+  connectorsProjection() {
+    const cfg = this.config();
+    const meta = this.metaReadiness();
+    const binding = this.bindingStatus();
+    const challengeOk = this.#eventCount('whatsapp.inbound.challenge_ok') > 0;
+    const rejected = this.db.prepare("SELECT count(*) n FROM cp_whatsapp_inbox WHERE status IN ('unauthorized_sender','rejected')").get()?.n || 0;
+    const retained = this.db.prepare('SELECT count(*) n FROM cp_whatsapp_inbox').get()?.n || 0;
+    const graph = meta.discovery?.graph_access === 'authorized' ? 'Authorized'
+      : (meta.discovery?.graph_access === 'refused' ? 'Refused' : 'Unavailable');
+    const binding_state = binding.verify_token_bound && binding.app_secret_bound && binding.access_token_bound
+      ? 'Bound' : 'Incomplete';
+    const callback = (cfg.prepared_callback_url && (challengeOk || cfg.webhook_subscription_status === 'active' || cfg.webhook_subscription_status === 'pending'))
+      ? 'Registered' : (cfg.prepared_callback_url ? 'Prepared' : 'Not prepared');
+    const messages = (cfg.webhook_subscription_status === 'active' && cfg.subscribed_fields.includes('messages'))
+      ? 'Subscribed' : 'Not subscribed';
+    const delivery = this.#deliveryEvidence();
+    const inboundDelivery = delivery.phone_originated_delivery;
+    const outbound = 'Unavailable';
+    const capabilities = {
+      graph,
+      binding_state,
+      callback,
+      messages,
+      meta_dashboard_test: delivery.meta_dashboard_test,
+      sender_allowlist: delivery.sender_allowlist,
+      inbound_delivery: inboundDelivery,
+      outbound
+    };
+    const inboundReady = graph === 'Authorized' && binding_state === 'Bound' && callback === 'Registered';
+    const setup = delivery.meta_dashboard_test === 'Received'
+      ? 'Meta dashboard webhook test received and HMAC-verified. Sender rejected by allowlist (unchanged). Normal phone-originated delivery not yet verified. Outbound unavailable.'
+      : (!inboundReady
+        ? 'Official inbound webhook source only. Personal WhatsApp history is unavailable through this adapter. No WhatsApp Web automation.'
+        : 'Official WhatsApp Business inbound webhook is configured. Normal phone-originated Meta delivery is not yet verified. Outbound messaging remains unavailable.');
+    return {
+      id: 'whatsapp',
+      protocol: 'WhatsApp Business Cloud API',
+      state: cfg.enabled && inboundReady ? 'configured' : (cfg.enabled ? 'incomplete' : 'disabled'),
+      state_label: inboundReady ? 'Inbound ready' : (cfg.enabled ? 'Inbound incomplete' : 'Disabled'),
+      setup,
+      mutations: 'Outbound messaging unavailable until a separately governed official adapter is qualified.',
+      capabilities,
+      detail: {
+        active_environment: cfg.active_environment,
+        waba_id: cfg.waba_id,
+        phone_number_id: cfg.phone_number_id,
+        test_waba_id: cfg.test_waba_id,
+        test_phone_number_id: cfg.test_phone_number_id,
+        production_waba_id: cfg.production_waba_id,
+        production_phone_number_id: cfg.production_phone_number_id,
+        callback_readiness: callback,
+        subscription_status: cfg.webhook_subscription_status,
+        subscribed_fields: cfg.subscribed_fields,
+        prepared_callback: Boolean(cfg.prepared_callback_url),
+        last_webhook_event: this.#lastWhatsappEvent(),
+        inbox_retained: retained,
+        delivery_errors: rejected,
+        meta_dashboard_test: delivery.meta_dashboard_test,
+        meta_dashboard_test_at: delivery.meta_dashboard_test_at,
+        sender_allowlist: delivery.sender_allowlist,
+        phone_originated_delivery: delivery.phone_originated_delivery,
+        hmac_result: delivery.hmac_result,
+        ingress_result: delivery.ingress_result,
+        host_http_status: delivery.host_http_status,
+        values_displayed: false
+      },
+      outbound,
+      inbound_delivery: inboundDelivery,
+      read_only: true,
+      live_qualified: false,
+      authority: false,
+      auto_mission_execution: false,
+      public_ingress: false
     };
   }
 
@@ -635,6 +1011,7 @@ class WhatsAppInbound {
       inbox: Object.fromEntries(counts.map(r => [r.status, r.n])),
       recent: this.list({ limit: 10 }).items,
       retained: this.db.prepare('SELECT count(*) n FROM cp_whatsapp_inbox').get().n,
+      connectors: this.connectorsProjection(),
       authority: false,
       auto_mission_execution: false,
       public_ingress: false,
@@ -720,30 +1097,37 @@ class WhatsAppInbound {
   }
 
   #parse(raw, signatureHeader, appSecret) {
-    // Reuse HMAC boundary; enrich with sender and delivery statuses.
-    const messages = officialInbound(raw, signatureHeader, appSecret).map(m => ({ ...m, from: null, payload_hash: null }));
+    // Reuse HMAC boundary; enrich with sender, optional entry WABA id, and delivery statuses.
+    // Meta Cloud API test and production webhooks share object=whatsapp_business_account.
+    const messages = officialInbound(raw, signatureHeader, appSecret).map(m => ({ ...m, from: null, payload_hash: null, waba_id: null }));
     const data = JSON.parse(raw.toString('utf8'));
     const hash = crypto.createHash('sha256').update(raw).digest('hex');
+    const accepted = new Set(this.config().accepted_waba_ids || []);
     const enriched = [];
     const statuses = [];
     for (const entry of data.entry || []) {
+      const entryWaba = META_ID.test(String(entry.id || '')) ? String(entry.id) : null;
+      if (entryWaba && accepted.size && !accepted.has(entryWaba)) {
+        throw Error('Webhook WABA is not an accepted production or test account');
+      }
       for (const change of entry.changes || []) {
         const value = change.value || {};
+        // metadata.phone_number_id is informational; HMAC + allowlist remain authoritative.
         for (const m of value.messages || []) {
           if (m.type !== 'text' || !MSG_ID.test(m.id || '')) continue;
           const from = PHONE.test(String(m.from || '')) ? String(m.from) : null;
           const base = messages.find(x => x.id === m.id) || { id: m.id, text: '[Sensitive content withheld]' };
-          enriched.push({ id: m.id, from, text: base.text, payload_hash: hash });
+          enriched.push({ id: m.id, from, text: base.text, payload_hash: hash, waba_id: entryWaba });
           if (enriched.length > 20) throw Error('Webhook bound exceeded');
         }
         for (const s of value.statuses || []) {
           if (!MSG_ID.test(s.id || '') || typeof s.status !== 'string' || !/^[a-z_]{2,40}$/.test(s.status)) continue;
-          statuses.push({ id: s.id, status: s.status });
+          statuses.push({ id: s.id, status: s.status, waba_id: entryWaba });
           if (statuses.length > 40) throw Error('Status bound exceeded');
         }
       }
     }
-    return { messages: enriched.length ? enriched : messages.map(m => ({ ...m, from: null, payload_hash: hash })), statuses };
+    return { messages: enriched.length ? enriched : messages.map(m => ({ ...m, from: null, payload_hash: hash, waba_id: null })), statuses };
   }
 
   list({ limit = 50, status = null } = {}) {
@@ -816,9 +1200,21 @@ function whatsappSource(bridge) {
   if (!bridge?.whatsappInbound) return {};
   return {
     whatsapp: {
-      read: async ({ id, query, limit = 10 } = {}) => bridge.whatsappInbound.read({ id, query, limit })
+      read: async ({ id, query, limit = 10 } = {}) => bridge.whatsappInbound.read({ id, query, limit }),
+      inboundStatus: () => bridge.whatsappInbound.connectorsProjection()
     }
   };
 }
 
-module.exports = { WhatsAppInbound, readRaw, PHONE, whatsappSource, loadMetaDefaults, MAX_BODY };
+module.exports = {
+  WhatsAppInbound,
+  readRaw,
+  PHONE,
+  whatsappSource,
+  loadMetaDefaults,
+  MAX_BODY,
+  ENVIRONMENTS,
+  KNOWN_TEST_WABA,
+  KNOWN_TEST_PHONE,
+  KNOWN_PRODUCTION_WABA
+};

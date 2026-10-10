@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -35,7 +35,7 @@ Connectors ${p?.connectors||'Unavailable'}
 Privacy    Local inference · scoped Memory · credentials stay private
 `;
 }
-function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  menu         Open the native macOS menu helper\n  help         Show full command guidance\n  browser options  Show browser connection availability\n  doctor       Inspect safe readiness and pin categories\n  requalify    Fresh confined qualification while stopped\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  whatsapp     bind | status | discover | prepare-callback <https://host/webhooks/whatsapp>\n  secret       prepare | put [operator|gmail|whatsapp] | forget <ref> | status\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nWhatsApp credentials use hidden Terminal input only (airodrom whatsapp bind). Public ingress stays OFF.\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
+function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  menu         Open the native macOS menu helper\n  help         Show full command guidance\n  browser options  Show browser connection availability\n  doctor       Inspect safe readiness and pin categories\n  requalify    Fresh confined qualification while stopped\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  whatsapp     bind | status | discover | use-test | rotate-verify-token | prepare-callback <https://host/webhooks/whatsapp>\n  secret       prepare | put [operator|gmail|whatsapp] | forget <ref> | status\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nWhatsApp credentials use hidden Terminal input only (airodrom whatsapp bind). Public ingress stays OFF.\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
 async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
   const deadline = Date.now() + timeoutMs; let lastState=null;
   while (Date.now() < deadline) {
@@ -312,12 +312,13 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         }
         else if(command==='gmail'||command==='whatsapp') {
           const [actionArg='status',...parts]=arg.split(/\s+/),action=actionArg==='draft-reply'?'draft_reply':actionArg,query=parts.join(' '),selected=['read','thread','summarize','draft_reply'].includes(action);
-          if(command==='whatsapp'&&['bind','onboard','discover','prepare-callback'].includes(action)){
+          if(command==='whatsapp'&&['bind','onboard','discover','prepare-callback','rotate-verify-token'].includes(action)){
             active=new AbortController();
             try{
               const onboard=require('./whatsapp-credential-onboarding');
               if(action==='bind'||action==='onboard')await onboard.run({home,input,output,signal:active.signal,callbackUrl:parts[0]&&parts[0].startsWith('https://')?parts[0]:null});
               else if(action==='discover')await onboard.runDiscover(home,output);
+              else if(action==='rotate-verify-token')await onboard.runRotateVerifyToken(home,input,output,{signal:active.signal});
               else await onboard.runPrepare(home,output,parts[0]);
             }finally{active=null;}
             readerLocked=false;showPrompt();continue;
@@ -427,10 +428,12 @@ async function main(args = process.argv.slice(2)) {
     const action=rest[0]||'status';
     const onboard=require('./whatsapp-credential-onboarding');
     if(action==='bind'||action==='onboard')return onboard.run({home,input:process.stdin,output:process.stdout,callbackUrl:rest[1]&&rest[1].startsWith('https://')?rest[1]:null});
-    if(action==='discover')return onboard.runDiscover(home,process.stdout);
+    if(action==='discover')return onboard.runDiscover(home,process.stdout,rest[1]&&/^[0-9]{5,32}$/.test(rest[1])?rest[1]:null);
+    if(action==='use-test'||action==='configure-test')return onboard.runConfigureTest(home,process.stdout);
+    if(action==='rotate-verify-token')return onboard.runRotateVerifyToken(home,process.stdin,process.stdout);
     if(action==='prepare-callback')return onboard.runPrepare(home,process.stdout,rest[1]);
     if(action==='status')return onboard.runStatus(home,process.stdout,rest.includes('--json'));
-    throw Error('Use airodrom whatsapp bind|status|discover|prepare-callback <https://host/webhooks/whatsapp>');
+    throw Error('Use airodrom whatsapp bind|status|discover|use-test|rotate-verify-token|prepare-callback <https://host/webhooks/whatsapp>');
   }
   if (command === '--version') { process.stdout.write(branding.name + ' ' + require('../package.json').version + '\n'); return; }
   if (command === 'status') { if(local.isStopped(home))show(process.stdout,{state:'stopped'},()=> 'Airodrom is stopped. Run airodrom to start.',rest.includes('--json'));else show(process.stdout,await local.status(home),rows,rest.includes('--json')); return; }
