@@ -74,7 +74,23 @@ Failed Mission `668a177e-…` remains in durable history as `needs_rework` / `op
 
 ## Live runtime note
 
-For the live proof, `~/.airodrom/local.json` `source` temporarily pointed at this worktree so the fixed adapter loaded. Operator checkout `/Users/andrew/code/airodrom` was not modified.
+For the Automatic Acceptance pilot, `~/.airodrom/local.json` `source` temporarily pointed at this git worktree. Operator checkout `/Users/andrew/code/airodrom` was not modified.
+
+## Final closeout — runtime source reconciliation (2026-10-10)
+
+Authorized cutover after idle drain/stop:
+
+| Field | Value |
+| --- | --- |
+| Prior source | git worktree `…/work/airodrom-coding-reliability` |
+| Canonical source | install archive `…/install/airodrom-coding-reliability-a6ee3e3` (no `.git`) |
+| Service | Healthy · admission `open` · OpenCode 2.0.25 ready |
+| Active runs / leases | 0 / 0 |
+| Pilot Mission `2c57a4e7-…` | preserved `completed` |
+| Historical `668a177e-…` | preserved `needs_rework` |
+| Personal memories | 6 preserved |
+
+No temporary worktree dependency remains for the running service.
 
 ## Remaining limitations
 

@@ -4,6 +4,7 @@
 
 - Stop using display `redactValue` mutation as the OpenCode coding-context sensitivity gate; admit ordinary JS comments/regex while keeping secret and sensitive-path fail-closed checks.
 - Prove host-owned risk Automatic Acceptance on one disposable local OpenCode Mission after explicit operator preference opt-in.
+- Reconcile live `local.json` source from the temporary proof worktree to a canonical install archive of the fix tip; preserve Mission and Memory evidence.
 
 ## Unreleased — Lifecycle closeout shipped and installed
 

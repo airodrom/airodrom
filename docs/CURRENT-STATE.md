@@ -1,11 +1,12 @@
 # Current state (2026-10-10)
 
-## Coding Reliability & Auto-Acceptance V1 (COMPLETED)
+## Coding Reliability & Auto-Acceptance V1 (COMPLETED + RUNTIME RECONCILED)
 
 - OpenCode `safeText` no longer treats display path/URL redaction mutation as `opencode_sensitive_context`; ordinary JS comments/regex admitted; secrets and sensitive absolute paths remain denied.
 - Live Mission `2c57a4e7-c906-4b5f-9590-61242e6b6f82` completed via host risk Automatic Acceptance (operator preference opt-in, then restored OFF).
-- Branch `fix/coding-reliability-auto-acceptance` (local; not pushed). Evidence: [CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md](CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md).
-- Historical failed Mission `668a177e-…` preserved. Operator checkout untouched.
+- Branch `fix/coding-reliability-auto-acceptance` @ `a6ee3e3` (+ closeout commit). Evidence: [CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md](CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md).
+- **Runtime source:** canonical install `…/install/airodrom-coding-reliability-a6ee3e3` (not the proof worktree). Healthy · admission open.
+- Historical failed Mission `668a177e-…` preserved. Operator checkout untouched. Memories/Missions preserved.
 
 ## Shipped source
 
@@ -16,9 +17,10 @@
 
 ## Installed release (running)
 
-- **Root:** `/Users/andrew/Documents/Codex/2026-10-09/airodrom-v101-install-hotfix/install/airodrom-1.0.1-rc.1`
-- **Health:** Healthy — OpenCode 2.0.25, Memory Ready, Gmail configured
-- **Backup / rollback:** `~/.airodrom/backups/v101-upgrade-20261010T160704Z`
+- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-coding-reliability/install/airodrom-coding-reliability-a6ee3e3`
+- **Health:** Healthy — OpenCode 2.0.25, Memory Ready, admission `open`
+- **Includes:** Coding reliability `sourceContextSensitive` fix (pending merge to `origin/main` until PR lands)
+- **Prior lifecycle install:** `…/install/airodrom-lifecycle-f28e8ca` (retained on disk)
 - **Manual patches required:** No
 
 ## Distinctions
