@@ -604,5 +604,12 @@
   "src/whatsapp-production-connection.js",
   "src/whatsapp-outbound.js",
   "src/whatsapp-conversations.js",
-  "src/whatsapp-credential-onboarding.js"
+  "src/whatsapp-credential-onboarding.js",
+  "config/core-contracts-v1.json",
+  "config/runtime-security-conformance-v1.json",
+  "config/installation-compatibility-v1.json",
+  "src/core-contracts.js",
+  "src/runtime-security-conformance.js",
+  "src/installation-compatibility.js",
+  "docs/adr/0043-core-contracts-runtime-consistency.md"
 ]

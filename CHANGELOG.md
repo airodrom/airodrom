@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Core Contracts & Runtime Consistency V1
+
+- Add versioned core contracts, host-evidence runtime security conformance, and installation compatibility observation without rewriting durable state.
+- Expose `/api/product/compatibility`, Control Center System Health rows, and interactive `/compat`.
+
 ## Unreleased — Personal AI Channels V1
 
 - Restore `/api/assistant/provider` + ConversationEngine provider revision binding; Control Center Conversation refresh fails soft if provider is unavailable.

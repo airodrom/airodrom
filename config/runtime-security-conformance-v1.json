@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "family": "airodrom.runtime_security_conformance",
+  "properties": [
+    "workspace_confinement",
+    "tool_mediation",
+    "credential_isolation",
+    "cancellation",
+    "result_publication",
+    "recovery_support"
+  ],
+  "states": ["VERIFIED", "UNVERIFIED", "UNSUPPORTED"],
+  "policy": {
+    "worker_self_report": "insufficient",
+    "missing_host_evidence": "UNVERIFIED",
+    "fail_closed_on_required_unproven": true
+  },
+  "adapters": {
+    "opencode": {
+      "kind": "agent_runtime",
+      "evidence_sources": ["opencode_adapter_readiness", "sandbox_policy", "agent_runtime_qualification"]
+    },
+    "host": {
+      "kind": "agent_runtime",
+      "evidence_sources": ["capability_broker", "control_plane"]
+    },
+    "ollama": {
+      "kind": "model_provider",
+      "evidence_sources": ["local_model_capability", "qualify_conversation"]
+    },
+    "claude_code": {
+      "kind": "agent_runtime",
+      "evidence_sources": ["bounded_worker", "agent_runtime_profile"]
+    },
+    "codex": {
+      "kind": "agent_runtime",
+      "evidence_sources": ["codex_handoff", "agent_runtime_profile"]
+    },
+    "cursor": {
+      "kind": "agent_runtime",
+      "evidence_sources": ["agent_runtime_profile"]
+    }
+  }
+}

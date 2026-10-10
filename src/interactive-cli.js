@@ -7,7 +7,7 @@ const { PassThrough } = require('node:stream');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
 const render = require('./assistant-render');
-const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','memory','runtime','sensitive','vault','secret','gmail','whatsapp','research']);
+const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','compat','compatibility','memory','runtime','sensitive','vault','secret','gmail','whatsapp','research']);
 function parseLine(line) {
  const raw=line.trim().replace(/^(?:You\s*[›>]|>)\s*(?=\/|--help|--version)/,'');
  const value=({'--version':'/version','--help':'/help','-h':'/help'}[raw])||raw;
@@ -19,7 +19,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -269,7 +269,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         if(command==='name')throw Error('Use /name followed by the name you’d like me to use. Credentials require /vault.');
         await refreshName();
         if(command)output.write('\n');
-        if(['help','about','version','mcp','status','details','doctor','connectors'].includes(command)&&arg)throw Error('Submit this command on its own, or use --json for read-only details.');
+        if(['help','about','version','mcp','status','details','doctor','compat','compatibility','connectors'].includes(command)&&arg)throw Error('Submit this command on its own, or use --json for read-only details.');
         if (command === 'quit') {if(arg)throw Error('Submit /quit on its own.');break;}
         if (command === 'help') output.write(help());
         else if (command === 'about'||command==='version') output.write(branding.name+' '+require('../package.json').version+' · PRE-RELEASE\n');
@@ -335,6 +335,17 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           else { active=new AbortController();await secureGuide();active=null; }
         }
         else if (command === 'doctor') show(output,await require('./product-diagnostics').doctor(home),require('./product-diagnostics').summary,json);
+        else if (command === 'compat'||command==='compatibility') {
+          const report=await local.request(home,'/api/product/compatibility');
+          show(output,report,r=>{
+            const lines=['Installation · '+(r.installation?.overall||'Unavailable')+(r.installation?.mutations_allowed?' · mutations allowed':' · mutations blocked')];
+            for(const c of r.installation?.components||[])lines.push(c.component+' · '+c.state+(c.guidance?' · '+c.guidance:''));
+            lines.push('Contracts · family '+(r.contracts?.family||'Unavailable'));
+            for(const item of r.runtime_security?.items||[]){const props=Object.entries(item.properties||{}).map(([k,v])=>k+':'+v.state).join(', ');lines.push('Security · '+item.adapter+' · '+props);}
+            lines.push('No credentials or private Memory are included.');
+            return lines.join('\n');
+          },json);
+        }
         else if (command === 'status'||command==='details') {
           const detail=lastMission?await local.request(home,'/api/product/mission?id='+encodeURIComponent(lastMission)):null;
           if(command==='status'){

@@ -175,7 +175,10 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
   approvals:{waiting:pending,records:includeMissions?approvals:[],scope:'Up to 50 retained protected Approvals, pending first'},leases:{held:leases.find(l=>l.state==='held')?.count||0,quarantined:leases.find(l=>l.state==='quarantined')?.count||0},
   audit:{state:ledger?.healthy===true?'Ready':ledger?.state==='degraded'?'Degraded':'Unavailable',retained_events:count(db.prepare('SELECT count(*) n FROM event_ledger_events').get().n)},disk:{state:'Unavailable',reason:'Not checked'},
   missions,current_mission_ids:current.map(m=>m.id),counts:{scope:'Recent 50 retained Missions plus a separate current Mission page',visible:missions.length,active:activeCount,current:currentCount,current_offset:currentOffset,current_page_size:current.length,current_has_more:currentOffset+current.length<currentCount},
-  limitations:['Model reasoning and prompts are private.','Memory delivery does not prove model use.','Worker completion requires independent verification, Acceptance and Settlement.']};
+  core_contracts:(()=>{try{return require('./core-contracts').manifest();}catch{return null;}})(),
+  runtime_security:(()=>{try{return require('./runtime-security-conformance').evaluate(bridge);}catch{return null;}})(),
+  installation_compatibility:(()=>{try{return require('./installation-compatibility').evaluate(bridge);}catch{return null;}})(),
+  limitations:['Model reasoning and prompts are private.','Memory delivery does not prove model use.','Worker completion requires independent verification, Acceptance and Settlement.','Runtime security VERIFIED states require host evidence; worker self-reports are insufficient.']};
 }
 async function nativeStatus(bridge) {
  const s=await overview(bridge,{includeMissions:false}),db=bridge.controlStore.db;
@@ -196,10 +199,11 @@ async function nativeStatus(bridge) {
   cursor:s.cursor,
   acceptance_config:s.acceptance_config,
   conversation:{nickname:conversationNickname,model:conversationModel,worker:conversationModel?'local-ollama':null,channel:'browser',separated_from_missions:true},
+  installation:s.installation_compatibility?{overall:s.installation_compatibility.overall,mutations_allowed:s.installation_compatibility.mutations_allowed,components:s.installation_compatibility.components.length}:null,
   mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode,worker:m.runtime||null,model:m.model?.id||null,elapsed_s,progress_value:m.progress.mode==='determinate'?m.progress.value:null,progress_maximum:m.progress.mode==='determinate'?m.progress.maximum:null}:null,
   review_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n,
   failed_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n,
-  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Conversation: '+(conversationNickname||'Airo')+' · '+(conversationModel||'Unavailable'),'Active Missions: '+activeCount,'Waiting Approvals: '+s.approvals.waiting,'Connection: '+connectivity.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
+  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Conversation: '+(conversationNickname||'Airo')+' · '+(conversationModel||'Unavailable'),'Installation: '+(s.installation_compatibility?.overall||'Unavailable'),'Active Missions: '+activeCount,'Waiting Approvals: '+s.approvals.waiting,'Connection: '+connectivity.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
 }
 function events(bridge,url) {
  const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)throw Error('Invalid event cursor');
