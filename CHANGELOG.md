@@ -1,5 +1,9 @@
 ## Unreleased — macOS Desktop Activation V1 (shipped locally)
 
+## Unreleased — Control Center & Premium macOS Experience V4 (shipped locally)
+
+- Merged PR #67 to `origin/main` (`1105659`); installed `airodrom-ux-v4-1105659` with Menu CFBundleVersion **4** and Mission history / Needs review presentation. See [CONTROL-CENTER-MACOS-UX-V4.md](docs/CONTROL-CENTER-MACOS-UX-V4.md).
+
 ## Unreleased — Control Center & Premium macOS Experience V4
 
 - Port Mission history + `mission_counts` so Control Center Missions / Overview show Active, Needs review, Failed, Completed, and Settled correctly.
