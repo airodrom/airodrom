@@ -9,24 +9,40 @@ const { spawn, spawnSync } = require('node:child_process');
 const { randomUUID, createHash } = require('node:crypto');
 const { AgentAdapter, AgentAdapterError } = require('../agent-adapter');
 const { object, redactValue } = require('../control-plane-store');
-const MAX_CONTEXT = 24000, MAX_OUTPUT = 64000, MAX_FILE = 12000;
+const MAX_CONTEXT = 24000, MAX_OUTPUT = 64000, MAX_FILE = 262144;
 const VERSION = '2.0.25';
+const CODING_TIMEOUT_MS = 120000;
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => { throw new AgentAdapterError(code, code); };
 const quote = value => JSON.stringify(value);
+// Host-owned coding view: Authorization headers that bind a JS identifier are
+// ordinary source (for example Authorization:'Bearer '+token). Literal Bearer
+// tokens and other embedded secrets still pass through containsSecret unchanged.
+// Workers never perform this neutralization; only the host classifier does.
+function codingSecretScanView(value) {
+  // Placeholder must not look like authorization:=value (containsSecret assign rule).
+  return String(value)
+    .replace(/\bAuthorization\s*:\s*(['"`])Bearer\s*\1\s*\+\s*[A-Za-z_$][\w$]*/g, '/*host-coding-auth*/')
+    .replace(/\bAuthorization\s*:\s*(['"`])Bearer\s*\$\{[A-Za-z_$][\w$.]*\}\1/g, '/*host-coding-auth*/')
+    .replace(/\bAuthorization\s*:\s*`Bearer\s*\$\{[A-Za-z_$][\w$.]*\}`/g, '/*host-coding-auth*/');
+}
 // OpenCode coding context must not use display-oriented redactValue mutation as a
 // sensitivity gate. Ledger redactPayload/(?<!\w)\/ path redaction and relative-URL
 // redaction intentionally rewrite ordinary JS (// comments, /regex/, a / b, ./x).
 // Gate on secrets and real sensitive absolute / protected locations instead.
+// UI prose that mentions "credentials" or "secrets" is not a file reference.
 function sourceContextSensitive(value) {
   if (typeof value !== 'string') return true;
-  if (require('../personal-memory').containsSecret(value)) return true;
+  if (require('../personal-memory').containsSecret(codingSecretScanView(value))) return true;
   // Absolute home/private product paths and Windows/UNC/~ roots.
   if (/(?:^|[\s"'`=(,:])(?:[A-Za-z]:[\\/]|\\\\|~\/)/.test(value)) return true;
   if (/(?:^|[\s"'`=(,:])\/(?:Users|home|private|root|etc)(?:\/|$)/.test(value)) return true;
   if (/(?:^|[\s"'`=\/])\.airodrom(?:\/|$)/.test(value) || /\/\.airodrom(?:\/|$)/.test(value)) return true;
-  // Credential / secret file names as tokens or path segments.
-  if (/(?:^|[\s"'`=\/])(?:\.env(?:\.[A-Za-z0-9._-]*)?|credentials?(?:\.[A-Za-z0-9._-]*)?|secrets?(?:\.[A-Za-z0-9._-]*)?|auth\.json)\b/i.test(value)) return true;
+  // Credential / secret file names: dotted filenames or path segments only.
+  if (/(?:^|[\s"'`=\/])\.env(?:\.[A-Za-z0-9._-]*)?\b/i.test(value)) return true;
+  if (/(?:^|[\s"'`=\/])auth\.json\b/i.test(value)) return true;
+  if (/(?:^|[\s"'`=\/])(?:credentials?|secrets?)(?:\.[A-Za-z0-9._-]+)\b/i.test(value)) return true;
+  if (/(?:\/)(?:credentials?|secrets?)(?:\/|$)/i.test(value)) return true;
   if (/(?:^|[\s\/])[^\/\s"'`]+\.(?:pem|key|sqlite|db)\b/i.test(value)) return true;
   // Sensitive environment bindings in source text.
   if (/\bprocess\.env\.[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY)[A-Z0-9_]*\b/i.test(value)) return true;
@@ -274,7 +290,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const runId = b.controlContext.inspect(context.id).run_id;
     const observatory = require('../live-observatory');
     try {
-      const result = await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, conversation:m.envelope.kind==='conversation', context, timeoutMs: this.options.timeoutMs || 90000, deadline, signal: controller.signal,
+      const result = await this.execute({ workspace: repo, files: m.envelope.allowed_files, writable: m.envelope.kind==='conversation'?[]:m.envelope.allowed_files, objective: prompt, conversation:m.envelope.kind==='conversation', context, timeoutMs: this.options.timeoutMs || CODING_TIMEOUT_MS, deadline, signal: controller.signal,
       onStart: () => {
         b.controlStore.event('runtime.execution.started',m.id,{agent_id:'opencode'},{runId});
         try { observatory.record(b,{eventType:'worker.started',missionId:m.id,runId,metadata:{agent_id:'opencode'},idempotencyKey:`obs-worker-start:${m.id}:${runId}`}); } catch {}
@@ -295,4 +311,4 @@ class OpenCodeAdapter extends AgentAdapter {
   async shutdown() { for (const controller of this.active.values()) controller.abort(); }
   async status() { return this.readiness(); }
 }
-module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, MAX_CONTEXT, MAX_OUTPUT, VERSION };
+module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, codingSecretScanView, MAX_CONTEXT, MAX_OUTPUT, MAX_FILE, CODING_TIMEOUT_MS, VERSION };

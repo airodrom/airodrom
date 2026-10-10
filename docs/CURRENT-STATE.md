@@ -56,3 +56,10 @@
 - Branch `feat/dev-sessions-summary-v1` worktree under Documents/Codex (operator checkout untouched).
 - Focused contract: `tests/development-session-summary-v1.test.js` via registered task `development-session-summary-v1`.
 - Local-first: no push / no per-Mission PR / Automatic Acceptance OFF.
+
+## Self-Development Reliability V1.1 (LOCAL)
+
+- Host coding classifier admits authorized `control-hub.js` (prose ≠ credential file; Authorization+variable neutralized before `containsSecret`; MAX_FILE 256 KiB). Real secrets/paths remain fail-closed.
+- Coding default timeout 120000 ms (Mission `d55695c4-…` timed out at ~90s under prior 90000 ms supervision).
+- Evidence: [SELF-DEVELOPMENT-RELIABILITY-V1.1.md](SELF-DEVELOPMENT-RELIABILITY-V1.1.md). Install cutover still separate.
+- Operator checkout preserved. No push/PR/CI.

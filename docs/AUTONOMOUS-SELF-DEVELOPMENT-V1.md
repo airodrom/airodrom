@@ -8,7 +8,7 @@ Airodrom coordinated a governed OpenCode/Qwen coding Mission that drafted a Cont
 
 ## Why a panel module
 
-The installed OpenCode adapter fail-closes when reading `public/control-hub.js` because ordinary UI copy includes auth-material tokens (`Bearer` + token construction, the word `credentials`). Host setup introduced `public/development-sessions-panel.js` plus a call site so OpenCode could implement the summary without loading the full hub script.
+V1 used `public/development-sessions-panel.js` so OpenCode could draft the summary without loading the full hub script. At that time the host classifier fail-closed on hub UI prose (`credentials`/`secrets`) and `Authorization:'Bearer '+token` construction, and the 12 KiB file bound rejected the ~119 KiB hub. See [Self-Development Reliability V1.1](SELF-DEVELOPMENT-RELIABILITY-V1.1.md) for the security-preserving admission fix; the panel remains the OpenCode-authored surface.
 
 ## Missions
 
@@ -37,4 +37,4 @@ The installed OpenCode adapter fail-closes when reading `public/control-hub.js` 
 - Automatic Acceptance remained OFF.
 - No push, PR, or hosted CI.
 - Operator checkout `/Users/andrew/code/airodrom` untouched.
-- OpenCode still cannot author the full hub script under current source-context rules.
+- V1.1 host classifier admits authorized hub source; real secrets and sensitive paths remain fail-closed.
