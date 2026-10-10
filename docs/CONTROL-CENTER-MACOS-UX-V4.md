@@ -64,3 +64,7 @@ Installed classification at audit time (not hardcoded in product): Active **0**,
 - Mass accept/cancel/settle of historical Missions
 - Startup PR #36, WhatsApp production, Automatic Acceptance
 - New frontend framework or dependency
+
+## Follow-on: menu tone closeout
+
+Historical Mission review backlog no longer forces the gold menu mark. See [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md).

@@ -441,8 +441,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         errorsRow.title = "Recent failures  " + String(p?.failed_missions ?? 0) + " · review " + String(p?.review_missions ?? 0)
         modelRow.title = "Model  " + (p?.model ?? "Unavailable") + " · " + (p?.routing ?? "Unavailable")
         connectorsRow.title = "Connectors  " + (p?.connectors ?? "Unavailable")
-        // Compact bar: approvals/review badge or symbolic cue — not a long status string.
-        let actionCount = (p?.approvals ?? 0) + (p?.review_missions ?? 0)
+        // Compact bar: pending Approvals badge only — historical review backlog stays in menu text, not gold icon.
+        let actionCount = p?.approvals ?? 0
         statusItem.button?.title = actionCount > 0 ? String(actionCount) : tone == "disconnected" || tone == "degraded" ? "!" : tone == "reconnecting" ? "…" : ""
         statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title + ". " + errorsRow.title
         statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title + ". " + errorsRow.title)
@@ -499,9 +499,9 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         if status?.state == .starting || changing || failures > 0 && status == nil { return "reconnecting" }
         if let tone = status?.product?.menu_tone, !tone.isEmpty { return tone }
         let p = status?.product
-        if (p?.approvals ?? 0) > 0 || (p?.review_missions ?? 0) > 0 { return "approval" }
+        // Fallback mirrors host menuPresentation: pending Approvals only (not historical review backlog).
+        if (p?.approvals ?? 0) > 0 { return "approval" }
         if (p?.active_missions ?? 0) > 0 || isLiveMission(p?.mission) { return "working" }
-        if p?.mission.map({ MenuApplication.reviewMissionStates.contains($0.state) }) == true { return "approval" }
         if p?.status == "Degraded" || p?.status == "Unavailable" { return "degraded" }
         if status?.state == .connected { return "healthy" }
         return "disconnected"

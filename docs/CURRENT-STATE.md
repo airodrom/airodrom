@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## Menu Status & WhatsApp Connection Closeout V1 — LOCAL IMPLEMENTATION (2026-10-10)
+
+- **Branch:** `feat/menu-status-whatsapp-closeout` (isolated worktree from `origin/main` `f6e13ca`)
+- **Menu:** historical Mission review backlog no longer forces gold icon; only pending protected Approvals do
+- **WhatsApp:** test WABA path remains; production HOLD; host eligibility `prohibited` for general-purpose personal AI assistant use
+- **Not** pushed / merged / installed over tip `airodrom-ux-v4-1105659`
+- Evidence: [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md). Operator checkout preserved.
+
 ## Control Center & Premium macOS Experience V4 — SHIPPED + INSTALLED (2026-10-10)
 
 - **PR:** [#67](https://github.com/airodrom/airodrom/pull/67) **MERGED**

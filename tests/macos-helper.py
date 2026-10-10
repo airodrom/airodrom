@@ -84,30 +84,42 @@ if not animation['reduced_motion']:
  assert animation['animation_running'] and animation['animation_ticks']>=2 and animation['frame_changed']
 else:
  assert not animation['animation_running'] and not animation['frame_changed']
-# Historical / review states must not present as active work or busy animation.
+# Historical review backlog: NEEDS REVIEW text, healthy/neutral gradient (not permanent gold).
 status['product']['active_missions']=0
-status['product']['menu_tone']='approval'
-status['product']['connection_label']='ACTION REQUIRED'
+status['product']['approvals']=0
+status['product']['menu_tone']='healthy'
+status['product']['connection_label']='CONNECTED'
 status['product']['review_missions']=1
 status['product']['mission']['state']='awaiting_acceptance'
 control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
 review=json.loads(run('--inspect-menu').stdout)
-assert review['animation_state']=='approval' and not review['animation_running']
+assert review['animation_state']=='idle' and not review['animation_running']
 review_titles={item['title'] for item in rows(review['items'])}
 assert any(title.startswith('NEEDS REVIEW  ') for title in review_titles)
+assert 'SYSTEM STATUS  CONNECTED' in review_titles
 assert not any(title.startswith('ACTIVE MISSION  ') and 'none' not in title and 'NEEDS' not in title for title in review_titles)
 assert review.get('mark_canvas') == 18 and review.get('mark_inset') == 1.5
 assert review.get('template_icon') is False and review.get('gradient_icon') is True
-assert review.get('icon_tone') == 'approval'
+assert review.get('icon_tone') == 'healthy'
 assert {item['title']:item for item in rows(review['items'])}['View Active Mission']['enabled'] is False
+# New protected Approvals still force gold ACTION REQUIRED.
+status['product']['approvals']=2
+status['product']['menu_tone']='approval'
+status['product']['connection_label']='ACTION REQUIRED'
+control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
+approval=json.loads(run('--inspect-menu').stdout)
+assert approval['animation_state']=='approval' and not approval['animation_running']
+assert approval.get('icon_tone')=='approval'
+assert 'SYSTEM STATUS  ACTION REQUIRED' in {item['title'] for item in rows(approval['items'])}
 status['product']['mission']=None
 status['product']['review_missions']=0
+status['product']['approvals']=0
 status['product']['menu_tone']='healthy'
 status['product']['connection_label']='CONNECTED'
 control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
 idle=json.loads(run('--inspect-menu').stdout)
 assert idle['animation_state']=='idle' and not idle['animation_running'] and not idle['frame_changed']
-print('PASS: cached native busy frames advance, stop immediately on idle, stay static for review, and respect reduced motion')
+print('PASS: cached native busy frames advance, stop immediately on idle, historical review stays healthy, approvals stay gold, and respect reduced motion')
 print('PASS: task-bound Mission open/cancel controls are enabled only for the supported local operator helper')
 control.write_text('console.error("SECRET_FROM_STDERR"); process.stdout.write("invalid"); process.exit(1);')
 p=run('--action','status')

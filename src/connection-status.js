@@ -95,14 +95,18 @@ function view(state, extra) {
   };
 }
 
-/** Menu icon semantic class from bridge + product aggregates. */
+/** Menu icon semantic class from bridge + product aggregates.
+ * Historical Mission review backlog (awaiting_acceptance / waiting_for_operator) stays
+ * neutral/healthy — only new protected Approvals force the gold ACTION REQUIRED mark.
+ * Review counts remain available to Control Center and menu text rows.
+ */
 function menuPresentation({ bridgeState, productStatus, activeMissions = 0, approvals = 0, reviewMissions = 0, missionState = null, reconnecting = false, lastError = null } = {}) {
   if (bridgeState === 'Stopped') return { tone: 'stopped', label: 'DISCONNECTED', accessibility: 'Airodrom stopped' };
   if (bridgeState === 'Error' || lastError) return { tone: 'disconnected', label: 'DISCONNECTED', accessibility: 'Airodrom disconnected' };
   if (bridgeState === 'Starting' || reconnecting) return { tone: 'reconnecting', label: 'RECONNECTING', accessibility: 'Airodrom reconnecting' };
-  if (approvals > 0 || reviewMissions > 0) {
-    const waiting = (approvals > 0 ? approvals + ' approvals' : '') + (approvals > 0 && reviewMissions > 0 ? ', ' : '') + (reviewMissions > 0 ? reviewMissions + ' reviews' : '');
-    return { tone: 'approval', label: 'ACTION REQUIRED', accessibility: `Airodrom action required: ${waiting || 'operator review'}` };
+  // New actionable protected Approvals only — not retained Mission review backlog.
+  if (approvals > 0) {
+    return { tone: 'approval', label: 'ACTION REQUIRED', accessibility: `Airodrom action required: ${approvals} approvals waiting` };
   }
   if (activeMissions > 0 || ['dispatching', 'running', 'verifying'].includes(missionState)) {
     return { tone: 'working', label: 'CONNECTED', accessibility: 'Airodrom mission executing' };
@@ -110,7 +114,10 @@ function menuPresentation({ bridgeState, productStatus, activeMissions = 0, appr
   if (productStatus === 'Degraded' || productStatus === 'Unavailable') {
     return { tone: 'degraded', label: 'DEGRADED', accessibility: 'Airodrom degraded' };
   }
-  if (bridgeState === 'Connected') return { tone: 'healthy', label: 'CONNECTED', accessibility: 'Airodrom connected and healthy' };
+  if (bridgeState === 'Connected') {
+    const reviewNote = reviewMissions > 0 ? ` · ${reviewMissions} historical reviews retained` : '';
+    return { tone: 'healthy', label: 'CONNECTED', accessibility: `Airodrom connected and healthy${reviewNote}` };
+  }
   return { tone: 'disconnected', label: 'DISCONNECTED', accessibility: 'Airodrom disconnected' };
 }
 
