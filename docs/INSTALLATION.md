@@ -20,6 +20,10 @@ Optional sandboxed host capabilities require an operator-owned `config/safe-auto
 
 After setup and review, `npm start` starts foreground operation. Review source-profile configuration through the canonical `AIRODROM_SOURCE_PROFILE` option; give the path through private environment configuration, never credentials in arguments. Service installation, restart, external runtime execution and production activation are separate operator actions. No install/start/restart is performed by this candidate preparation.
 
+## Installation Hotfix V1.0.1
+
+Package completeness and Gmail optional credential-reference fixes are documented in [INSTALL-HOTFIX-V1.0.1.md](INSTALL-HOTFIX-V1.0.1.md). Apply that upgrade only at an authorized maintenance checkpoint; do not overlay onto a dirty operator checkout.
+
 ## Upgrade and recovery
 
 Back up independent current erasure/identity authority separately from old snapshots. Keep migration work in quarantine; verify generations and scope before exposing any recovered service. Raw database substitution and downgrades that lose current dispositions are unsupported. See [privacy and erasure](PRIVACY-ERASURE.md). Keep the preceding private repository and evidence separately; do not publish its history with this archive.

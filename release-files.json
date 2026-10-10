@@ -617,5 +617,9 @@
   "docs/adr/0041-whatsapp-conversations-v1.md",
   "docs/adr/0042-whatsapp-production-connection-v1.md",
   "docs/INTEGRATED-RELEASE-V1.md",
-  "docs/CURRENT-STATE.md"
+  "docs/CURRENT-STATE.md",
+  "src/wait-presentation.js",
+  "config/wait-presentation-v1.json",
+  "docs/INSTALL-HOTFIX-V1.0.1.md",
+  "tests/install-hotfix-v101.test.js"
 ]

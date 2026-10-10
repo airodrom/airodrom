@@ -50,8 +50,8 @@ Canonical package artifacts (outside Git):
 | --- | --- |
 | IMPLEMENTED LOCALLY | Yes — daily integration worktree (historical) |
 | MERGED IN SOURCE | Yes — PR #45 → `0e5f0a86da1a21526105ebda24984ec309f91897` |
-| INSTALLED LOCALLY | No — operator service not replaced (separate authorization) |
-| LIVE VERIFIED | Partial — focused fixture/typecheck evidence only; not a live production qualify |
+| INSTALLED LOCALLY | Yes — `install/airodrom-77724f8` via verified package (2026-10-09 activation) |
+| LIVE VERIFIED | Yes — local service health, OpenCode 2.0.25, Qwen conversation smoke, Memory/Mission preservation |
 | PRODUCTION HOLD | WhatsApp production messaging / Meta AI providers |
 
 ## Compatibility result
@@ -111,11 +111,15 @@ Rollback: restore prior source tree or previous archive; keep databases and Keyc
 - Release source HEAD `77724f83569eadae41727c86b201e433a801f910` is an ancestor of `origin/main`.  
 - Feature PRs #43 (Automatic Acceptance) and #44 (WhatsApp Inbound) closed after inclusion verification; feature branches retained. Drafts #38/#37/#36 unchanged.  
 - Hosted candidate workflow remained idle (no checks required; no heavy suites).  
-- **Local operator install / service cutover** still requires separate authorization.
+- **Local operator install activated** from verified package; rollback backup under `~/.airodrom/backups/integrated-release-v1-activation-20261010T005021Z`.
+
+## Pending V1.0.1 upgrade
+
+Canonical package fixes land on `fix/v1.0.1-install-hotfix` ([INSTALL-HOTFIX-V1.0.1.md](INSTALL-HOTFIX-V1.0.1.md)). The healthy V1 install remains on `install/airodrom-77724f8` until an authorized maintenance cutover.
 
 ## Known blockers
 
-1. Not installed on the operator host (separate authorization).  
-2. WhatsApp production HOLD (Meta AI policy).  
-3. Live OpenCode/Qwen qualification on the operator machine is separate from fixture evidence.  
+1. WhatsApp production HOLD (Meta AI policy).  
+2. Package allowlist omitted `wait-presentation` (restored from tip into install root for activation).  
+3. Install-local ControlServer hotfix accepts optional Gmail `clientSecretReference`.  
 4. Operator checkout remains dirty/protected and is not the install source.

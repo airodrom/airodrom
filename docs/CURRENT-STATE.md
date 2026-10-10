@@ -1,24 +1,28 @@
 # Current state (2026-10-09)
 
-Canonical local reconciliation after Integrated Release V1 shipment. Dated release notes retain their original evidence scope.
+## Shipped source
 
-## Merged source
+- **`origin/main` base for hotfix:** `710971798c0a27d47d3e3e4fdb32a4a3553e1c0a`
+- **Hotfix branch:** `fix/v1.0.1-install-hotfix` (local; not pushed)
+- **Package:** `1.0.1-rc.1` — see [INSTALL-HOTFIX-V1.0.1.md](INSTALL-HOTFIX-V1.0.1.md)
 
-- **PR:** [#45](https://github.com/airodrom/airodrom/pull/45)
-- **Release source HEAD:** `77724f83569eadae41727c86b201e433a801f910`
-- **`origin/main` merge:** `0e5f0a86da1a21526105ebda24984ec309f91897`
-- **Release record:** [INTEGRATED-RELEASE-V1.md](INTEGRATED-RELEASE-V1.md)
+## Installed release (running)
+
+- **Root:** `…/install/airodrom-77724f8` (Integrated Release V1 + activation hotfixes)
+- **Health:** Healthy — OpenCode 2.0.25, Memory Ready
+- **Pending:** authorized maintenance upgrade to V1.0.1 package (no automatic restart)
 
 ## Distinctions
 
 | Claim | State |
 | --- | --- |
-| IMPLEMENTED LOCALLY | Yes (pre-merge daily worktree) |
-| MERGED IN SOURCE | Yes |
-| INSTALLED LOCALLY | No |
-| LIVE VERIFIED | Focused fixture/typecheck only |
-| PRODUCTION HOLD | WhatsApp production / Meta AI providers |
+| MERGED IN SOURCE (V1) | Yes (`0e5f0a8` / PR #45) |
+| INSTALLED LOCALLY (V1) | Yes |
+| LIVE VERIFIED (V1) | Yes |
+| V1.0.1 HOTFIX SOURCE | Local branch only |
+| V1.0.1 INSTALLED | No — upgrade pending |
+| PRODUCTION HOLD | WhatsApp / Meta AI |
 
 ## Operator checkout
 
-`/Users/andrew/code/airodrom` on `main` remains the protected dirty operator tree and is not the install source. Do not overlay hybrid untracked files onto the live service without a separate install authorization.
+`/Users/andrew/code/airodrom` remains protected and dirty; it is not the install source.

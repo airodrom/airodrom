@@ -2,6 +2,8 @@
 
 Notion documentation routing: [NOTION-DOCUMENTATION-ROUTING-V1.md](NOTION-DOCUMENTATION-ROUTING-V1.md). Airodrom hub only; Pi Bridge parents refused.
 
+Installation Hotfix V1.0.1: [INSTALL-HOTFIX-V1.0.1.md](INSTALL-HOTFIX-V1.0.1.md). Reproducible package fix; pending authorized upgrade of the healthy V1 install.
+
 Integrated Release V1 (daily candidate): [INTEGRATED-RELEASE-V1.md](INTEGRATED-RELEASE-V1.md). One coherent local package from `integ/daily-candidate-v1-20261009`; not merged to main; operator service not replaced.
 
 Control Center UI recovery (source candidate): [CONTROL-CENTER-UI-RECOVERY-V1.md](CONTROL-CENTER-UI-RECOVERY-V1.md). Restores atmosphere/theme/nav mounts lost before merge; not SHIPPED on main.

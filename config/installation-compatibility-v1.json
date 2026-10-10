@@ -10,7 +10,13 @@
     "model_provider_contract",
     "agent_runtime_contract"
   ],
-  "states": ["compatible", "compatible_outdated", "incompatible", "missing_evidence", "mixed_source"],
+  "states": [
+    "compatible",
+    "compatible_outdated",
+    "incompatible",
+    "missing_evidence",
+    "mixed_source"
+  ],
   "policy": {
     "require_identical_git_sha": false,
     "reject_incompatible_mutations": true,
@@ -18,12 +24,45 @@
     "preserve_recovery_access": true
   },
   "contracts": {
-    "core_daemon": { "min_package": "1.0.0-rc.1", "contract": "airodrom.core_contracts", "contract_version": 1 },
-    "global_cli": { "min_package": "1.0.0-rc.1", "protocol": "airodrom-local-v1" },
-    "control_center": { "min_package": "1.0.0-rc.1", "hub_asset": "control-hub.js" },
-    "macos_menu": { "min_package": "1.0.0-rc.1", "actions": ["status", "open", "open-conversation", "open-mission"] },
-    "mcp_contract": { "min_package": "1.0.0-rc.1", "tools_required": ["submit_mission", "get_task_events", "get_agent_results"] },
-    "model_provider_contract": { "min_package": "1.0.0-rc.1", "contract": "airodrom.model_request", "contract_version": 1 },
-    "agent_runtime_contract": { "min_package": "1.0.0-rc.1", "contract": "airodrom.worker_assignment", "contract_version": 1 }
+    "core_daemon": {
+      "min_package": "1.0.1-rc.1",
+      "contract": "airodrom.core_contracts",
+      "contract_version": 1
+    },
+    "global_cli": {
+      "min_package": "1.0.1-rc.1",
+      "protocol": "airodrom-local-v1"
+    },
+    "control_center": {
+      "min_package": "1.0.1-rc.1",
+      "hub_asset": "control-hub.js"
+    },
+    "macos_menu": {
+      "min_package": "1.0.1-rc.1",
+      "actions": [
+        "status",
+        "open",
+        "open-conversation",
+        "open-mission"
+      ]
+    },
+    "mcp_contract": {
+      "min_package": "1.0.1-rc.1",
+      "tools_required": [
+        "submit_mission",
+        "get_task_events",
+        "get_agent_results"
+      ]
+    },
+    "model_provider_contract": {
+      "min_package": "1.0.1-rc.1",
+      "contract": "airodrom.model_request",
+      "contract_version": 1
+    },
+    "agent_runtime_contract": {
+      "min_package": "1.0.1-rc.1",
+      "contract": "airodrom.worker_assignment",
+      "contract_version": 1
+    }
   }
 }
