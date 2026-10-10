@@ -1,3 +1,7 @@
+## Unreleased — Git Repository Cleanup V1
+
+- Delete fully merged unused remote branches and remove clean merged disposable worktrees; retain open draft PRs #36–#38, active Development Session branch, operator checkout, and unique/dirty review worktrees.
+
 ## Unreleased — Grounded Assistant Accuracy V1 shipped and installed
 
 - Merged PRs #56/#57 to `origin/main` (`fe918cc`); installed `airodrom-grounded-accuracy-fe918cc`; live Qwen Control Center conversation preserved host-verified active/current Mission distinction and authorized Development Session metadata; credentials stay on the Vault path.
