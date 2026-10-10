@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## Conversation UX Bugfix V1 (2026-10-10) — LOCAL COMMIT ONLY
+
+- **Branch / worktree:** `fix/conversation-ux-bugfix-v1` @ worktree `…/airodrom-conversation-ux-bugfix/work/airodrom-conversation-ux` (base `cb705f8`).
+- **Fixes:** Start new conversation no longer auto-restores the prior browser session after clear/refresh; Claude selection shows explicit unavailable copy and keeps Qwen working.
+- **Focused tests:** `conversation-ux-bugfix-v1` + browser fixture; Everyday UX contract unchanged.
+- **Browser evidence:** Installed package hot-patched for verify then restored; live source remains `airodrom-grounded-accuracy-fe918cc`.
+- **Not pushed / not PR / not merged / not installed.** Operator checkout `/Users/andrew/code/airodrom` preserved. Evidence: [CONVERSATION-UX-BUGFIX-V1.md](CONVERSATION-UX-BUGFIX-V1.md).
+
 ## Git Repository Cleanup V1 (2026-10-10)
 
 - Deleted **49** remote branches whose tips were fully ancestral to `origin/main` with no open PR.

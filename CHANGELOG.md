@@ -1,3 +1,8 @@
+## Unreleased — Conversation UX Bugfix V1
+
+- Start new conversation clears the browser display and skips auto-restoring the latest host browser session across refresh; Continue previous restores the prior session; first send creates a fresh identity.
+- Claude is labeled unavailable until qualified; selection keeps Qwen as the working provider with explicit fallback messaging (no activation or subscription workaround).
+
 ## Unreleased — Git Repository Cleanup V1
 
 - Delete fully merged unused remote branches and remove clean merged disposable worktrees; retain open draft PRs #36–#38, active Development Session branch, operator checkout, and unique/dirty review worktrees.
