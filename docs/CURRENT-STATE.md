@@ -1,15 +1,14 @@
 # Current state (2026-10-10)
 
-## Everyday Personal AI UX V1 (LOCAL FEATURE — NOT INSTALLED)
+## Everyday Personal AI UX V1 — SHIPPED + INSTALLED (2026-10-10)
 
-- Branch `feat/everyday-personal-ai-ux-v1` worktree under Documents/Codex; tip local until authorized checkpoint.
-- Conversation: visible Qwen default model picker, persistent session continue/new, Memory consent status, honest activity/reconnect; ConversationEngine reused.
-- Missions: active work, worker, verified activity, pending approval, Settlement, Open Observatory (no fabricated progress).
-- Development Sessions: Continue action clarity (repo/branch/worktree/next action); no duplicate execution controls.
-- macOS Menu V2: Open Conversation, Active Missions, Continue Development Session, Open System Health, Control Center deep links.
-- Focused contracts: `tests/everyday-personal-ai-ux-v1.test.js`. Evidence: [EVERYDAY-PERSONAL-AI-UX-V1.md](EVERYDAY-PERSONAL-AI-UX-V1.md).
-- **Installed release unchanged:** Continue DS `…/airodrom-ds-continue-c701289` (`origin/main` includes docs tip `674a8e3`). Live Qwen + DS resolve validated on that install.
-- Operator checkout preserved. No push/merge for this Mission.
+- **PR:** [#54](https://github.com/airodrom/airodrom/pull/54) **MERGED**
+- **Feature tip:** `0142ab9066eed974ece96eeb0eb228d21395a6d1`
+- **Merge on `origin/main`:** `5e23731121d95822255dbef0c257b34d77afb24f`
+- **Installed:** `…/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731` (npm pack 367 files; archive SHA-256 `82df832e9d09365d871db9e899a6bb45cd6f53cf0a9c2d28c45a1fd1f3a145bd`)
+- **Backup/rollback:** `~/.airodrom/backups/everyday-ux-v1-20261010T181626Z` (prior source `…/airodrom-ds-continue-c701289`)
+- **Live:** Control/OpenCode/Memory/Provider Ready · Conversation model/continue/Memory consent markers served · atmosphere 200 · menu helper rebuilt with deep links · Qwen marker `everyday-ux-ship-ok` · Automatic Acceptance OFF · WhatsApp HOLD
+- Evidence: [EVERYDAY-PERSONAL-AI-UX-V1.md](EVERYDAY-PERSONAL-AI-UX-V1.md). Operator checkout preserved.
 
 ## Coding Reliability & Auto-Acceptance V1 (COMPLETED + RUNTIME RECONCILED)
 
@@ -28,10 +27,10 @@
 
 ## Installed release (running)
 
-- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-coding-reliability/install/airodrom-coding-reliability-a6ee3e3`
-- **Health:** Healthy — OpenCode 2.0.25, Memory Ready, admission `open`
-- **Includes:** Coding reliability `sourceContextSensitive` fix (pending merge to `origin/main` until PR lands)
-- **Prior lifecycle install:** `…/install/airodrom-lifecycle-f28e8ca` (retained on disk)
+- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731`
+- **Health:** Ready — OpenCode Ready, Memory Ready, Provider Ready (Qwen)
+- **Includes:** Everyday Personal AI UX V1 (Conversation/Missions/DS/menu) on merge `5e23731`
+- **Prior Continue DS install:** `…/install/airodrom-ds-continue-c701289` (retained on disk; backup `everyday-ux-v1-20261010T181626Z`)
 - **Manual patches required:** No
 
 ## Distinctions
