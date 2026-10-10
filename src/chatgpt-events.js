@@ -54,8 +54,8 @@ function prepareIdentitySchema(db) {
     WHERE lifecycle_type IS NOT NULL`);
 }
 class ChatGPTEvents {
-  constructor(db, { route = null, fetchImpl = fetch, now = Date.now } = {}) {
-    this.db = db; this.route = route; this.fetch = fetchImpl; this.now = now; this.running = false;
+  constructor(db, { route = null, fetchImpl = fetch, now = Date.now, canDeliver = () => true } = {}) {
+    this.db = db; this.route = route; this.fetch = fetchImpl; this.now = now; this.running = false; this.canDeliver = canDeliver;
     db.exec(`CREATE TABLE IF NOT EXISTS chatgpt_events (
       seq INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, event_id TEXT NOT NULL,
       fingerprint TEXT NOT NULL, payload TEXT NOT NULL, received_at INTEGER NOT NULL,
@@ -134,12 +134,13 @@ class ChatGPTEvents {
   }
   async stop() { clearInterval(this.timer); this.timer = null; this.abort?.abort(); await this.flight; }
   async flush() {
-    if (this.running || !this.route) return;
+    if (this.running || !this.route || !this.canDeliver()) return;
     this.running = true;
     this.flight = this.deliver();
     try { await this.flight; } finally { this.running = false; }
   }
   async deliver() {
+    if (!this.canDeliver()) return;
     content.assertReadable(this.db);
     // Route fixed at ingestion. Changing operator configuration cannot reroute old events.
     this.db.prepare("UPDATE chatgpt_events SET delivery='needs_review' WHERE delivery='pending' AND (attempts>=5 OR (attempts>0 AND received_at<?))").run(this.now() - 15 * 60 * 1000);

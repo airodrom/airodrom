@@ -17,3 +17,5 @@ Local-first Development Sessions (source candidate): [LOCAL-FIRST-BATCH-MERGE-V1
 Release review uses the [release policy](RELEASE-POLICY.md), [candidate notes](RELEASE-NOTES.md), [CI readiness](CI-BRANCH-PROTECTION.md), [candidate checklist](RELEASE-CANDIDATE-CHECKLIST.md), [dependency/license summary](DEPENDENCY-LICENSE-AUDIT.md), [secret/history summary](SECRET-HISTORY-AUDIT.md) and [fresh validation](FRESH-VALIDATION.md).
 
 Canonical contribution contracts are in [governance](governance/README.md) and [ADRs](adr/README.md). The [file classification](PUBLIC-PRIVATE-CLASSIFICATION.md) describes excluded surfaces. Publication status is in [PUBLICATION-GATE.md](../PUBLICATION-GATE.md).
+
+- [Lifecycle & Package Closeout V1](LIFECYCLE-PACKAGE-CLOSEOUT-V1.md)

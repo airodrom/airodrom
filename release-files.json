@@ -621,5 +621,9 @@
   "src/wait-presentation.js",
   "config/wait-presentation-v1.json",
   "docs/INSTALL-HOTFIX-V1.0.1.md",
-  "tests/install-hotfix-v101.test.js"
+  "tests/install-hotfix-v101.test.js",
+  "src/service-lifecycle.js",
+  "src/run-settlement.js",
+  "tests/service-lifecycle-v1.test.js",
+  "tests/lifecycle-package-closeout.test.js"
 ]
