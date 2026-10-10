@@ -1,6 +1,6 @@
 ## Unreleased — WhatsApp verify-token staged rotation
 
-- Staged verify-token recovery: new Vault candidate while current remains valid; Meta Verify or `commit-verify-token` finalizes; `rollback-verify-token` and TTL discard the candidate; local probes cannot finalize. App Secret and Graph token references preserved. Production HOLD / public ingress / outbound unchanged.
+- Staged verify-token recovery: new Vault candidate while current remains valid; webhook GET never finalizes; owner `commit-verify-token` after Meta success; `rollback-verify-token` and TTL discard the candidate. App Secret and Graph token references preserved. Production HOLD / public ingress / outbound unchanged.
 
 ## Unreleased — Conversation UX Bugfix V1 shipped and installed
 

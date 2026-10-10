@@ -178,9 +178,8 @@ class ControlServer {
       if(whatsappWebhook){
         const inbound=this.bridge.whatsappInbound;if(!inbound)throw Error('WhatsApp inbound unavailable');
         if(req.method==='GET'){
-          // Loopback probe header skips staged finalize so local proofs cannot revoke the current verify token.
-          const probe=req.headers['x-airodrom-verify-probe']==='1';
-          const challenge=inbound.challenge(Object.fromEntries(url.searchParams),{finalizeStaged:!probe});
+          // Challenge never finalizes staging; owner commit-verify-token is required after Meta Verify succeeds.
+          const challenge=inbound.challenge(Object.fromEntries(url.searchParams));
           res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'});res.end(challenge);return;
         }
         if(req.method==='POST'){

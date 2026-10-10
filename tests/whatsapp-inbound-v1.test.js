@@ -700,7 +700,7 @@ function bindSyntheticVerifySlots(bridge, vault, {
   return { previous, appSecret, access, verify, secret, graph };
 }
 
-test('staged verify rotation keeps previous until finalize; probe cannot finalize; secrets not leaked', async t => {
+test('staged verify rotation keeps previous until explicit commit; GET challenge cannot finalize; secrets not leaked', async t => {
   const { bridge, request } = await fixture(t, { enabled: false });
   const { vault } = syntheticVault(bridge);
   const { previous, appSecret, access, verify, secret, graph } = bindSyntheticVerifySlots(bridge, vault);
@@ -728,33 +728,34 @@ test('staged verify rotation keeps previous until finalize; probe cannot finaliz
     'hub.mode': 'subscribe',
     'hub.verify_token': previous,
     'hub.challenge': 'both1'
-  }, { finalizeStaged: false }), 'both1');
+  }), 'both1');
   assert.equal(bridge.whatsappInbound.challenge({
     'hub.mode': 'subscribe',
     'hub.verify_token': generated,
     'hub.challenge': 'both2'
-  }, { finalizeStaged: false }), 'both2');
+  }), 'both2');
   assert.equal(bridge.whatsappInbound.config().verify_staging_active, true);
   assert.equal(vault.resolve(verify.reference, 'whatsapp'), previous);
 
-  // HTTP probe header must not finalize.
-  const probe = await request(`/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(generated)}&hub.challenge=probe1`, {
-    authorized: false,
-    headers: { 'x-airodrom-verify-probe': '1' }
+  // HTTP GET challenge (including Meta-shaped requests) must not finalize.
+  const metaShaped = await request(`/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(generated)}&hub.challenge=meta1`, {
+    authorized: false
   });
-  assert.equal(probe.status, 200);
-  assert.equal(probe.text, 'probe1');
+  assert.equal(metaShaped.status, 200);
+  assert.equal(metaShaped.text, 'meta1');
   assert.equal(bridge.whatsappInbound.config().verify_staging_active, true);
   assert.equal(bridge.whatsappInbound.opaqueCredentialReferences('operator').slot_verify, verify.reference);
 
-  // Meta-style finalize (no probe) promotes staged and revokes previous.
-  assert.equal(bridge.whatsappInbound.challenge({
-    'hub.mode': 'subscribe',
-    'hub.verify_token': generated,
-    'hub.challenge': 'meta1'
-  }), 'meta1');
+  // Wrong token cannot finalize or accept.
+  const bad = await request(`/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=bad1`, { authorized: false });
+  assert.equal(bad.status, 400);
+  assert.equal(bridge.whatsappInbound.config().verify_staging_active, true);
+
+  // Explicit operator commit promotes staged and revokes previous.
+  const committed = bridge.whatsappInbound.commitVerifyTokenStaging('operator');
+  assert.equal(committed.committed, true);
+  assert.equal(committed.slot_verify, staged.slot_staged);
   assert.equal(bridge.whatsappInbound.config().verify_staging_active, false);
-  assert.equal(bridge.whatsappInbound.opaqueCredentialReferences('operator').slot_verify, staged.slot_staged);
   assert.throws(() => vault.resolve(verify.reference, 'whatsapp'), /invalid|revoked/i);
   assert.equal(vault.resolve(staged.slot_staged, 'whatsapp'), generated);
   assert.equal(vault.resolve(secret.reference, 'whatsapp'), appSecret);

@@ -631,7 +631,8 @@ class WhatsAppInbound {
    * Promote staged verify reference to active and revoke the previous Vault slot.
    * Invoked after a successful webhook challenge that matched the staged candidate.
    */
-  commitVerifyTokenStaging(actor = 'system') {
+  commitVerifyTokenStaging(actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may commit WhatsApp verify-token staging');
     this.#sweepExpiredStaging();
     const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference, staged_verify_token_reference, staged_verify_expires_at FROM cp_whatsapp_inbound_config WHERE id=1').get();
     const staging = this.#stagingFromRow(row);
@@ -643,7 +644,7 @@ class WhatsAppInbound {
       throw Error('App Secret and Graph access token must remain bound during commit');
     }
     this.db.prepare('UPDATE cp_whatsapp_inbound_config SET verify_token_reference=?, staged_verify_token_reference=NULL, staged_verify_expires_at=NULL, updated_at=?, updated_by=? WHERE id=1')
-      .run(stagedRef, this.#now(), actor === 'operator' || actor === 'system' ? actor : 'system');
+      .run(stagedRef, this.#now(), 'operator');
     this.#forgetVaultRef(previous);
     if (typeof this.options.verifyToken === 'string') delete this.options.verifyToken;
     this.store.event('whatsapp.inbound.verify_staging_committed', null, {
@@ -1208,14 +1209,13 @@ class WhatsAppInbound {
   /**
    * Meta webhook verification challenge.
    * Accepts the active verify token and, while staging is active, the staged candidate.
-   * finalizeStaged defaults true so a real Meta Verify and Save promotes the candidate.
-   * Local probes MUST pass finalizeStaged:false (or the probe HTTP header) so proofs cannot revoke the current credential.
+   * Never finalizes staging: a correct verify-token GET does not cryptographically prove Meta,
+   * so promotion requires explicit operator commit-verify-token after the owner confirms Meta success.
    */
-  challenge(query = {}, { finalizeStaged = true } = {}) {
+  challenge(query = {}) {
     const cfg = this.config();
     if (!cfg.enabled) throw Error('WhatsApp inbound is disabled');
     if (query['hub.mode'] !== 'subscribe') throw Error('Invalid verification mode');
-    if (finalizeStaged !== true && finalizeStaged !== false) throw Error('finalizeStaged must be boolean');
     const provided = Buffer.from(String(query['hub.verify_token'] || ''));
     const candidates = this.#verifyCandidates();
     let matched = null;
@@ -1231,15 +1231,10 @@ class WhatsAppInbound {
     if (!matched) throw Error('Invalid verification token');
     const challenge = String(query['hub.challenge'] || '');
     if (!/^[0-9A-Za-z_-]{1,256}$/.test(challenge)) throw Error('Invalid challenge');
-    let finalized = false;
-    if (matched === 'staged' && finalizeStaged === true) {
-      this.commitVerifyTokenStaging('system');
-      finalized = true;
-    }
     this.store.event('whatsapp.inbound.challenge_ok', null, {
       authority: false,
       verify_match: matched === 'staged' ? 'staged' : 'current',
-      staging_finalized: finalized
+      staging_finalized: false
     });
     return challenge;
   }

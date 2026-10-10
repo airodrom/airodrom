@@ -15,7 +15,7 @@ Operator checklist for the first real Meta → Airodrom webhook delivery. Builds
 | Production Connection V1 | Prerequisites documented; **production messaging HOLD** (Meta AI Providers / general-purpose assistant clause). Production phone unset; test WABA preserved; trycloudflare forbidden for production callbacks. See [Production Connection V1](WHATSAPP-PRODUCTION-CONNECTION-V1.md). |
 | Test results | `tests/whatsapp-inbound-v1.test.js` + `tests/whatsapp-conversations-v1.test.js` (focused; see latest local run) |
 | Known limitations | Public ingress refused; Phone Number ID unavailable — Graph `phone_numbers` returns **authorized empty** (HTTP 200, `data: []`), not a permission error; portfolio owned-list still needs `business_management` unless WABA hint supplied |
-| Next action | Prefer staged recovery: `airodrom whatsapp rotate-verify-token` (TTY once; current token kept) → paste into Meta → Meta Verify and Save finalizes (or `commit-verify-token`) → rollback with `rollback-verify-token` if Meta fails. Do not use older immediate-replace semantics. Production HOLD unchanged. |
+| Next action | Staged recovery: `airodrom whatsapp rotate-verify-token` (TTY once; current token kept) → paste into Meta → Verify and Save → owner confirms Meta success → `commit-verify-token`. Rollback with `rollback-verify-token` if Meta fails. Webhook GET never finalizes. Production HOLD unchanged. |
 
 ## Verify-token staged rotation (local CLI)
 
@@ -29,10 +29,10 @@ airodrom whatsapp rollback-verify-token
 - Stages a **new** purpose=`whatsapp` Vault slot; the current verify-token reference stays active.
 - Preserves Meta App Secret and Graph access token references.
 - Prints the new token **once** on a TTY for Meta Configuration; never logs it to Git, Notion, or Mission results.
-- Local challenge proofs use `X-Airodrom-Verify-Probe: 1` and **cannot** finalize/revoke the current token.
 - While staging is active, webhook verification accepts **either** the current or staged token.
-- Meta Verify and Save (non-probe) finalizes: promotes the staged reference and revokes the previous Keychain slot.
-- Explicit finalize: `commit-verify-token`. Discard candidate: `rollback-verify-token`. Staging expires on a bounded TTL.
+- A correct GET `hub.verify_token` challenge does **not** prove the caller is Meta and **never** finalizes staging.
+- After the owner independently confirms Meta Verify and Save succeeded: `commit-verify-token` promotes the staged reference and revokes the previous Keychain slot.
+- Discard candidate: `rollback-verify-token`. Staging expires on a bounded TTL.
 - Concurrent staging while one is active is refused.
 - Public ingress and Mission auto-dispatch remain **OFF**.
 

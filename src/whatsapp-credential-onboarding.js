@@ -8,10 +8,11 @@
  * Mission auto-dispatch remain off.
  *
  * rotate-verify-token stages a new webhook verify token in Keychain without
- * revoking the current slot and displays the plaintext once on a TTY. Local
- * probes never finalize. Meta Verify (non-probe) or commit-verify-token promotes
- * the candidate and revokes the previous slot. rollback-verify-token discards an
- * uncommitted stage. Values never enter logs, Git, Notion, or Mission results.
+ * revoking the current slot and displays the plaintext once on a TTY. Webhook
+ * GET challenges never finalize (verify-token alone does not prove Meta).
+ * commit-verify-token promotes after owner-confirmed Meta success.
+ * rollback-verify-token discards an uncommitted stage. Values never enter logs,
+ * Git, Notion, or Mission results.
  */
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -453,10 +454,10 @@ async function runRotateVerifyToken(home, input, output, { signal } = {}) {
 
   output.write('WhatsApp verify-token staged rotation\n');
   output.write('A new cryptographically secure verify token will be staged in Keychain.\n');
-  output.write('The current verify token stays valid until Meta Verify and Save succeeds (or you commit).\n');
+  output.write('The current verify token stays valid until you explicitly commit after Meta succeeds.\n');
   output.write('Meta App Secret and Graph access token references stay unchanged.\n');
   output.write('The new token is printed once below for Meta Configuration. It is not logged.\n');
-  output.write('Local proofs use a non-finalizing probe and cannot revoke the current token.\n');
+  output.write('Webhook challenges never finalize staging; only commit-verify-token revokes the previous slot.\n');
   output.write('Public ingress and Mission auto-dispatch stay OFF.\n');
 
   if (!await confirm(input, output, { prompt: 'Stage a new WhatsApp webhook verify token now?', signal })) {
@@ -513,10 +514,9 @@ async function runRotateVerifyToken(home, input, output, { signal } = {}) {
     output.write('\nNew Meta webhook verify token (enter once in Meta App → WhatsApp → Configuration):\n\n');
     output.write(next + '\n\n');
     output.write('Shown once. Do not paste into chat, Git, Notion, or Mission results.\n');
-    output.write('Staging active: current and staged tokens both accepted until Meta Verify, commit, rollback, or expiry.\n');
-    output.write('Meta Verify and Save (non-probe) finalizes the new token and revokes the previous Keychain slot.\n');
-    output.write('Manual finalize: airodrom whatsapp commit-verify-token\n');
-    output.write('Rollback without finalize: airodrom whatsapp rollback-verify-token\n');
+    output.write('Staging active: current and staged tokens both accepted until commit, rollback, or expiry.\n');
+    output.write('After Meta Verify and Save succeeds, run: airodrom whatsapp commit-verify-token\n');
+    output.write('Webhook GET alone never finalizes. Rollback if Meta fails: airodrom whatsapp rollback-verify-token\n');
     output.write('App Secret and Graph access token: preserved\n');
     output.write('Public ingress: OFF · Mission auto-dispatch: OFF\n');
 
@@ -580,7 +580,7 @@ async function runCommitVerifyToken(home, input, output, { signal } = {}) {
   const local = require('./local-bootstrap');
   output.write('WhatsApp verify-token staging commit\n');
   output.write('Promotes the staged candidate and revokes the previous verify-token Keychain slot.\n');
-  output.write('Use after Meta Verify and Save succeeded, or to finalize without another Meta challenge.\n');
+  output.write('Use only after Meta Verify and Save succeeded and you independently confirm success.\n');
   output.write('App Secret and Graph access token stay unchanged. Public ingress stays OFF.\n');
   if (!await confirm(input, output, { prompt: 'Commit staged WhatsApp verify-token rotation now?', signal })) {
     output.write('WhatsApp verify-token commit cancelled.\n');

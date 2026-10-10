@@ -13,12 +13,12 @@ Installed verify-token rotation used `vault.replace`, which immediately revoked 
 
 ## Decision
 
-Stage a replacement verify token in a separate Vault reference bound on `cp_whatsapp_inbound_config.staged_verify_token_reference` with `staged_verify_expires_at`. Challenge accepts the active or staged candidate while staging is live. Finalization (promote staged, revoke previous) occurs on non-probe Meta challenge success or explicit operator `commit-verify-token`. Local proofs send `X-Airodrom-Verify-Probe: 1` so they cannot finalize. Rollback and TTL expiry discard only the staged candidate. App Secret and Graph access references are unchanged. Public ingress, outbound messaging and production activation remain out of scope.
+Stage a replacement verify token in a separate Vault reference bound on `cp_whatsapp_inbound_config.staged_verify_token_reference` with `staged_verify_expires_at`. Challenge accepts the active or staged candidate while staging is live. Finalization (promote staged, revoke previous) occurs only via explicit operator `commit-verify-token` after the owner independently confirms Meta Verify and Save succeeded. Webhook GET challenges never finalize: a correct verify-token alone does not cryptographically authenticate Meta. Rollback and TTL expiry discard only the staged candidate. App Secret and Graph access references are unchanged. Public ingress, outbound messaging and production activation remain out of scope.
 
 ## Alternatives considered
 
 - Keep immediate `vault.replace`: rejected; irreversible before Meta verify.
-- Never finalize on webhook challenge (commit-only): workable but worse Meta UX; retained as explicit commit alongside Meta finalize.
+- Auto-finalize on successful GET challenge: rejected; verify-token alone does not authenticate Meta.
 - Clipboard reveal of the current token: rejected; connector credentials remain non-revealable.
 
 ## Authority, privacy and ownership
