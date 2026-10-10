@@ -2,9 +2,19 @@
 
 ## Status
 
-LOCAL IMPLEMENTATION — 2026-10-10
+SHIPPED + INSTALLED LOCALLY — 2026-10-10
 
 Focused reliability fixes on `feat/dev-sessions-summary-v1` so authorized repository source is usable by OpenCode, Development Sessions summary remains wired, and coding Missions use the existing 120s hard timeout ceiling.
+
+### Integration
+
+| Item | Value |
+| --- | --- |
+| Feature tip | `af5fce8021b52038c7ee18c99c6f02d4069fdd1b` |
+| PRs | #49, #50 |
+| `origin/main` | `61d0b0d8fbabfed70532751f7ca713d3d082c17d` |
+| Install | `…/airodrom-self-dev-v1/install/airodrom-self-dev-af5fce8` |
+| Backup | `~/.airodrom/backups/self-dev-v11-20261010T174215Z` |
 
 ## Source-context root cause
 
