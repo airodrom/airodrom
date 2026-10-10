@@ -318,8 +318,12 @@ async function admission(home, action='status') {
 function open(home, {missionId, view} = {}) {
   const d = discovery(home);
   if(missionId&&!require('./product-observability').id(missionId))throw Error('Invalid Mission identity');
-  if(view!=null&&view!=='Conversation')throw Error('Unsupported Control Center view');
-  const query=missionId?'mission='+missionId:(view?'view='+encodeURIComponent(view):null);
+  const allowed=new Set(['Conversation','Missions','Development Sessions','System Health']);
+  if(view!=null&&!allowed.has(view))throw Error('Unsupported Control Center view');
+  const params=[];
+  if(missionId)params.push('mission='+missionId);
+  if(view)params.push('view='+encodeURIComponent(view));
+  const query=params.length?params.join('&'):null;
   const target=query?d.url.replace('/#','/?'+query+'#'):d.url;
   // LaunchServices receives a private URL on stdin through AppleScript, never argv.
   const r = spawnSync('/usr/bin/osascript', ['-'], { input: 'open location ' + JSON.stringify(target) + '\n', encoding: 'utf8', timeout: 5000 });

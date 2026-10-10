@@ -1,5 +1,16 @@
 # Current state (2026-10-10)
 
+## Everyday Personal AI UX V1 (LOCAL FEATURE — NOT INSTALLED)
+
+- Branch `feat/everyday-personal-ai-ux-v1` worktree under Documents/Codex; tip local until authorized checkpoint.
+- Conversation: visible Qwen default model picker, persistent session continue/new, Memory consent status, honest activity/reconnect; ConversationEngine reused.
+- Missions: active work, worker, verified activity, pending approval, Settlement, Open Observatory (no fabricated progress).
+- Development Sessions: Continue action clarity (repo/branch/worktree/next action); no duplicate execution controls.
+- macOS Menu V2: Open Conversation, Active Missions, Continue Development Session, Open System Health, Control Center deep links.
+- Focused contracts: `tests/everyday-personal-ai-ux-v1.test.js`. Evidence: [EVERYDAY-PERSONAL-AI-UX-V1.md](EVERYDAY-PERSONAL-AI-UX-V1.md).
+- **Installed release unchanged:** Continue DS `…/airodrom-ds-continue-c701289` (`origin/main` includes docs tip `674a8e3`). Live Qwen + DS resolve validated on that install.
+- Operator checkout preserved. No push/merge for this Mission.
+
 ## Coding Reliability & Auto-Acceptance V1 (COMPLETED + RUNTIME RECONCILED)
 
 - OpenCode `safeText` no longer treats display path/URL redaction mutation as `opencode_sensitive_context`; ordinary JS comments/regex admitted; secrets and sensitive absolute paths remain denied.

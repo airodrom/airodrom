@@ -45,8 +45,9 @@ function observeComponent(id,root,bridge){
   const menu=fs.existsSync(path.join(root,'macos/AirodromMenu.swift'));
   const control=fs.existsSync(path.join(root,'scripts/macos/product-control.cjs'));
   let actions_ok=false;
-  try{actions_ok=fs.readFileSync(path.join(root,'scripts/macos/product-control.cjs'),'utf8').includes('open-conversation');}catch{actions_ok=false;}
-  return {...base,state:menu&&control?(actions_ok?compatiblePackage(pkg,spec.min_package):'compatible_outdated'):'missing_evidence',evidence:{menu,control,open_conversation:actions_ok},guidance:menu&&control?(actions_ok?null:'Rebuild/reinstall the macOS menu for Conversation navigation.'):'macOS menu sources unavailable in this tree.'};
+  let controlSrc='';
+  try{controlSrc=fs.readFileSync(path.join(root,'scripts/macos/product-control.cjs'),'utf8');actions_ok=['open-conversation','open-missions','open-development-sessions','open-system-health'].every(a=>controlSrc.includes(a));}catch{actions_ok=false;}
+  return {...base,state:menu&&control?(actions_ok?compatiblePackage(pkg,spec.min_package):'compatible_outdated'):'missing_evidence',evidence:{menu,control,open_conversation:controlSrc.includes('open-conversation'),everyday_deep_links:actions_ok},guidance:menu&&control?(actions_ok?null:'Rebuild/reinstall the macOS menu for Conversation, Missions, Development Sessions and System Health navigation.'):'macOS menu sources unavailable in this tree.'};
  }
  if(id==='mcp_contract'){
   let tools=[];
