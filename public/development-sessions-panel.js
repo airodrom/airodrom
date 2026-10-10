@@ -1,4 +1,5 @@
 'use strict';
+// Settlement marker: host coding plan after OpenCode draft + independent verification.
 // Development Sessions panel. Summary body originated from governed OpenCode Mission
 // eea8d18d-f742-49b4-ae0f-1e8e43308638; host independent verification repaired helper
 // contracts, inspect field names, and removed HTML injection.
