@@ -21,6 +21,16 @@ function operatorInstructionText(value) {
       if(next){const token=next[1].replace(/[.,;!]+$/,'');if(!operatorAddress(token,{login:true})&&!(/^(?:[a-z0-9-]+\.)+[a-z]{2,63}(?::443)?(?:\/.*)?$/i.test(token)&&operatorAddress('https://'+token,{login:true}))&&!/^(?:monarch|login|research)$/i.test(token))return phrase;}
       return phrase.replace(/session$/i,'workflow');
     })
+    // Host Development Session identity is workstream metadata, not a session secret.
+    // Only authorized label/branch/worktree shapes are renamed for screening; assignment
+    // values, Cookie session=, tokens and unknown session payloads stay credential-like.
+    .replace(/\b(?:active\s+)?development\s+sessions?\b/gi,'development workstream')
+    .replace(/\b(?:feat|fix|chore|docs|rc|backup|integ|product|work|hotfix)\/[A-Za-z0-9._\/-]{1,200}/g,token=>/session/i.test(token)?token.replace(/session/gi,'workstream'):token)
+    .replace(/\bairodrom-[A-Za-z0-9._-]{1,180}/gi,token=>/session/i.test(token)?token.replace(/session/gi,'workstream'):token)
+    // Ordinary English “session with …” and title-case “Session Heading” are not
+    // SESSION=value. Keep “session for <token>” and assignments screened.
+    .replace(/\bsession with\b/gi,'workflow with')
+    .replace(/\bSession [A-Z][A-Za-z-]{1,40}\b/g,phrase=>phrase.replace(/^Session/,'Workflow'))
     // A complete final clause describes human entry, with no supplied value.
     // Unknown trailing text keeps the original credential noun screened.
     .replace(/\b(?:i(?: will|['’]ll)|let me)\s+(?:enter|type)\s+(?:my|the)\s+(?:password|credentials)\s+(?:(?:manually|myself)\s+)?(?:in|into)\s+(?:the|a|that)\s+(?:(?:dedicated|visible|isolated|separate)\s+)?browser(?:\s+(?:manually|myself))?[.!]?$/gi,phrase=>phrase.replace(/\b(?:password|credentials)\b/i,'login'));
@@ -71,11 +81,22 @@ function secretLike(value, depth = 0) {
   if (Array.isArray(value)) return value.some(v => secretLike(v, depth + 1));
   return !!value && typeof value === 'object' && Object.entries(value).some(([k,v]) => sensitiveKey(k) || secretLike(v, depth + 1));
 }
+function localConversationSecret(value) {
+  // Local private conversation uses operator instruction screening so authorized
+  // Development Session branch/workstream metadata is not treated as SESSION=value.
+  // Display redaction (secretLike) remains for non-local and non-conversation paths.
+  if (typeof value === 'string') return operatorSecretLike(value);
+  if (Array.isArray(value)) return value.some(localConversationSecret);
+  return !!value && typeof value === 'object' && Object.entries(value).some(([k, v]) => sensitiveKey(k) || localConversationSecret(v));
+}
 // Host-owned classification and project policy. Never derived from model output.
 function dataPolicy(input, provider) {
   const classification = input.data_class;
   if (!CLASSES.has(classification)) return {allow:false,reason:'unknown_data_class'};
-  if (classification === 'credentials' || secretLike(input.messages) || secretLike(input.tools) || secretLike(input.structured_schema)) return {allow:false,reason:'secrets_prohibited'};
+  const messageSecret = input.privacy === 'local_only' && (classification === 'private' || classification === 'internal')
+    ? localConversationSecret(input.messages)
+    : secretLike(input.messages);
+  if (classification === 'credentials' || messageSecret || secretLike(input.tools) || secretLike(input.structured_schema)) return {allow:false,reason:'secrets_prohibited'};
   const p = input.project_policy || {};
   if (provider.locality !== 'local' && provider.locality !== 'external') return {allow:false,reason:'unknown_locality'};
   if (provider.locality === 'external') {
@@ -90,4 +111,4 @@ function dataPolicy(input, provider) {
   if (input.attachment_refs?.length || input.context_refs?.length || input.memory_refs?.length) return {allow:false,reason:'reference_transport_unsupported'};
   return {allow:true,classification,minimum_context:true,redaction_required:true,execution_authority:false};
 }
-module.exports = { dataPolicy, secretLike, operatorSecretLike, operatorInstructionText, ordinaryWebsiteSyntax, CLASSES };
+module.exports = { dataPolicy, secretLike, operatorSecretLike, localConversationSecret, operatorInstructionText, ordinaryWebsiteSyntax, CLASSES };

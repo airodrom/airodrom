@@ -52,6 +52,14 @@ selects no execution worker and cannot dispatch work. Inference stays on the fix
 loopback provider, with no tools, external inference or capability fallback.
 Tool requests and secret-like output are refused.
 
+Host-verified Mission counts (`active`, `current`, `completed`, `historical`,
+`retained`) are injected as authoritative context. Delivery grounding rewrites
+disputed active/current count claims so model prose cannot redefine host totals.
+Authorized Development Session id/branch/worktree metadata may enter local
+private conversation through operator instruction screening; Cookie/assignment
+session secrets and mixed credential submissions remain fail-closed. See
+[Grounded Assistant Accuracy V1](GROUNDED-ASSISTANT-ACCURACY-V1.md).
+
 Current ordinary Memory V2 references are selected when relevant, including the
 single current ordinary operator name for conversational address; Sensitive
 Memory and Vault values are excluded. Context includes at most six bounded

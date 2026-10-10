@@ -35,6 +35,13 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Standing merge authorization remains **INACTIVE**.
 - See [LOCAL-FIRST-BATCH-MERGE-V1.md](LOCAL-FIRST-BATCH-MERGE-V1.md) and [ADR 0039](adr/0039-local-first-batch-merge.md).
 
+## Grounded Assistant Accuracy V1
+
+- Source on `feat/grounded-assistant-accuracy-v1`. **Not pushed**, **not merged**, **not INSTALLED** into the live Everyday UX package until a later authorized checkpoint.
+- Host Mission count grounding covers active/current/completed/historical/retained vocabulary only; it does not invent Settled/Failed filters in Conversation prose.
+- Operator screening permits authorized Development Session metadata shapes; unknown `session <token>` forms and Cookie/assignment secrets remain denied.
+- Live Control Center continues to run Everyday UX `5e23731` until an authorized install cutover.
+
 ## Notion documentation ownership
 
 - Canonical Airodrom Notion hub is Projects → Airodrom (`3f4593eead74818bb339d302719256a4`). Historical Pi Bridge hub must not parent new Airodrom milestone pages.

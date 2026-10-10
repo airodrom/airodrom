@@ -23,3 +23,4 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Autonomous Self-Development V1](AUTONOMOUS-SELF-DEVELOPMENT-V1.md)
 - [Self-Development Reliability V1.1](SELF-DEVELOPMENT-RELIABILITY-V1.1.md)
 - [Everyday Personal AI UX V1](EVERYDAY-PERSONAL-AI-UX-V1.md) (SHIPPED + INSTALLED)
+- [Grounded Assistant Accuracy V1](GROUNDED-ASSISTANT-ACCURACY-V1.md) (LOCAL IMPLEMENTATION; not installed)

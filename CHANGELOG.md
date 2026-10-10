@@ -1,3 +1,8 @@
+## Unreleased — Grounded Assistant Accuracy V1
+
+- Inject host-verified Mission counts into Conversation and ground delivery text when the model mislabels current as active.
+- Permit authorized Development Session id/branch/worktree metadata through operator screening; keep Cookie/assignment session secrets fail-closed for local private conversation.
+
 ## Unreleased — Everyday Personal AI UX V1 shipped and installed
 
 - Merged PR #54 to `origin/main` (`5e23731`); installed `airodrom-everyday-ux-5e23731`; live Control Center serves Conversation model/continue/Memory consent, Mission Observatory links, Development Session Continue clarity, and macOS menu deep links.
