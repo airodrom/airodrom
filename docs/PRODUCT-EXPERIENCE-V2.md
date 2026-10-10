@@ -43,9 +43,13 @@ Ordinary conversation in Control Center uses the host ConversationEngine with a 
 
 ## Native menu
 
-The native macOS menu uses the canonical connected A geometry as a Retina-capable vector template image. Its status, Conversation identity (separate from Missions), OpenCode/Memory rows, approval badge, active Mission phase, System Health, Doctor, safe diagnostic copy, Open Conversation, Active Missions, Continue Development Session, Open System Health, task-bound Open/Cancel Mission controls, service submenu, help and About match the product terminology. Menu deep links open allowlisted Control Center views through private discovery. Open CLI uses a fixed private launcher, with no request text interpolated into a shell. Start/stop/restart preserve ownership and lock guards. Quit Menu Bar leaves the control plane running; service restart does not require helper restart.
+The native macOS menu (Premium Menu V3) uses the canonical connected A geometry as an optically padded 18pt Retina template mark. Status color is a compact corner indicator only: system green/blue/orange/red for healthy/working/degraded/disconnected, and a restrained warm-gold accent for ACTION REQUIRED. Pale yellow wash is avoided. Primary status vocabulary is CONNECTED, DEGRADED, DISCONNECTED and ACTION REQUIRED.
 
-`airodrom menu` prepares/opens the local helper. `install:local` prepares it without changing login settings. Launch at Login remains the existing opt-in [macOS installer](INSTALLATION.md); no speculative toggle or new persistence is added.
+Menu hierarchy keeps Everyday UX sections—System Status, Active Mission, Workers, Memory, Model, Connectors, Actions, Diagnostics, Service—with clearer section headers and consistent label spacing. Conversation identity stays separate from Missions. Featured Active Mission is host-backed live execution only (`dispatching` / `running` / `verifying`). Missions in `awaiting_acceptance` or `waiting_for_operator` surface as NEEDS REVIEW / ACTION REQUIRED and never as active work. View Active Mission / Cancel Mission enable only for live featured Missions; Review Missions & Approvals remains the review path.
+
+Deep links still open allowlisted Control Center views through private discovery (Open Conversation, Active Missions, Continue Development Session, Open System Health, Open Control Center). Open CLI uses a fixed private launcher. Start/stop/restart preserve ownership and lock guards. Quit Menu leaves the control plane running.
+
+`airodrom menu` prepares/opens the local helper. `install:local` prepares it without changing login settings. Optional login startup uses `npm run macos:desktop-login:install` (`local.airodrom.desktop-login`), which starts Ollama if needed, the owned Control Plane via `local.start`, then the native menu. It does not enable legacy `local.pi-chatgpt-bridge*` agents or merge startup PR #36. See [INSTALLATION.md](INSTALLATION.md).
 
 ## Visual system and sources
 

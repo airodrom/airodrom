@@ -182,18 +182,20 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
 }
 async function nativeStatus(bridge) {
  const s=await overview(bridge,{includeMissions:false}),db=bridge.controlStore.db;
- const active=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying','awaiting_acceptance','waiting_for_operator') ORDER BY CASE WHEN state IN ('dispatching','running','verifying') THEN 0 ELSE 1 END,created_at DESC LIMIT 1").get();
- const m=active?missionView(bridge,bridge.controlStore.requireMission(active.id)):null;
+ // Featured menu Mission is live execution only — awaiting_acceptance / waiting_for_operator are review, not active work.
+ const live=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying') ORDER BY created_at DESC,id LIMIT 1").get();
+ const m=live?missionView(bridge,bridge.controlStore.requireMission(live.id)):null;
  const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
+ const reviewCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n;
  const {derive,menuPresentation}=require('./connection-status');
  const connectivity=derive({authorized:true,reachable:true,overviewStatus:s.status,lastOkAt:Date.now(),maintenance:!!bridge.closed});
- const presentation=menuPresentation({bridgeState:bridge.closed?'Stopped':'Connected',productStatus:s.status,activeMissions:activeCount,approvals:s.approvals.waiting,missionState:m?.state||null});
- const activity_status=presentation.tone==='working'?'Working '+activeCount:presentation.tone==='approval'?'Approval needed':presentation.label;
+ const presentation=menuPresentation({bridgeState:bridge.closed?'Stopped':'Connected',productStatus:s.status,activeMissions:activeCount,approvals:s.approvals.waiting,reviewMissions:reviewCount,missionState:m?.state||null});
+ const activity_status=presentation.tone==='working'?'CONNECTED · '+activeCount+' active':presentation.label;
  const elapsed_s=m?.started_at?Math.max(0,Math.floor((Date.now()-m.started_at)/1000)):null;
  const conversationNickname=(()=>{try{return bridge.conversationEngine?.nickname?.()||null;}catch{return null;}})();
  const conversationModel=s.runtime.ready?require('./model-worker-router').MODEL:null;
  return {status:s.status,control:s.control.state,runtime:s.runtime.state,runtimeReason:s.runtime.reason,memory:s.memory.state,provider:s.provider.state,approvals:s.approvals.waiting,active_missions:activeCount,quarantined_leases:s.leases.quarantined,
-  activity_status,connection_state:connectivity.state,connection_label:connectivity.label,menu_tone:presentation.tone,
+  activity_status,connection_state:connectivity.state,connection_label:presentation.label,menu_tone:presentation.tone,
   model:m?.model?.id||(s.runtime.ready?require('./model-worker-router').MODEL:'Unavailable'),routing:m?.model?.mode||(s.runtime.ready?'AUTO · local policy':'Unavailable'),connectors:s.connectors.items.map(c=>c.id+': '+c.state).join(' · '),
   workers:'OpenCode: '+s.runtime.state+' · Provider: '+s.provider.state+' · Cursor Agent: '+(s.cursor?.agent_availability||'unqualified'),
   cursor:s.cursor,
@@ -201,9 +203,9 @@ async function nativeStatus(bridge) {
   conversation:{nickname:conversationNickname,model:conversationModel,worker:conversationModel?'local-ollama':null,channel:'browser',separated_from_missions:true},
   installation:s.installation_compatibility?{overall:s.installation_compatibility.overall,mutations_allowed:s.installation_compatibility.mutations_allowed,components:s.installation_compatibility.components.length}:null,
   mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode,worker:m.runtime||null,model:m.model?.id||null,elapsed_s,progress_value:m.progress.mode==='determinate'?m.progress.value:null,progress_maximum:m.progress.mode==='determinate'?m.progress.maximum:null}:null,
-  review_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n,
+  review_missions:reviewCount,
   failed_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n,
-  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Conversation: '+(conversationNickname||'Airo')+' · '+(conversationModel||'Unavailable'),'Installation: '+(s.installation_compatibility?.overall||'Unavailable'),'Active Missions: '+activeCount,'Waiting Approvals: '+s.approvals.waiting,'Connection: '+connectivity.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
+  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Conversation: '+(conversationNickname||'Airo')+' · '+(conversationModel||'Unavailable'),'Installation: '+(s.installation_compatibility?.overall||'Unavailable'),'Active Missions: '+activeCount,'Review Missions: '+reviewCount,'Waiting Approvals: '+s.approvals.waiting,'Menu: '+presentation.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
 }
 function events(bridge,url) {
  const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)throw Error('Invalid event cursor');

@@ -96,19 +96,22 @@ function view(state, extra) {
 }
 
 /** Menu icon semantic class from bridge + product aggregates. */
-function menuPresentation({ bridgeState, productStatus, activeMissions = 0, approvals = 0, missionState = null, reconnecting = false, lastError = null } = {}) {
-  if (bridgeState === 'Stopped') return { tone: 'stopped', label: 'Stopped', accessibility: 'Airodrom stopped' };
-  if (bridgeState === 'Error' || lastError) return { tone: 'disconnected', label: 'Disconnected', accessibility: 'Airodrom disconnected' };
-  if (bridgeState === 'Starting' || reconnecting) return { tone: 'reconnecting', label: 'Reconnecting', accessibility: 'Airodrom reconnecting' };
-  if (approvals > 0) return { tone: 'approval', label: 'Approval needed', accessibility: `Airodrom ${approvals} approvals waiting` };
+function menuPresentation({ bridgeState, productStatus, activeMissions = 0, approvals = 0, reviewMissions = 0, missionState = null, reconnecting = false, lastError = null } = {}) {
+  if (bridgeState === 'Stopped') return { tone: 'stopped', label: 'DISCONNECTED', accessibility: 'Airodrom stopped' };
+  if (bridgeState === 'Error' || lastError) return { tone: 'disconnected', label: 'DISCONNECTED', accessibility: 'Airodrom disconnected' };
+  if (bridgeState === 'Starting' || reconnecting) return { tone: 'reconnecting', label: 'RECONNECTING', accessibility: 'Airodrom reconnecting' };
+  if (approvals > 0 || reviewMissions > 0) {
+    const waiting = (approvals > 0 ? approvals + ' approvals' : '') + (approvals > 0 && reviewMissions > 0 ? ', ' : '') + (reviewMissions > 0 ? reviewMissions + ' reviews' : '');
+    return { tone: 'approval', label: 'ACTION REQUIRED', accessibility: `Airodrom action required: ${waiting || 'operator review'}` };
+  }
   if (activeMissions > 0 || ['dispatching', 'running', 'verifying'].includes(missionState)) {
-    return { tone: 'working', label: 'Working', accessibility: 'Airodrom mission executing' };
+    return { tone: 'working', label: 'CONNECTED', accessibility: 'Airodrom mission executing' };
   }
   if (productStatus === 'Degraded' || productStatus === 'Unavailable') {
-    return { tone: 'degraded', label: 'Degraded', accessibility: 'Airodrom degraded' };
+    return { tone: 'degraded', label: 'DEGRADED', accessibility: 'Airodrom degraded' };
   }
-  if (bridgeState === 'Connected') return { tone: 'healthy', label: 'Connected', accessibility: 'Airodrom connected and healthy' };
-  return { tone: 'disconnected', label: 'Disconnected', accessibility: 'Airodrom disconnected' };
+  if (bridgeState === 'Connected') return { tone: 'healthy', label: 'CONNECTED', accessibility: 'Airodrom connected and healthy' };
+  return { tone: 'disconnected', label: 'DISCONNECTED', accessibility: 'Airodrom disconnected' };
 }
 
 module.exports = { STATES, derive, menuPresentation };

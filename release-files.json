@@ -188,6 +188,7 @@
   "scripts/macos/install.cjs",
   "scripts/macos/mcp-tunnel.cjs",
   "scripts/macos/prepare-local-menu.cjs",
+  "scripts/macos/desktop-login.cjs",
   "scripts/macos/product-control.cjs",
   "scripts/macos/resilient-control.cjs",
   "scripts/macos/restart-handoff.cjs",

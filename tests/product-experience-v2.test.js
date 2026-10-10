@@ -34,7 +34,7 @@ test('safe product HTTP has no prompts, payloads, memory, paths or reasoning; MC
  const get=async(route,credential=server.token)=>{const response=await fetch(server.origin+route,{headers:{Authorization:'Bearer '+credential}});return{response,value:await response.json()};};
  const m=b.missions.createConversation({request_id:randomUUID(),message:'PRIVATE_PROMPT_CANARY',include_memory:true});b.ledger.record({eventType:'mission.created',agent:'bridge',direction:'internal',missionId:m.mission_id,metadata:{objective:'PRIVATE_OBJECTIVE',environment:'PRIVATE_ENV',argv:'PRIVATE_ARGV',reasoning:'PRIVATE_REASONING',path:'/Users/private/PRIVATE_PATH'},payload:'PRIVATE_PAYLOAD'});
  assert.equal((await get('/api/product/overview',server.mcpToken)).response.status,401);
- for(const route of ['/api/product/overview','/api/product/events','/api/product/mission?id='+m.mission_id]){const result=await get(route);assert.equal(result.response.status,200);assert.doesNotMatch(JSON.stringify(result.value),/PRIVATE_|\/Users\/|payload|envelope|argv|environment/);}
+ for(const route of ['/api/product/overview','/api/product/events','/api/product/mission?id='+m.mission_id]){const result=await get(route);assert.equal(result.response.status,200);assert.doesNotMatch(JSON.stringify(result.value),/PRIVATE_|\/Users\/|"payload"|"envelope"|"argv"|"environment":/);}
  const detail=(await get('/api/product/mission?id='+m.mission_id)).value;assert.equal(detail.verification.status,'not_observed');assert.equal(detail.acceptance.status,'pending');assert.equal(detail.settlement.status,'not_observed');
  assert.equal((await get('/api/product/events?after=-1')).response.status,400);assert.equal((await get('/api/product/events?category=PRIVATE')).response.status,400);
 });
@@ -76,6 +76,20 @@ test('current Mission pagination and native summaries remain truthful beyond ret
  assert.equal(first.counts.active,1);assert.equal(native.active_missions,1);assert.equal(native.mission.id,oldest.mission_id);assert.ok(first.current_mission_ids.includes(oldest.mission_id));assert.equal(first.counts.current_has_more,true);assert.equal(next.counts.current_has_more,false);assert.equal(new Set([...first.current_mission_ids,...next.current_mission_ids]).size,56);
  assert.ok(Buffer.byteLength(JSON.stringify(native))<4000);assert.doesNotMatch(JSON.stringify(first),/Synthetic older work|Synthetic registration|repositories|\/private\//);await assert.rejects(display.overview(b,{currentOffset:-1}));
  b.ledger.health=()=>({healthy:false,state:'degraded'});assert.equal((await display.overview(b)).status,'Degraded');
+});
+test('native menu status features live Missions only and marks review as action required',async t=>{
+ const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge;
+ const review=b.missions.createConversation({request_id:randomUUID(),message:'Synthetic review work'});
+ b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance',created_at=2 WHERE id=?").run(review.mission_id);
+ let native=await display.nativeStatus(b);
+ assert.equal(native.active_missions,0);assert.equal(native.review_missions,1);assert.equal(native.mission,null);
+ assert.equal(native.menu_tone,'approval');assert.equal(native.connection_label,'ACTION REQUIRED');
+ const live=b.missions.createConversation({request_id:randomUUID(),message:'Synthetic live work'});
+ b.controlStore.db.prepare("UPDATE cp_missions SET state='running',created_at=3 WHERE id=?").run(live.mission_id);
+ native=await display.nativeStatus(b);
+ assert.equal(native.active_missions,1);assert.equal(native.mission.id,live.mission_id);assert.equal(native.mission.state,'running');
+ assert.equal(native.review_missions,1);assert.equal(native.menu_tone,'approval');assert.equal(native.connection_label,'ACTION REQUIRED');
+ assert.doesNotMatch(JSON.stringify(native),/Synthetic review work|Synthetic live work/);
 });
 test('safe mutation receipts withhold Acceptance rationale, content and bound envelopes',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,server=new ControlServer(b,{port:0});await server.start();t.after(()=>server.close());
