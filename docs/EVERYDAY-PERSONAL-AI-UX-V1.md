@@ -6,11 +6,11 @@ Local-first Control Center and macOS menu improvements for daily personal AI use
 
 | Claim | State |
 | --- | --- |
-| LOCAL FEATURE BRANCH | Yes — `feat/everyday-personal-ai-ux-v1` |
-| MERGED TO `origin/main` | No |
-| INSTALLED LOCALLY | No — installed release remains Continue DS `c701289` |
-| LIVE API VALIDATED (installed) | Yes — Qwen conversation + Continue Development Session resolve |
-| FOCUSED CONTRACTS | Yes — `tests/everyday-personal-ai-ux-v1.test.js` |
+| LOCAL FEATURE BRANCH | Yes — `feat/everyday-personal-ai-ux-v1` @ `0142ab9` |
+| MERGED TO `origin/main` | Yes — PR [#54](https://github.com/airodrom/airodrom/pull/54) merge `5e23731121d95822255dbef0c257b34d77afb24f` |
+| INSTALLED LOCALLY | Yes — `…/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731` |
+| LIVE VERIFIED | Yes — Control Center assets + Qwen turn + menu rebuild |
+| PUBLIC ACTIVATION | OFF (WhatsApp HOLD unchanged) |
 
 ## Improvements
 
@@ -42,14 +42,21 @@ Local-first Control Center and macOS menu improvements for daily personal AI use
 
 Deep links use allowlisted `local.open({ view })` targets: Conversation, Missions, Development Sessions, System Health.
 
-## Validation
+## Installation evidence (2026-10-10)
 
-- Focused: `node --test tests/everyday-personal-ai-ux-v1.test.js tests/development-session-continue-v1.test.js` (7/7).
-- Installed product (`airodrom-ds-continue-c701289`): Qwen turn completed with model `ollama/qwen3-coder:30b`; Development Session `2eb98c6a` resolve reused existing session (`PR_OPEN`, no new Mission).
+- **Feature tip:** `0142ab9066eed974ece96eeb0eb228d21395a6d1`
+- **Merge on `origin/main`:** `5e23731121d95822255dbef0c257b34d77afb24f`
+- **Package:** `1.0.1-rc.1` · 367 files · archive SHA-256 `82df832e9d09365d871db9e899a6bb45cd6f53cf0a9c2d28c45a1fd1f3a145bd`
+- **Install root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731`
+- **Prior source:** `…/airodrom-ds-continue/install/airodrom-ds-continue-c701289`
+- **Backup/rollback:** `~/.airodrom/backups/everyday-ux-v1-20261010T181626Z`
+- **Live:** Control/OpenCode/Memory/Provider Ready · hub/css/panel/atmosphere HTTP 200 with Everyday UX markers · menu helper rebuilt · Automatic Acceptance OFF · WhatsApp HOLD
+- **Qwen:** `ollama/qwen3-coder:30b` completed marker `everyday-ux-ship-ok`
+- **Focused tests:** `everyday-personal-ai-ux-v1` + continue panel **7/7**
 - Operator checkout `/Users/andrew/code/airodrom` preserved.
 
 ## Limits
 
-- Everyday UX hub/menu assets are not on the installed release until an authorized install checkpoint.
 - Claude conversation remains WAIT / OFF for inference until independently qualified.
 - WhatsApp production HOLD unchanged. Automatic Acceptance OFF.
+- Menu helper must be rebuilt from the installed source after cutover (`prepare-local-menu`).

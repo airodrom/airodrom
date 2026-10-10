@@ -1,10 +1,13 @@
+## Unreleased — Everyday Personal AI UX V1 shipped and installed
+
+- Merged PR #54 to `origin/main` (`5e23731`); installed `airodrom-everyday-ux-5e23731`; live Control Center serves Conversation model/continue/Memory consent, Mission Observatory links, Development Session Continue clarity, and macOS menu deep links.
+
 ## Unreleased — Everyday Personal AI UX V1
 
 - Conversation: visible Qwen-default model selection, persistent session continue/new, Memory consent status, honest activity/reconnect; reuse ConversationEngine.
 - Missions: clearer active work, worker, verified activity, pending approval, Settlement, Open Observatory.
 - Development Sessions: Continue clarity for repository, branch, worktree and next permitted action (no duplicate execution controls).
 - macOS Menu V2: Active Missions, Continue Development Session and Open System Health deep links alongside Open Conversation and Control Center.
-- Local feature branch only; installed release remains Continue DS until an authorized checkpoint.
 
 ## Unreleased — Continue Development Session V1 shipped and installed
 
