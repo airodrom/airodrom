@@ -218,6 +218,7 @@
     "src/codex-completion-relay.js",
     "src/command-classifier.js",
     "src/config.js",
+    "src/connection-status.js",
     "src/control-context.js",
     "src/control-execution.js",
     "src/control-plane-api.js",
