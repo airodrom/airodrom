@@ -122,6 +122,7 @@
   "docs/adr/0042-whatsapp-production-connection-v1.md",
   "docs/adr/0043-core-contracts-runtime-consistency.md",
   "docs/adr/0044-grounded-assistant-accuracy.md",
+  "docs/adr/0045-whatsapp-verify-token-staged-rotation.md",
   "docs/adr/README.md",
   "docs/adr/SUPERSESSION-TEMPLATE.md",
   "docs/adr/TEMPLATE.md",

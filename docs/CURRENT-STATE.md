@@ -115,3 +115,7 @@
 - **Backup/rollback:** `~/.airodrom/backups/self-dev-v11-20261010T174215Z` (prior source `…/airodrom-coding-reliability-a6ee3e3`)
 - **Live:** Control/OpenCode/Memory/Provider Ready · panel `/development-sessions-panel.js` HTTP 200 · hub coding admission `sourceContextSensitive=false` · timeout 120000 · Automatic Acceptance OFF · WhatsApp HOLD
 - Evidence: [SELF-DEVELOPMENT-RELIABILITY-V1.1.md](SELF-DEVELOPMENT-RELIABILITY-V1.1.md). Operator checkout preserved.
+
+## WhatsApp verify-token staged rotation (source candidate)
+
+Staged Keychain verify-token recovery is implemented on `feature/whatsapp-verify-token-safe-rotation` (ADR 0045). Installed runtime may still use irreversible replace until this branch is installed. Production WhatsApp remains HOLD; no live credential rotation in this change.

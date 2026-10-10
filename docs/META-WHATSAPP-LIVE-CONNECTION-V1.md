@@ -15,19 +15,25 @@ Operator checklist for the first real Meta → Airodrom webhook delivery. Builds
 | Production Connection V1 | Prerequisites documented; **production messaging HOLD** (Meta AI Providers / general-purpose assistant clause). Production phone unset; test WABA preserved; trycloudflare forbidden for production callbacks. See [Production Connection V1](WHATSAPP-PRODUCTION-CONNECTION-V1.md). |
 | Test results | `tests/whatsapp-inbound-v1.test.js` + `tests/whatsapp-conversations-v1.test.js` (focused; see latest local run) |
 | Known limitations | Public ingress refused; Phone Number ID unavailable — Graph `phone_numbers` returns **authorized empty** (HTTP 200, `data: []`), not a permission error; portfolio owned-list still needs `business_management` unless WABA hint supplied |
-| Next action | In an interactive Terminal: `airodrom whatsapp rotate-verify-token` (shows new verify token once; preserves App Secret + Graph token) → paste that verify token into Meta → re-bind a **valid Meta App Secret** (Vault `app_secret` is still EAA-shaped / fails `client_credentials`) → Meta callback URL + `messages` subscribe → one allowlisted phone message → inbox + Missions=0. |
+| Next action | Staged recovery: `airodrom whatsapp rotate-verify-token` (TTY once; current token kept) → paste into Meta → Verify and Save → owner confirms Meta success → `commit-verify-token`. Rollback with `rollback-verify-token` if Meta fails. Webhook GET never finalizes. Production HOLD unchanged. |
 
-## Verify-token rotation (local CLI)
+## Verify-token staged rotation (local CLI)
 
 ```text
 airodrom whatsapp rotate-verify-token
+airodrom whatsapp commit-verify-token
+airodrom whatsapp rollback-verify-token
 ```
 
 - Generates a cryptographically secure verify token (`crypto.randomBytes` → base64url).
-- Replaces **only** the purpose=`whatsapp` verify-token Vault reference via Keychain `replace`.
+- Stages a **new** purpose=`whatsapp` Vault slot; the current verify-token reference stays active.
 - Preserves Meta App Secret and Graph access token references.
 - Prints the new token **once** on a TTY for Meta Configuration; never logs it to Git, Notion, or Mission results.
-- Proves local `GET /webhooks/whatsapp` challenge: new token **200**, previous token rejected.
+- While staging is active, webhook verification accepts **either** the current or staged token.
+- A correct GET `hub.verify_token` challenge does **not** prove the caller is Meta and **never** finalizes staging.
+- After the owner independently confirms Meta Verify and Save succeeded: `commit-verify-token` promotes the staged reference and revokes the previous Keychain slot.
+- Discard candidate: `rollback-verify-token`. Staging expires on a bounded TTL.
+- Concurrent staging while one is active is refused.
 - Public ingress and Mission auto-dispatch remain **OFF**.
 
 ## First live webhook test (2026-10-09)

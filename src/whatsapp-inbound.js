@@ -16,6 +16,8 @@ const MAX_BODY = 512_000;
 const KNOWN_TEST_WABA = '28756456347344989';
 const KNOWN_TEST_PHONE = '1330971766772548';
 const KNOWN_PRODUCTION_WABA = '29094507813569086';
+const DEFAULT_VERIFY_STAGING_TTL_MS = 30 * 60 * 1000;
+const MAX_VERIFY_STAGING_TTL_MS = 24 * 60 * 60 * 1000;
 
 function loadMetaDefaults(root) {
   const file = path.join(root || path.resolve(__dirname, '..'), 'config/whatsapp-inbound-v1.json');
@@ -106,6 +108,8 @@ class WhatsAppInbound {
     add('test_waba_id', 'TEXT');
     add('test_phone_number_id', 'TEXT');
     add('active_environment', "TEXT NOT NULL DEFAULT 'production'");
+    add('staged_verify_token_reference', 'TEXT');
+    add('staged_verify_expires_at', 'INTEGER');
     const row = this.db.prepare('SELECT meta_app_id, business_portfolio_id, waba_id, phone_number_id, production_waba_id, production_phone_number_id, active_environment FROM cp_whatsapp_inbound_config WHERE id=1').get();
     if (row && !row.meta_app_id && this.defaults.meta_app_id) {
       this.db.prepare('UPDATE cp_whatsapp_inbound_config SET meta_app_id=?, business_portfolio_id=? WHERE id=1')
@@ -134,11 +138,14 @@ class WhatsAppInbound {
     const test_phone_number_id = row?.test_phone_number_id || null;
     const active_waba = active === 'test' ? (test_waba_id || row?.waba_id) : (production_waba_id || row?.waba_id);
     const active_phone = active === 'test' ? (test_phone_number_id || row?.phone_number_id) : (production_phone_number_id || row?.phone_number_id);
+    const staging = this.#stagingFromRow(row);
     return {
       enabled: row?.enabled === 1,
       verify_token_bound: Boolean(row?.verify_token_reference) || typeof this.options.verifyToken === 'string',
       app_secret_bound: Boolean(row?.app_secret_reference) || typeof this.options.appSecret === 'string',
       access_token_bound: Boolean(row?.access_token_reference) || typeof this.options.accessToken === 'string',
+      verify_staging_active: Boolean(staging),
+      verify_staging_expires_at: staging ? staging.staged_verify_expires_at : null,
       allowlist: JSON.parse(row?.allowlist || '[]'),
       updated_at: row?.updated_at || null,
       updated_by: row?.updated_by || null,
@@ -523,12 +530,134 @@ class WhatsAppInbound {
    */
   opaqueCredentialReferences(actor = 'operator') {
     if (actor !== 'operator') throw Error('Only operator may read WhatsApp credential references');
-    const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference, enabled FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    this.#sweepExpiredStaging();
+    const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference, enabled, staged_verify_token_reference, staged_verify_expires_at FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    const staging = this.#stagingFromRow(row);
     return {
       slot_verify: row?.verify_token_reference || null,
       slot_app: row?.app_secret_reference || null,
       slot_graph: row?.access_token_reference || null,
+      slot_staged: staging?.staged_verify_token_reference || null,
+      staging_active: Boolean(staging),
+      staging_expires_at: staging ? staging.staged_verify_expires_at : null,
       enabled: row?.enabled === 1,
+      values_displayed: false,
+      public_ingress: false,
+      auto_mission_execution: false
+    };
+  }
+
+  /**
+   * Stage a new verify-token Vault reference without revoking the current one.
+   * Accepts only an opaque staged_verify_reference (never plaintext over the API).
+   */
+  stageVerifyTokenRotation(input, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may stage WhatsApp verify-token rotation');
+    object(input, ['confirmed', 'staged_verify_reference', 'ttl_ms']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    this.#sweepExpiredStaging();
+    const row = this.db.prepare('SELECT * FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    if (this.#stagingFromRow(row)) throw Error('WhatsApp verify-token rotation already staged; rollback or wait for expiry before staging again');
+    if (!row?.verify_token_reference || !row?.app_secret_reference || !row?.access_token_reference) {
+      throw Error('WhatsApp verify token, App Secret and Graph access token must already be bound');
+    }
+    const stagedRef = input.staged_verify_reference;
+    if (typeof stagedRef !== 'string' || !this.#refOk(stagedRef)) throw Error('Invalid staged_verify_reference');
+    if (stagedRef === row.verify_token_reference || stagedRef === row.app_secret_reference || stagedRef === row.access_token_reference) {
+      throw Error('Staged verify reference must be a new Vault slot');
+    }
+    let stagedValue = this.#vault(stagedRef);
+    if (typeof stagedValue !== 'string' || !stagedValue || Buffer.byteLength(stagedValue) > 200) {
+      stagedValue = '';
+      throw Error('Staged verify reference does not resolve in Vault');
+    }
+    stagedValue = '';
+    let ttl = input.ttl_ms;
+    if (ttl === undefined) ttl = Number.isInteger(this.options.verifyStagingTtlMs) ? this.options.verifyStagingTtlMs : DEFAULT_VERIFY_STAGING_TTL_MS;
+    if (!Number.isInteger(ttl) || ttl < 1_000 || ttl > MAX_VERIFY_STAGING_TTL_MS) throw Error('Invalid verify-token staging ttl_ms');
+    const expiresAt = this.#now() + ttl;
+    this.db.prepare('UPDATE cp_whatsapp_inbound_config SET staged_verify_token_reference=?, staged_verify_expires_at=?, updated_at=?, updated_by=? WHERE id=1')
+      .run(stagedRef, expiresAt, this.#now(), actor);
+    this.store.event('whatsapp.inbound.verify_staging_started', null, {
+      authority: false,
+      staging_expires_at: expiresAt,
+      public_ingress: false,
+      auto_mission_execution: false
+    });
+    return {
+      staged: true,
+      slot_verify: row.verify_token_reference,
+      slot_staged: stagedRef,
+      slot_app: row.app_secret_reference,
+      slot_graph: row.access_token_reference,
+      staging_expires_at: expiresAt,
+      values_displayed: false,
+      public_ingress: false,
+      auto_mission_execution: false
+    };
+  }
+
+  /** Discard staged verify candidate; current verify-token reference stays authoritative. */
+  rollbackVerifyTokenStaging(input = {}, actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may rollback WhatsApp verify-token staging');
+    object(input, ['confirmed']);
+    if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
+    this.#sweepExpiredStaging();
+    const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference, staged_verify_token_reference, staged_verify_expires_at FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    const staging = this.#stagingFromRow(row);
+    if (!staging) throw Error('No active WhatsApp verify-token staging to rollback');
+    const stagedRef = staging.staged_verify_token_reference;
+    this.db.prepare('UPDATE cp_whatsapp_inbound_config SET staged_verify_token_reference=NULL, staged_verify_expires_at=NULL, updated_at=?, updated_by=? WHERE id=1')
+      .run(this.#now(), actor);
+    this.#forgetVaultRef(stagedRef);
+    this.store.event('whatsapp.inbound.verify_staging_rolled_back', null, {
+      authority: false,
+      public_ingress: false,
+      auto_mission_execution: false
+    });
+    return {
+      rolled_back: true,
+      slot_verify: row.verify_token_reference,
+      slot_app: row.app_secret_reference,
+      slot_graph: row.access_token_reference,
+      staging_active: false,
+      values_displayed: false,
+      public_ingress: false,
+      auto_mission_execution: false
+    };
+  }
+
+  /**
+   * Promote staged verify reference to active and revoke the previous Vault slot.
+   * Invoked after a successful webhook challenge that matched the staged candidate.
+   */
+  commitVerifyTokenStaging(actor = 'operator') {
+    if (actor !== 'operator') throw Error('Only operator may commit WhatsApp verify-token staging');
+    this.#sweepExpiredStaging();
+    const row = this.db.prepare('SELECT verify_token_reference, app_secret_reference, access_token_reference, staged_verify_token_reference, staged_verify_expires_at FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    const staging = this.#stagingFromRow(row);
+    if (!staging) throw Error('No active WhatsApp verify-token staging to commit');
+    const previous = row.verify_token_reference;
+    const stagedRef = staging.staged_verify_token_reference;
+    if (!previous || !stagedRef || previous === stagedRef) throw Error('Invalid verify-token staging state');
+    if (row.app_secret_reference == null || row.access_token_reference == null) {
+      throw Error('App Secret and Graph access token must remain bound during commit');
+    }
+    this.db.prepare('UPDATE cp_whatsapp_inbound_config SET verify_token_reference=?, staged_verify_token_reference=NULL, staged_verify_expires_at=NULL, updated_at=?, updated_by=? WHERE id=1')
+      .run(stagedRef, this.#now(), 'operator');
+    this.#forgetVaultRef(previous);
+    if (typeof this.options.verifyToken === 'string') delete this.options.verifyToken;
+    this.store.event('whatsapp.inbound.verify_staging_committed', null, {
+      authority: false,
+      public_ingress: false,
+      auto_mission_execution: false
+    });
+    return {
+      committed: true,
+      slot_verify: stagedRef,
+      slot_app: row.app_secret_reference,
+      slot_graph: row.access_token_reference,
+      staging_active: false,
       values_displayed: false,
       public_ingress: false,
       auto_mission_execution: false
@@ -976,6 +1105,64 @@ class WhatsAppInbound {
     };
   }
 
+  #now() {
+    return typeof this.options.now === 'function' ? this.options.now() : Date.now();
+  }
+
+  #stagingFromRow(row) {
+    if (!row?.staged_verify_token_reference) return null;
+    if (!Number.isInteger(row.staged_verify_expires_at) || row.staged_verify_expires_at <= this.#now()) return null;
+    return row;
+  }
+
+  #sweepExpiredStaging() {
+    const row = this.db.prepare('SELECT staged_verify_token_reference, staged_verify_expires_at FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    if (!row?.staged_verify_token_reference) return;
+    if (Number.isInteger(row.staged_verify_expires_at) && row.staged_verify_expires_at > this.#now()) return;
+    const stagedRef = row.staged_verify_token_reference;
+    this.db.prepare('UPDATE cp_whatsapp_inbound_config SET staged_verify_token_reference=NULL, staged_verify_expires_at=NULL, updated_at=?, updated_by=? WHERE id=1')
+      .run(this.#now(), 'system');
+    this.#forgetVaultRef(stagedRef);
+    this.store.event('whatsapp.inbound.verify_staging_expired', null, {
+      authority: false,
+      public_ingress: false,
+      auto_mission_execution: false
+    });
+  }
+
+  #forgetVaultRef(reference) {
+    if (typeof reference !== 'string' || !this.#refOk(reference)) return;
+    try {
+      const vault = this.#vaultPort();
+      if (vault && typeof vault.forget === 'function') vault.forget(reference);
+    } catch {
+      // Disposition may already be revoked; challenge/config paths remain fail-closed.
+    }
+  }
+
+  #vaultPort() {
+    return this.options.vault || (this.bridge.dataDir ? new (require('./secret-vault').SecretVault)(this.bridge.dataDir) : null);
+  }
+
+  /** Resolve active verify candidates for challenge. Caller must wipe returned values. */
+  #verifyCandidates() {
+    this.#sweepExpiredStaging();
+    const candidates = [];
+    if (typeof this.options.verifyToken === 'string' && this.options.verifyToken) {
+      candidates.push({ role: 'current', value: this.options.verifyToken });
+      return candidates;
+    }
+    const row = this.db.prepare('SELECT verify_token_reference, staged_verify_token_reference, staged_verify_expires_at FROM cp_whatsapp_inbound_config WHERE id=1').get();
+    if (row?.verify_token_reference) {
+      candidates.push({ role: 'current', value: this.#vault(row.verify_token_reference) });
+    }
+    const staging = this.#stagingFromRow(row);
+    if (staging?.staged_verify_token_reference) {
+      candidates.push({ role: 'staged', value: this.#vault(staging.staged_verify_token_reference) });
+    }
+    return candidates;
+  }
+
   #resolve(kind) {
     if (kind === 'verify') {
       if (typeof this.options.verifyToken === 'string' && this.options.verifyToken) return this.options.verifyToken;
@@ -990,7 +1177,7 @@ class WhatsAppInbound {
   }
 
   #vault(reference) {
-    const vault = this.options.vault || (this.bridge.dataDir ? new (require('./secret-vault').SecretVault)(this.bridge.dataDir) : null);
+    const vault = this.#vaultPort();
     if (!vault) throw Error('Secret Vault unavailable for WhatsApp inbound');
     return vault.resolve(reference, 'whatsapp');
   }
@@ -1019,17 +1206,36 @@ class WhatsAppInbound {
     };
   }
 
+  /**
+   * Meta webhook verification challenge.
+   * Accepts the active verify token and, while staging is active, the staged candidate.
+   * Never finalizes staging: a correct verify-token GET does not cryptographically prove Meta,
+   * so promotion requires explicit operator commit-verify-token after the owner confirms Meta success.
+   */
   challenge(query = {}) {
     const cfg = this.config();
     if (!cfg.enabled) throw Error('WhatsApp inbound is disabled');
     if (query['hub.mode'] !== 'subscribe') throw Error('Invalid verification mode');
-    const token = this.#resolve('verify');
     const provided = Buffer.from(String(query['hub.verify_token'] || ''));
-    const expected = Buffer.from(token);
-    if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) throw Error('Invalid verification token');
+    const candidates = this.#verifyCandidates();
+    let matched = null;
+    try {
+      if (!candidates.length) throw Error('WhatsApp verify token is not configured');
+      for (const candidate of candidates) {
+        const expected = Buffer.from(candidate.value);
+        if (provided.length === expected.length && crypto.timingSafeEqual(provided, expected)) matched = candidate.role;
+      }
+    } finally {
+      for (const candidate of candidates) candidate.value = '';
+    }
+    if (!matched) throw Error('Invalid verification token');
     const challenge = String(query['hub.challenge'] || '');
     if (!/^[0-9A-Za-z_-]{1,256}$/.test(challenge)) throw Error('Invalid challenge');
-    this.store.event('whatsapp.inbound.challenge_ok', null, { authority: false });
+    this.store.event('whatsapp.inbound.challenge_ok', null, {
+      authority: false,
+      verify_match: matched === 'staged' ? 'staged' : 'current',
+      staging_finalized: false
+    });
     return challenge;
   }
 

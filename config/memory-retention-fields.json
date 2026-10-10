@@ -584,7 +584,9 @@
       "production_phone_number_id",
       "test_waba_id",
       "test_phone_number_id",
-      "active_environment"
+      "active_environment",
+      "staged_verify_token_reference",
+      "staged_verify_expires_at"
     ],
     "source": "src/whatsapp-inbound.js",
     "classification": {
@@ -609,7 +611,9 @@
       "test_waba_id": "A",
       "test_phone_number_id": "A",
       "active_environment": "A",
-      "subscribed_fields": "A"
+      "subscribed_fields": "A",
+      "staged_verify_token_reference": "D",
+      "staged_verify_expires_at": "A"
     }
   },
   "cp_whatsapp_inbox": {
