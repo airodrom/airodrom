@@ -69,7 +69,7 @@ Webhook: subscribe `messages`; verify with challenge token; POST bodies require 
 
 Official Meta AI Providers documentation (updated Sep 1, 2026) states that “AI Providers” offering **general-purpose AI assistants** are **only permitted** on the WhatsApp Business Platform **where Meta is legally required to permit this use case**, with related Terms updates (Jan 15 / Sep 23, 2026) and pricing category `general_purpose_ai` / `AI_BOT`.
 
-Airodrom’s Conversations V1 goal (personal AI conversation as the WhatsApp experience) is treated as **policy-unresolved / HOLD** for production messaging.  
+**Verdict: PROHIBITED** for the exact proposed production use (WhatsApp as the primary channel for Airodrom’s general-purpose personal AI), except where Meta is legally required to permit that use. **Production messaging remains HOLD.** Written Meta/legal clarification is required before treating any exemption as available.  
 **Do not bypass.** Owner must record an explicit eligibility determination before any production allowlisted test that delivers AI replies over WhatsApp.
 
 Incidental AI inside a non-AI primary business workflow is a different fact pattern; that is **not** claimed here.
