@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Integrated Release V1 (daily candidate 2026-10-09)
+
+- Prepare one local-first release candidate from `integ/daily-candidate-v1-20261009` with allowlisted source archives, SOURCE/COMPATIBILITY manifests, and reversible install plan (service not replaced).
+- Restore WhatsApp inbound credential API routes dropped during daily merge (`validate-credentials`, `bind-credentials`, and related).
+- Complete package allowlists for Conversation provider, risk Acceptance, and WhatsApp ADRs 0041/0042; remove ghost ADR paths that broke archive generation.
+
 ## Unreleased — Core Contracts & Runtime Consistency V1
 
 - Add versioned core contracts, host-evidence runtime security conformance, and installation compatibility observation without rewriting durable state.

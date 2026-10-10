@@ -404,10 +404,8 @@
     "config/notion-documentation-v1.json",
     "src/notion-documentation-routing.js",
     "docs/NOTION-DOCUMENTATION-ROUTING-V1.md",
-    "docs/adr/0039-whatsapp-conversations-v1.md",
     "docs/WHATSAPP-CONVERSATIONS-V1.md",
     "config/whatsapp-conversations-v1.json",
-    "docs/adr/0040-whatsapp-production-connection-v1.md",
     "docs/WHATSAPP-PRODUCTION-CONNECTION-V1.md",
     "config/whatsapp-production-connection-v1.json",
     "src/whatsapp-production-connection.js",
@@ -420,6 +418,19 @@
     "src/core-contracts.js",
     "src/runtime-security-conformance.js",
     "src/installation-compatibility.js",
-    "docs/adr/0043-core-contracts-runtime-consistency.md"
+    "docs/adr/0043-core-contracts-runtime-consistency.md",
+    "src/conversation-provider.js",
+    "src/claude-conversation-boundary.js",
+    "src/risk-acceptance.js",
+    "docs/adr/0037-cursor-ide-task-vs-agent.md",
+    "docs/adr/0041-whatsapp-conversations-v1.md",
+    "docs/adr/0042-whatsapp-production-connection-v1.md",
+    "src/live-observatory.js",
+    "src/development-session.js",
+    "docs/adr/0036-live-agent-observatory-v1.md",
+    "docs/adr/0038-whatsapp-inbound-v1.md",
+    "docs/adr/0039-local-first-batch-merge.md",
+    "docs/INTEGRATED-RELEASE-V1.md",
+    "docs/CURRENT-STATE.md"
   ]
 }
