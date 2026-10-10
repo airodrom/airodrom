@@ -1,6 +1,7 @@
 ## Unreleased — WhatsApp verify-token staged rotation
 
 - Staged verify-token recovery: new Vault candidate while current remains valid; webhook GET never finalizes; owner `commit-verify-token` after Meta success; `rollback-verify-token` and TTL discard the candidate. App Secret and Graph token references preserved. Production HOLD / public ingress / outbound unchanged.
+- Shipped on `origin/main` via PR #62 (`879daa3`); installed locally as `airodrom-whatsapp-verify-safe-879daa3`. Meta test callback Verify/Save remains owner-controlled. See [WHATSAPP-VERIFY-TOKEN-STAGED-ROTATION-SHIPPED.md](docs/WHATSAPP-VERIFY-TOKEN-STAGED-ROTATION-SHIPPED.md).
 
 ## Unreleased — Conversation UX Bugfix V1 shipped and installed
 
