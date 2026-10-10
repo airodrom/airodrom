@@ -3,6 +3,10 @@
 // Development Sessions panel. Summary body originated from governed OpenCode Mission
 // eea8d18d-f742-49b4-ae0f-1e8e43308638; host independent verification repaired helper
 // contracts, inspect field names, and removed HTML injection.
+// Continue Development Session action originated from governed OpenCode Mission
+// 79a170b2-1407-41b9-88ab-5eff102f3a6b (OpenCode/Qwen); host independent verification
+// repaired host API reuse (resolve + native-status), duplicate-execution guard, and
+// Execution state label after trailing-whitespace / invented /continue route failure.
 window.AirodromDevelopmentSessions = {
   render(result, ds, ui) {
     const labels = {
@@ -126,6 +130,79 @@ window.AirodromDevelopmentSessions = {
     row('Next permitted action', nextAction(session.integration_state));
     summary.append(facts);
     result.append(summary);
+
+    const continueBtn = ui.button('Continue Development Session', async () => {
+      if (!session) return;
+      try {
+        const native = await ui.api('/api/product/native-status');
+        const active = Number(native.active_missions || 0);
+        const missionIds = Array.isArray(session.missions) ? session.missions : [];
+        const currentId = native.mission && native.mission.id;
+        if (active > 0 && currentId && missionIds.includes(currentId)) {
+          ui.setNotice('Continue Development Session blocked: this session already has an active Mission. Inspect Observatory before starting another.');
+          return;
+        }
+        const reused = await ui.api('/api/assistant/development-sessions/resolve', {
+          goal: session.goal || 'Continue Development Session',
+          repository: session.repository,
+          branch: session.branch,
+          worktree: session.worktree,
+          confirmed: true,
+          capabilities: session.capabilities,
+          workers: session.workers,
+          assigned_worker: session.assigned_worker,
+          request_id: crypto.randomUUID()
+        });
+        await ui.api('/api/assistant/development-sessions/observe-git', {
+          session_id: session.id,
+          dirty_files: Array.isArray(session.dirty_files) ? session.dirty_files : [],
+          confirmed: true
+        });
+        ui.setNotice(
+          'Continue Development Session reused session ' + shortId(reused.id || session.id) +
+          (reused.reused ? ' (existing)' : '') +
+          '. development_session_id=' + (reused.id || session.id) +
+          '. Next permitted action: ' + nextAction(session.integration_state) +
+          '. Host Development Session APIs only.'
+        );
+      } catch (error) {
+        ui.setNotice(error.message || 'Continue Development Session failed');
+      }
+    }, true);
+    result.append(continueBtn);
+
+    const details = ui.glass('Continue Development Session', session ? shortId(session.id) : '—', 'Reuse authorized session · no duplicate active execution');
+    if (session) {
+      details.append(ui.node('p', 'Selected session: ' + session.id));
+      details.append(ui.node('p', 'Authorized repository: ' + (session.repository || 'Unavailable')));
+      details.append(ui.node('p', 'Authorized worktree: ' + (session.worktree || 'Unavailable')));
+      let lastMissionText = 'Unavailable';
+      if (Array.isArray(session.missions) && session.missions.length) {
+        lastMissionText = shortId(session.missions[session.missions.length - 1]);
+      }
+      details.append(ui.node('p', 'Last completed Mission: ' + lastMissionText));
+      details.append(ui.node('p', 'Next permitted action: ' + nextAction(session.integration_state)));
+      const execLine = ui.node('p', 'Execution state: observing…');
+      details.append(execLine);
+      (async () => {
+        try {
+          const native = await ui.api('/api/product/native-status');
+          const active = Number(native.active_missions || 0);
+          const mid = native.mission && native.mission.id;
+          const bound = Array.isArray(session.missions) && mid && session.missions.includes(mid);
+          let text = 'idle';
+          if (active > 0 && bound) {
+            text = 'running · Mission ' + shortId(mid) + ' · ' + (native.mission.state || 'active');
+          } else if (active > 0) {
+            text = 'other Missions active (' + active + '); this session idle';
+          }
+          execLine.textContent = 'Execution state: ' + text;
+        } catch {
+          execLine.textContent = 'Execution state: Unavailable';
+        }
+      })();
+    }
+    result.append(details);
 
     for (const s of ds.recent || []) {
       const card = ui.glass(
