@@ -12,7 +12,7 @@ async function main() {
   if (c.version !== 1 || c.source !== local.ROOT || c.dataDir !== path.join(home, 'data') || c.profile !== path.join(home, 'profile') || c.pinsFile !== path.join(home, 'runtime-pins.json')) throw Error('Local service configuration changed.');
   const pins = local.validatePins(local.ownedJSON(c.pinsFile));
   local.privateDirectory(c.dataDir); local.privateDirectory(c.profile);
-  const bridge = await new Bridge({ dataDir: c.dataDir, sourceProfile: c.profile, webEnabled: false, defaultRuntime: process.env.AIRODROM_DEFAULT_RUNTIME, slack: { env: {} }, opencode: { enabled: true, executable: pins.executables.find(p => p.id === 'opencode').path, model: pins.model, pinsFile: c.pinsFile, timeoutMs: 90000 } }).initialize();
+  const bridge = await new Bridge({ dataDir: c.dataDir, sourceProfile: c.profile, webEnabled: false, defaultRuntime: process.env.AIRODROM_DEFAULT_RUNTIME, slack: { env: {} }, opencode: { enabled: true, executable: pins.executables.find(p => p.id === 'opencode').path, model: pins.model, pinsFile: c.pinsFile, timeoutMs: 120000 } }).initialize();
   const server = new ControlServer(bridge, { port: 0 });
   bridge.controlServer = server;
   let stopping = false;

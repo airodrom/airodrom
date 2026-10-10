@@ -32,3 +32,7 @@ Operator action (`prepareDailyIntegration` / Control Center **Prepare Daily Inte
 ## Control Center
 
 **Development Sessions** shows active sessions, related Missions, assigned worker, branch/worktree, local changes, test evidence, local vs published status, integration readiness, pending approvals and the daily integration checkpoint. Status values are host-observed.
+
+## Control Center summary
+
+The Development Sessions view renders an evidence-backed Active Session Summary from durable session inspect fields. Push, merge, and hosted CI remain operator-authorized at the daily checkpoint.

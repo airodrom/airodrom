@@ -126,6 +126,7 @@
     "public/control-hub.css",
     "public/control-hub.html",
     "public/control-hub.js",
+    "public/development-sessions-panel.js",
     "public/index.html",
     "public/style.css",
     "scripts/airodrom.cjs",

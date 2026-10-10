@@ -20,3 +20,5 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 
 - [Lifecycle & Package Closeout V1](LIFECYCLE-PACKAGE-CLOSEOUT-V1.md)
 - [Coding Reliability & Auto-Acceptance V1](CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md)
+- [Autonomous Self-Development V1](AUTONOMOUS-SELF-DEVELOPMENT-V1.md)
+- [Self-Development Reliability V1.1](SELF-DEVELOPMENT-RELIABILITY-V1.1.md)

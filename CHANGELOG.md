@@ -1,3 +1,13 @@
+## Unreleased — Self-Development Reliability V1.1
+
+- Admit authorized OpenCode coding source for Control Hub JS: host-owned Authorization+identifier neutralization, credential-filename rules that ignore UI prose, 256 KiB staged-file bound; keep real secrets and sensitive paths fail-closed.
+- Raise default local OpenCode coding Mission timeout to the existing 120000 ms ceiling (no unlimited timeouts).
+- Extend Development Sessions summary and source-context focused contracts; document Mission `d55695c4-…` timeout evidence.
+
+## Unreleased — Autonomous Self-Development V1
+
+- Control Center Development Sessions view shows an evidence-backed Active Session Summary (missions, worker, repository/branch, local changes, focused verification, pending integration, last activity, next permitted action) via `public/development-sessions-panel.js`.
+
 # Changelog
 
 ## Unreleased — Coding Reliability & Auto-Acceptance V1

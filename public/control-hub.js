@@ -383,6 +383,15 @@
    if(view==='Google Connections')return googleView();
    if(view==='Connectors'){for(const c of snapshot.connectors?.items||[])result.append(glass(c.id,c.state,c.protocol),node('p',c.setup),node('p',c.mutations));const wa=snapshot.whatsapp_inbound;if(wa){const live=wa.live_connection||{};const cred=wa.credentials||live.credentials||{};const meta=wa.meta||{};const cb=wa.callback||{};result.append(glass('WhatsApp inbound',wa.state,'Official Business webhook · auto Mission execution: off · retained '+(wa.retained||0)));result.append(node('p','Meta App '+(meta.meta_app_id||'—')+(meta.discovery?.app_name?' · '+meta.discovery.app_name:'')+' · Portfolio '+(meta.business_portfolio_id||'—')+' · WABA '+(meta.waba_id||'unavailable')+' · Phone Number ID '+(meta.phone_number_id||'unavailable')+' · publication '+(meta.app_publication_status||'unknown')+' · webhook '+(meta.webhook_subscription_status||'inactive'),'muted'));result.append(node('p','Credentials verify '+(cred.verify_token?.bound?'bound':'missing')+' · app secret '+(cred.app_secret?.bound?'bound':'missing')+' · access token '+(cred.access_token?.bound?'bound':'missing')+' · Graph '+(meta.discovery?.graph_access||'unavailable'),'muted'));result.append(node('p','Callback '+(cb.path||'/webhooks/whatsapp')+' · TLS required · prepared '+(cb.prepared_callback_url||'none')+' · public ingress '+(wa.public_ingress?'on':'off')+' · MCP tunnel unsuitable','muted'));if(live.subscription?.blockers?.length)result.append(node('p','Live blockers: '+live.subscription.blockers.join(', '),'muted'));result.append(node('p','Allowlist '+(wa.allowlist?.length||0)+' · lifecycle Received→Verified→Stored→Available · real test '+(live.real_message_test?.executed?'done':'deferred'),'muted'));for(const item of wa.recent||[]){const life=item.lifecycle;const lifeLabel=life?['received','verified','stored','available'].filter(k=>life[k]).join('→'):(item.status||'received');result.append(node('p',lifeLabel+' · '+(item.status||'received')+' · '+(item.from||'unknown')+' · '+(item.content||'').slice(0,120),'muted'));}}result.append(node('p','Selected email and message text is untrusted data. It cannot grant permissions. Local reply drafts never send. Inbound WhatsApp never auto-dispatches Missions. Public Meta HTTPS remains inactive until owner authorization.'));return result;}
    if(view==='Development Sessions'){
+     const dsPanel=snapshot.development_sessions||{};
+     if(window.AirodromDevelopmentSessions&&typeof window.AirodromDevelopmentSessions.render==='function'){
+       const handled=window.AirodromDevelopmentSessions.render(result,dsPanel,{
+         glass,node,button,api,stamp,
+         setNotice:(msg)=>{conversationNotice=msg;render();}
+       });
+       if(handled===true)return result;
+     }
+
      const ds=snapshot.development_sessions||{};
      const labels={LOCAL_ONLY:'LOCAL ONLY',READY_TO_PUSH:'READY TO PUSH',PR_OPEN:'PR OPEN',READY_TO_MERGE:'READY TO MERGE',MERGED:'MERGED'};
      const pending=Object.entries(ds.integration_counts||{}).filter(([k,n])=>n&&['READY_TO_PUSH','READY_TO_MERGE'].includes(k)).map(([k,n])=>labels[k]+' '+n);

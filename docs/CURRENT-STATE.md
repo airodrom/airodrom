@@ -49,3 +49,17 @@
 - **Installed:** `…/install/airodrom-lifecycle-f28e8ca` · admission **open** · prior_state **stopping** reconciled to epoch `4d5e0893…`
 - **Preservation:** missions 62 · personal_memories 6 · pins unchanged
 - **Backup:** `~/.airodrom/backups/lifecycle-closeout-20261010T163020Z`
+
+## Autonomous Self-Development V1 (LOCAL)
+
+- Development Sessions Control Center summary panel: `public/development-sessions-panel.js` (OpenCode Mission `eea8d18d-…` draft + host independent verification repair).
+- Branch `feat/dev-sessions-summary-v1` worktree under Documents/Codex (operator checkout untouched).
+- Focused contract: `tests/development-session-summary-v1.test.js` via registered task `development-session-summary-v1`.
+- Local-first: no push / no per-Mission PR / Automatic Acceptance OFF.
+
+## Self-Development Reliability V1.1 (LOCAL)
+
+- Host coding classifier admits authorized `control-hub.js` (prose ≠ credential file; Authorization+variable neutralized before `containsSecret`; MAX_FILE 256 KiB). Real secrets/paths remain fail-closed.
+- Coding default timeout 120000 ms (Mission `d55695c4-…` timed out at ~90s under prior 90000 ms supervision).
+- Evidence: [SELF-DEVELOPMENT-RELIABILITY-V1.1.md](SELF-DEVELOPMENT-RELIABILITY-V1.1.md). Install cutover still separate.
+- Operator checkout preserved. No push/PR/CI.

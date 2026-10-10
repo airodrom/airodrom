@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "diff-check",
+      "type": "process",
+      "command": "git",
+      "args": ["diff", "--check"]
+    },
+    {
+      "label": "development-session-summary-v1",
+      "type": "process",
+      "command": "node",
+      "args": ["--test", "tests/development-session-summary-v1.test.js"]
+    }
+  ]
+}
