@@ -1,3 +1,7 @@
+## Unreleased — Grounded Assistant Accuracy V1 shipped and installed
+
+- Merged PRs #56/#57 to `origin/main` (`fe918cc`); installed `airodrom-grounded-accuracy-fe918cc`; live Qwen Control Center conversation preserved host-verified active/current Mission distinction and authorized Development Session metadata; credentials stay on the Vault path.
+
 ## Unreleased — Grounded Assistant Accuracy V1
 
 - Inject host-verified Mission counts into Conversation and ground delivery text when the model mislabels current as active.
