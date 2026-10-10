@@ -32,3 +32,11 @@
 - Root cause: shipped package omitted lifecycle admission module, so durable `stopping` survived upgrade.
 - Fix on branch `fix/lifecycle-package-closeout` (local): ship `service-lifecycle.js` + `run-settlement.js`, reconcile orphaned stopping on new writer ownership, complete package allowlist.
 - Live `1.0.1-rc.1` service not restarted; remains Healthy. Evidence: [LIFECYCLE-PACKAGE-CLOSEOUT-V1.md](LIFECYCLE-PACKAGE-CLOSEOUT-V1.md).
+
+## Lifecycle closeout — SHIPPED + INSTALLED (2026-10-10)
+
+- **PR:** [#47](https://github.com/airodrom/airodrom/pull/47) **MERGED**
+- **`origin/main`:** `f28e8ca17e26297d49bfe6dcb25d6f232e3c93a3`
+- **Installed:** `…/install/airodrom-lifecycle-f28e8ca` · admission **open** · prior_state **stopping** reconciled to epoch `4d5e0893…`
+- **Preservation:** missions 62 · personal_memories 6 · pins unchanged
+- **Backup:** `~/.airodrom/backups/lifecycle-closeout-20261010T163020Z`

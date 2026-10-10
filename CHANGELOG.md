@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Lifecycle closeout shipped and installed
+
+- Merged PR #47 (`f28e8ca`); installed corrected package; reconciled durable `stopping` to admission `open` with preserved Memory/Missions.
+
 ## Unreleased — Lifecycle & Package Closeout V1
 
 - Ship service lifecycle admission and run-settlement helpers in the canonical package; reconcile orphaned durable `stopping` on new writer ownership without restarting the healthy installed service.

@@ -25,6 +25,20 @@ Closes two Everyday Reliability findings against installed `1.0.1-rc.1` without 
 - Typechecks: authority + SDK green
 - Live installed service: left Healthy on `1.0.1-rc.1` (not restarted). Durable row may remain `stopping` until the next authorized restart under this closeout build.
 
+
+## Shipment & activation (2026-10-10)
+
+| Claim | State |
+| --- | --- |
+| MERGED IN SOURCE | Yes — PR [#47](https://github.com/airodrom/airodrom/pull/47) → `f28e8ca17e26297d49bfe6dcb25d6f232e3c93a3` |
+| INSTALLED LOCALLY | Yes — `…/install/airodrom-lifecycle-f28e8ca` (package still versioned `1.0.1-rc.1`) |
+| LIVE VERIFIED | Yes — admission `open`; prior_state `stopping` → new epoch `4d5e0893-8412-4a7f-89b0-029a9207614e` |
+| PRODUCTION HOLD | WhatsApp / Meta AI |
+
+Backup/rollback: `~/.airodrom/backups/lifecycle-closeout-20261010T163020Z`
+
+Preservation: missions **62**, personal_memories **6**, pins OpenCode 2.0.25 / qwen3-coder:30b.
+
 ## Limitations
 
 - Live DB row is not rewritten without process ownership transfer (no concealed SQL overwrite).
