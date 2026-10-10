@@ -1,6 +1,7 @@
 'use strict';
 const { validateRequest, validateSchema, normalizeTools, fail }=require('../provider-envelope');
-const { dataPolicy, secretLike }=require('../provider-policy');
+const { dataPolicy, secretLike, operatorSecretLike }=require('../provider-policy');
+const contentSecret=(text,privacy)=>privacy==='local_only'?operatorSecretLike(text):secretLike(text);
 const { normalizeError }=require('../provider-reliability');
 const { redactText }=require('../secret-observation');
 const MAX_RESPONSE=1024*1024;
@@ -57,7 +58,7 @@ class OpenAICompatibleProvider {
       if(!raw||!Array.isArray(raw.choices)||raw.choices.length!==1)fail('invalid_response');
       const choice=raw.choices[0],message=choice.message;
       if(!message||message.role&&message.role!=='assistant'||message.content!=null&&typeof message.content!=='string')fail('invalid_response');
-      if(secretLike(message.content)||secretLike(message.reasoning_content))fail('invalid_response');
+      if(contentSecret(message.content,input.privacy)||contentSecret(message.reasoning_content,input.privacy))fail('invalid_response');
       if(choice.finish_reason==='content_filter')fail('policy_reject');
       if(!['stop','tool_calls'].includes(choice.finish_reason))fail('invalid_response');
       const tools=normalizeTools(message.tool_calls||[],input.tools||[]);
@@ -66,7 +67,11 @@ class OpenAICompatibleProvider {
       if(!tools.length&&!message.content?.trim())fail('invalid_response');
       const usage={};for(const key of ['prompt_tokens','completion_tokens','total_tokens','prompt_cache_hit_tokens','prompt_cache_miss_tokens'])if(Number.isSafeInteger(raw.usage?.[key])&&raw.usage[key]>=0)usage[key]=raw.usage[key];
       if(Number.isSafeInteger(raw.usage?.completion_tokens_details?.reasoning_tokens))usage.reasoning_tokens=raw.usage.completion_tokens_details.reasoning_tokens;
-      return {request_id:input.request_id,run_id:input.run_id,provider_id:this.providerId,model:model.id,profile_id:model.profile_id||model.id,status:'completed',text:redactText(message.content||''),structured_output:structured,tool_requests:tools,usage,finish_reason:choice.finish_reason,reasoning_context:typeof message.reasoning_content==='string'?redactText(message.reasoning_content):null,latency_ms:Date.now()-started,completed_at:Date.now(),execution_authority:false,accepted:false};
+      // Local private conversation already passed operator screening; display SESSION
+      // redaction must not mangle authorized Development Session / ordinary prose.
+      const visible=message.content||'';
+      const reasoning=typeof message.reasoning_content==='string'?message.reasoning_content:null;
+      return {request_id:input.request_id,run_id:input.run_id,provider_id:this.providerId,model:model.id,profile_id:model.profile_id||model.id,status:'completed',text:input.privacy==='local_only'?visible:redactText(visible),structured_output:structured,tool_requests:tools,usage,finish_reason:choice.finish_reason,reasoning_context:reasoning==null?null:(input.privacy==='local_only'?reasoning:redactText(reasoning)),latency_ms:Date.now()-started,completed_at:Date.now(),execution_authority:false,accepted:false};
     } catch(error) {
       let e=error;if(signal?.aborted)e={code:'cancelled'};else if(error?.name==='TimeoutError')e={code:'timeout'};else if(error instanceof TypeError)e={code:'network_error'};
       return {request_id:input?.request_id,run_id:input?.run_id,provider_id:this.providerId,model:model?.id,status:'failed',...normalizeError(e),latency_ms:Date.now()-started,execution_authority:false,accepted:false};

@@ -1,6 +1,9 @@
 'use strict';
-const { secretLike } = require('./provider-policy');
+const { secretLike, localConversationSecret } = require('./provider-policy');
 const fail = code => {throw Object.assign(Error('Provider request or response rejected'),{code});};
+const messagesSecret = (messages, input) => input?.privacy === 'local_only' && (input.data_class === 'private' || input.data_class === 'internal')
+  ? localConversationSecret(messages)
+  : secretLike(messages);
 const ID=/^[A-Za-z0-9_.:-]{1,160}$/;
 const SCHEMA_KEYS=new Set(['type','properties','required','additionalProperties','items','enum','anyOf','minimum','maximum','minLength','maxLength','minItems','maxItems','description','title']);
 function validateSchema(schema,value,depth=0) {
@@ -29,7 +32,7 @@ function schemaSupported(schema,depth=0) {
 const REQUEST_FIELDS=new Set(['allowed_providers','request_id','run_id','messages','tools','tool_choice','structured_schema','strict_schema','reasoning_mode','reasoning_effort','stream','max_output','context_tokens','temperature','data_class','privacy','project_policy','attachment_refs','memory_refs','context_refs','redaction','requirements','selected_agent','required_provider','required_model','cost_preference','latency_preference','unknown_side_effects','failed_providers','deterministic','execution_started']);
 function validateRequest(input) {
   if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!REQUEST_FIELDS.has(k))||!ID.test(input.request_id||'')||!ID.test(input.run_id||''))fail('invalid_request');
-  if(Buffer.byteLength(JSON.stringify(input))>128*1024||secretLike(input.messages)||secretLike(input.tools)||secretLike(input.structured_schema))fail('policy_reject');
+  if(Buffer.byteLength(JSON.stringify(input))>128*1024||messagesSecret(input.messages,input)||secretLike(input.tools)||secretLike(input.structured_schema))fail('policy_reject');
   if(!Array.isArray(input.messages)||!input.messages.length||input.messages.length>100)fail('invalid_request');
   for(const m of input.messages) {
     if(!m||!['system','user','assistant','tool'].includes(m.role)||Object.keys(m).some(k=>!['role','content','tool_calls','tool_call_id','reasoning_content'].includes(k))||!(typeof m.content==='string'||m.role==='assistant'&&m.content===null))fail('invalid_request');
