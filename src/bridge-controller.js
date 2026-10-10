@@ -271,6 +271,10 @@ class BridgeController extends EventEmitter {
     this.policy.on('approval', approval => { this._recordApprovalTransition(approval); this.supervisor?.schedule(); this.emit('change'); });
   }
   async initialize() {
+    // An explicit maintenance boot must never inherit prior open admission.
+    const closedBoot = process.env.AIRODROM_START_CLOSED;
+    if (closedBoot !== undefined && closedBoot !== '1') throw Error('AIRODROM_START_CLOSED must be exactly 1 when present');
+    this.startClosed = closedBoot === '1';
     fs.mkdirSync(this.dataDir, { recursive: true, mode: 0o700 }); fs.chmodSync(this.dataDir, 0o700);
     this.lockFile = path.join(this.dataDir, 'bridge.lock');
     try { this.lockFd = fs.openSync(this.lockFile, 'wx', 0o600); }
@@ -312,7 +316,7 @@ class BridgeController extends EventEmitter {
       // This is intentionally suggestion-only.  It reads durable project state
       // and never creates tasks, starts runs, or makes external calls.
       this.nextActions = new NextActionEngine({ projects: this.projects });
-      this.chatgptEvents = new ChatGPTEvents(this.memory.db, { route: loadRoute(this.dataDir) });
+      this.chatgptEvents = new ChatGPTEvents(this.memory.db, { route: loadRoute(this.dataDir), canDeliver: () => !this.closed && (!this.lifecycle || this.lifecycle.state()==='open') });
       this.chatgptEvents.start();
       this.tasks.on('transition', id => {
       const task = this.tasks.get(id);
@@ -347,6 +351,8 @@ class BridgeController extends EventEmitter {
       this.workers=new (require('./worker-registry').WorkerRegistry)(this);
       this.codexRelay=new (require('./codex-completion-relay').CodexCompletionRelay)(this);
       this.agentDispatch=new (require('./agent-dispatch').AgentDispatch)(this,this.options.agentDispatch||{});
+      this.lifecycle = new (require('./service-lifecycle').ServiceLifecycle)(this);
+      this.controlStore.lifecycle = this.lifecycle;
       this.controlStore.recover();
       this.controlContext = new ControlContext(this, this.controlStore);
       this.controlExecution = new ControlExecution(this, this.controlStore);
@@ -370,10 +376,10 @@ class BridgeController extends EventEmitter {
       this.providerGateway.beforeInference=(input,provider,attempt,profile,providerRecordId)=>{const run=this.controlStore.run(input.run_id),m=run?.mission_id?this.controlStore.getMission(run.mission_id):null;if(!m?.envelope.manifest)return;this.missions.program.assert(m);const p=m.envelope.manifest.permissions.providers;if(!(provider==='ollama'?p.local_reasoning:p.approved_external))throw Error('Manifest provider denied');if(provider!=='ollama'){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(providerRecordId||''))throw Error('Provider budget origin unavailable');this.missions.program.reserve(m.id,'external_reasoning',['provider',providerRecordId,provider,attempt,profile].join(':'),1,{run_id:run.id,provider,attempt,profile});}};
       this.boundedNextActions = new (require('./bounded-next-action').BoundedNextAction)(this,{enabled:true});
       this.missions.recover();
-      this.codexRelay.start();
+      if (!this.startClosed) this.codexRelay.start();
       this.agentDispatch.recover();
       this.slackRuntime = new SlackRuntime(this, this.options.slack || {});
-      this.slackRuntime.start().catch(() => {});
+      if (!this.startClosed) this.slackRuntime.start().catch(() => {});
       this.socketPath = path.join(this.dataDir, 'policy.sock');
       if (Buffer.byteLength(this.socketPath) > 100) throw new Error('Data directory too long for local Unix socket (choose a shorter path)');
       if (fs.existsSync(this.socketPath)) fs.unlinkSync(this.socketPath);
@@ -382,6 +388,13 @@ class BridgeController extends EventEmitter {
       fs.chmodSync(this.socketPath, 0o600);
       this.supervisor = new MissionSupervisor(this);
       this.monitor = setInterval(() => {
+        if (this.startClosed) {
+          if (this.lifecycle.state() !== 'open') return;
+          if (!this.closedBootBackgroundStarted) {
+            this.closedBootBackgroundStarted = true;
+            this.slackRuntime.start().catch(() => {});
+          }
+        }
         this.codexRelay?.reconcile();
         this.workExecution?.reconcileTimeouts().catch(()=>{});
         this.agentDispatch?.reconcile().catch(()=>{});
@@ -392,6 +405,7 @@ class BridgeController extends EventEmitter {
         try { this.reconcileExecution(); } catch { /* Reconciliation must not crash the host. */ }
         this.emit('change');
       }, 5000); this.monitor.unref();
+      this.lifecycle.finishRecovery();
       return this;
     } catch (e) { await this.shutdown(); throw e; }
   }
@@ -775,12 +789,22 @@ class BridgeController extends EventEmitter {
     delete task.invalidToolArguments;
   }
   async handlePolicy(req, res) {
+    const gate = this.lifecycle;
+    if (!gate) return this.handlePolicyRequest(req, res);
+    try { gate.assertOpen(); }
+    catch { return reply(res, 503, { allow: false, error: 'Service admission is closed for maintenance' }); }
+    gate.requests++;
+    try { return await this.handlePolicyRequest(req, res); }
+    finally { gate.requests--; }
+  }
+  async handlePolicyRequest(req, res) {
     try {
       const token = (req.headers.authorization || '').replace(/^Bearer /, '');
       const id = this.tokens.get(token); if (!id) return reply(res, 403, { error: 'Forbidden' });
       const task = this.tasks.get(id), runtime = this.runtimes.get(id);
       if (req.method !== 'POST' || !runtime) return reply(res, 403, { error: 'Forbidden' });
       const body = await readJSON(req);
+      this.lifecycle?.assertOpen();
       if (this.tokens.get(token) !== id || this.runtimes.get(id) !== runtime) return reply(res, 403, { error: 'Task authorization was revoked' });
       if (req.url === '/ready') {
         if (body.sessionId !== task.sessionId || body.cwd !== task.workspace) throw new Error('Safety session or workspace mismatch');
@@ -1335,6 +1359,7 @@ class BridgeController extends EventEmitter {
   }
 
   createTask(description, options = {}) {
+    this.lifecycle?.assertOpen();
     if (this.closed) throw new Error('Bridge closed');
     const reasoningGatewayPolicy = options.reasoningGatewayPolicy ? require('./host-reasoning-admission').policy(options.reasoningGatewayPolicy) : null;
     if (reasoningGatewayPolicy && !options.reasoningOnly) throw Error('Gateway policy requires reasoning-only task');
@@ -1704,6 +1729,7 @@ class BridgeController extends EventEmitter {
     return true;
   }
   async prompt(id, message, { timeoutMs = this.options.taskTimeoutMs || 60 * 60 * 1000, recovery = false, level1Internal = false, activeChatInternal = false, approvalResume = null } = {}) {
+    this.lifecycle?.assertOpen();
     const task = this.tasks.get(id); require('./removed-runtime').assertExecutable(task); this._normalizeMission(task);
     if (task.reasoningMode === 'reasoning_only' && task.reasoningGatewayPolicy) return this.hostReasoningAdmission.run(task, message, { recovery, timeoutMs });
     if (task.reasoningMode === 'reasoning_only') return this.reasoningAdmission.run(task, message, { recovery, timeoutMs });
@@ -2479,6 +2505,7 @@ class BridgeController extends EventEmitter {
     return this.shutdownPromise;
   }
   async shutdownOnce() {
+    if(this.lifecycle && this.lifecycle.state()!=='stopping')this.lifecycle.drain();
     this.closed = true; await this.workers?.shutdown(); this.codexRelay?.close(); this.supervisor?.close(); clearInterval(this.monitor);
     await this.missions?.close();
     await this.slackRuntime?.stop();
@@ -2498,6 +2525,7 @@ class BridgeController extends EventEmitter {
       }
       this.shutdownSettlement = settlement;
     }
+    if (settlement.remaining || this.lifecycle && !this.lifecycle.status().idle) throw Error('Shutdown termination is unverified; writer lock retained');
     if (this.server?.listening) await new Promise(resolve => this.server.close(resolve));
     await this.chatgptEvents?.stop(); await this.controlStore?.outbox.stop(); this.memory?.close();
     if (this.lockFd != null) { fs.closeSync(this.lockFd); this.lockFd = null; fs.unlinkSync(this.lockFile); }

@@ -26,3 +26,9 @@
 ## Operator checkout
 
 `/Users/andrew/code/airodrom` remains protected and dirty; it was not the install source.
+
+## Lifecycle & Package Closeout V1 (2026-10-10)
+
+- Root cause: shipped package omitted lifecycle admission module, so durable `stopping` survived upgrade.
+- Fix on branch `fix/lifecycle-package-closeout` (local): ship `service-lifecycle.js` + `run-settlement.js`, reconcile orphaned stopping on new writer ownership, complete package allowlist.
+- Live `1.0.1-rc.1` service not restarted; remains Healthy. Evidence: [LIFECYCLE-PACKAGE-CLOSEOUT-V1.md](LIFECYCLE-PACKAGE-CLOSEOUT-V1.md).

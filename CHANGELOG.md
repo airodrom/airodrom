@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Lifecycle & Package Closeout V1
+
+- Ship service lifecycle admission and run-settlement helpers in the canonical package; reconcile orphaned durable `stopping` on new writer ownership without restarting the healthy installed service.
+
 ## Unreleased — V1.0.1 hotfix shipped and installed
 
 - Merged PR #46 (`14ee5ab`); installed canonical `1.0.1-rc.1` package at `install/airodrom-1.0.1-rc.1` with Memory/Mission preservation and WhatsApp production HOLD unchanged.

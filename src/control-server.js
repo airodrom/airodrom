@@ -135,6 +135,16 @@ class ControlServer {
     };
   }
   async handle(req, res) {
+    const gate=this.bridge.lifecycle;
+    const route=new URL(req.url,this.origin).pathname;
+    const maintenance=req.method==='GET'&&['/api/interactive/lifecycle','/api/interactive/status','/api/mcp/health','/api/control-v2/health'].includes(route)||req.method==='POST'&&['/api/interactive/drain','/api/interactive/resume-admission','/api/interactive/stop'].includes(route);
+    const recovery=req.method==='POST'&&(['/api/interactive/cancel','/api/assistant/conversation/cancel','/api/assistant/browser/revoke','/api/assistant/browser/close','/api/product/cancel-mission','/api/control-v2/codex-reconcile','/api/control-v2/codex-cancel','/api/control-v2/cancel-mission','/api/control-v2/cancel-mission-program'].includes(route)||/^\/api\/tasks\/[0-9a-f-]{36}\/(cancel|pause|resolve-stop)$/.test(route));
+    if(!gate||maintenance)return this.handleRequest(req,res);
+    try{if(!recovery||gate.state()==='stopping')gate.assertOpen();}catch{return this.json(res,503,{error:'Service admission is closed for maintenance'});}
+    gate.requests++;
+    try{return await this.handleRequest(req,res);}finally{gate.requests--;}
+  }
+  async handleRequest(req, res) {
     const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'" };
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
     try {
@@ -178,7 +188,7 @@ class ControlServer {
       if (url.pathname === '/api/mcp/health') {
         if (!this.authorize(req, this.mcpToken)) return this.json(res, 401, { error: 'MCP authorization required' });
         if (req.method !== 'GET') return this.json(res, 405, { error: 'GET required' });
-        return this.json(res, 200, { ready: !this.bridge.closed, pid: process.pid, now: Date.now() });
+        return this.json(res, 200, { ready: !this.bridge.closed&&(!this.bridge.lifecycle||this.bridge.lifecycle.state()==='open'), pid: process.pid, now: Date.now() });
       }
       if(url.pathname==='/api/mcp/session'){
         if(!this.authorize(req,this.mcpToken)||req.method!=='POST')return this.json(res,401,{error:'Authenticated session required'});
@@ -261,7 +271,8 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/development-sessions/status')return this.json(res,200,this.bridge.developmentSessions.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/sensitive')return this.json(res,200,require('./assistant-service').sensitiveList(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/handoff')return this.json(res,200,require('./mission-handoff').status(this.bridge,url.searchParams.get('id'),'operator'));
-      if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, nickname:this.conversationEngine.nickname()||'Airo', opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'persistent local conversation; governed Work Missions; no chat tools', active_conversations:this.conversationEngine.active.size, active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n, quarantined_leases: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE state='quarantined'").get().n, installation_compatibility:(()=>{try{return require('./installation-compatibility').evaluate(this.bridge);}catch{return null;}})(), core_contracts:(()=>{try{return require('./core-contracts').manifest();}catch{return null;}})() });
+      if(req.method==='GET'&&url.pathname==='/api/interactive/lifecycle')return this.json(res,200,this.bridge.lifecycle.status());
+      if (req.method === 'GET' && url.pathname === '/api/interactive/status') return this.json(res, 200, { protocol: 'airodrom-local-v1', admission: this.bridge.lifecycle?.state()||'legacy', pid: process.pid, healthy: !this.bridge.closed, managed: typeof this.localShutdown === 'function', source_sha256: this.bridge.runtimeFingerprint.source_sha256, default_runtime: this.bridge.defaultRuntime, nickname:this.conversationEngine.nickname()||'Airo', opencode: await this.bridge.opencodeAdapter.readiness(), memory_schema: 2, reasoning_scope: 'persistent local conversation; governed Work Missions; no chat tools', active_conversations:this.conversationEngine.active.size, active_runs: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE state IN ('starting','running','verifying','termination_unverified')").get().n, quarantined_leases: this.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE state='quarantined'").get().n, installation_compatibility:(()=>{try{return require('./installation-compatibility').evaluate(this.bridge);}catch{return null;}})(), core_contracts:(()=>{try{return require('./core-contracts').manifest();}catch{return null;}})() });
       if (req.method === 'GET' && url.pathname === '/api/product/compatibility') return this.json(res, 200, {contracts:require('./core-contracts').manifest(),runtime_security:require('./runtime-security-conformance').evaluate(this.bridge),installation:require('./installation-compatibility').evaluate(this.bridge),authority:false});
       if (req.method === 'GET' && url.pathname === '/api/interactive/memory') return this.json(res, 200, this.interactiveMemory(url.searchParams.get('query') || ''));
       if (req.method === 'GET' && url.pathname === '/api/interactive/task') return this.json(res, 200, this.interactiveTask(url.searchParams.get('mission_id')));
@@ -438,8 +449,17 @@ class ControlServer {
         require('./control-plane-store').object(body, ['mission_id', 'request_id']);
         return this.json(res, 200, this.bridge.missions.cancel(body.mission_id, body));
       }
+      if(url.pathname==='/api/interactive/drain'){
+        require('./control-plane-store').object(body,[]);
+        return this.json(res,200,this.bridge.lifecycle.drain());
+      }
+      if(url.pathname==='/api/interactive/resume-admission'){
+        require('./control-plane-store').object(body,['epoch']);
+        return this.json(res,200,this.bridge.lifecycle.resume(body.epoch));
+      }
       if (url.pathname === '/api/interactive/stop') {
         if (Object.keys(body).length || typeof this.localShutdown !== 'function') throw Error('Only the managed local service can be stopped by this endpoint.');
+        this.bridge.lifecycle.prepareStop();
         this.json(res, 202, { stopping: true }); setImmediate(() => this.localShutdown().catch(() => {})); return;
       }
       if (url.pathname === '/api/interactive/remember') {

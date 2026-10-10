@@ -14,9 +14,12 @@ async function main() {
   local.privateDirectory(c.dataDir); local.privateDirectory(c.profile);
   const bridge = await new Bridge({ dataDir: c.dataDir, sourceProfile: c.profile, webEnabled: false, defaultRuntime: process.env.AIRODROM_DEFAULT_RUNTIME, slack: { env: {} }, opencode: { enabled: true, executable: pins.executables.find(p => p.id === 'opencode').path, model: pins.model, pinsFile: c.pinsFile, timeoutMs: 90000 } }).initialize();
   const server = new ControlServer(bridge, { port: 0 });
+  bridge.controlServer = server;
   let stopping = false;
   const stop = async () => {
-    if (stopping) return; stopping = true;
+    if (stopping) return;
+    if(bridge.lifecycle.state()!=='stopping'){bridge.lifecycle.drain();bridge.lifecycle.prepareStop();}
+    stopping = true;
     await server.close(); await bridge.shutdown();
     for (const name of ['ui.json', 'mcp.json']) fs.rmSync(path.join(c.dataDir, name), { force: true });
   };

@@ -281,7 +281,17 @@ async function start(home, env = process.env) {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       if (controller.signal.aborted) throw Error('Local startup was interrupted; existing data preserved.');
-      try { const s = await status(home, {timeoutMs:Math.min(1000,deadline-Date.now()),signal:controller.signal}); if (s.healthy) return s; } catch {}
+      try {
+        const s = await status(home, {timeoutMs:Math.min(1000,deadline-Date.now()),signal:controller.signal});
+        if (s.healthy) {
+          // Owned local start is host evidence to reopen a prior planned stop once blockers are idle.
+          if (s.admission && s.admission !== 'open') {
+            try { await admission(home, 'resume'); return await status(home, {timeoutMs:1000,signal:controller.signal}); }
+            catch { /* Remain closed when durable work is unresolved. */ }
+          }
+          return s;
+        }
+      } catch {}
       if (spawnError) break; await pause(100);
     }
     throw Error('Local service did not become ready. Inspect private service state; data was preserved.');
@@ -295,6 +305,16 @@ async function stop(home) {
   for (let i = 0; i < 150; i++) { if (!require('../scripts/macos/control.cjs').lock({ dataDir: path.join(home, 'data') }).blocked) return { stopped: true }; await pause(100); }
   throw Error('Service is still stopping. Its writer lock was preserved.');
 }
+async function admission(home, action='status') {
+  if(!['status','drain','resume'].includes(action))throw Error('Use admission status, drain or resume');
+  if(action==='status')return request(home,'/api/interactive/lifecycle');
+  if(action==='drain')return request(home,'/api/interactive/drain',{});
+  const health=await status(home);
+  if(!health.healthy)throw Error('Current source health required before resuming');
+  const gate=await request(home,'/api/interactive/lifecycle');
+  return request(home,'/api/interactive/resume-admission',{epoch:gate.epoch});
+}
+
 function open(home, {missionId, view} = {}) {
   const d = discovery(home);
   if(missionId&&!require('./product-observability').id(missionId))throw Error('Invalid Mission identity');
@@ -305,4 +325,4 @@ function open(home, {missionId, view} = {}) {
   const r = spawnSync('/usr/bin/osascript', ['-'], { input: 'open location ' + JSON.stringify(target) + '\n', encoding: 'utf8', timeout: 5000 });
   if (r.status !== 0) throw Error('Control Center could not open. Check the default browser.');
 }
-module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, isStopped, start, stop, open };
+module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, isStopped, start, stop, admission, open };
