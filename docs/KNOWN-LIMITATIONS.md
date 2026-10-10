@@ -37,10 +37,15 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 
 ## Grounded Assistant Accuracy V1
 
-- Source on `feat/grounded-assistant-accuracy-v1`. **Not pushed**, **not merged**, **not INSTALLED** into the live Everyday UX package until a later authorized checkpoint.
-- Host Mission count grounding covers active/current/completed/historical/retained vocabulary only; it does not invent Settled/Failed filters in Conversation prose.
+- **SHIPPED + INSTALLED** on `airodrom-grounded-accuracy-fe918cc` (main ancestry through `fe918cc`). Host Mission count grounding covers active/current/completed/historical/retained vocabulary only; it does not invent Settled/Failed filters in Conversation prose.
 - Operator screening permits authorized Development Session metadata shapes; unknown `session <token>` forms and Cookie/assignment secrets remain denied.
-- Live Control Center continues to run Everyday UX `5e23731` until an authorized install cutover.
+
+## Conversation UX Bugfix V1
+
+- Local branch `fix/conversation-ux-bugfix-v1` (isolated worktree). **Not pushed**, **not merged**, **not INSTALLED** into the live Grounded Accuracy package until a later authorized cutover.
+- Start-new / Continue / refresh session isolation and Claude-unavailable Qwen fallback are Control Center UX only; ConversationEngine session `{new:true}` behavior is unchanged.
+- Claude conversation remains WAIT / OFF until independently qualified. No API-key or subscription workaround.
+- See [CONVERSATION-UX-BUGFIX-V1.md](CONVERSATION-UX-BUGFIX-V1.md).
 
 ## Notion documentation ownership
 

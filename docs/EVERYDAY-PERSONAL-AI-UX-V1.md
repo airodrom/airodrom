@@ -60,3 +60,4 @@ Deep links use allowlisted `local.open({ view })` targets: Conversation, Mission
 - Claude conversation remains WAIT / OFF for inference until independently qualified.
 - WhatsApp production HOLD unchanged. Automatic Acceptance OFF.
 - Menu helper must be rebuilt from the installed source after cutover (`prepare-local-menu`).
+- Start-new / Claude-unavailable Control Center corrections are tracked in [Conversation UX Bugfix V1](CONVERSATION-UX-BUGFIX-V1.md) (local source; not yet installed into the live package).
