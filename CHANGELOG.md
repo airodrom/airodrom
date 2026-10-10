@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Personal AI Channels V1
+
+- Unify first-party ConversationEngine reliability across Control Center, ChatGPT MCP and the macOS menu.
+- Control Center: persistent browser session, scoped history, Memory consent, local-ollama/model identity and Thinking activity.
+- macOS menu: Conversation status row and Open Conversation deep-link (`?view=Conversation`).
+- Preserve WhatsApp production outbound and automatic Mission execution OFF under Meta policy HOLD.
+
+
 ## 1.0.0-rc.1 — October 5, 2026 — private candidate
 
 - Include opaque candidate/ContextPack identity migration, scoped erasure and current-authority restore/replay safeguards from the qualified private source.

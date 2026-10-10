@@ -295,10 +295,12 @@ async function stop(home) {
   for (let i = 0; i < 150; i++) { if (!require('../scripts/macos/control.cjs').lock({ dataDir: path.join(home, 'data') }).blocked) return { stopped: true }; await pause(100); }
   throw Error('Service is still stopping. Its writer lock was preserved.');
 }
-function open(home, {missionId} = {}) {
+function open(home, {missionId, view} = {}) {
   const d = discovery(home);
   if(missionId&&!require('./product-observability').id(missionId))throw Error('Invalid Mission identity');
-  const target=missionId?d.url.replace('/#','/?mission='+missionId+'#'):d.url;
+  if(view!=null&&view!=='Conversation')throw Error('Unsupported Control Center view');
+  const query=missionId?'mission='+missionId:(view?'view='+encodeURIComponent(view):null);
+  const target=query?d.url.replace('/#','/?'+query+'#'):d.url;
   // LaunchServices receives a private URL on stdin through AppleScript, never argv.
   const r = spawnSync('/usr/bin/osascript', ['-'], { input: 'open location ' + JSON.stringify(target) + '\n', encoding: 'utf8', timeout: 5000 });
   if (r.status !== 0) throw Error('Control Center could not open. Check the default browser.');
