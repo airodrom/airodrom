@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Integrated Release V1 shipped
+
+- Merged consolidated daily candidate via PR #45 to `origin/main` (`0e5f0a86da1a21526105ebda24984ec309f91897`); release source `77724f83569eadae41727c86b201e433a801f910`.
+- Closed superseded feature PRs #43/#44 after inclusion verification. Operator install remains separately authorized; WhatsApp production HOLD unchanged.
+
 ## Unreleased — Integrated Release V1 (daily candidate 2026-10-09)
 
 - Prepare one local-first release candidate from `integ/daily-candidate-v1-20261009` with allowlisted source archives, SOURCE/COMPATIBILITY manifests, and reversible install plan (service not replaced).

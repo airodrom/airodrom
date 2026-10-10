@@ -9,6 +9,8 @@ Local-first release candidate prepared from one verified source revision. This i
 | Worktree | `/Users/andrew/Documents/Codex/2026-10-09/airodrom-daily-integration-v1/work/airodrom-daily-integration` |
 | Branch | `integ/daily-candidate-v1-20261009` |
 | Integration tip (preflight) | `2aac9c72d184fbae1754fcf43104e865ff4a4403` |
+| Release source HEAD | `77724f83569eadae41727c86b201e433a801f910` |
+| Merged on `origin/main` | `0e5f0a86da1a21526105ebda24984ec309f91897` (PR #45) |
 | Package | `airodrom` `1.0.0-rc.1` (`private: true`) |
 | Operator checkout | `/Users/andrew/code/airodrom` on `main` — preserved; not the install source |
 
@@ -26,17 +28,17 @@ Canonical package artifacts (outside Git):
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Premium Control Center | IMPLEMENTED LOCALLY | Atmosphere, theme, Conversation, System Health, compatibility rows |
-| Live Observatory | IMPLEMENTED LOCALLY | `src/live-observatory.js` |
-| Menu Bar V2 | IMPLEMENTED LOCALLY | Conversation status + Open Conversation |
-| Automatic Acceptance | IMPLEMENTED LOCALLY | Risk-based Acceptance + Cursor task bridge (open PR #43 on feature tip) |
-| Development Sessions | IMPLEMENTED LOCALLY | Local-first batch merge policy; no auto CI/merge |
-| Personal AI Channels | IMPLEMENTED LOCALLY | Control Center / MCP / macOS ConversationEngine |
-| Conversation provider API | IMPLEMENTED LOCALLY | `/api/assistant/provider` restored |
-| Core Contracts V1 | IMPLEMENTED LOCALLY | ADR 0043 |
-| Runtime Security Conformance | IMPLEMENTED LOCALLY | Host-evidence VERIFIED/UNVERIFIED/UNSUPPORTED |
-| Installation Compatibility | IMPLEMENTED LOCALLY | `/compat`, `/api/product/compatibility` |
-| WhatsApp source | IMPLEMENTED LOCALLY · PRODUCTION HOLD | Inbound + Conversations + credential routes; outbound/Mission auto OFF; Meta AI policy HOLD |
+| Premium Control Center | MERGED IN SOURCE | Atmosphere, theme, Conversation, System Health, compatibility rows |
+| Live Observatory | MERGED IN SOURCE | `src/live-observatory.js` |
+| Menu Bar V2 | MERGED IN SOURCE | Conversation status + Open Conversation |
+| Automatic Acceptance | MERGED IN SOURCE | Risk-based Acceptance + Cursor task bridge (feature PR #43 closed after inclusion) |
+| Development Sessions | MERGED IN SOURCE | Local-first batch merge policy; no auto CI/merge |
+| Personal AI Channels | MERGED IN SOURCE | Control Center / MCP / macOS ConversationEngine |
+| Conversation provider API | MERGED IN SOURCE | `/api/assistant/provider` restored |
+| Core Contracts V1 | MERGED IN SOURCE | ADR 0043 |
+| Runtime Security Conformance | MERGED IN SOURCE | Host-evidence VERIFIED/UNVERIFIED/UNSUPPORTED |
+| Installation Compatibility | MERGED IN SOURCE | `/compat`, `/api/product/compatibility` |
+| WhatsApp source | MERGED IN SOURCE · PRODUCTION HOLD | Inbound + Conversations + credential routes; outbound/Mission auto OFF; Meta AI policy HOLD |
 | OpenCode 2.0.25 + Qwen | QUALIFIED IN SOURCE | `config/agent-runtime-qualification-v1.json` |
 | Memory V2 | PRESERVED | No silent migration |
 | Gmail | PRESERVED | Existing OAuth/connector contracts |
@@ -46,9 +48,9 @@ Canonical package artifacts (outside Git):
 
 | State | This candidate |
 | --- | --- |
-| IMPLEMENTED LOCALLY | Yes — daily integration worktree |
-| MERGED IN SOURCE | No — not on `origin/main` |
-| INSTALLED LOCALLY | No — operator service not replaced |
+| IMPLEMENTED LOCALLY | Yes — daily integration worktree (historical) |
+| MERGED IN SOURCE | Yes — PR #45 → `0e5f0a86da1a21526105ebda24984ec309f91897` |
+| INSTALLED LOCALLY | No — operator service not replaced (separate authorization) |
 | LIVE VERIFIED | Partial — focused fixture/typecheck evidence only; not a live production qualify |
 | PRODUCTION HOLD | WhatsApp production messaging / Meta AI providers |
 
@@ -105,14 +107,15 @@ Rollback: restore prior source tree or previous archive; keep databases and Keyc
 
 ## Git / PR status
 
-- Daily branch ahead of `origin/main` (local only).  
-- Open related PRs (feature tips, not this integ branch): #44 WhatsApp Inbound, #43 Automatic Acceptance; drafts #38/#37/#36.  
-- `main` branch protection: not configured via API (404). Required checks documented in [CI-BRANCH-PROTECTION.md](CI-BRANCH-PROTECTION.md); hosted workflow remains manually disabled.  
-- **No push, merge, tag, or service cutover** without explicit operator authorization.
+- Consolidated release PR [#45](https://github.com/airodrom/airodrom/pull/45) **merged** to `main` at `0e5f0a86da1a21526105ebda24984ec309f91897`.  
+- Release source HEAD `77724f83569eadae41727c86b201e433a801f910` is an ancestor of `origin/main`.  
+- Feature PRs #43 (Automatic Acceptance) and #44 (WhatsApp Inbound) closed after inclusion verification; feature branches retained. Drafts #38/#37/#36 unchanged.  
+- Hosted candidate workflow remained idle (no checks required; no heavy suites).  
+- **Local operator install / service cutover** still requires separate authorization.
 
 ## Known blockers
 
-1. Not merged to `main`; not installed on the operator host.  
+1. Not installed on the operator host (separate authorization).  
 2. WhatsApp production HOLD (Meta AI policy).  
 3. Live OpenCode/Qwen qualification on the operator machine is separate from fixture evidence.  
-4. End-of-day merge checkpoint prepared locally only; PR creation for the integ branch awaits authorization.
+4. Operator checkout remains dirty/protected and is not the install source.
