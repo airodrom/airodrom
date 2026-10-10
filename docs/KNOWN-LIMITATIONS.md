@@ -42,8 +42,7 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 
 ## Conversation UX Bugfix V1
 
-- Local branch `fix/conversation-ux-bugfix-v1` (isolated worktree). **Not pushed**, **not merged**, **not INSTALLED** into the live Grounded Accuracy package until a later authorized cutover.
-- Start-new / Continue / refresh session isolation and Claude-unavailable Qwen fallback are Control Center UX only; ConversationEngine session `{new:true}` behavior is unchanged.
+- **SHIPPED + INSTALLED** on `airodrom-conversation-ux-bugfix-52e1003` (main merge `52e1003`). Start-new / Continue / refresh session isolation and Claude-unavailable Qwen fallback are Control Center UX only; ConversationEngine session `{new:true}` behavior is unchanged.
 - Claude conversation remains WAIT / OFF until independently qualified. No API-key or subscription workaround.
 - See [CONVERSATION-UX-BUGFIX-V1.md](CONVERSATION-UX-BUGFIX-V1.md).
 

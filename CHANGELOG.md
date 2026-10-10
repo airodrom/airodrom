@@ -1,3 +1,7 @@
+## Unreleased — Conversation UX Bugfix V1 shipped and installed
+
+- Merged PR #60 to `origin/main` (`52e1003`); installed `airodrom-conversation-ux-bugfix-52e1003`; live Control Center verifies Start new / pending-new refresh / Continue previous and Claude unavailable→Qwen fallback.
+
 ## Unreleased — Conversation UX Bugfix V1
 
 - Start new conversation clears the browser display and skips auto-restoring the latest host browser session across refresh; Continue previous restores the prior session; first send creates a fresh identity.
