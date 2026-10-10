@@ -1,3 +1,7 @@
+## Unreleased — WhatsApp verify-token staged rotation
+
+- Staged verify-token recovery: new Vault candidate while current remains valid; Meta Verify or `commit-verify-token` finalizes; `rollback-verify-token` and TTL discard the candidate; local probes cannot finalize. App Secret and Graph token references preserved. Production HOLD / public ingress / outbound unchanged.
+
 ## Unreleased — Conversation UX Bugfix V1 shipped and installed
 
 - Merged PR #60 to `origin/main` (`52e1003`); installed `airodrom-conversation-ux-bugfix-52e1003`; live Control Center verifies Start new / pending-new refresh / Continue previous and Claude unavailable→Qwen fallback.

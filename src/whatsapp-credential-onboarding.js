@@ -7,9 +7,11 @@
  * accounts and prepares a webhook-only HTTPS callback. Public ingress and
  * Mission auto-dispatch remain off.
  *
- * rotate-verify-token generates a new webhook verify token in-process,
- * replaces only that Vault slot, displays the plaintext once on a TTY,
- * and never writes the value to logs, Git, Notion, or Mission results.
+ * rotate-verify-token stages a new webhook verify token in Keychain without
+ * revoking the current slot and displays the plaintext once on a TTY. Local
+ * probes never finalize. Meta Verify (non-probe) or commit-verify-token promotes
+ * the candidate and revokes the previous slot. rollback-verify-token discards an
+ * uncommitted stage. Values never enter logs, Git, Notion, or Mission results.
  */
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -65,13 +67,14 @@ function generateVerifyToken() {
 }
 
 /**
- * Replace only the verify-token Vault slot; preserve app_secret and access_token references.
- * @param {{vault, inbound, token?:string}} options inbound must expose configure + challenge
- * @returns {{verify_token_reference, app_secret_reference, access_token_reference, previous_reference, token}}
+ * Stage a new verify-token Vault slot; preserve current verify, app_secret and access_token.
+ * @param {{vault, inbound, token?:string, ttlMs?:number}} options
+ * @returns {{slot_verify, slot_staged, slot_app, slot_graph, previous_slot_verify, token, staging_expires_at}}
  *   `token` is returned only for the caller to display once; do not persist or log it.
  */
-function rotateVerifyTokenSlot({ vault, inbound, token } = {}) {
+function rotateVerifyTokenSlot({ vault, inbound, token, ttlMs } = {}) {
   if (!vault || !inbound) throw Error('Vault and WhatsApp inbound required for verify-token rotation');
+  if (typeof inbound.options?.verifyToken === 'string') delete inbound.options.verifyToken;
   const refs = typeof inbound.opaqueCredentialReferences === 'function'
     ? inbound.opaqueCredentialReferences('operator')
     : null;
@@ -85,35 +88,35 @@ function rotateVerifyTokenSlot({ vault, inbound, token } = {}) {
   if (!next || next.includes('\0') || Buffer.byteLength(next) > 200) {
     throw Error('Invalid generated WhatsApp verify token');
   }
-  const replaced = vault.replace(previousRef, next, 'whatsapp');
-  inbound.configure({
-    enabled: refs.enabled !== false,
+  const stored = vault.put(next, 'whatsapp');
+  const staged = inbound.stageVerifyTokenRotation({
     confirmed: true,
-    verify_token_reference: replaced.reference,
-    app_secret_reference: appRef,
-    access_token_reference: accessRef
+    staged_verify_reference: stored.reference,
+    ...(Number.isInteger(ttlMs) ? { ttl_ms: ttlMs } : {})
   }, 'operator');
-  if (typeof inbound.options?.verifyToken === 'string') {
-    // Drop in-memory fixture override so Vault is authoritative after rotation.
-    delete inbound.options.verifyToken;
-  }
   return {
-    slot_verify: replaced.reference,
+    slot_verify: previousRef,
+    slot_staged: staged.slot_staged,
     slot_app: appRef,
     slot_graph: accessRef,
     previous_slot_verify: previousRef,
+    staging_expires_at: staged.staging_expires_at,
+    staged: true,
     token: next,
     public_ingress: false,
     auto_mission_execution: false
   };
 }
 
-async function probeWebhookChallenge(home, token) {
+/** Local loopback proof. Never finalizes staged rotation (probe header). */
+async function probeWebhookChallenge(home, token, { finalizeStaged = false } = {}) {
   const local = require('./local-bootstrap');
   const d = local.discovery(home);
   const challenge = 'rotateProof1';
   const url = `${d.origin}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(token)}&hub.challenge=${challenge}`;
-  const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10000) });
+  const headers = {};
+  if (finalizeStaged !== true) headers['x-airodrom-verify-probe'] = '1';
+  const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10000), headers });
   const body = await r.text();
   return { status: r.status, accepted: r.status === 200 && body === challenge };
 }
@@ -432,8 +435,9 @@ async function runStatus(home, output, json = false) {
 }
 
 /**
- * Generate and bind a new webhook verify token. Displays plaintext once on TTY.
- * Preserves Meta App Secret and Graph access token references. Never logs the token.
+ * Stage a new webhook verify token. Displays plaintext once on TTY.
+ * Current token remains valid until Meta Verify finalizes the stage (or explicit commit),
+ * or until rollback/expiry. Local probes never finalize. Never logs the token.
  */
 async function runRotateVerifyToken(home, input, output, { signal } = {}) {
   if (!home || !input || !output) throw Error('WhatsApp verify-token rotation requires home, input and output');
@@ -447,13 +451,15 @@ async function runRotateVerifyToken(home, input, output, { signal } = {}) {
     throw Error('Keychain Vault is not prepared. Run: airodrom secret prepare');
   }
 
-  output.write('WhatsApp verify-token rotation\n');
-  output.write('A new cryptographically secure verify token will be generated and bound.\n');
+  output.write('WhatsApp verify-token staged rotation\n');
+  output.write('A new cryptographically secure verify token will be staged in Keychain.\n');
+  output.write('The current verify token stays valid until Meta Verify and Save succeeds (or you commit).\n');
   output.write('Meta App Secret and Graph access token references stay unchanged.\n');
   output.write('The new token is printed once below for Meta Configuration. It is not logged.\n');
+  output.write('Local proofs use a non-finalizing probe and cannot revoke the current token.\n');
   output.write('Public ingress and Mission auto-dispatch stay OFF.\n');
 
-  if (!await confirm(input, output, { prompt: 'Rotate the active WhatsApp webhook verify token now?', signal })) {
+  if (!await confirm(input, output, { prompt: 'Stage a new WhatsApp webhook verify token now?', signal })) {
     output.write('WhatsApp verify-token rotation cancelled.\n');
     return { cancelled: true, public_ingress: false, auto_mission_execution: false };
   }
@@ -464,45 +470,53 @@ async function runRotateVerifyToken(home, input, output, { signal } = {}) {
     || refs.slot_verify === '[omitted]' || refs.slot_app === '[omitted]' || refs.slot_graph === '[omitted]') {
     throw Error('WhatsApp verify token, App Secret and Graph access token must already be bound. Run: airodrom whatsapp bind');
   }
+  if (refs.staging_active) {
+    throw Error('WhatsApp verify-token rotation already staged. Run: airodrom whatsapp rollback-verify-token');
+  }
+  const preservedVerify = refs.slot_verify;
   const preservedApp = refs.slot_app;
   const preservedAccess = refs.slot_graph;
 
   let previous = '';
   let next = '';
   try {
-    previous = vault.resolve(refs.slot_verify, 'whatsapp');
+    previous = vault.resolve(preservedVerify, 'whatsapp');
     next = generateVerifyToken();
-    const replaced = vault.replace(refs.slot_verify, next, 'whatsapp');
-    const configured = await local.request(home, '/api/assistant/whatsapp/inbound/configure', {
-      enabled: refs.enabled !== false,
+    const stored = vault.put(next, 'whatsapp');
+    const staged = await local.request(home, '/api/assistant/whatsapp/inbound/stage-verify-token', {
       confirmed: true,
-      verify_token_reference: replaced.reference,
-      app_secret_reference: preservedApp,
-      access_token_reference: preservedAccess
+      staged_verify_reference: stored.reference
     });
-    if (configured?.binding?.app_secret_bound === false || configured?.app_secret_bound === false) {
-      throw Error('App Secret binding was lost during verify-token rotation');
-    }
-    if (configured?.binding?.access_token_bound === false || configured?.access_token_bound === false) {
-      throw Error('Graph access token binding was lost during verify-token rotation');
-    }
-    const after = await local.request(home, '/api/assistant/whatsapp/inbound/credential-references', { confirmed: true });
-    if (after.slot_app !== preservedApp || after.slot_graph !== preservedAccess) {
+    if (staged?.slot_app !== preservedApp || staged?.slot_graph !== preservedAccess) {
       throw Error('App Secret or Graph access token reference changed unexpectedly');
     }
-    if (after.slot_verify !== replaced.reference) {
-      throw Error('Verify token reference was not updated');
+    if (staged?.slot_verify !== preservedVerify) {
+      throw Error('Current verify token reference changed unexpectedly during staging');
+    }
+    if (staged?.slot_staged !== stored.reference) {
+      throw Error('Staged verify token reference was not recorded');
     }
 
-    const accepted = await probeWebhookChallenge(home, next);
-    const rejected = await probeWebhookChallenge(home, previous);
-    if (accepted.accepted !== true) throw Error('Local webhook challenge did not accept the new verify token');
-    if (rejected.accepted === true) throw Error('Previous verify token still accepted after rotation');
+    const stagedOk = await probeWebhookChallenge(home, next, { finalizeStaged: false });
+    const previousOk = await probeWebhookChallenge(home, previous, { finalizeStaged: false });
+    if (stagedOk.accepted !== true) throw Error('Local webhook challenge did not accept the staged verify token');
+    if (previousOk.accepted !== true) throw Error('Current verify token must remain accepted during staging');
+
+    const afterProbe = await local.request(home, '/api/assistant/whatsapp/inbound/credential-references', { confirmed: true });
+    if (!afterProbe.staging_active || afterProbe.slot_verify !== preservedVerify || afterProbe.slot_staged !== stored.reference) {
+      throw Error('Staging was altered by local probe; refusing to continue');
+    }
+    if (afterProbe.slot_app !== preservedApp || afterProbe.slot_graph !== preservedAccess) {
+      throw Error('App Secret or Graph access token reference changed after probe');
+    }
 
     output.write('\nNew Meta webhook verify token (enter once in Meta App → WhatsApp → Configuration):\n\n');
     output.write(next + '\n\n');
     output.write('Shown once. Do not paste into chat, Git, Notion, or Mission results.\n');
-    output.write('Challenge proof: new token accepted · previous token rejected\n');
+    output.write('Staging active: current and staged tokens both accepted until Meta Verify, commit, rollback, or expiry.\n');
+    output.write('Meta Verify and Save (non-probe) finalizes the new token and revokes the previous Keychain slot.\n');
+    output.write('Manual finalize: airodrom whatsapp commit-verify-token\n');
+    output.write('Rollback without finalize: airodrom whatsapp rollback-verify-token\n');
     output.write('App Secret and Graph access token: preserved\n');
     output.write('Public ingress: OFF · Mission auto-dispatch: OFF\n');
 
@@ -518,12 +532,16 @@ async function runRotateVerifyToken(home, input, output, { signal } = {}) {
     writeSummary(output, summary);
     return {
       cancelled: false,
-      rotated: true,
-      slot_verify: replaced.reference,
+      staged: true,
+      committed: false,
+      slot_verify: preservedVerify,
+      slot_staged: stored.reference,
       slot_app: preservedApp,
       slot_graph: preservedAccess,
-      challenge_new_ok: true,
-      challenge_previous_rejected: true,
+      staging_expires_at: staged.staging_expires_at,
+      challenge_staged_ok: true,
+      challenge_previous_ok: true,
+      probe_finalized: false,
       public_ingress: false,
       auto_mission_execution: false,
       values_displayed_once: true
@@ -534,11 +552,59 @@ async function runRotateVerifyToken(home, input, output, { signal } = {}) {
   }
 }
 
+async function runRollbackVerifyToken(home, input, output, { signal } = {}) {
+  if (!home || !input || !output) throw Error('WhatsApp verify-token rollback requires home, input and output');
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== 'function') {
+    throw Error('WhatsApp verify rollback requires an interactive operator terminal.');
+  }
+  const local = require('./local-bootstrap');
+  output.write('WhatsApp verify-token staging rollback\n');
+  output.write('Discards the staged candidate and keeps the current verify-token reference.\n');
+  output.write('App Secret and Graph access token stay unchanged. Public ingress stays OFF.\n');
+  if (!await confirm(input, output, { prompt: 'Rollback staged WhatsApp verify-token rotation now?', signal })) {
+    output.write('WhatsApp verify-token rollback cancelled.\n');
+    return { cancelled: true, public_ingress: false };
+  }
+  await ensureService(home);
+  const result = await local.request(home, '/api/assistant/whatsapp/inbound/rollback-verify-token', { confirmed: true });
+  output.write('Staged verify token discarded. Current verify token remains active.\n');
+  output.write('Public ingress: OFF · Mission auto-dispatch: OFF\n');
+  return { cancelled: false, ...result };
+}
+
+async function runCommitVerifyToken(home, input, output, { signal } = {}) {
+  if (!home || !input || !output) throw Error('WhatsApp verify-token commit requires home, input and output');
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== 'function') {
+    throw Error('WhatsApp verify commit requires an interactive operator terminal.');
+  }
+  const local = require('./local-bootstrap');
+  output.write('WhatsApp verify-token staging commit\n');
+  output.write('Promotes the staged candidate and revokes the previous verify-token Keychain slot.\n');
+  output.write('Use after Meta Verify and Save succeeded, or to finalize without another Meta challenge.\n');
+  output.write('App Secret and Graph access token stay unchanged. Public ingress stays OFF.\n');
+  if (!await confirm(input, output, { prompt: 'Commit staged WhatsApp verify-token rotation now?', signal })) {
+    output.write('WhatsApp verify-token commit cancelled.\n');
+    return { cancelled: true, public_ingress: false };
+  }
+  await ensureService(home);
+  const before = await local.request(home, '/api/assistant/whatsapp/inbound/credential-references', { confirmed: true });
+  const preservedApp = before.slot_app;
+  const preservedAccess = before.slot_graph;
+  const result = await local.request(home, '/api/assistant/whatsapp/inbound/commit-verify-token', { confirmed: true });
+  if (result.slot_app !== preservedApp || result.slot_graph !== preservedAccess) {
+    throw Error('App Secret or Graph access token reference changed during commit');
+  }
+  output.write('Staged verify token committed. Previous verify-token slot revoked.\n');
+  output.write('Public ingress: OFF · Mission auto-dispatch: OFF\n');
+  return { cancelled: false, ...result };
+}
+
 module.exports = {
   SLOTS,
   storeSlot,
   generateVerifyToken,
   rotateVerifyTokenSlot,
+  probeWebhookChallenge,
   bindReferences,
   summarizeBinding,
   writeSummary,
@@ -548,5 +614,7 @@ module.exports = {
   runPrepare,
   runStatus,
   runRotateVerifyToken,
+  runRollbackVerifyToken,
+  runCommitVerifyToken,
   vaultFor
 };

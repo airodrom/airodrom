@@ -178,7 +178,9 @@ class ControlServer {
       if(whatsappWebhook){
         const inbound=this.bridge.whatsappInbound;if(!inbound)throw Error('WhatsApp inbound unavailable');
         if(req.method==='GET'){
-          const challenge=inbound.challenge(Object.fromEntries(url.searchParams));
+          // Loopback probe header skips staged finalize so local proofs cannot revoke the current verify token.
+          const probe=req.headers['x-airodrom-verify-probe']==='1';
+          const challenge=inbound.challenge(Object.fromEntries(url.searchParams),{finalizeStaged:!probe});
           res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'});res.end(challenge);return;
         }
         if(req.method==='POST'){
@@ -348,6 +350,9 @@ class ControlServer {
       if(url.pathname==='/api/assistant/whatsapp/inbound/bind-credentials')return this.json(res,200,this.bridge.whatsappInbound.bindCredentialReferences(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/configure-environment')return this.json(res,200,this.bridge.whatsappInbound.configureMetaEnvironment(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/credential-references'){require('./control-plane-store').object(body,['confirmed']);if(body.confirmed!==true)throw Error('Explicit operator confirmation required');return this.json(res,200,this.bridge.whatsappInbound.opaqueCredentialReferences('operator'));}
+      if(url.pathname==='/api/assistant/whatsapp/inbound/stage-verify-token')return this.json(res,200,this.bridge.whatsappInbound.stageVerifyTokenRotation(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/inbound/rollback-verify-token')return this.json(res,200,this.bridge.whatsappInbound.rollbackVerifyTokenStaging(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/inbound/commit-verify-token'){require('./control-plane-store').object(body,['confirmed']);if(body.confirmed!==true)throw Error('Explicit operator confirmation required');return this.json(res,200,this.bridge.whatsappInbound.commitVerifyTokenStaging('operator'));}
       if(url.pathname==='/api/assistant/whatsapp/inbound/validate-credentials'){require('./control-plane-store').object(body,['confirmed']);if(body.confirmed!==true)throw Error('Explicit operator confirmation required');return this.json(res,200,this.bridge.whatsappInbound.validateCredentialReferences('operator'));}
       if(url.pathname==='/api/assistant/whatsapp/inbound/discovery')return this.json(res,200,this.bridge.whatsappInbound.recordDiscovery(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/discover-graph')return this.json(res,200,await this.bridge.whatsappInbound.discoverGraphAccounts(body,'operator'));

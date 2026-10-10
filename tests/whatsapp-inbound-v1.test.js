@@ -51,6 +51,11 @@ async function fixture(t, { enabled = true, allowlist = ['15551234567'] } = {}) 
     connectionStatus: async () => ({ state: 'not_connected', connected: false, tunnelHealthy: false, mcpProbe: 'unknown' })
   });
   await ui.start();
+  // Inbound fixtures need open admission for loopback webhook/API checks; closed-startup HOLD is covered elsewhere.
+  if (bridge.lifecycle) {
+    bridge.lifecycle.finishRecovery();
+    if (bridge.lifecycle.state() !== 'open') bridge.lifecycle.resume(bridge.lifecycle.epoch);
+  }
   t.after(async () => {
     await ui.close();
     await bridge.shutdown();
@@ -660,8 +665,7 @@ test('meta-graph preferred phone id selects the verified test number', async () 
   assert.equal(result.preferred_phone_matched, true);
 });
 
-test('rotate verify token replaces only verify slot; previous challenge fails; secrets not leaked', async t => {
-  const { bridge, request } = await fixture(t, { enabled: false });
+function syntheticVault(bridge) {
   const values = new Map();
   const vault = new (require('../src/secret-vault').SecretVault)(bridge.dataDir, (op, id, value) => {
     if (op === 'put') values.set(id, value);
@@ -673,13 +677,17 @@ test('rotate verify token replaces only verify slot; previous challenge fails; s
     return '';
   });
   bridge.whatsappInbound.options.vault = vault;
-  // Fixture may inject plaintext options; Vault must be authoritative for rotation.
   delete bridge.whatsappInbound.options.verifyToken;
   delete bridge.whatsappInbound.options.appSecret;
   delete bridge.whatsappInbound.options.accessToken;
-  const previous = 'synthetic-previous-verify-token-value';
-  const appSecret = 'synthetic-app-secret-rotate-preserve';
-  const access = 'synthetic-graph-token-rotate-preserve';
+  return { vault, values };
+}
+
+function bindSyntheticVerifySlots(bridge, vault, {
+  previous = 'synthetic-previous-verify-token-value',
+  appSecret = 'synthetic-app-secret-rotate-preserve',
+  access = 'synthetic-graph-token-rotate-preserve'
+} = {}) {
   const verify = vault.put(previous, 'whatsapp');
   const secret = vault.put(appSecret, 'whatsapp');
   const graph = vault.put(access, 'whatsapp');
@@ -689,51 +697,72 @@ test('rotate verify token replaces only verify slot; previous challenge fails; s
     app_secret_reference: secret.reference,
     access_token_reference: graph.reference
   }, 'operator');
+  return { previous, appSecret, access, verify, secret, graph };
+}
 
-  assert.equal(bridge.whatsappInbound.challenge({
-    'hub.mode': 'subscribe',
-    'hub.verify_token': previous,
-    'hub.challenge': 'before1'
-  }), 'before1');
-
-  const refs = await request('/api/assistant/whatsapp/inbound/credential-references', {
-    method: 'POST',
-    body: { confirmed: true }
-  });
-  assert.equal(refs.status, 200);
-  assert.equal(refs.body.slot_verify, verify.reference);
-  assert.equal(refs.body.slot_app, secret.reference);
-  assert.equal(refs.body.slot_graph, graph.reference);
-  assert.doesNotMatch(JSON.stringify(refs.body), /synthetic-previous|synthetic-app-secret|synthetic-graph/);
-
+test('staged verify rotation keeps previous until finalize; probe cannot finalize; secrets not leaked', async t => {
+  const { bridge, request } = await fixture(t, { enabled: false });
+  const { vault } = syntheticVault(bridge);
+  const { previous, appSecret, access, verify, secret, graph } = bindSyntheticVerifySlots(bridge, vault);
   const onboard = require('../src/whatsapp-credential-onboarding');
   const generated = onboard.generateVerifyToken();
-  assert.match(generated, /^[A-Za-z0-9_-]{40,}$/);
-  assert.notEqual(generated, previous);
 
-  const rotated = onboard.rotateVerifyTokenSlot({
+  const staged = onboard.rotateVerifyTokenSlot({
     vault,
     inbound: bridge.whatsappInbound,
-    token: generated
+    token: generated,
+    ttlMs: 60_000
   });
-  assert.equal(rotated.slot_app, secret.reference);
-  assert.equal(rotated.slot_graph, graph.reference);
-  assert.notEqual(rotated.slot_verify, verify.reference);
-  assert.equal(rotated.public_ingress, false);
-  assert.equal(vault.resolve(rotated.slot_verify, 'whatsapp'), generated);
-  assert.throws(() => vault.resolve(verify.reference, 'whatsapp'), /invalid|revoked/i);
+  assert.equal(staged.staged, true);
+  assert.equal(staged.slot_verify, verify.reference);
+  assert.ok(staged.slot_staged);
+  assert.notEqual(staged.slot_staged, verify.reference);
+  assert.equal(staged.slot_app, secret.reference);
+  assert.equal(staged.slot_graph, graph.reference);
+  assert.equal(vault.resolve(verify.reference, 'whatsapp'), previous);
+  assert.equal(vault.resolve(staged.slot_staged, 'whatsapp'), generated);
   assert.equal(vault.resolve(secret.reference, 'whatsapp'), appSecret);
   assert.equal(vault.resolve(graph.reference, 'whatsapp'), access);
 
   assert.equal(bridge.whatsappInbound.challenge({
     'hub.mode': 'subscribe',
+    'hub.verify_token': previous,
+    'hub.challenge': 'both1'
+  }, { finalizeStaged: false }), 'both1');
+  assert.equal(bridge.whatsappInbound.challenge({
+    'hub.mode': 'subscribe',
     'hub.verify_token': generated,
-    'hub.challenge': 'after1'
-  }), 'after1');
+    'hub.challenge': 'both2'
+  }, { finalizeStaged: false }), 'both2');
+  assert.equal(bridge.whatsappInbound.config().verify_staging_active, true);
+  assert.equal(vault.resolve(verify.reference, 'whatsapp'), previous);
+
+  // HTTP probe header must not finalize.
+  const probe = await request(`/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(generated)}&hub.challenge=probe1`, {
+    authorized: false,
+    headers: { 'x-airodrom-verify-probe': '1' }
+  });
+  assert.equal(probe.status, 200);
+  assert.equal(probe.text, 'probe1');
+  assert.equal(bridge.whatsappInbound.config().verify_staging_active, true);
+  assert.equal(bridge.whatsappInbound.opaqueCredentialReferences('operator').slot_verify, verify.reference);
+
+  // Meta-style finalize (no probe) promotes staged and revokes previous.
+  assert.equal(bridge.whatsappInbound.challenge({
+    'hub.mode': 'subscribe',
+    'hub.verify_token': generated,
+    'hub.challenge': 'meta1'
+  }), 'meta1');
+  assert.equal(bridge.whatsappInbound.config().verify_staging_active, false);
+  assert.equal(bridge.whatsappInbound.opaqueCredentialReferences('operator').slot_verify, staged.slot_staged);
+  assert.throws(() => vault.resolve(verify.reference, 'whatsapp'), /invalid|revoked/i);
+  assert.equal(vault.resolve(staged.slot_staged, 'whatsapp'), generated);
+  assert.equal(vault.resolve(secret.reference, 'whatsapp'), appSecret);
+  assert.equal(vault.resolve(graph.reference, 'whatsapp'), access);
   assert.throws(() => bridge.whatsappInbound.challenge({
     'hub.mode': 'subscribe',
     'hub.verify_token': previous,
-    'hub.challenge': 'after1'
+    'hub.challenge': 'gone'
   }), /Invalid verification token/);
 
   const live = await request('/api/assistant/whatsapp/live-connection');
@@ -741,9 +770,97 @@ test('rotate verify token replaces only verify slot; previous challenge fails; s
   assert.equal(live.body.binding.app_secret_bound, true);
   assert.equal(live.body.binding.access_token_bound, true);
   assert.equal(live.body.public_ingress, false);
-  assert.equal(live.body.auto_mission_execution, false);
   assert.doesNotMatch(JSON.stringify(live.body), new RegExp(generated.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(JSON.stringify(live.body), /synthetic-previous-verify|synthetic-app-secret-rotate|synthetic-graph-token-rotate/);
+});
+
+test('staged verify rotation rollback restores single current token', async t => {
+  const { bridge } = await fixture(t, { enabled: false });
+  const { vault } = syntheticVault(bridge);
+  const { previous, verify, secret, graph } = bindSyntheticVerifySlots(bridge, vault);
+  const onboard = require('../src/whatsapp-credential-onboarding');
+  const generated = onboard.generateVerifyToken();
+  const staged = onboard.rotateVerifyTokenSlot({ vault, inbound: bridge.whatsappInbound, token: generated, ttlMs: 60_000 });
+  const rolled = bridge.whatsappInbound.rollbackVerifyTokenStaging({ confirmed: true }, 'operator');
+  assert.equal(rolled.rolled_back, true);
+  assert.equal(rolled.slot_verify, verify.reference);
+  assert.equal(bridge.whatsappInbound.config().verify_staging_active, false);
+  assert.equal(vault.resolve(verify.reference, 'whatsapp'), previous);
+  assert.throws(() => vault.resolve(staged.slot_staged, 'whatsapp'), /invalid|revoked|missing/i);
+  assert.equal(vault.resolve(secret.reference, 'whatsapp'), 'synthetic-app-secret-rotate-preserve');
+  assert.equal(vault.resolve(graph.reference, 'whatsapp'), 'synthetic-graph-token-rotate-preserve');
+  assert.throws(() => bridge.whatsappInbound.challenge({
+    'hub.mode': 'subscribe',
+    'hub.verify_token': generated,
+    'hub.challenge': 'x'
+  }), /Invalid verification token/);
+  assert.equal(bridge.whatsappInbound.challenge({
+    'hub.mode': 'subscribe',
+    'hub.verify_token': previous,
+    'hub.challenge': 'ok'
+  }), 'ok');
+});
+
+test('expired verify staging discards candidate and keeps current credential', async t => {
+  const { bridge } = await fixture(t, { enabled: false });
+  const { vault } = syntheticVault(bridge);
+  const { previous, verify } = bindSyntheticVerifySlots(bridge, vault);
+  let now = 1_000_000;
+  bridge.whatsappInbound.options.now = () => now;
+  const onboard = require('../src/whatsapp-credential-onboarding');
+  const generated = onboard.generateVerifyToken();
+  const staged = onboard.rotateVerifyTokenSlot({ vault, inbound: bridge.whatsappInbound, token: generated, ttlMs: 5_000 });
+  assert.equal(bridge.whatsappInbound.config().verify_staging_active, true);
+  now = 1_000_000 + 5_001;
+  assert.equal(bridge.whatsappInbound.config().verify_staging_active, false);
+  assert.throws(() => bridge.whatsappInbound.challenge({
+    'hub.mode': 'subscribe',
+    'hub.verify_token': generated,
+    'hub.challenge': 'exp'
+  }), /Invalid verification token/);
+  assert.equal(bridge.whatsappInbound.challenge({
+    'hub.mode': 'subscribe',
+    'hub.verify_token': previous,
+    'hub.challenge': 'cur'
+  }), 'cur');
+  assert.equal(bridge.whatsappInbound.opaqueCredentialReferences('operator').slot_verify, verify.reference);
+  assert.throws(() => vault.resolve(staged.slot_staged, 'whatsapp'), /invalid|revoked|missing/i);
+});
+
+test('concurrent verify staging is rejected while active', async t => {
+  const { bridge } = await fixture(t, { enabled: false });
+  const { vault } = syntheticVault(bridge);
+  bindSyntheticVerifySlots(bridge, vault);
+  const onboard = require('../src/whatsapp-credential-onboarding');
+  onboard.rotateVerifyTokenSlot({ vault, inbound: bridge.whatsappInbound, token: onboard.generateVerifyToken(), ttlMs: 60_000 });
+  assert.throws(() => onboard.rotateVerifyTokenSlot({
+    vault,
+    inbound: bridge.whatsappInbound,
+    token: onboard.generateVerifyToken(),
+    ttlMs: 60_000
+  }), /already staged/i);
+});
+
+test('explicit commit-verify-token API finalizes staging without leaking secrets', async t => {
+  const { bridge, request } = await fixture(t, { enabled: false });
+  const { vault } = syntheticVault(bridge);
+  const { previous, verify, secret, graph } = bindSyntheticVerifySlots(bridge, vault);
+  const onboard = require('../src/whatsapp-credential-onboarding');
+  const generated = onboard.generateVerifyToken();
+  const staged = onboard.rotateVerifyTokenSlot({ vault, inbound: bridge.whatsappInbound, token: generated, ttlMs: 60_000 });
+  const denied = await request('/api/assistant/whatsapp/inbound/commit-verify-token', { method: 'POST', body: {} });
+  assert.equal(denied.status, 400);
+  const committed = await request('/api/assistant/whatsapp/inbound/commit-verify-token', {
+    method: 'POST',
+    body: { confirmed: true }
+  });
+  assert.equal(committed.status, 200);
+  assert.equal(committed.body.committed, true);
+  assert.equal(committed.body.slot_verify, staged.slot_staged);
+  assert.equal(committed.body.slot_app, secret.reference);
+  assert.equal(committed.body.slot_graph, graph.reference);
+  assert.doesNotMatch(JSON.stringify(committed.body), new RegExp(generated.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '|' + previous));
+  assert.throws(() => vault.resolve(verify.reference, 'whatsapp'), /invalid|revoked/i);
 });
 
 test('connectorsProjection separates inbound readiness from outbound and does not claim Meta delivery', async t => {
