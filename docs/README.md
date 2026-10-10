@@ -19,3 +19,4 @@ Release review uses the [release policy](RELEASE-POLICY.md), [candidate notes](R
 Canonical contribution contracts are in [governance](governance/README.md) and [ADRs](adr/README.md). The [file classification](PUBLIC-PRIVATE-CLASSIFICATION.md) describes excluded surfaces. Publication status is in [PUBLICATION-GATE.md](../PUBLICATION-GATE.md).
 
 - [Lifecycle & Package Closeout V1](LIFECYCLE-PACKAGE-CLOSEOUT-V1.md)
+- [Coding Reliability & Auto-Acceptance V1](CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md)
