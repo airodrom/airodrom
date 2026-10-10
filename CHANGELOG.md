@@ -1,3 +1,7 @@
+## Unreleased — Self-Development Reliability V1.1 shipped and installed
+
+- Merged PRs #49/#50 to `origin/main` (`61d0b0d`); installed `airodrom-self-dev-af5fce8`; live Control Center serves Development Sessions panel; coding admission and 120s timeout active.
+
 ## Unreleased — Self-Development Reliability V1.1
 
 - Admit authorized OpenCode coding source for Control Hub JS: host-owned Authorization+identifier neutralization, credential-filename rules that ignore UI prose, 256 KiB staged-file bound; keep real secrets and sensitive paths fail-closed.

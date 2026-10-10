@@ -57,9 +57,11 @@
 - Focused contract: `tests/development-session-summary-v1.test.js` via registered task `development-session-summary-v1`.
 - Local-first: no push / no per-Mission PR / Automatic Acceptance OFF.
 
-## Self-Development Reliability V1.1 (LOCAL)
+## Self-Development Reliability V1.1 — SHIPPED + INSTALLED (2026-10-10)
 
-- Host coding classifier admits authorized `control-hub.js` (prose ≠ credential file; Authorization+variable neutralized before `containsSecret`; MAX_FILE 256 KiB). Real secrets/paths remain fail-closed.
-- Coding default timeout 120000 ms (Mission `d55695c4-…` timed out at ~90s under prior 90000 ms supervision).
-- Evidence: [SELF-DEVELOPMENT-RELIABILITY-V1.1.md](SELF-DEVELOPMENT-RELIABILITY-V1.1.md). Install cutover still separate.
-- Operator checkout preserved. No push/PR/CI.
+- **PRs:** [#49](https://github.com/airodrom/airodrom/pull/49) (feature) · [#50](https://github.com/airodrom/airodrom/pull/50) (package allowlist `connection-status.js`)
+- **Merge on `origin/main`:** `61d0b0d8fbabfed70532751f7ca713d3d082c17d` (contains tip `af5fce8021b52038c7ee18c99c6f02d4069fdd1b`)
+- **Installed:** `…/airodrom-self-dev-v1/install/airodrom-self-dev-af5fce8` from npm pack (366 files; archive SHA-256 `753227615d5c942312b25c8e091d98bb25de5fa530ca694365ea896bb0c604cd`)
+- **Backup/rollback:** `~/.airodrom/backups/self-dev-v11-20261010T174215Z` (prior source `…/airodrom-coding-reliability-a6ee3e3`)
+- **Live:** Control/OpenCode/Memory/Provider Ready · panel `/development-sessions-panel.js` HTTP 200 · hub coding admission `sourceContextSensitive=false` · timeout 120000 · Automatic Acceptance OFF · WhatsApp HOLD
+- Evidence: [SELF-DEVELOPMENT-RELIABILITY-V1.1.md](SELF-DEVELOPMENT-RELIABILITY-V1.1.md). Operator checkout preserved.
