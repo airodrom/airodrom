@@ -71,17 +71,19 @@ class ConversationEngine {
   if(input.include_history!==undefined&&typeof input.include_history!=='boolean')throw Error('Invalid history choice');
   const context=input.context||[];
   if(!Array.isArray(context)||context.length>3||context.some(c=>!c||c.untrusted!==true||Object.keys(c).some(k=>!['id','subject','content','untrusted'].includes(k))||typeof c.content!=='string'||c.content.length>700||typeof c.subject!=='string'||c.subject.length>200||typeof c.id!=='string'||c.id.length>200||secretLike(c)||[c.id,c.subject,c.content].some(require('./assistant-intent').secret)||require('./private-vault-intent').containsPrivate(c)))throw Error('Only minimum selected untrusted connector context is permitted');
+  const providerRevision=require('./conversation-provider').assertLocal(this,{connector:context.length>0});
   erasure.assertReadable(this.db);
   const sessionRow=input.conversation_id?this.db.prepare('SELECT id,channel FROM cp_conversations WHERE id=? AND operator_id=?').get(opaque(input.conversation_id),this.owner):null;
   if(input.conversation_id&&!sessionRow)throw Error('Conversation not found in this operator context');
   const conversation_id=sessionRow?sessionRow.id:this.session({channel:input.channel==='whatsapp'?'whatsapp':(context.length?'connector':'terminal'),new:true}).conversation_id;
   const sessionChannel=sessionRow?.channel||(input.channel==='whatsapp'?'whatsapp':(context.length?'connector':'terminal'));
   const request_id=opaque(input.request_id||randomUUID()),generation=this.generation();
-  const request_digest=createHash('sha256').update(JSON.stringify({message:input.message,include_memory:input.include_memory!==false,include_history:input.include_history,model:input.model||'auto',context})).digest('hex');
+  const request_digest=createHash('sha256').update(JSON.stringify({message:input.message,include_memory:input.include_memory!==false,include_history:input.include_history,model:input.model||'auto',context,providerRevision})).digest('hex');
   const previous=this.db.prepare('SELECT * FROM cp_conversation_turns WHERE conversation_id=? AND request_id=? AND operator_id=?').get(conversation_id,request_id,this.owner);
   if(previous){if(!this.current(previous,generation)||previous.request_digest!==request_digest)throw Error('Conversation replay rejected; use a fresh request.');return {kind:'chat',conversation_id,turn_id:previous.id,state:previous.state};}
   if(this.active.size)throw Error('A conversation is still responding; wait or cancel it first.');
   const route=await this.qualify({model:input.model,request:this.request,now:this.now()});if(route.state!=='READY'||route.model!==require('./model-worker-router').MODEL)throw Error('No current qualified local conversation model. Check /status.');
+  if(require('./conversation-provider').assertLocal(this,{connector:context.length>0})!==providerRevision)throw Error('Conversation provider changed; send a fresh message.');
   // Qualification is a read-only observation; revalidate context afterwards.
   if(generation!==this.generation())throw Error('Memory context changed; send this message again.');
   if(this.active.size)throw Error('A conversation is still responding; wait or cancel it first.');
@@ -110,11 +112,11 @@ class ConversationEngine {
   this.db.prepare('UPDATE cp_conversations SET updated_at=? WHERE id=?').run(now,conversation_id);
   this.audit('conversation.started',conversation_id,id,route.model,'running');
   const entry={controller,promise:null};this.active.set(id,entry);
-  entry.promise=this.complete({id,conversation_id,request_id,generation,route,messages,controller}).finally(()=>{messages.length=0;this.active.delete(id);});
+  entry.promise=this.complete({id,conversation_id,request_id,generation,route,messages,controller,providerRevision}).finally(()=>{messages.length=0;this.active.delete(id);});
   return {kind:'chat',conversation_id,turn_id:id,state:'running',model:route.model,worker:'local-ollama',activity:'Thinking…'};
  }
  audit(event,conversation_id,turn_id,model,state){this.bridge.ledger.record({eventType:event,agent:'bridge',direction:'internal',metadata:{version:1,conversation_id,turn_id,model,state,execution_authority:false}});}
- async complete({id,conversation_id,request_id,generation,route,messages,controller}){
+ async complete({id,conversation_id,request_id,generation,route,messages,controller,providerRevision}){
   try{
    const profile=require('./provider-profiles').initialProfiles().find(p=>p.id==='ollama');const model=profile.models.find(m=>m.id===route.model.slice(7));if(!model)throw Error('Qualified provider profile unavailable');
    const provider=new(require('./apps/openai-compatible-provider').OpenAICompatibleProvider)({profile,baseUrl:'http://127.0.0.1:11434/v1',request:this.request,timeoutMs:90000});
@@ -124,6 +126,7 @@ class ConversationEngine {
    if(result.status==='completed'&&!controller.signal.aborted){const delivery=await this.qualify({model:route.model,request:this.request,now:this.now()});if(delivery.state!=='READY'||delivery.model!==route.model){this.finish(id,conversation_id,route.model,'failed',null,'qualification_changed');return;}}
    erasure.assertReadable(this.db);const row=this.db.prepare('SELECT * FROM cp_conversation_turns WHERE id=?').get(id);
    if(row.state!=='running'||this.retired(id))return;
+   if(require('./conversation-provider').read(this.bridge.dataDir).revision!==providerRevision){this.finish(id,conversation_id,route.model,'cancelled',null,'provider_changed');return;}
    if(!this.current(row)||generation!==this.generation()){this.finish(id,conversation_id,route.model,'cancelled',null,'context_changed');return;}
    if(controller.signal.aborted){this.finish(id,conversation_id,route.model,'cancelled',null,'cancelled');return;}
    if(result.status!=='completed'||result.tool_requests?.length||!result.text?.trim()||result.text.length>12000||secretLike(result.text)||require('./assistant-intent').secret(result.text)||require('./private-vault-intent').containsPrivate(result.text)||/\b(?:i|we)(?:['’]ve| have)?\s+(?:just |already )?(?:saved|stored|remembered)\b|\b(?:i|airodrom)\s+(?:cannot|can['’]t|do(?:n['’]t| not))\s+(?:save|store|remember)\b|\bi\s+(?:do(?:n['’]t| not))\s+have\s+(?:the\s+)?ability\s+to\s+(?:save|store|remember)\b/i.test(result.text)){this.finish(id,conversation_id,route.model,'failed',null,'provider_unavailable');return;}

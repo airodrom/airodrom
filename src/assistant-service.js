@@ -76,4 +76,5 @@ async function connectorInput(server,{connector,action,input={},conversation_id,
  return {...created,route:'CONNECTOR',connector,provenance:'Explicitly selected bounded untrusted connector data',draft_only:action==='draft_reply',sent:false};
 }
 function connectors(bridge){const wa=require('./whatsapp-inbound').whatsappSource(bridge);if(!bridge.assistantConnectors)bridge.assistantConnectors=new (require('./assistant-connectors').AssistantConnectors)({...(bridge.options.assistantConnectors||{}),...wa});else if(wa.whatsapp&&typeof bridge.assistantConnectors.ensureWhatsapp==='function')bridge.assistantConnectors.ensureWhatsapp(wa.whatsapp);return bridge.assistantConnectors;}
-module.exports={submit,forget,sensitiveRecord,sensitiveList,reveal,connectors,connectorInput};
+async function providerStatus(server){return require('./conversation-provider').status(server.conversationEngine);}
+module.exports={providerStatus,submit,forget,sensitiveRecord,sensitiveList,reveal,connectors,connectorInput};

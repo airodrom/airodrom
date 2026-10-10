@@ -2,6 +2,7 @@
 
 ## Unreleased — Personal AI Channels V1
 
+- Restore `/api/assistant/provider` + ConversationEngine provider revision binding; Control Center Conversation refresh fails soft if provider is unavailable.
 - Unify first-party ConversationEngine reliability across Control Center, ChatGPT MCP and the macOS menu.
 - Control Center: persistent browser session, scoped history, Memory consent, local-ollama/model identity and Thinking activity.
 - macOS menu: Conversation status row and Open Conversation deep-link (`?view=Conversation`).

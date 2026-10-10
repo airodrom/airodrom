@@ -38,6 +38,9 @@ test('Control Center and macOS personal-channel surfaces stay wired without What
  assert.match(control,/view:'Conversation'/);
  const bootstrap=fs.readFileSync(path.join(__dirname,'../src/local-bootstrap.js'),'utf8');
  assert.match(bootstrap,/view!=='Conversation'/);
+ const server=fs.readFileSync(path.join(__dirname,'../src/control-server.js'),'utf8');
+ assert.match(server,/\/api\/assistant\/provider/);
+ assert.ok(fs.existsSync(path.join(__dirname,'../src/conversation-provider.js')));
  const production=require('../config/whatsapp-production-connection-v1.json');
  assert.equal(production.outbound_enabled,false);
  assert.equal(production.auto_mission_execution,false);

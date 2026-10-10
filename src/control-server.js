@@ -237,6 +237,7 @@ class ControlServer {
         const items=rows.map(r=>{const m=this.bridge.missions.require(r.id),t=this.bridge.tasks.get(m.task_id);const prompt=require('./conversation-mission').projectRead(this.bridge,t.id,m.envelope.objective,m.id),response=require('./conversation-mission').projectRead(this.bridge,t.id,t.lastResult||null,m.id);return {mission_id:m.id,state:m.state,prompt:typeof prompt==='string'?prompt:null,response:typeof response==='string'?response:null};});return this.json(res,200,{items,generation:require('./product-observability').memoryStatus(this.bridge).generation,streaming:'Unavailable: adapter returns one bounded visible response'});
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/conversation')return this.json(res,200,this.conversationEngine.result({conversation_id:url.searchParams.get('conversation_id'),turn_id:url.searchParams.get('turn_id')}));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/provider')return this.json(res,200,await require('./assistant-service').providerStatus(this));
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/connectors')return this.json(res,200,require('./assistant-service').connectors(this.bridge).status());
@@ -359,6 +360,7 @@ class ControlServer {
         require('./control-plane-store').object(body,['connector']);if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport.'});
         return this.json(res,200,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback'));
       }
+      if(url.pathname==='/api/assistant/provider'){const saved=require('./conversation-provider').save(this.bridge.dataDir,body,'operator');for(const entry of this.conversationEngine.active.values())entry.controller.abort();this.bridge.controlStore.event('conversation.provider_preference_saved',null,{revision:saved.revision,provider:saved.provider,authority:false});return this.json(res,200,await require('./assistant-service').providerStatus(this));}
       if(url.pathname==='/api/assistant/conversation/session')return this.json(res,201,this.conversationEngine.session(body));
       if(url.pathname==='/api/assistant/conversation/cancel')return this.json(res,200,this.conversationEngine.cancel(body));
       if(url.pathname==='/api/assistant/web/research'){const created=this.bridge.missions.web.createResearch(body);this.bridge.missions.dispatch(created.mission_id,{request_id:'public-web-dispatch:'+body.request_id});return this.json(res,202,{...created,browser_research_available:true});}
