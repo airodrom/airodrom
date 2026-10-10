@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Coding Reliability & Auto-Acceptance V1
+
+- Stop using display `redactValue` mutation as the OpenCode coding-context sensitivity gate; admit ordinary JS comments/regex while keeping secret and sensitive-path fail-closed checks.
+- Prove host-owned risk Automatic Acceptance on one disposable local OpenCode Mission after explicit operator preference opt-in.
+
 ## Unreleased — Lifecycle closeout shipped and installed
 
 - Merged PR #47 (`f28e8ca`); installed corrected package; reconciled durable `stopping` to admission `open` with preserved Memory/Missions.

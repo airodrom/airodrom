@@ -31,7 +31,7 @@
     "audit:dependencies": "npm audit --audit-level=low",
     "audit:licenses": "node scripts/audit-licenses.cjs",
     "package:check": "node scripts/package-check.cjs",
-    "test:opencode": "node scripts/run.cjs --test tests/opencode-runtime.test.js tests/opencode-memory-v2.test.js",
+    "test:opencode": "node scripts/run.cjs --test tests/opencode-runtime.test.js tests/opencode-memory-v2.test.js tests/opencode-source-context.test.js",
     "test:opencode:live": "AIRODROM_OPENCODE_LIVE=1 NODE_ENV=test node scripts/run.cjs --test tests/live-opencode.cjs",
     "test:cutover": "node scripts/run.cjs --test tests/default-runtime-cutover.test.js",
     "install:local": "node scripts/run.cjs scripts/install-local.cjs",

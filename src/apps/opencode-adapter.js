@@ -14,9 +14,29 @@ const VERSION = '2.0.25';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => { throw new AgentAdapterError(code, code); };
 const quote = value => JSON.stringify(value);
+// OpenCode coding context must not use display-oriented redactValue mutation as a
+// sensitivity gate. Ledger redactPayload/(?<!\w)\/ path redaction and relative-URL
+// redaction intentionally rewrite ordinary JS (// comments, /regex/, a / b, ./x).
+// Gate on secrets and real sensitive absolute / protected locations instead.
+function sourceContextSensitive(value) {
+  if (typeof value !== 'string') return true;
+  if (require('../personal-memory').containsSecret(value)) return true;
+  // Absolute home/private product paths and Windows/UNC/~ roots.
+  if (/(?:^|[\s"'`=(,:])(?:[A-Za-z]:[\\/]|\\\\|~\/)/.test(value)) return true;
+  if (/(?:^|[\s"'`=(,:])\/(?:Users|home|private|root|etc)(?:\/|$)/.test(value)) return true;
+  if (/(?:^|[\s"'`=\/])\.airodrom(?:\/|$)/.test(value) || /\/\.airodrom(?:\/|$)/.test(value)) return true;
+  // Credential / secret file names as tokens or path segments.
+  if (/(?:^|[\s"'`=\/])(?:\.env(?:\.[A-Za-z0-9._-]*)?|credentials?(?:\.[A-Za-z0-9._-]*)?|secrets?(?:\.[A-Za-z0-9._-]*)?|auth\.json)\b/i.test(value)) return true;
+  if (/(?:^|[\s\/])[^\/\s"'`]+\.(?:pem|key|sqlite|db)\b/i.test(value)) return true;
+  // Sensitive environment bindings in source text.
+  if (/\bprocess\.env\.[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY)[A-Z0-9_]*\b/i.test(value)) return true;
+  if (/\bAIRODROM_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY)[A-Z0-9_]*\b/i.test(value)) return true;
+  if (/\b(?:OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|GH_TOKEN)\b/.test(value)) return true;
+  return false;
+}
 function safeText(value, max = MAX_CONTEXT) {
   if (typeof value !== 'string' || Buffer.byteLength(value) > max || /\0/.test(value)) fail('opencode_context_bound');
-  if (redactValue(value) !== value || require('../personal-memory').containsSecret(value)) fail('opencode_sensitive_context');
+  if (sourceContextSensitive(value)) fail('opencode_sensitive_context');
   return value;
 }
 function contextSafetyView(value, key, parentKey) {
@@ -275,4 +295,4 @@ class OpenCodeAdapter extends AgentAdapter {
   async shutdown() { for (const controller of this.active.values()) controller.abort(); }
   async status() { return this.readiness(); }
 }
-module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, MAX_CONTEXT, MAX_OUTPUT, VERSION };
+module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, MAX_CONTEXT, MAX_OUTPUT, VERSION };

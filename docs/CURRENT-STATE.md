@@ -1,5 +1,12 @@
 # Current state (2026-10-10)
 
+## Coding Reliability & Auto-Acceptance V1 (COMPLETED)
+
+- OpenCode `safeText` no longer treats display path/URL redaction mutation as `opencode_sensitive_context`; ordinary JS comments/regex admitted; secrets and sensitive absolute paths remain denied.
+- Live Mission `2c57a4e7-c906-4b5f-9590-61242e6b6f82` completed via host risk Automatic Acceptance (operator preference opt-in, then restored OFF).
+- Branch `fix/coding-reliability-auto-acceptance` (local; not pushed). Evidence: [CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md](CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md).
+- Historical failed Mission `668a177e-…` preserved. Operator checkout untouched.
+
 ## Shipped source
 
 - **PR:** [#46](https://github.com/airodrom/airodrom/pull/46) **MERGED**
