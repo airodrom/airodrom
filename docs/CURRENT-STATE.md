@@ -1,12 +1,14 @@
 # Current state (2026-10-10)
 
-## Conversation UX Bugfix V1 (2026-10-10) — LOCAL COMMIT ONLY
+## Conversation UX Bugfix V1 — SHIPPED + INSTALLED (2026-10-10)
 
-- **Branch / worktree:** `fix/conversation-ux-bugfix-v1` @ worktree `…/airodrom-conversation-ux-bugfix/work/airodrom-conversation-ux` (base `cb705f8`).
-- **Fixes:** Start new conversation no longer auto-restores the prior browser session after clear/refresh; Claude selection shows explicit unavailable copy and keeps Qwen working.
-- **Focused tests:** `conversation-ux-bugfix-v1` + browser fixture; Everyday UX contract unchanged.
-- **Browser evidence:** Installed package hot-patched for verify then restored; live source remains `airodrom-grounded-accuracy-fe918cc`.
-- **Not pushed / not PR / not merged / not installed.** Operator checkout `/Users/andrew/code/airodrom` preserved. Evidence: [CONVERSATION-UX-BUGFIX-V1.md](CONVERSATION-UX-BUGFIX-V1.md).
+- **PR:** [#60](https://github.com/airodrom/airodrom/pull/60) **MERGED**
+- **Feature tip:** `3a37c40898251b060a5390ca52f2db79ad5188f0`
+- **Merge on `origin/main`:** `52e1003caa64b6f7f2660b7650006c324ce1ccbc`
+- **Installed:** `…/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003` (npm pack 372 files; tarball SHA-256 `8d0d3a9e932ba1866edda9ca5679f49e4e9bc135d58adba04a77f74bd7255743`)
+- **Backup/rollback:** `…/airodrom-conversation-ux-bugfix/backup/pre-conversation-ux-bugfix-20261010T193433Z` (prior source `…/airodrom-grounded-accuracy-fe918cc`)
+- **Live:** Control/OpenCode/Memory/Provider Ready · Start new / pending-new refresh / distinct send / Continue previous / Claude unavailable→Qwen verified · missions **71** · personal_memories **6** · Automatic Acceptance OFF · WhatsApp HOLD
+- Evidence: [CONVERSATION-UX-BUGFIX-V1.md](CONVERSATION-UX-BUGFIX-V1.md). Operator checkout preserved.
 
 ## Git Repository Cleanup V1 (2026-10-10)
 
@@ -54,10 +56,10 @@
 
 ## Installed release (running)
 
-- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc`
+- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003`
 - **Health:** Ready — OpenCode Ready, Memory Ready, Provider Ready (Qwen)
-- **Includes:** Grounded Assistant Accuracy V1 on `fe918cc` (ancestry includes Everyday UX `5e23731`)
-- **Prior Everyday UX install:** `…/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731` (retained; backup `pre-grounded-accuracy-20261010T185313Z`)
+- **Includes:** Conversation UX Bugfix V1 on `52e1003` (ancestry includes Grounded Accuracy `fe918cc`)
+- **Prior Grounded Accuracy install:** `…/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc` (retained; backup `pre-conversation-ux-bugfix-20261010T193433Z`)
 - **Manual patches required:** No
 
 ## Distinctions

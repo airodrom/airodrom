@@ -10,7 +10,7 @@ Fixes two Control Center usability defects observed on the installed Grounded Ac
 ## Root causes
 
 1. After Start new, `refresh()` called `conversationSession()` without `new:true` whenever `conversationSessionId` was null, reattaching the latest host browser session and reloading its history. Pending-new intent was not persisted across reload.
-2. Conversation model picker called the provider preference API for Claude and used activation-shaped copy. `refresh()` / `clearMemory()` could also wipe a notice set before refresh completed.
+2. Conversation model picker used activation-shaped Claude copy. Notices set before `refresh()` could be wiped by `clearMemory()`.
 
 ## Fix (Control Center only)
 
@@ -24,19 +24,26 @@ Fixes two Control Center usability defects observed on the installed Grounded Ac
 
 | Claim | State |
 | --- | --- |
-| LOCAL FEATURE BRANCH | Yes — `fix/conversation-ux-bugfix-v1` |
-| MERGED TO `origin/main` | No |
-| INSTALLED LOCALLY | No — live package remains `airodrom-grounded-accuracy-fe918cc` (hot-patch verify only; restored) |
-| LIVE VERIFIED | Yes — installed Control Center hot-patch browser evidence (then restored) |
+| LOCAL FEATURE BRANCH | Yes — `fix/conversation-ux-bugfix-v1` @ `3a37c40` |
+| MERGED TO `origin/main` | Yes — PR [#60](https://github.com/airodrom/airodrom/pull/60) merge `52e1003caa64b6f7f2660b7650006c324ce1ccbc` |
+| INSTALLED LOCALLY | Yes — `…/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003` |
+| LIVE VERIFIED | Yes — installed Control Center Start new / refresh pending / send / Continue / Claude→Qwen |
 | PUBLIC ACTIVATION | OFF |
 
-## Validation
+## Shipment (2026-10-10)
 
-- Focused: `tests/conversation-ux-bugfix-v1.test.js`, `tests/conversation-ux-bugfix-browser.cjs`, Everyday UX contract still green.
-- Installed hot-patch browser: Start new clears continuing line; refresh keeps pending new; Continue previous restores prior session; Claude unavailable message keeps Qwen selected.
+- **Feature tip:** `3a37c40898251b060a5390ca52f2db79ad5188f0`
+- **PR:** [#60](https://github.com/airodrom/airodrom/pull/60) **MERGED**
+- **`origin/main`:** `52e1003caa64b6f7f2660b7650006c324ce1ccbc`
+- **Package:** `1.0.1-rc.1` · 372 files · tarball SHA-256 `8d0d3a9e932ba1866edda9ca5679f49e4e9bc135d58adba04a77f74bd7255743`
+- **Install root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003`
+- **Prior source:** `…/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc`
+- **Backup/rollback:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/backup/pre-conversation-ux-bugfix-20261010T193433Z`
+- **Live:** Control/OpenCode/Memory/Provider Ready · Qwen `ollama/qwen3-coder:30b` · Start new clears continuing line · pending-new survives refresh · first send creates distinct session · Continue previous restores history · Claude unavailable notice keeps Qwen · missions **71** · personal_memories **6** · Automatic Acceptance OFF · WhatsApp HOLD
+- **Focused tests:** `conversation-ux-bugfix-v1` + browser + Everyday UX **11/11**
+- Operator checkout `/Users/andrew/code/airodrom` preserved.
 
 ## Limits
 
-- Not installed into the running package until a later authorized maintenance cutover.
 - Claude conversation remains WAIT / OFF for inference until independently qualified. No API-key or subscription workaround.
-- WhatsApp HOLD and Automatic Acceptance OFF unchanged.
+- WhatsApp production HOLD unchanged. Automatic Acceptance OFF.
