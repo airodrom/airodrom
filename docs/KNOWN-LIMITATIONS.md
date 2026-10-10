@@ -1,6 +1,14 @@
 # Known limitations
 
-This candidate is source-only and unactivated. macOS arm64 is the freshly tested host. Installed runtime qualification requires private operator pins and exact dependency closure; other operating systems are unqualified. No production provider, service lifecycle or external Work port was exercised for public release.
+## Local usable release (2026-10-10)
+
+The installed local application on macOS arm64 meets [Final Product Consolidation V1](FINAL-PRODUCT-CONSOLIDATION-V1.md) daily-use criteria. That does **not** authorize public binary distribution, WhatsApp production messaging, Automatic Acceptance, or Claude external conversation.
+
+Remaining items are **optional or owner-gated**, not daily-use blockers: login service supervision (draft #36), DeepSeek reserve (draft #37), selective operations-recovery cherry-picks from draft #38 (whole tip would regress Everyday menu UX), Calendar/Drive API enablement, approved web search, native packaging foundation, and clean-machine notarized distribution.
+
+## Distribution / publication baseline
+
+This candidate remains without a notarized public application package. macOS arm64 is the freshly tested host. Installed runtime qualification requires private operator pins and exact dependency closure; other operating systems are unqualified. No production provider activation or public Work port was exercised for public release.
 
 Work is optional and live-unqualified. Claude Code needs host qualification. Cursor governed execution is experimental and denied. Generic Cloud is unsupported. DeepSeek stays disabled/auth_required. An agent CLI wrapper does not establish a vendor or OS sandbox guarantee, exclusive network egress or universal hard cancellation.
 

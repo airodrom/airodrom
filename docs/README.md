@@ -1,5 +1,7 @@
 # Airodrom documentation
 
+**Final Product Consolidation V1** (local usable release stop line): [FINAL-PRODUCT-CONSOLIDATION-V1.md](FINAL-PRODUCT-CONSOLIDATION-V1.md).
+
 Notion documentation routing: [NOTION-DOCUMENTATION-ROUTING-V1.md](NOTION-DOCUMENTATION-ROUTING-V1.md). Airodrom hub only; Pi Bridge parents refused.
 
 Installation Hotfix V1.0.1: [INSTALL-HOTFIX-V1.0.1.md](INSTALL-HOTFIX-V1.0.1.md). Reproducible package fix; pending authorized upgrade of the healthy V1 install.

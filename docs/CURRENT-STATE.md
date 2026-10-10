@@ -1,5 +1,18 @@
 # Current state (2026-10-10)
 
+## Final Product Consolidation V1 — RELEASE CRITERIA MET (2026-10-10)
+
+Local daily-use Airodrom is **finished** against the consolidation stop line. See [FINAL-PRODUCT-CONSOLIDATION-V1.md](FINAL-PRODUCT-CONSOLIDATION-V1.md).
+
+- **`origin/main`:** `7bae01d91636762f3a78a1ddba474ee2dd9ad589`
+- **Installed:** `airodrom-whatsapp-verify-safe-879daa3` (`1.0.1-rc.1`) — Control / OpenCode 2.0.25 / Memory / Provider Ready
+- **Menu helper:** Conversation + Development Session + System Health deep links present
+- **Automatic Acceptance:** OFF · **WhatsApp production:** HOLD · **Public activation:** OFF
+- **Operator checkout** `/Users/andrew/code/airodrom`: protected dirty; not the release source
+- **Essential blockers for local use:** none · optional future: draft PRs #36–#38 (do not merge #38 wholesale), Claude WAIT, packaging roadmap
+
+No new feature milestone was invented for this consolidation. Live status observation only; unchanged focused suites were not re-executed.
+
 ## WhatsApp Verify Token Staged Rotation — SHIPPED + INSTALLED (2026-10-10)
 
 - **PR:** [#62](https://github.com/airodrom/airodrom/pull/62) **MERGED**

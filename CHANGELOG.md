@@ -1,3 +1,7 @@
+## Unreleased — Final Product Consolidation V1
+
+- Document local usable release stop line: installed tip meets daily-use criteria; no essential blockers; optional draft PRs #36–#38 and packaging/Claude remain future work. Protect dirty operator checkout. See [FINAL-PRODUCT-CONSOLIDATION-V1.md](docs/FINAL-PRODUCT-CONSOLIDATION-V1.md).
+
 ## Unreleased — WhatsApp verify-token staged rotation
 
 - Staged verify-token recovery: new Vault candidate while current remains valid; webhook GET never finalizes; owner `commit-verify-token` after Meta success; `rollback-verify-token` and TTL discard the candidate. App Secret and Graph token references preserved. Production HOLD / public ingress / outbound unchanged.
