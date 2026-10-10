@@ -1,3 +1,7 @@
+## Unreleased — macOS Desktop Activation V1 (shipped locally)
+
+- Record Premium Menu V3 + `local.airodrom.desktop-login` installed on tip `airodrom-menu-v3-1cff95d` (merge `1cff95d` / PR #65). Login rehearsal verified. See [MACOS-DESKTOP-ACTIVATION-V1.md](docs/MACOS-DESKTOP-ACTIVATION-V1.md).
+
 ## Unreleased — Premium macOS Menu V3
 
 - Refine the native menu-bar mark (18pt optically padded template A) and replace pale-yellow status wash with a compact warm-gold ACTION REQUIRED indicator.

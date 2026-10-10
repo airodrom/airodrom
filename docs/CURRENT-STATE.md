@@ -1,12 +1,23 @@
 # Current state (2026-10-10)
 
+## macOS Desktop Activation V1 — SHIPPED + INSTALLED (2026-10-10)
+
+- **PR:** [#65](https://github.com/airodrom/airodrom/pull/65) **MERGED**
+- **Merge on `origin/main`:** `1cff95d478838ad9b088ae27b1a67b22ff941ec1`
+- **Installed:** `…/airodrom-menu-v3/install/airodrom-menu-v3-1cff95d` (`1.0.1-rc.1`) — Control / OpenCode 2.0.25 / Memory / Provider Ready
+- **Menu V3:** CFBundleVersion **3** · live-only Active Mission · historical review Missions not shown as active
+- **Startup:** `local.airodrom.desktop-login` (RunAtLoad, no KeepAlive) starts Ollama, owned Control Plane, then menu; legacy `local.pi-chatgpt-bridge*` remain disabled; PR #36 not merged
+- **Backup/rollback:** `~/.airodrom/backups/macos-desktop-activation-v1-20261010T225226Z` (prior source `…/airodrom-whatsapp-verify-safe-879daa3`)
+- **Acceptance:** login rehearsal (drain/stop → desktop-login start) · single local-service · Control Center opens · Qwen probe OK · Memory Ready · Automatic Acceptance OFF · WhatsApp HOLD
+- Evidence: [MACOS-DESKTOP-ACTIVATION-V1.md](MACOS-DESKTOP-ACTIVATION-V1.md). Operator checkout preserved.
+
 ## Final Product Consolidation V1 — RELEASE CRITERIA MET (2026-10-10)
 
 Local daily-use Airodrom is **finished** against the consolidation stop line. See [FINAL-PRODUCT-CONSOLIDATION-V1.md](FINAL-PRODUCT-CONSOLIDATION-V1.md).
 
-- **`origin/main`:** `7bae01d91636762f3a78a1ddba474ee2dd9ad589`
-- **Installed:** `airodrom-whatsapp-verify-safe-879daa3` (`1.0.1-rc.1`) — Control / OpenCode 2.0.25 / Memory / Provider Ready
-- **Menu helper:** Conversation + Development Session + System Health deep links present
+- **`origin/main` (docs consolidation):** `21db75b624fb84cef947544f7f121a75c6a7c170` · desktop activation follow-on `1cff95d`
+- **Installed:** `airodrom-menu-v3-1cff95d` (`1.0.1-rc.1`) — Control / OpenCode 2.0.25 / Memory / Provider Ready · Menu V3
+- **Menu helper:** Premium Menu V3 with Conversation + Development Session + System Health deep links
 - **Automatic Acceptance:** OFF · **WhatsApp production:** HOLD · **Public activation:** OFF
 - **Operator checkout** `/Users/andrew/code/airodrom`: protected dirty; not the release source
 - **Essential blockers for local use:** none · optional future: draft PRs #36–#38 (do not merge #38 wholesale), Claude WAIT, packaging roadmap
@@ -80,10 +91,10 @@ No new feature milestone was invented for this consolidation. Live status observ
 
 ## Installed release (running)
 
-- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-whatsapp-verify-token-safe-rotation/install/airodrom-whatsapp-verify-safe-879daa3`
+- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-menu-v3/install/airodrom-menu-v3-1cff95d`
 - **Health:** Ready — managed local service healthy; admission open
-- **Includes:** WhatsApp verify-token staged rotation on `879daa3` (ancestry includes Conversation UX Bugfix `52e1003`)
-- **Prior Conversation UX install:** `…/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003` (retained; backup `pre-whatsapp-verify-safe-20261010T205019Z`)
+- **Includes:** Premium Menu V3 + desktop-login startup on `1cff95d` (ancestry includes WhatsApp verify-token `879daa3`)
+- **Prior WhatsApp verify install:** `…/airodrom-whatsapp-verify-token-safe-rotation/install/airodrom-whatsapp-verify-safe-879daa3` (retained; backup `macos-desktop-activation-v1-20261010T225226Z`)
 - **Manual patches required:** No
 
 ## Distinctions

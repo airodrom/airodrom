@@ -2,6 +2,8 @@
 
 Local-first closeout so an installed Airodrom tip starts after login with Premium Menu V3.
 
+**Status (2026-10-10):** MERGED IN SOURCE · INSTALLED LOCALLY · LIVE VERIFIED (login rehearsal)
+
 ## Scope
 
 - Premium Menu V3 helper (CFBundleVersion 3)
@@ -16,6 +18,18 @@ Local-first closeout so an installed Airodrom tip starts after login with Premiu
 - WhatsApp production / public ingress
 - Automatic Acceptance
 - Native SMAppService packaging (roadmap)
+
+## Shipped evidence
+
+| Item | Value |
+| --- | --- |
+| PR | [#65](https://github.com/airodrom/airodrom/pull/65) MERGED |
+| `origin/main` | `1cff95d478838ad9b088ae27b1a67b22ff941ec1` |
+| Installed tip | `…/airodrom-menu-v3/install/airodrom-menu-v3-1cff95d` (`1.0.1-rc.1`) |
+| Menu | `~/.airodrom/menu/Airodrom.app` CFBundleVersion **3** |
+| Startup | `local.airodrom.desktop-login` enabled (RunAtLoad, no KeepAlive) |
+| Rollback | `~/.airodrom/backups/macos-desktop-activation-v1-20261010T225226Z` |
+| Acceptance | Login rehearsal restored single healthy Control Plane + menu; Active Missions **0**; Memory Ready; Qwen probe OK; Automatic Acceptance OFF; WhatsApp HOLD |
 
 ## Operator steps
 
