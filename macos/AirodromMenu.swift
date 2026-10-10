@@ -141,9 +141,11 @@ private final class Controller {
     }
 }
 
-/// Compact semantic status indicator. Template mark stays monochrome; the dot carries tone + accessibility text.
+/// Compact semantic status indicator. Template mark stays monochrome; the dot carries tone only when meaningful.
 private final class StatusDot: NSView {
     var tone: String = "stopped" { didSet { needsDisplay = true } }
+    /// Restrained warm gold / bronze — readable on light and dark menu bars without pale yellow wash.
+    private static let warmGold = NSColor(calibratedRed: 0.62, green: 0.44, blue: 0.10, alpha: 1)
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let color: NSColor
@@ -151,29 +153,33 @@ private final class StatusDot: NSView {
         case "healthy": color = NSColor.systemGreen
         case "working": color = NSColor.systemBlue
         case "reconnecting", "degraded": color = NSColor.systemOrange
-        case "approval": color = NSColor.systemYellow
+        case "approval": color = StatusDot.warmGold
         case "disconnected": color = NSColor.systemRed
         default: color = NSColor.secondaryLabelColor
         }
+        let disk = bounds.insetBy(dx: 0.75, dy: 0.75)
         ctx.setFillColor(color.cgColor)
-        ctx.fillEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
-        // Shape cue independent of color: ring for working, square-ish for approval via thicker stroke
+        ctx.fillEllipse(in: disk)
+        // Shape cue independent of color: thin ring for working / action-required.
         if tone == "working" || tone == "approval" {
-            ctx.setStrokeColor(color.withAlphaComponent(0.9).cgColor)
-            ctx.setLineWidth(tone == "approval" ? 1.6 : 1.1)
-            ctx.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+            ctx.setStrokeColor(NSColor.black.withAlphaComponent(tone == "approval" ? 0.35 : 0.25).cgColor)
+            ctx.setLineWidth(tone == "approval" ? 1.25 : 1.0)
+            ctx.strokeEllipse(in: disk)
         }
     }
 }
 
 private func brandImage() -> NSImage {
+    // Canonical connected-A geometry, optically padded for 18pt menu-bar Retina clarity.
     let polygons: [[CGPoint]] = [[CGPoint(x: 12.000, y: 223.348),CGPoint(x: 106.431, y: 32.652),CGPoint(x: 152.323, y: 136.423),CGPoint(x: 162.203, y: 136.423),CGPoint(x: 131.860, y: 70.607),CGPoint(x: 149.893, y: 32.706),CGPoint(x: 244.000, y: 223.348),CGPoint(x: 180.020, y: 223.348),CGPoint(x: 163.175, y: 189.334),CGPoint(x: 92.825, y: 189.334),CGPoint(x: 76.465, y: 223.348),CGPoint(x: 12.000, y: 223.348)],[CGPoint(x: 150.109, y: 62.617),CGPoint(x: 145.304, y: 72.281),CGPoint(x: 182.234, y: 148.301),CGPoint(x: 97.738, y: 148.301),CGPoint(x: 121.386, y: 99.709),CGPoint(x: 105.837, y: 62.509),CGPoint(x: 33.057, y: 210.930),CGPoint(x: 42.667, y: 210.930),CGPoint(x: 106.970, y: 81.352),CGPoint(x: 113.395, y: 97.225),CGPoint(x: 84.294, y: 156.399),CGPoint(x: 186.121, y: 156.399),CGPoint(x: 213.171, y: 210.930),CGPoint(x: 223.429, y: 210.930),CGPoint(x: 150.109, y: 62.617)],[CGPoint(x: 128.459, y: 113.692),CGPoint(x: 118.147, y: 136.423),CGPoint(x: 139.095, y: 136.423),CGPoint(x: 128.459, y: 113.692)],[CGPoint(x: 78.355, y: 168.817),CGPoint(x: 57.677, y: 210.930),CGPoint(x: 68.043, y: 210.930),CGPoint(x: 84.834, y: 176.916),CGPoint(x: 171.760, y: 176.916),CGPoint(x: 188.389, y: 210.930),CGPoint(x: 198.701, y: 210.930),CGPoint(x: 178.023, y: 168.817),CGPoint(x: 78.355, y: 168.817)]]
-    let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { rect in
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
         NSColor.black.setFill()
+        // Slight inset + 0.5pt optical lift keeps the mark crisp beside the status dot.
+        let draw = NSRect(x: rect.minX + 1.25, y: rect.minY + 1.5, width: rect.width - 2.5, height: rect.height - 2.5)
         let path = NSBezierPath(); path.windingRule = .evenOdd
         for polygon in polygons {
             for (index, point) in polygon.enumerated() {
-                let p = CGPoint(x: point.x / 256 * rect.width, y: (256 - point.y) / 256 * rect.height)
+                let p = CGPoint(x: draw.minX + point.x / 256 * draw.width, y: draw.minY + (256 - point.y) / 256 * draw.height)
                 if index == 0 { path.move(to: p) } else { path.line(to: p) }
             }
             path.close()
@@ -181,41 +187,41 @@ private func brandImage() -> NSImage {
         path.fill(); return true
     }
     image.isTemplate = true
-    image.accessibilityDescription = "Airodrom connected A mark"
+    image.accessibilityDescription = "Airodrom"
     return image
 }
 private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let controller: Controller
     private let helperLock: Int32
     private var statusItem: NSStatusItem!
-    private let statusDot = StatusDot(frame: NSRect(x: 13, y: 2, width: 7, height: 7))
+    private let statusDot = StatusDot(frame: NSRect(x: 12.5, y: 1.5, width: 5, height: 5))
     private let menu = NSMenu()
-    private let stateRow = NSMenuItem(title: "Status: Waiting", action: nil, keyEquivalent: "")
-    private let modelRow = NSMenuItem(title: "Model: Unavailable", action: nil, keyEquivalent: "")
-    private let connectorsRow = NSMenuItem(title: "Connectors: Unavailable", action: nil, keyEquivalent: "")
-    private let runtimeRow = NSMenuItem(title: "OpenCode: Unavailable · Primary", action: nil, keyEquivalent: "")
-    private let memoryRow = NSMenuItem(title: "Memory V2: Unavailable · Local", action: nil, keyEquivalent: "")
-    private let missionRow = NSMenuItem(title: "Active Mission: none observed", action: nil, keyEquivalent: "")
-    private let conversationRow = NSMenuItem(title: "Conversation: local · separate from Missions", action: nil, keyEquivalent: "")
-    private let approvalsRow = NSMenuItem(title: "Approvals: unavailable", action: nil, keyEquivalent: "")
+    private let stateRow = NSMenuItem(title: "SYSTEM STATUS  Waiting", action: nil, keyEquivalent: "")
+    private let modelRow = NSMenuItem(title: "Model  Unavailable", action: nil, keyEquivalent: "")
+    private let connectorsRow = NSMenuItem(title: "Connectors  Unavailable", action: nil, keyEquivalent: "")
+    private let runtimeRow = NSMenuItem(title: "OpenCode  Unavailable · Primary", action: nil, keyEquivalent: "")
+    private let memoryRow = NSMenuItem(title: "MEMORY  Memory V2  Unavailable", action: nil, keyEquivalent: "")
+    private let missionRow = NSMenuItem(title: "ACTIVE MISSION  none", action: nil, keyEquivalent: "")
+    private let conversationRow = NSMenuItem(title: "CONVERSATION  local · separate from Missions", action: nil, keyEquivalent: "")
+    private let approvalsRow = NSMenuItem(title: "Approvals  unavailable", action: nil, keyEquivalent: "")
     private let detailRow = NSMenuItem(title: "Checking local observations…", action: nil, keyEquivalent: "")
-    private let workersRow = NSMenuItem(title: "Workers: Unavailable", action: nil, keyEquivalent: "")
-    private let providerRow = NSMenuItem(title: "Provider: Unavailable", action: nil, keyEquivalent: "")
-    private let mcpRow = NSMenuItem(title: "MCP: Unavailable", action: nil, keyEquivalent: "")
-    private let progressRow = NSMenuItem(title: "Mission progress: none", action: nil, keyEquivalent: "")
-    private let elapsedRow = NSMenuItem(title: "Elapsed: —", action: nil, keyEquivalent: "")
-    private let errorsRow = NSMenuItem(title: "Recent failures: none", action: nil, keyEquivalent: "")
+    private let workersRow = NSMenuItem(title: "WORKERS  Unavailable", action: nil, keyEquivalent: "")
+    private let providerRow = NSMenuItem(title: "Provider  Unavailable", action: nil, keyEquivalent: "")
+    private let mcpRow = NSMenuItem(title: "MCP  Unavailable", action: nil, keyEquivalent: "")
+    private let progressRow = NSMenuItem(title: "Mission progress  none", action: nil, keyEquivalent: "")
+    private let elapsedRow = NSMenuItem(title: "Elapsed  —", action: nil, keyEquivalent: "")
+    private let errorsRow = NSMenuItem(title: "Recent failures  none", action: nil, keyEquivalent: "")
     private var startItem: NSMenuItem!, stopItem: NSMenuItem!, restartItem: NSMenuItem!, openItem: NSMenuItem!, qualifyItem: NSMenuItem!
     private var cliItem: NSMenuItem!, doctorItem: NSMenuItem!, copyItem: NSMenuItem!
     private var openConversationItem: NSMenuItem!, openMissionsItem: NSMenuItem!, openDevSessionsItem: NSMenuItem!, openSystemHealthItem: NSMenuItem!, openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
     private var animationTimer: Timer?, animationIndex = 0, animationTicks = 0
     private let idleImage = brandImage()
     private lazy var busyImages: [NSImage] = (0..<12).map { frame in
-        let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { [idleImage] rect in
-            idleImage.draw(in: NSRect(x: 3, y: 3, width: 14, height: 14))
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { [idleImage] rect in
+            idleImage.draw(in: NSRect(x: 2.5, y: 2.5, width: 13, height: 13))
             NSColor.black.setStroke()
-            let arc = NSBezierPath(); arc.lineWidth = 1.2
-            arc.appendArc(withCenter: NSPoint(x: 10, y: 10), radius: 9, startAngle: CGFloat(frame * 30), endAngle: CGFloat(frame * 30 + 220))
+            let arc = NSBezierPath(); arc.lineWidth = 1.1
+            arc.appendArc(withCenter: NSPoint(x: 9, y: 9), radius: 8, startAngle: CGFloat(frame * 30), endAngle: CGFloat(frame * 30 + 220))
             arc.stroke(); return true
         }
         image.isTemplate = true; image.accessibilityDescription = "Airodrom working"; return image
@@ -261,15 +267,45 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private func item(_ title: String, _ selector: Selector, in target: NSMenu, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key); item.target = self; target.addItem(item); return item
     }
+    private func sectionHeader(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+    private static let liveMissionStates = Set(["dispatching", "running", "verifying"])
+    private static let reviewMissionStates = Set(["awaiting_acceptance", "waiting_for_operator"])
+    private func isLiveMission(_ mission: BridgeStatus.Product.Mission?) -> Bool {
+        guard let mission else { return false }
+        return MenuApplication.liveMissionStates.contains(mission.state)
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = idleImage; statusItem.button?.setAccessibilityLabel("Airodrom")
         statusItem.button?.addSubview(statusDot)
         statusItem.menu = menu; menu.autoenablesItems = false
-        menu.addItem(NSMenuItem(title: "AIRODROM", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Personal AI Operations", action: nil, keyEquivalent: ""))
-        [stateRow, detailRow, conversationRow, missionRow, progressRow, elapsedRow, workersRow, runtimeRow, providerRow, memoryRow, mcpRow, approvalsRow, errorsRow, modelRow, connectorsRow].forEach { menu.addItem($0) }; menu.addItem(.separator())
+        menu.addItem(sectionHeader("AIRODROM"))
+        menu.addItem(sectionHeader("Personal AI Operations"))
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("System Status"))
+        [stateRow, detailRow].forEach { menu.addItem($0) }
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("Active Mission"))
+        [conversationRow, missionRow, progressRow, elapsedRow].forEach { menu.addItem($0) }
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("Workers"))
+        [workersRow, runtimeRow, providerRow].forEach { menu.addItem($0) }
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("Memory"))
+        [memoryRow, mcpRow].forEach { menu.addItem($0) }
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("Model"))
+        menu.addItem(modelRow)
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("Connectors"))
+        [connectorsRow, approvalsRow, errorsRow].forEach { menu.addItem($0) }
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("Actions"))
         _ = item("Refresh Status", #selector(refreshStatus), in: menu)
         _ = item("Reconnect", #selector(reconnect), in: menu)
         openItem = item("Open Control Center", #selector(openCenter), in: menu, key: "o")
@@ -277,7 +313,6 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         openMissionsItem = item("Active Missions", #selector(openMissions), in: menu)
         openDevSessionsItem = item("Continue Development Session", #selector(openDevSessions), in: menu)
         cliItem = item("New Mission / Open CLI", #selector(openCLI), in: menu)
-        menu.addItem(.separator())
         openMissionItem = item("View Active Mission", #selector(openMission), in: menu)
         cancelMissionItem = item("Cancel Mission", #selector(cancelMission), in: menu)
         _ = item("Review Missions & Approvals", #selector(openMissions), in: menu)
@@ -343,7 +378,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let p = status?.product, state = status?.state
         // Never map optional provider/MCP gaps or a nil product alone to Disconnected.
         let tone = menuTone(changing: changing)
-        let visible = changing ? "Waiting" : (p?.connection_label ?? p?.activity_status ?? presentationLabel(tone: tone))
+        let visible = primaryStatusLabel(changing: changing, tone: tone, product: p)
         updateAnimation(changing: changing)
         statusDot.tone = tone
         stateRow.title = "SYSTEM STATUS  " + visible
@@ -355,10 +390,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         } else {
             conversationRow.title = "CONVERSATION  local · separate from Missions"
         }
-        missionRow.title = p?.mission.map { "ACTIVE MISSION  \($0.label)" } ?? "ACTIVE MISSION  none"
-        progressRow.title = missionProgressTitle(p?.mission)
-        elapsedRow.title = p?.mission?.elapsed_s.map { "Elapsed  \($0)s · \((p?.mission?.worker ?? "worker")) · \((p?.mission?.model ?? p?.model ?? "model"))" } ?? "Elapsed  —"
-        if let phase = p?.mission?.phase { elapsedRow.title += " · \(phase)" }
+        applyMissionRows(product: p)
         workersRow.title = "WORKERS  " + (p?.workers ?? ("OpenCode " + (p?.runtime ?? "Unavailable")))
         runtimeRow.title = "OpenCode  " + (p?.runtime ?? "Unavailable")
         if p?.runtimeReason == "opencode_runtime_pins_changed" { runtimeRow.title += " · Requalification required" }
@@ -369,10 +401,11 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         errorsRow.title = "Recent failures  " + String(p?.failed_missions ?? 0) + " · review " + String(p?.review_missions ?? 0)
         modelRow.title = "Model  " + (p?.model ?? "Unavailable") + " · " + (p?.routing ?? "Unavailable")
         connectorsRow.title = "Connectors  " + (p?.connectors ?? "Unavailable")
-        // Compact bar: approvals badge or symbolic cue — not a long Disconnected string.
-        statusItem.button?.title = (p?.approvals ?? 0) > 0 ? String(p!.approvals!) : tone == "disconnected" || tone == "degraded" ? "!" : tone == "reconnecting" ? "…" : ""
-        statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title
-        statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title)
+        // Compact bar: approvals/review badge or symbolic cue — not a long status string.
+        let actionCount = (p?.approvals ?? 0) + (p?.review_missions ?? 0)
+        statusItem.button?.title = actionCount > 0 ? String(actionCount) : tone == "disconnected" || tone == "degraded" ? "!" : tone == "reconnecting" ? "…" : ""
+        statusItem.button?.toolTip = "Airodrom — " + visible + ". " + approvalsRow.title + ". " + errorsRow.title
+        statusItem.button?.setAccessibilityValue(visible + ". " + approvalsRow.title + ". " + errorsRow.title)
         statusItem.button?.setAccessibilityLabel("Airodrom")
         let available = pendingAction == nil && currentAction == nil
         let navigationAvailable = pendingAction == nil && (currentAction == nil || currentAction == .status)
@@ -389,12 +422,35 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         doctorItem.isEnabled = navigationAvailable && status?.product != nil
         qualifyItem.isEnabled = available && state == .stopped && controller.configuration.localHome != nil
         copyItem.isEnabled = navigationAvailable && p != nil
-        openMissionItem.isEnabled = navigationAvailable && p?.mission?.id != nil && controller.configuration.localHome != nil
-        cancelMissionItem.isEnabled = openMissionItem.isEnabled && ["dispatching", "running", "verifying", "awaiting_acceptance", "waiting_for_operator"].contains(p?.mission?.state ?? "")
+        let live = isLiveMission(p?.mission)
+        openMissionItem.isEnabled = navigationAvailable && live && p?.mission?.id != nil && controller.configuration.localHome != nil
+        cancelMissionItem.isEnabled = openMissionItem.isEnabled
         if let health = menu.items.first(where: { $0.title == "System Health" })?.submenu {
             let values = [p?.control, p?.runtime, p?.memory, p?.provider]
             for (index, item) in health.items.enumerated() where index < 4 { item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + (values[index] ?? "Unavailable") }
         }
+    }
+
+    private func applyMissionRows(product p: BridgeStatus.Product?) {
+        let mission = p?.mission
+        if isLiveMission(mission), let mission {
+            missionRow.title = "ACTIVE MISSION  \(mission.label)"
+            progressRow.title = missionProgressTitle(mission)
+            elapsedRow.title = mission.elapsed_s.map { "Elapsed  \($0)s · \((mission.worker ?? "worker")) · \((mission.model ?? p?.model ?? "model"))" } ?? "Elapsed  —"
+            if !mission.phase.isEmpty { elapsedRow.title += " · \(mission.phase)" }
+            return
+        }
+        let reviews = p?.review_missions ?? 0
+        if reviews > 0 || (mission.map { MenuApplication.reviewMissionStates.contains($0.state) } ?? false) {
+            let count = max(reviews, mission != nil ? 1 : 0)
+            missionRow.title = "NEEDS REVIEW  \(count) waiting · not active work"
+            progressRow.title = "Mission progress  awaiting operator review"
+            elapsedRow.title = "Elapsed  — · historical work is not active"
+            return
+        }
+        missionRow.title = "ACTIVE MISSION  none"
+        progressRow.title = "Mission progress  none"
+        elapsedRow.title = "Elapsed  —"
     }
 
     private func menuTone(changing: Bool) -> String {
@@ -403,21 +459,34 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         if status?.state == .starting || changing || failures > 0 && status == nil { return "reconnecting" }
         if let tone = status?.product?.menu_tone, !tone.isEmpty { return tone }
         let p = status?.product
-        if (p?.approvals ?? 0) > 0 { return "approval" }
-        if (p?.active_missions ?? 0) > 0 || ["dispatching", "running", "verifying"].contains(p?.mission?.state ?? "") { return "working" }
+        if (p?.approvals ?? 0) > 0 || (p?.review_missions ?? 0) > 0 { return "approval" }
+        if (p?.active_missions ?? 0) > 0 || isLiveMission(p?.mission) { return "working" }
+        if p?.mission.map({ MenuApplication.reviewMissionStates.contains($0.state) }) == true { return "approval" }
         if p?.status == "Degraded" || p?.status == "Unavailable" { return "degraded" }
         if status?.state == .connected { return "healthy" }
         return "disconnected"
     }
+    private func primaryStatusLabel(changing: Bool, tone: String, product: BridgeStatus.Product?) -> String {
+        if changing { return "WAITING" }
+        switch tone {
+        case "approval": return "ACTION REQUIRED"
+        case "working", "healthy": return product?.connection_label == "DEGRADED" ? "DEGRADED" : "CONNECTED"
+        case "degraded": return "DEGRADED"
+        case "reconnecting": return "RECONNECTING"
+        case "stopped", "disconnected": return "DISCONNECTED"
+        default:
+            if let label = product?.connection_label, !label.isEmpty { return label }
+            return presentationLabel(tone: tone)
+        }
+    }
     private func presentationLabel(tone: String) -> String {
         switch tone {
-        case "healthy": return "Connected · Healthy"
-        case "working": return "Working"
-        case "reconnecting": return "Reconnecting"
-        case "degraded": return "Degraded"
-        case "approval": return "Approval needed"
-        case "stopped": return "Stopped"
-        default: return "Disconnected"
+        case "healthy", "working": return "CONNECTED"
+        case "reconnecting": return "RECONNECTING"
+        case "degraded": return "DEGRADED"
+        case "approval": return "ACTION REQUIRED"
+        case "stopped", "disconnected": return "DISCONNECTED"
+        default: return "DISCONNECTED"
         }
     }
     private func missionProgressTitle(_ mission: BridgeStatus.Product.Mission?) -> String {
@@ -426,7 +495,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
             let pct = min(100, Int((Double(value) / Double(max)) * 100))
             return "Mission progress  \(pct)% · \(value)/\(max) checks"
         }
-        if ["dispatching", "running", "verifying"].contains(mission.state) {
+        if MenuApplication.liveMissionStates.contains(mission.state) {
             return "Mission progress  indeterminate · \(mission.phase)"
         }
         return "Mission progress  " + mission.state.replacingOccurrences(of: "_", with: " ")
@@ -507,16 +576,69 @@ private func openControlCenter(_ directory: String) -> Int32 {
           let safeURL = URL(string: "http://127.0.0.1:\(port)/#\(fragment)") else { return 1 }
     return NSWorkspace.shared.open(safeURL) ? 0 : 1
 }
+private func writePNG(_ image: NSImage, to url: URL) -> Bool {
+    guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+          let png = rep.representation(using: .png, properties: [:]) else { return false }
+    do { try png.write(to: url); return true } catch { return false }
+}
+private func appearanceIcon(template: NSImage, dark: Bool, tone: String) -> NSImage {
+    let size = NSSize(width: 36, height: 36)
+    let inverted = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { mark in
+        NSColor.white.setFill(); NSBezierPath(rect: mark).fill()
+        template.draw(in: mark, from: .zero, operation: .destinationIn, fraction: 1)
+        return true
+    }
+    return NSImage(size: size, flipped: false) { rect in
+        (dark ? NSColor(calibratedWhite: 0.14, alpha: 1) : NSColor(calibratedWhite: 0.92, alpha: 1)).setFill()
+        NSBezierPath(rect: rect).fill()
+        let mark = NSRect(x: 7, y: 7, width: 18, height: 18)
+        if dark { inverted.draw(in: mark) } else { template.draw(in: mark) }
+        let dot = StatusDot(frame: NSRect(x: 24, y: 8, width: 10, height: 10))
+        dot.tone = tone
+        if let ctx = NSGraphicsContext.current {
+            NSGraphicsContext.saveGraphicsState()
+            ctx.cgContext.translateBy(x: dot.frame.minX, y: dot.frame.minY)
+            dot.draw(NSRect(origin: .zero, size: dot.frame.size))
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        return true
+    }
+}
+private func exportVisualEvidence(_ directory: String) -> Int32 {
+    let root = URL(fileURLWithPath: directory, isDirectory: true)
+    do { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) } catch { return 1 }
+    let template = brandImage()
+    let pairs: [(String, String, Bool)] = [
+        ("icon-light-connected.png", "healthy", false),
+        ("icon-dark-connected.png", "healthy", true),
+        ("icon-light-action-required.png", "approval", false),
+        ("icon-dark-action-required.png", "approval", true),
+        ("icon-light-degraded.png", "degraded", false),
+        ("icon-dark-degraded.png", "degraded", true),
+        ("icon-light-disconnected.png", "disconnected", false),
+        ("icon-dark-disconnected.png", "disconnected", true)
+    ]
+    for (name, tone, dark) in pairs {
+        guard writePNG(appearanceIcon(template: template, dark: dark, tone: tone), to: root.appendingPathComponent(name)) else { return 1 }
+    }
+    guard writePNG(template, to: root.appendingPathComponent("icon-template-mark.png")) else { return 1 }
+    fputs("Exported menu visual evidence.\n", stderr)
+    return 0
+}
 private func main() -> Int32 {
+    let arguments = CommandLine.arguments
+    if arguments.count == 3 && arguments[1] == "--export-visual-evidence" {
+        return exportVisualEvidence(arguments[2])
+    }
     let configuration: Configuration
     do { configuration = try Configuration() }
     catch { fputs("Airodrom helper configuration is unavailable.\n", stderr); return 1 }
-    let controller = Controller(configuration: configuration), arguments = CommandLine.arguments
+    let controller = Controller(configuration: configuration)
     if arguments.count == 2 && arguments[1] == "--open-control-center" { return openControlCenter(configuration.dataDirectory) }
     if arguments.count > 1 {
         let inspecting = arguments.count == 2 && arguments[1] == "--inspect-menu"
         guard inspecting || (arguments.count == 3 && arguments[1] == "--action" && ControlAction(rawValue: arguments[2]) != nil) else {
-            fputs("Usage: AirodromMenu [--action status|start|stop|restart|open|open-conversation|open-missions|open-development-sessions|open-system-health|cli|doctor|requalify]\n", stderr); return 2
+            fputs("Usage: AirodromMenu [--action status|start|stop|restart|open|open-conversation|open-missions|open-development-sessions|open-system-health|cli|doctor|requalify] | --export-visual-evidence DIR\n", stderr); return 2
         }
         let action = inspecting ? ControlAction.status : ControlAction(rawValue: arguments[2])!
         let done = DispatchSemaphore(value: 0)

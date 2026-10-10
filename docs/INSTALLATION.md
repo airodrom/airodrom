@@ -14,6 +14,20 @@ qualifies actual installed OpenCode artifacts and opens terminal tasks; Control
 Center is optional. See [Interactive CLI V1](INTERACTIVE-CLI-V1.md). This does not
 install login agents, alter another private instance or publish a package.
 
+### Optional desktop login (macOS)
+
+After an authorized local install tip is linked and healthy, opt in with:
+
+```sh
+npm run macos:desktop-login:install
+```
+
+This registers `local.airodrom.desktop-login` (RunAtLoad, no KeepAlive). At login it
+starts Ollama if needed, attaches or starts the owned Control Plane through
+`local.start` / `local-service.cjs`, then opens the Premium Menu V3 helper from
+`~/.airodrom/menu`. Legacy `local.pi-chatgpt-bridge*` agents stay disabled. Disable
+with `node scripts/macos/desktop-login.cjs disable`. This is not startup PR #36.
+
 An optional private control profile may supply non-secret Ollama provider/model settings. Pi executables, profiles, model catalogs and extensions are neither discovered nor installed. Authenticate optional external agents through their supported private mechanisms. Keep auth files mode 0600 under private directories, outside Git and release artifacts. Do not put keys in shell arguments or share raw runtime discovery.
 
 Optional sandboxed host capabilities require an operator-owned `config/safe-autonomy-manifest.json` containing exact executable, runtime library, declared input and job pins for the installed host. The distributed `.example.json` is deliberately unconfigured and grants nothing. It is not safe to copy another host's pins or replace mismatches with wildcard paths. Have a competent operator build and review the exact inventory before attempting runtime qualification. Registered verifier tools start with an empty configuration.

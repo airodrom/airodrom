@@ -34,7 +34,7 @@ if '--menu-refresh-only' in __import__('sys').argv:
   assert menu['queued_mission_matches_selection'] is True
   items={item['title']:item['enabled'] for item in menu['refresh_items']}
   assert items['New Mission / Open CLI'] is True
-  for name in ['Open Control Center','Open Mission','Cancel Mission']: assert items[name] is (state=='Connected')
+  for name in ['Open Control Center','View Active Mission','Cancel Mission']: assert items[name] is (state=='Connected')
   assert 'token=' not in result.stdout and '127.0.0.1' not in result.stdout
  print('PASS: native menu controls stay enabled during healthy refresh, requests queue without changing Mission selection, stopped controls stay disabled and private discovery is withheld')
  raise SystemExit(0)
@@ -55,12 +55,13 @@ def rows(items):
   yield item
   yield from rows(item.get('items',[]))
 native={item['title']:item for item in rows(menu['items'])}
-assert 'Status: Degraded' in native
-assert 'Approvals: 2 waiting' in native
-assert native['Open Mission']['enabled'] is False # Legacy fixture has no local CLI home.
+assert 'SYSTEM STATUS  ACTION REQUIRED' in native
+assert 'Approvals  2 waiting' in native
+assert any(title.startswith('ACTIVE MISSION  ') for title in native)
+assert native['View Active Mission']['enabled'] is False # Legacy fixture has no local CLI home.
 assert native['Stop Service']['enabled'] is False
 assert native['Start Service']['enabled'] is False
-assert native['Quit Menu Bar (service stays running)']['key']=='q'
+assert native['Quit Menu (service stays running)']['key']=='q'
 assert any('Requalification required' in title for title in native)
 assert 'token=' not in p.stdout and '127.0.0.1' not in p.stdout
 print('PASS: actual native menu uses template identity, canonical degraded runtime, approval count and state-aware service controls')
@@ -68,10 +69,12 @@ info['AirodromHome']=str(root)
 with (contents/'Info.plist').open('wb') as f: plistlib.dump(info,f)
 p=run('--inspect-menu');assert p.returncode==0
 native={item['title']:item for item in rows(json.loads(p.stdout)['items'])}
-assert native['Open Mission']['enabled'] is True and native['Cancel Mission']['enabled'] is True
+assert native['View Active Mission']['enabled'] is True and native['Cancel Mission']['enabled'] is True
 status['product']['approvals']=0
 status['product']['active_missions']=1
 status['product']['status']='Ready'
+status['product']['menu_tone']='working'
+status['product']['connection_label']='CONNECTED'
 control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
 animation=json.loads(run('--inspect-menu').stdout)
 assert animation['animation_state']=='busy'
@@ -80,12 +83,23 @@ if not animation['reduced_motion']:
  assert animation['animation_running'] and animation['animation_ticks']>=2 and animation['frame_changed']
 else:
  assert not animation['animation_running'] and not animation['frame_changed']
+# Historical / review states must not present as active work or busy animation.
 status['product']['active_missions']=0
+status['product']['menu_tone']='approval'
+status['product']['connection_label']='ACTION REQUIRED'
+status['product']['review_missions']=1
 status['product']['mission']['state']='awaiting_acceptance'
 control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
-waiting=json.loads(run('--inspect-menu').stdout)
-assert waiting['animation_state']=='waiting' and not waiting['animation_running']
+review=json.loads(run('--inspect-menu').stdout)
+assert review['animation_state']=='approval' and not review['animation_running']
+review_titles={item['title'] for item in rows(review['items'])}
+assert any(title.startswith('NEEDS REVIEW  ') for title in review_titles)
+assert not any(title.startswith('ACTIVE MISSION  ') and 'none' not in title and 'NEEDS' not in title for title in review_titles)
+assert {item['title']:item for item in rows(review['items'])}['View Active Mission']['enabled'] is False
 status['product']['mission']=None
+status['product']['review_missions']=0
+status['product']['menu_tone']='healthy'
+status['product']['connection_label']='CONNECTED'
 control.write_text('process.stdout.write(JSON.stringify('+json.dumps(status)+'));')
 idle=json.loads(run('--inspect-menu').stdout)
 assert idle['animation_state']=='idle' and not idle['animation_running'] and not idle['frame_changed']

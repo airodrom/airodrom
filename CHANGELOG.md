@@ -1,3 +1,11 @@
+## Unreleased — Premium macOS Menu V3
+
+- Refine the native menu-bar mark (18pt optically padded template A) and replace pale-yellow status wash with a compact warm-gold ACTION REQUIRED indicator.
+- Clarify menu hierarchy (System Status / Active Mission / Workers / Memory / Model / Connectors / Actions) and status vocabulary: CONNECTED, DEGRADED, DISCONNECTED, ACTION REQUIRED.
+- Feature only live Missions in the Active Mission row; `awaiting_acceptance` / `waiting_for_operator` report as NEEDS REVIEW and never as active work.
+- Preserve Everyday UX deep links, service controls and security boundaries. See [PRODUCT-EXPERIENCE-V2.md](docs/PRODUCT-EXPERIENCE-V2.md).
+- Optional `local.airodrom.desktop-login` LaunchAgent starts Ollama, the owned Control Plane and the native menu at login without enabling legacy `pi-chatgpt` agents or merging startup PR #36.
+
 ## Unreleased — Final Product Consolidation V1
 
 - Document local usable release stop line: installed tip meets daily-use criteria; no essential blockers; optional draft PRs #36–#38 and packaging/Claude remain future work. Protect dirty operator checkout. See [FINAL-PRODUCT-CONSOLIDATION-V1.md](docs/FINAL-PRODUCT-CONSOLIDATION-V1.md).
