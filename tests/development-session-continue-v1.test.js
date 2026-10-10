@@ -13,7 +13,9 @@ test('Development Sessions panel exposes Continue Development Session action', (
   for (const label of [
     'Selected session',
     'Authorized repository',
+    'Authorized branch',
     'Authorized worktree',
+    'Assigned worker',
     'Last completed Mission',
     'Next permitted action',
     'Execution state'

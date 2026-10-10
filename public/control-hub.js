@@ -13,7 +13,8 @@
  let observatory=null,obsFollow=true,obsFilter='',obsQuery='',obsStream=null,obsCursor=0,diffCache=new Map(),expandedOutput=new Set();
  let lastOkAt=null,connectionView=null,secondaryNotice='';
  let missionPage=null,missionFilter='All',missionOffset=0,searchTimer=null;
- const nav=new Map(),feed=new Map();let view=(()=>{const value=new URLSearchParams(location.search).get('view');return value==='Conversation'?'Conversation':'Overview';})(),snapshot=null,missionId=(()=>{const value=new URLSearchParams(location.search).get('mission');return /^[a-f0-9-]{36}$/i.test(value||'')?value:null;})(),cursor=0,busy=false,paused=false,authorized=true,timer=null,failures=0,category='',generation=0,lastFocus=null,reviewMission=null,searchQuery='',inflight=null,currentOffset=0,memoryResults=[],memoryDraft='',memoryQuery='',selectedMemory=null,memoryEpoch=0,memoryController=null,eventMission='';
+ const deepLinkViews=new Set(['Conversation','Missions','Development Sessions','System Health']);
+ const nav=new Map(),feed=new Map();let view=(()=>{const value=new URLSearchParams(location.search).get('view');return deepLinkViews.has(value)?value:'Overview';})(),snapshot=null,missionId=(()=>{const value=new URLSearchParams(location.search).get('mission');return /^[a-f0-9-]{36}$/i.test(value||'')?value:null;})(),cursor=0,busy=false,paused=false,authorized=true,timer=null,failures=0,category='',generation=0,lastFocus=null,reviewMission=null,searchQuery='',inflight=null,currentOffset=0,memoryResults=[],memoryDraft='',memoryQuery='',selectedMemory=null,memoryEpoch=0,memoryController=null,eventMission='';
  if(missionId)view='Missions';
  async function api(route,body,signal){const response=await fetch(route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store',redirect:'error',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(10000)]):AbortSignal.timeout(10000)});if(!response.ok){if(response.status===401){authorized=false;clearMemory();render();throw Error('Authorization expired. Reopen your private Control Center link.');}throw Error('Local request unavailable. Check System Health.');}return response.json();}
  function loseAuthorization(){authorized=false;generation++;inflight?.abort();clearTimeout(timer);timer=null;token='';try{sessionStorage.removeItem('airodromToken');}catch{}clearMemory();snapshot=null;missionPage=null;feed.clear();reviewMission=null;for(const id of ['new-dialog','review-dialog'])if($(id).open)$(id).close();render();}
@@ -90,8 +91,20 @@
  function missionCard(m){
   const c=node('article',null,'mission-card'),head=node('div',null,'mission-head');c.dataset.missionId=m.id;
   const open=button(m.label,()=>selectMission(m.id));open.dataset.focusKey='mission:'+m.id;head.append(open,chip(m.state));
-  c.append(head,node('code',m.id,'mission-id'),node('small',`Worker: ${m.runtime||'Not assigned'} · Started: ${stamp(m.started_at)} · Created: ${stamp(m.created_at)}`),phase(m),node('p',m.timeline.at(-1)?.label||'No lifecycle event observed','latest-activity'),node('small',`Independent verification: ${readable(m.verification.status)}${m.verification.current?' · current':' · historical / not current'} · Settlement: ${readable(m.settlement.status)}`));
-  const actions=node('div',null,'actions');actions.append(button('View details',()=>selectMission(m.id)));
+  const pendingApprovals=(snapshot?.approvals?.records||[]).filter(a=>a.task_id===m.task_id&&a.status==='pending').length;
+  const acceptancePending=m.state==='awaiting_acceptance'||m.state==='waiting_for_operator';
+  c.append(
+    head,
+    node('code',m.id,'mission-id'),
+    node('small',`Active work: ${stateText(m.state)} · Assigned worker: ${m.runtime||'Not assigned'} · Model: ${m.model?.id||'Unavailable'} · Started: ${stamp(m.started_at)}`),
+    phase(m),
+    node('p',m.timeline.at(-1)?.label||'No verified lifecycle event observed','latest-activity'),
+    node('small',`Independent verification: ${readable(m.verification.status)}${m.verification.current?' · current':' · historical / not current'} · Acceptance: ${acceptancePending?'Pending operator decision':readable(m.acceptance?.status||'not requested')} · Settlement: ${readable(m.settlement.status)}`),
+    node('small',pendingApprovals?`Pending approval: ${pendingApprovals} waiting on retained page`:'Pending approval: none on retained page')
+  );
+  const actions=node('div',null,'actions');
+  actions.append(button('Open Observatory',()=>selectMission(m.id),true));
+  actions.append(button('View details',()=>selectMission(m.id)));
   if(m.actions.accept){const review=button('Review Acceptance',event=>openReview(m,event.currentTarget),true);review.dataset.focusKey='review:'+m.id;review.disabled=failures>0||paused;actions.append(review);}
   c.append(actions);return c;
  }
@@ -446,19 +459,47 @@
    }
    if(view==='Sensitive & Vault'){result.append(glass('Sensitive Memory','Operator-only',snapshot.sensitive?.disclosure),node('p',snapshot.sensitive?.encryption),glass('Vault','macOS Keychain', 'Named private identifiers and credentials. Credential values stay hidden and are never sent to workers.'),node('p','In the Airodrom terminal, use /vault to save a password or API key securely. Use /secret list or /secret search <label> to find an entry. Private identifiers can be revealed only after fresh confirmation in that terminal and may remain in its scrollback. Credentials require approved capability use.'),node('p','Sensitive Memory is separate: use /remember-sensitive or /sensitive in the authenticated terminal.'));return result;}
    const layout=node('div',null,'assistant-layout'),chat=node('section',null,'glass conversation'),ops=node('aside',null,'operations');
-   chat.append(node('h2','Talk to Airodrom'),node('p',snapshot.provider?.message||'Local conversation · qualified Qwen · canonical Memory V2','muted'));
-   chat.append(node('p','Persistent browser session · worker local-ollama · ordinary conversation is separate from Work Missions','muted'));
-   if(conversationStreaming)chat.append(node('p',conversationStreaming,'muted'));
+   const provider=snapshot.provider;
+   const providerId=provider?.preferences?.provider||'qwen';
+   const providerTitle=providerId==='claude'?'Claude · WAIT':'Qwen · local default';
+   chat.append(node('h2','Talk to Airodrom'));
+   chat.append(glass('Conversation model',providerTitle,(provider?.state||'Unavailable')+' · '+(provider?.message||'Local conversation · qualified Qwen · no Mission authority')));
+   const conn=connectionView||deriveConnection({authorized,reachable:failures===0,paused,failures,overviewStatus:snapshot.status});
+   chat.append(node('p',conn.label+(conn.detail?' · '+conn.detail:'')+(lastOkAt?' · Last ok '+stamp(lastOkAt):''),'conversation-status'));
+   if(failures>0)chat.append(node('p','Reconnecting to the local service. Conversation history may be stale until reconnect succeeds.','notice'));
+   else if(paused)chat.append(node('p','Live updates paused. Resume updates to refresh model activity and history.','notice'));
+   const providerStale=failures>0||paused||document.hidden||providerGeneration!==generation;
+   if(provider?.schema_version===1){
+     const modelBar=node('div',null,'conversation-model-bar'),label=node('label','Model'),select=node('select');
+     select.setAttribute('aria-label','Conversation model');select.dataset.focusKey='conversation-model';
+     for(const [id,title]of [['qwen','Qwen · local only (default)'],['claude','Claude · subscription · WAIT until qualified']]){const option=node('option',title);option.value=id;select.append(option);}
+     select.value=provider.preferences.provider;select.disabled=providerStale;label.append(select);modelBar.append(label);
+     const save=button('Use selected model',async()=>{save.disabled=true;try{await api('/api/assistant/provider',{revision:provider.preferences.revision,provider:select.value});conversationNotice=select.value==='qwen'?'Qwen selected · local only. No external transmission.':'Claude preference recorded · WAIT until qualified. No transmission authorized.';await refresh();}catch(e){conversationNotice=e.message;render();}});
+     save.disabled=providerStale;modelBar.append(save);chat.append(modelBar);
+     if(provider.preferences.provider!=='qwen')chat.append(node('p','Claude remains OFF for inference until independently qualified. Everyday conversation uses Qwen locally.','muted'));
+     if(providerStale)chat.append(node('p','Model controls disabled while observations are stale, paused, or offline.','muted'));
+   }else chat.append(node('p','Model picker requires a compatible backend. Default remains Qwen when available.','muted'));
+   chat.append(node('p',conversationSessionId?('Continuing session '+conversationSessionId.slice(0,8)+' · '+conversationHistory.length+' retained turn(s)'):'New browser session starts on first send · ordinary conversation is separate from Work Missions','muted'));
+   const sessionActions=node('div',null,'actions');
+   const continuePrev=button('Continue previous conversation',()=>{if(!conversationSessionId){conversationNotice='No previous browser session in this tab. Send a message to start one.';render();return;}conversationNotice='Continuing persistent browser session '+conversationSessionId.slice(0,8)+'. Host-retained history is shown below.';render();});
+   continuePrev.disabled=!conversationSessionId;sessionActions.append(continuePrev);
+   sessionActions.append(button('Start new conversation',()=>{conversationSessionId=null;try{sessionStorage.removeItem('airodromConversationSession');}catch{}conversationHistory=[];activeConversationId=null;activeDirectTurn=null;conversationStreaming=null;conversationNotice='New conversation. Previous browser session closed in this tab; host history for the old session is unchanged.';render();}));
+   chat.append(sessionActions);
+   if(conversationStreaming)chat.append(node('p','Model activity: '+conversationStreaming,'conversation-activity'));
+   else if(activeDirectTurn)chat.append(node('p','Model activity: waiting for local reply…','conversation-activity'));
+   else chat.append(node('p','Model activity: idle','muted'));
    const ordered=conversationHistory.every(item=>Number.isFinite(item.created_at))?conversationHistory.slice().sort((a,b)=>a.created_at-b.created_at):conversationHistory.slice().reverse();
    for(const item of ordered){
      if(item.prompt)chat.append(node('p',item.prompt,'operator-message'));
      if(item.response){chat.append(node('p',item.response,'assistant-message'));const meta=[item.model,item.worker||'local-ollama',item.memory_included?'Memory on':'Memory off'].filter(Boolean).join(' · ');if(meta)chat.append(node('small',meta,'muted'));}
    }
-   const memoryToggle=node('label','Include ordinary Memory V2 in this reply');memoryToggle.className='memory-consent';const memoryBox=node('input');memoryBox.type='checkbox';memoryBox.checked=includeMemoryConsent;memoryBox.setAttribute('aria-label','Include ordinary Memory V2');memoryBox.onchange=()=>{includeMemoryConsent=memoryBox.checked;try{sessionStorage.setItem('airodromConversationMemory',includeMemoryConsent?'1':'0');}catch{}};memoryToggle.prepend(memoryBox);chat.append(memoryToggle);
+   const memoryStatus=node('p',includeMemoryConsent?'Memory consent: ON for the next reply · ordinary Memory V2 may be included as reference context only':'Memory consent: OFF for the next reply · no ordinary Memory included','memory-consent-status');
+   memoryStatus.setAttribute('role','status');chat.append(memoryStatus);
+   const memoryToggle=node('label','Include ordinary Memory V2 in this reply');memoryToggle.className='memory-consent';const memoryBox=node('input');memoryBox.type='checkbox';memoryBox.checked=includeMemoryConsent;memoryBox.setAttribute('aria-label','Include ordinary Memory V2');memoryBox.onchange=()=>{includeMemoryConsent=memoryBox.checked;try{sessionStorage.setItem('airodromConversationMemory',includeMemoryConsent?'1':'0');}catch{};render();};memoryToggle.prepend(memoryBox);chat.append(memoryToggle);
    for(const [label,prefix] of [['Search public web','search the web for '],['Explore public websites','explore ']])chat.append(button(label,()=>{const value=window.prompt(label==='Search public web'?'Public search query':'Public HTTPS websites separated by spaces');if(value){conversationDraft=prefix+value;render();}}));chat.append(button('Browser connections & human login',()=>{conversationNotice='In Terminal, use /browser open https://app.monarch.com/ for seven connection choices, or /browser options for availability. Review the exact domain permission, sign in manually in the dedicated visible browser, complete MFA and confirm hand-back. Normal Chrome login is not inherited.';render();}));const form=node('form'),compose=node('textarea');compose.value=conversationDraft;compose.placeholder='Ask a question or say Remember that…';compose.setAttribute('aria-label','Conversation message');compose.dataset.focusKey='conversation-composer';compose.maxLength=4000;compose.oninput=()=>conversationDraft=compose.value;
-   const submit=node('button','Send');submit.type='submit';form.append(compose,submit);form.onsubmit=async e=>{e.preventDefault();generation++;const version=generation;inflight?.abort();const keepSession=conversationSessionId;clearMemory();conversationSessionId=keepSession;submit.disabled=true;try{const receipt=await api('/api/assistant/input',{message:conversationDraft,conversation_id:await conversationSession(),include_memory:includeMemoryConsent,request_id:crypto.randomUUID()});conversationDraft='';await refresh();await showAssistantReceipt(receipt,version);}catch(error){if(version===generation){conversationNotice=error.message;render();}}finally{submit.disabled=false;}};
+   const submit=node('button','Send');submit.type='submit';form.append(compose,submit);form.onsubmit=async e=>{e.preventDefault();generation++;const version=generation;inflight?.abort();const keepSession=conversationSessionId;clearMemory();conversationSessionId=keepSession;submit.disabled=true;try{const receipt=await api('/api/assistant/input',{message:conversationDraft,conversation_id:await conversationSession(),include_memory:includeMemoryConsent,request_id:crypto.randomUUID()});conversationDraft='';await refresh();await showAssistantReceipt(receipt,version);}catch(error){if(version===generation){conversationNotice=error.message||'Local conversation request failed. Check connection and retry.';render();}}finally{submit.disabled=false;}};
    if(activeConversationId&&conversationHistory.some(item=>item.mission_id===activeConversationId&&item.response))conversationNotice='Response ready.';
-   chat.append(form,node('p',conversationNotice));
+   chat.append(form,node('p',conversationNotice||'','notice'));
    ops.append(node('h2','Work Missions'),node('p','Sensitive execution stays here. Conversation never acquires Mission authority.','muted'));
    const work=snapshot.missions.filter(m=>m.label!=='Bounded local conversation'&&!['completed','cancelled'].includes(m.state)).slice(0,10);if(work.length){for(const m of work)ops.append(lifecycle(m),missionCard(m));}else ops.append(empty('No active Work Missions.'));ops.append(routeControls());
    layout.append(chat,ops);return layout;

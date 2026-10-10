@@ -22,3 +22,4 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Coding Reliability & Auto-Acceptance V1](CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md)
 - [Autonomous Self-Development V1](AUTONOMOUS-SELF-DEVELOPMENT-V1.md)
 - [Self-Development Reliability V1.1](SELF-DEVELOPMENT-RELIABILITY-V1.1.md)
+- [Everyday Personal AI UX V1](EVERYDAY-PERSONAL-AI-UX-V1.md) (local feature branch; not installed)

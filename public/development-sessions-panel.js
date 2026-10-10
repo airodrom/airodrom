@@ -175,13 +175,16 @@ window.AirodromDevelopmentSessions = {
     if (session) {
       details.append(ui.node('p', 'Selected session: ' + session.id));
       details.append(ui.node('p', 'Authorized repository: ' + (session.repository || 'Unavailable')));
+      details.append(ui.node('p', 'Authorized branch: ' + (session.branch || 'Unavailable')));
       details.append(ui.node('p', 'Authorized worktree: ' + (session.worktree || 'Unavailable')));
+      details.append(ui.node('p', 'Assigned worker: ' + (session.assigned_worker || 'Unavailable')));
       let lastMissionText = 'Unavailable';
       if (Array.isArray(session.missions) && session.missions.length) {
         lastMissionText = shortId(session.missions[session.missions.length - 1]);
       }
       details.append(ui.node('p', 'Last completed Mission: ' + lastMissionText));
       details.append(ui.node('p', 'Next permitted action: ' + nextAction(session.integration_state)));
+      details.append(ui.node('p', 'Continue reuses this session only · no duplicate execution controls', 'muted'));
       const execLine = ui.node('p', 'Execution state: observing…');
       details.append(execLine);
       (async () => {

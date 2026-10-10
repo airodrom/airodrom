@@ -51,7 +51,7 @@ private struct BridgeStatus: Codable {
         return "http://127.0.0.1:\(port)"
     }
 }
-private enum ControlAction: String { case status, start, stop, restart, open, cli, doctor, requalify; case openConversation = "open-conversation", openMission = "open-mission", cancelMission = "cancel-mission" }
+private enum ControlAction: String { case status, start, stop, restart, open, cli, doctor, requalify; case openConversation = "open-conversation", openMissions = "open-missions", openDevelopmentSessions = "open-development-sessions", openSystemHealth = "open-system-health", openMission = "open-mission", cancelMission = "cancel-mission" }
 private enum HelperError: Error {
     case configuration, timeout, command, response, busy
     var message: String {
@@ -207,7 +207,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private let errorsRow = NSMenuItem(title: "Recent failures: none", action: nil, keyEquivalent: "")
     private var startItem: NSMenuItem!, stopItem: NSMenuItem!, restartItem: NSMenuItem!, openItem: NSMenuItem!, qualifyItem: NSMenuItem!
     private var cliItem: NSMenuItem!, doctorItem: NSMenuItem!, copyItem: NSMenuItem!
-    private var openConversationItem: NSMenuItem!, openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
+    private var openConversationItem: NSMenuItem!, openMissionsItem: NSMenuItem!, openDevSessionsItem: NSMenuItem!, openSystemHealthItem: NSMenuItem!, openMissionItem: NSMenuItem!, cancelMissionItem: NSMenuItem!
     private var animationTimer: Timer?, animationIndex = 0, animationTicks = 0
     private let idleImage = brandImage()
     private lazy var busyImages: [NSImage] = (0..<12).map { frame in
@@ -247,7 +247,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         // Exercise the actual menu while a refresh owns the request slot.
         currentAction = .status; render()
         let openDuringRefresh = openItem.isEnabled
-        let refreshItems = [openItem!, openConversationItem!, cliItem!, openMissionItem!, cancelMissionItem!].map { ["title": $0.title, "enabled": $0.isEnabled] as [String: Any] }
+        let refreshItems = [openItem!, openConversationItem!, openMissionsItem!, openDevSessionsItem!, openSystemHealthItem!, cliItem!, openMissionItem!, cancelMissionItem!].map { ["title": $0.title, "enabled": $0.isEnabled] as [String: Any] }
         request(.open)
         let openQueued = pendingAction?.action == .open
         pendingAction = nil
@@ -274,14 +274,17 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         _ = item("Reconnect", #selector(reconnect), in: menu)
         openItem = item("Open Control Center", #selector(openCenter), in: menu, key: "o")
         openConversationItem = item("Open Conversation", #selector(openConversation), in: menu)
+        openMissionsItem = item("Active Missions", #selector(openMissions), in: menu)
+        openDevSessionsItem = item("Continue Development Session", #selector(openDevSessions), in: menu)
         cliItem = item("New Mission / Open CLI", #selector(openCLI), in: menu)
         menu.addItem(.separator())
         openMissionItem = item("View Active Mission", #selector(openMission), in: menu)
         cancelMissionItem = item("Cancel Mission", #selector(cancelMission), in: menu)
-        _ = item("Review Missions & Approvals", #selector(openCenter), in: menu)
+        _ = item("Review Missions & Approvals", #selector(openMissions), in: menu)
         menu.addItem(.separator())
         let health = NSMenu(); health.autoenablesItems = false
         ["Control Plane", "OpenCode", "Memory V2", "Local provider"].forEach { health.addItem(NSMenuItem(title: $0 + ": unavailable", action: nil, keyEquivalent: "")) }
+        openSystemHealthItem = item("Open System Health", #selector(openSystemHealth), in: health)
         let healthRow = NSMenuItem(title: "System Health", action: nil, keyEquivalent: ""); healthRow.submenu = health; menu.addItem(healthRow)
         let diagnostics = NSMenu(); diagnostics.autoenablesItems = false
         doctorItem = item("Run Doctor", #selector(runDoctor), in: diagnostics)
@@ -377,7 +380,11 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         stopItem.isEnabled = available && state == .connected && status?.managed == true && status?.tasks.active == 0 && (p?.quarantined_leases ?? 0) == 0
         restartItem.isEnabled = stopItem.isEnabled
         openItem.isEnabled = navigationAvailable && state == .connected
-        openConversationItem.isEnabled = navigationAvailable && state == .connected && controller.configuration.localHome != nil
+        let deepLinkReady = navigationAvailable && state == .connected && controller.configuration.localHome != nil
+        openConversationItem.isEnabled = deepLinkReady
+        openMissionsItem.isEnabled = deepLinkReady
+        openDevSessionsItem.isEnabled = deepLinkReady
+        openSystemHealthItem.isEnabled = deepLinkReady
         cliItem.isEnabled = navigationAvailable && controller.configuration.localHome != nil
         doctorItem.isEnabled = navigationAvailable && status?.product != nil
         qualifyItem.isEnabled = available && state == .stopped && controller.configuration.localHome != nil
@@ -386,7 +393,7 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         cancelMissionItem.isEnabled = openMissionItem.isEnabled && ["dispatching", "running", "verifying", "awaiting_acceptance", "waiting_for_operator"].contains(p?.mission?.state ?? "")
         if let health = menu.items.first(where: { $0.title == "System Health" })?.submenu {
             let values = [p?.control, p?.runtime, p?.memory, p?.provider]
-            for (index, item) in health.items.enumerated() { item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + (values[index] ?? "Unavailable") }
+            for (index, item) in health.items.enumerated() where index < 4 { item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + (values[index] ?? "Unavailable") }
         }
     }
 
@@ -450,6 +457,9 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     @objc private func reconnect() { failures = 0; lastError = nil; request(.status) }
     @objc private func openCenter() { request(.open) }
     @objc private func openConversation() { request(.openConversation) }
+    @objc private func openMissions() { request(.openMissions) }
+    @objc private func openDevSessions() { request(.openDevelopmentSessions) }
+    @objc private func openSystemHealth() { request(.openSystemHealth) }
     @objc private func openCLI() { request(.cli) }
     @objc private func openMission() { request(.openMission) }
     @objc private func cancelMission() { request(.cancelMission) }
@@ -506,7 +516,7 @@ private func main() -> Int32 {
     if arguments.count > 1 {
         let inspecting = arguments.count == 2 && arguments[1] == "--inspect-menu"
         guard inspecting || (arguments.count == 3 && arguments[1] == "--action" && ControlAction(rawValue: arguments[2]) != nil) else {
-            fputs("Usage: AirodromMenu [--action status|start|stop|restart|open|open-conversation|cli|doctor|requalify]\n", stderr); return 2
+            fputs("Usage: AirodromMenu [--action status|start|stop|restart|open|open-conversation|open-missions|open-development-sessions|open-system-health|cli|doctor|requalify]\n", stderr); return 2
         }
         let action = inspecting ? ControlAction.status : ControlAction(rawValue: arguments[2])!
         let done = DispatchSemaphore(value: 0)
