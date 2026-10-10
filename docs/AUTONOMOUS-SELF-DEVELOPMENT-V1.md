@@ -32,16 +32,16 @@ V1 used `public/development-sessions-panel.js` so OpenCode could draft the summa
 - `.vscode/tasks.json` — `diff-check`, `development-session-summary-v1`
 - `tests/development-session-summary-v1.test.js` — focused contract
 
-## Continue Development Session V1 (2026-10-10)
+## Continue Development Session V1 — SHIPPED (2026-10-10)
 
 | Role | Mission ID | Worker | Outcome |
 | --- | --- | --- | --- |
 | Feature draft | `79a170b2-1407-41b9-88ab-5eff102f3a6b` | OpenCode / `ollama/qwen3-coder:30b` | Continue action drafted; focused test passed; `diff-check` failed (trailing whitespace); invented non-existent `/continue` route → cancelled after host repair |
 | Host settlement | `a286ca1d-1096-42f3-b3ed-b38c6d369f43` | host coding plan | Verification passed; Acceptance accept; Settlement settled |
 
+- **PR [#52](https://github.com/airodrom/airodrom/pull/52)** merged · tip `06e80cf` · main `c701289`
+- **Installed:** `…/airodrom-ds-continue/install/airodrom-ds-continue-c701289` · live panel HTTP 200 with Continue action
 - Development Session: `2eb98c6a-88f8-4478-bee0-e867e1ce8dac`
-- Branch / worktree: `feat/ds-continue-session-v1` · Documents/Codex `…/airodrom-ds-continue/work/airodrom-ds-continue`
-- Files: `public/development-sessions-panel.js`, `tests/development-session-continue-v1.test.js`, `.vscode/tasks.json` task `development-session-continue-v1`
 - Continue uses existing host APIs only (`development-sessions/resolve`, `observe-git`, `product/native-status`); no second Mission system.
 
 ## Limits
