@@ -9,7 +9,7 @@
   },
   "forbidden_parents": [
     {
-      "title": "Pi Bridge — Architecture, Memory and Verification",
+      "title": "Pi Bridge \u2014 Architecture, Memory and Verification",
       "page_id": "3ef593eead7481d79081dab81405a34f",
       "reason": "Historical Pi Bridge hub; must not parent new Airodrom product documentation"
     }
@@ -20,7 +20,7 @@
       "page_id": "3f4593eead7481bda472e3a94dc1a60f"
     },
     {
-      "title": "Development Sessions V1 — local-first batch merge",
+      "title": "Development Sessions V1 \u2014 local-first batch merge",
       "page_id": "3f4593eead74817f8d8ecb8d448dc88c"
     },
     {
@@ -38,6 +38,10 @@
     {
       "title": "Menu Bar V2",
       "page_id": "3f4593eead74811fba37d40378388d11"
+    },
+    {
+      "title": "Premium macOS Menu V3",
+      "page_id": "3f5593eead7481be80bee8f9edacaa37"
     }
   ],
   "status_vocabulary": [
