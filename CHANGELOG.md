@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Integrated Release V1 local activation
+
+- Activated verified package install at `install/airodrom-77724f8`; preserved Memory/Missions; WhatsApp production HOLD unchanged.
+- Local install hotfixes: Gmail `clientSecretReference` acceptance; restore `wait-presentation` omitted from package allowlist.
+
 ## Unreleased — Integrated Release V1 shipped
 
 - Merged consolidated daily candidate via PR #45 to `origin/main` (`0e5f0a86da1a21526105ebda24984ec309f91897`); release source `77724f83569eadae41727c86b201e433a801f910`.
