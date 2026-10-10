@@ -1,5 +1,15 @@
 # Current state (2026-10-10)
 
+## Grounded Assistant Accuracy V1 — SHIPPED + INSTALLED (2026-10-10)
+
+- **PRs:** [#56](https://github.com/airodrom/airodrom/pull/56) (feature) · [#57](https://github.com/airodrom/airodrom/pull/57) (release package allowlist) **MERGED**
+- **Feature tip:** `2ef5ba8418cdc8a66e4322e85407064b9e2e504d` (same tree as expected `2e18107`; commit message cleaned of editor attribution)
+- **Merge on `origin/main`:** `fe918ccae9053c70bf9b6c9dfedfe5f9027590b1` (allowlist; includes feature merge `350a8e5`)
+- **Installed:** `…/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc` (npm pack 371 files; tarball SHA-256 `0296c83012bf2df46e931e679d648c1dabae5913cc48971eac92b5ed7d66697b`)
+- **Backup/rollback:** `…/airodrom-grounded-accuracy/backup/pre-grounded-accuracy-20261010T185313Z` (prior source `…/airodrom-everyday-ux-5e23731`)
+- **Live:** Control/OpenCode/Memory/Provider Ready · Qwen `ollama/qwen3-coder:30b` reported host-verified **active=0** / **current=62** distinctly · Development Session metadata `feat/ds-continue-session-v1` / `PR_OPEN` · credential chat → Vault (not model) · personal Memory consent (`memory_id_count≥1`) · Mission activity unchanged · Automatic Acceptance OFF · WhatsApp HOLD
+- Evidence: [GROUNDED-ASSISTANT-ACCURACY-V1.md](GROUNDED-ASSISTANT-ACCURACY-V1.md), ADR 0044. Operator checkout preserved.
+
 ## Everyday Personal AI UX V1 — SHIPPED + INSTALLED (2026-10-10)
 
 - **PR:** [#54](https://github.com/airodrom/airodrom/pull/54) **MERGED**
@@ -27,10 +37,10 @@
 
 ## Installed release (running)
 
-- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731`
+- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc`
 - **Health:** Ready — OpenCode Ready, Memory Ready, Provider Ready (Qwen)
-- **Includes:** Everyday Personal AI UX V1 (Conversation/Missions/DS/menu) on merge `5e23731`
-- **Prior Continue DS install:** `…/install/airodrom-ds-continue-c701289` (retained on disk; backup `everyday-ux-v1-20261010T181626Z`)
+- **Includes:** Grounded Assistant Accuracy V1 on `fe918cc` (ancestry includes Everyday UX `5e23731`)
+- **Prior Everyday UX install:** `…/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731` (retained; backup `pre-grounded-accuracy-20261010T185313Z`)
 - **Manual patches required:** No
 
 ## Distinctions
