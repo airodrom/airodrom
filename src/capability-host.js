@@ -9,7 +9,7 @@ const { HostExecutor } = require('./host-exec');
 const { CapabilityInputError, keys, text, pattern, sha256, looksSecret, describeInputShape } = require('./capability-util');
 const { classifyCommand } = require('./command-classifier');
 const { fileCapabilities, TAR } = require('./capability-files');
-const { developerCapabilities, ClaudeCodeJobs, toolStatus, claudeAuth, DEV_TOOLS } = require('./capability-devtools');
+const { developerCapabilities, ClaudeCodeJobs, ideTaskJobs, toolStatus, claudeAuth, DEV_TOOLS } = require('./capability-devtools');
 const { macCapabilities, loadLocalServices, EXECUTABLES } = require('./capability-mac');
 const { capabilityApps } = require('./apps');
 const { CONNECTORS } = require('./apps/capability-connectors');
@@ -218,11 +218,30 @@ class CapabilityHost {
         availability: !installed ? 'not_installed' : authenticated ? 'available' : 'needs_login',
         running_jobs: running.length, jobs: running
       },
-      cursor: { installed: cursor?.installed === true, version: cursor?.version || null, editor_available:cursor?.installed===true, availability:cursorRuntime.availability, runtime:cursorRuntime }
+      cursor: {
+        installed: cursor?.installed === true,
+        version: cursor?.version || null,
+        editor_available: cursor?.installed === true,
+        // IDE task success never implies Cursor Agent readiness.
+        agent_execution: false,
+        agent_availability: 'unqualified',
+        agent_reason: cursorRuntime.reason || 'cursor_execution_unqualified',
+        availability: cursorRuntime.availability === 'quota_limited' || cursorRuntime.availability === 'auth_required'
+          ? cursorRuntime.availability
+          : 'unqualified',
+        runtime: {
+          installed: cursorRuntime.installed === true,
+          version: cursorRuntime.version || null,
+          auth_state: cursorRuntime.auth_state || 'unknown',
+          acp_reachable: cursorRuntime.acp_reachable === true,
+          reason: cursorRuntime.reason || 'cursor_execution_unqualified'
+        },
+        last_ide_task: ideTaskJobs.last('cursor')
+      }
     };
   }
 
-  shutdown() { this.jobs.shutdown(); }
+  shutdown() { this.jobs.shutdown(); ideTaskJobs.shutdown(); }
 
   _metaCapabilities() {
     return {

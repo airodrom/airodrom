@@ -1,8 +1,18 @@
 name: Public candidate gates
+# Local-first / daily batch merge: feature-branch pushes do not auto-run hosted CI.
+# Integration checkpoint = pull_request into main, push to main, or explicit workflow_dispatch.
+# Security jobs remain on those checkpoints. Do not add schedule/cron spend here.
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      heavy:
+        description: 'Run full candidate-validation (expensive macos suite)'
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -10,6 +20,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   candidate-validation:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.heavy }}
     runs-on: macos-14
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

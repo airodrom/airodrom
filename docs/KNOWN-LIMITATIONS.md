@@ -15,3 +15,43 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Diff panels are Mission-scoped and size-capped; out-of-scope paths never appear.
 - Empty activity panes show "Detailed activity unavailable." instead of synthetic progress.
 - Installing Observatory into a running service requires an owner-authorized restart; `live_cutover_authorized` remains false until then.
+
+## WhatsApp Inbound V1 / Meta live connection
+
+- Source implementation exists on `feat/whatsapp-inbound-v1` (feature impl `5e2574bd0ca340e5f56bdda11a608553e61c36b0` as of 2026-10-09; later binding-readiness commits may tip the branch). PR [#44](https://github.com/airodrom/airodrom/pull/44) remains open and stacked on PR #43; **not merged**, **not SHIPPED IN SOURCE on main**, **not ACTIVE/DEPLOYED**.
+- Webhook remains loopback-bound (`127.0.0.1`). `public_ingress` is forced false; ordinary configure cannot enable it. Webhook-only ingress prep (`scripts/whatsapp-webhook-ingress-prep.cjs`) writes cloudflared plans without starting tunnels; ChatGPT MCP stdio tunnel is unsuitable.
+- Focused fixture evidence: `tests/whatsapp-inbound-v1.test.js` **13/13** (challenge, HMAC, dedupe, allowlist, lifecycle, readiness, Graph discovery mocks, ingress prep). Fixture success is not live Meta delivery proof.
+- Meta App ID `1625559252697626` publicly resolves as app name `Airodrom`. Business Portfolio, WABA ID, Phone Number ID, publication status, webhook subscription and granted permissions are **unknown** without an authorized Graph credential (OAuthException 104 on protected reads). Do not invent those identifiers.
+- Operator Vault currently has **zero** active `whatsapp`-purpose references. Binding interface ready (`airodrom secret put whatsapp` ×3 + configure refs); plaintext values were not available to store in the binding session.
+- Inbound text never auto-dispatches Missions and never grants authority. Send/reply capabilities remain inactive policy categories.
+- See [WhatsApp Inbound V1](WHATSAPP-INBOUND-V1.md), [V1.1](WHATSAPP-INBOUND-V1.1.md), [Meta live connection](META-WHATSAPP-LIVE-CONNECTION-V1.md) and [ADR 0038](adr/0038-whatsapp-inbound-v1.md).
+
+## Development Sessions / local-first batch merge
+
+- Source on `feat/local-first-batch-merge-v1` (feature impl `7c2217e127140e3d25fd3511e59cc4bab4e978c7` as of 2026-10-09; later docs-sync commits may tip the branch). **Not pushed**, **not merged**, **not SHIPPED IN SOURCE on main**, **not ACTIVE** as the default operator workflow until installed from main.
+- Focused evidence: `tests/development-session-v1.test.js` **9/9**. Fixture success is not live multi-Mission qualification on a production checkout.
+- Auto push, auto merge and hosted CI auto-dispatch remain fail-closed. Prepare Daily Integration never pushes or merges.
+- Feature-branch hosted CI remains gated to `main` + `workflow_dispatch` in `candidate.yml`; repository-required checks are not bypassed.
+- Standing merge authorization remains **INACTIVE**.
+- See [LOCAL-FIRST-BATCH-MERGE-V1.md](LOCAL-FIRST-BATCH-MERGE-V1.md) and [ADR 0039](adr/0039-local-first-batch-merge.md).
+
+## Notion documentation ownership
+
+- Canonical Airodrom Notion hub is Projects → Airodrom (`3f4593eead74818bb339d302719256a4`). Historical Pi Bridge hub must not parent new Airodrom milestone pages.
+- Publisher rules in `config/notion-documentation-v1.json` / `src/notion-documentation-routing.js` fail closed without the verified hub and refuse Pi Bridge parents.
+- Documentation sync alone never means MERGED IN SOURCE, INSTALLED LOCALLY, LIVE VERIFIED, or PUBLIC ACTIVATION.
+
+## Control Center UI recovery
+
+- Premium atmosphere/theme/nav mounts were missing from `origin/main` HTML despite Product Experience V2 docs and local preimage assets (2026-10-08). Recovery lives on `feat/control-center-ui-recovery-v1` — **not merged**, **not SHIPPED on main**, **not ACTIVE** in the installed service until authorized cutover.
+- Focused UI evidence: atmosphere + control-center-ui + connection-status + live-observatory **20/20**. Static browser proof is not authenticated live Activation.
+- See [CONTROL-CENTER-UI-RECOVERY-V1.md](CONTROL-CENTER-UI-RECOVERY-V1.md).
+
+## WhatsApp (daily integration reconcile)
+
+- Source tip reconciled from `feat/whatsapp-inbound-v1` @ `0ad82f1` into this daily candidate: inbound, Conversations V1, production-connection HOLD.
+- Meta dashboard webhook evidence (test) remains the verified live proof; phone-originated delivery still pending.
+- Conversations V1: allowlisted → ConversationEngine/Qwen; Memory retrieval off; outbound drafts pending; Cloud API send hard OFF. See [Conversations V1](WHATSAPP-CONVERSATIONS-V1.md), [ADR 0041](adr/0041-whatsapp-conversations-v1.md).
+- Production Connection V1 / Meta policy gate: exact proposed production use (WhatsApp as the primary channel for Airodrom’s general-purpose personal AI) is **prohibited** under Meta’s published AI Providers terms except where Meta is legally required to permit it. **Production messaging remains HOLD.** Do not bypass via branding, routing, alternate numbers, or account arrangements. See [Production Connection V1](WHATSAPP-PRODUCTION-CONNECTION-V1.md), [ADR 0042](adr/0042-whatsapp-production-connection-v1.md).
+- Outbound sending and WhatsApp-triggered Mission execution remain disabled.
+- Distinctions: source integration on this branch ≠ local service activation ≠ Meta dashboard proof ≠ production readiness.

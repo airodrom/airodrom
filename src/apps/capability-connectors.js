@@ -157,7 +157,14 @@ function agentCapabilities() {
       opencode: {state:opencode?.available===true?'available':'unavailable',reason:opencode?.reason||'opencode_unavailable'},
       host: { state: 'available' },
       chatgpt: { state: ctx.mcpConnected?.() ? 'connected' : 'unknown' },
-      cursor: { state: 'unavailable', editor_available:cursor?.installed===true,reason:'cursor_agent_adapter_unimplemented' },
+      cursor: {
+        state: 'unqualified',
+        editor_available: cursor?.installed === true,
+        agent_execution: false,
+        agent_availability: 'unqualified',
+        reason: 'cursor_execution_unqualified',
+        last_ide_task: (() => { try { return require('../capability-devtools').ideTaskJobs.last('cursor'); } catch { return null; } })()
+      },
       codex:{state:'unavailable',implemented:true,dispatch_mode:'local_handoff',reason:'native_dispatch_unavailable'},
       claude_code: { state: !claude?.installed?'not_installed':!claude.logged_in?'needs_login':claude.auth_mode!=='subscription'||claude.api_key_overrides_subscription?'unavailable':claude.running_jobs>0?'busy':'available', auth_mode: claude?.auth_mode || null,reason:claude?.api_key_overrides_subscription?'billing_override_requires_review':claude?.auth_mode!=='subscription'?'subscription_required':null }
     };

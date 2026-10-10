@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "family": "airodrom.core_contracts",
+  "owner": "airodrom_control_plane",
+  "compatibility": {
+    "policy": "additive_optional_fields",
+    "silent_migration": false,
+    "historical_records": "preserve_as_authored"
+  },
+  "contracts": {
+    "Conversation": {
+      "id": "airodrom.conversation",
+      "version": 1,
+      "state_owner": "conversation_engine",
+      "required": ["contract", "conversation_id", "channel", "operator_id"],
+      "optional": ["turn_id", "include_memory", "include_history", "model", "worker", "request_id"],
+      "channels": ["terminal", "browser", "connector", "whatsapp"],
+      "authority": false,
+      "idempotency": "request_id_digest"
+    },
+    "ModelRequest": {
+      "id": "airodrom.model_request",
+      "version": 1,
+      "state_owner": "model_provider_port",
+      "required": ["contract", "request_id", "model", "messages", "privacy"],
+      "optional": ["stream", "max_output", "data_class", "tool_choice"],
+      "kind": "model_provider",
+      "authority": false,
+      "idempotency": "request_id"
+    },
+    "WorkerAssignment": {
+      "id": "airodrom.worker_assignment",
+      "version": 1,
+      "state_owner": "model_worker_router",
+      "required": ["contract", "mission_id", "worker", "model", "security"],
+      "optional": ["route_mode", "qualification_evidence"],
+      "kind": "agent_runtime",
+      "authority": false,
+      "idempotency": "mission_dispatch"
+    },
+    "Mission": {
+      "id": "airodrom.mission",
+      "version": 1,
+      "state_owner": "mission_authority",
+      "required": ["contract", "mission_id", "state", "kind"],
+      "optional": ["task_id", "envelope", "verification", "acceptance", "settlement"],
+      "authority": true,
+      "idempotency": "request_id"
+    },
+    "ExecutionEvent": {
+      "id": "airodrom.execution_event",
+      "version": 1,
+      "state_owner": "event_ledger",
+      "required": ["contract", "event_type", "observed_at"],
+      "optional": ["mission_id", "run_id", "agent", "safe_error_class", "sequence"],
+      "authority": false,
+      "idempotency": "ledger_sequence"
+    },
+    "VerificationEvidence": {
+      "id": "airodrom.verification_evidence",
+      "version": 1,
+      "state_owner": "verification_runtime",
+      "required": ["contract", "verification_id", "mission_id", "status", "provenance"],
+      "optional": ["checks", "evidence_manifest_hash", "current"],
+      "authority": false,
+      "worker_self_report_insufficient": true,
+      "idempotency": "verification_id"
+    }
+  },
+  "kinds": {
+    "model_provider": {
+      "description": "Pure model inference and optional token streaming. No Mission authority, tools, or workspace mutation.",
+      "must_not_claim": ["workspace_confinement", "tool_mediation", "mission_dispatch"]
+    },
+    "agent_runtime": {
+      "description": "Bounded multistep execution with cancellation, tool-use evidence, and result publication under host authority.",
+      "must_not_establish_qualification_via": ["worker_self_report"]
+    }
+  }
+}

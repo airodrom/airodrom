@@ -359,6 +359,10 @@ class BridgeController extends EventEmitter {
       this.runtimeFingerprint=require('./runtime-fingerprint').sourceFingerprint();
       this.authorityRuntime=new (require('./authority-integration').AuthorityRuntime)(this);
       this.fixtureAcceptance = new (require('./fixture-acceptance').FixtureAcceptance)(this);
+      this.whatsappInbound = new (require('./whatsapp-inbound').WhatsAppInbound)(this, this.options.whatsappInbound || {});
+      this.whatsappOutbound = new (require('./whatsapp-outbound').WhatsAppOutbound)(this, this.options.whatsappOutbound || {});
+      this.whatsappConversations = new (require('./whatsapp-conversations').WhatsAppConversations)(this, this.options.whatsappConversations || {});
+      this.developmentSessions = new (require('./development-session').DevelopmentSession)(this, this.options.developmentSessions || {});
       this.missions = new MissionService(this);
       this.capabilityHost.missionWeb=this.missions.web;
       this.workExecution = new (require('./apps/work-execution-adapter').WorkExecutionAdapter)(this, this.options.workExecution || {});

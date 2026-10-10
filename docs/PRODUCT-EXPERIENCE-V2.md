@@ -27,6 +27,8 @@ airodrom menu
 
 ## Live Control Center
 
+Control Center atmosphere/theme mounts recovered on `feat/control-center-ui-recovery-v1` (see [CONTROL-CENTER-UI-RECOVERY-V1.md](CONTROL-CENTER-UI-RECOVERY-V1.md)); not yet shipped on main.
+
 `/open` and the native menu open the private Control Center through discovery kept in memory. The overview shows actual health, retained Mission counts, approvals and recent outcomes. Mission details show canonical lifecycle, attempts, budgets, Memory selection/delivery metadata, termination, independent verification checks, Acceptance and Settlement. Safe timestamped activity has category filters and cursor catch-up. A paused feed differs from a paused Mission.
 
 Memory supports explicit retrieval, remember, selected-record correction and forgetting through current canonical scope guards. Projects show a bounded priority-ordered list and backed archive controls. Approvals show bounded safe state/expiry records and task-bound exact-operation review links.
@@ -35,9 +37,13 @@ Only an authoritative declared denominator can produce determinate completion. C
 
 The authorized task workspace remains available for actual answer and protected-operation review. The cockpit never downloads generic raw envelopes or evidence panels. Its canonical mutations return safe receipts. Technical identity expansion does not relax redaction.
 
+## Personal AI conversation
+
+Ordinary conversation in Control Center uses the host ConversationEngine with a persistent browser session, scoped history, optional ordinary Memory V2 consent and clear local-ollama / Qwen identity. Work Mission model and worker selectors stay on the Missions rail. See [Conversation Engine V1](CONVERSATION-ENGINE-V1.md). ChatGPT MCP Mission tools remain compatible. WhatsApp production outbound and automatic Mission execution stay disabled under the Meta policy HOLD.
+
 ## Native menu
 
-The native macOS menu uses the canonical connected A geometry as a Retina-capable vector template image. Its status, OpenCode/Memory rows, approval badge, active Mission phase, System Health, Doctor, safe diagnostic copy, task-bound Open/Cancel Mission controls, service submenu, help and About match the product terminology. Open CLI uses a fixed private launcher, with no request text interpolated into a shell. Start/stop/restart preserve ownership and lock guards. Quit Menu Bar leaves the control plane running; service restart does not require helper restart.
+The native macOS menu uses the canonical connected A geometry as a Retina-capable vector template image. Its status, Conversation identity (separate from Missions), OpenCode/Memory rows, approval badge, active Mission phase, System Health, Doctor, safe diagnostic copy, Open Conversation, task-bound Open/Cancel Mission controls, service submenu, help and About match the product terminology. Open CLI uses a fixed private launcher, with no request text interpolated into a shell. Start/stop/restart preserve ownership and lock guards. Quit Menu Bar leaves the control plane running; service restart does not require helper restart.
 
 `airodrom menu` prepares/opens the local helper. `install:local` prepares it without changing login settings. Launch at Login remains the existing opt-in [macOS installer](INSTALLATION.md); no speculative toggle or new persistence is added.
 

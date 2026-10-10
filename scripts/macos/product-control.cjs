@@ -22,6 +22,7 @@ async function action(command,home=local.localHome(),missionId){
  else if(command==='restart'){await local.stop(home);await local.start(home);}
  else if(command==='requalify'){if(!local.isStopped(home))throw Error('Stop the owned service before requalification.');await local.requalify(home);}
   else if(command==='open')local.open(home);
+  else if(command==='open-conversation')local.open(home,{view:'Conversation'});
   else if(command==='open-mission'){if(!require('../../src/product-observability').id(missionId))throw Error('Invalid Mission identity');local.open(home,{missionId});}
   else if(command==='cancel-mission'){if(!require('../../src/product-observability').id(missionId))throw Error('Invalid Mission identity');await local.request(home,'/api/product/cancel-mission',{id:missionId,request_id:require('node:crypto').randomUUID()});}
  else if(command==='cli'){const file=launcher(home);const r=spawnSync('/usr/bin/open',['-a','Terminal',file],{stdio:'ignore',timeout:5000});if(r.status!==0)throw Error('Explicit Terminal launcher unavailable.');}

@@ -7,7 +7,15 @@ const clean=value=>{const raw=String(value||'');if(secret(raw))return '[Sensitiv
 class AssistantConnectors {
  #gmail; #whatsapp; #secret; #request;
  constructor({gmail=null,whatsapp=null,secrets=null,request=fetch}={}){this.#gmail=gmail;this.#whatsapp=whatsapp;this.#secret=secrets;this.#request=request;}
- status(){return {items:[{id:'gmail',protocol:'Google Gmail API / OAuth 2.0',state:this.#gmail&&this.#secret?'configured':'unavailable',read_only:true,live_qualified:false,setup:'Requires owner-configured OAuth gmail.readonly credential reference. No account connected by qualification.',mutations:'Remote draft/send/archive/delete/label/mark-read require separate canonical capabilities; unavailable in this read-only adapter.'},{id:'whatsapp',protocol:'WhatsApp Business Cloud API',state:this.#whatsapp?'configured':'unavailable',read_only:true,live_qualified:false,setup:'Official inbound webhook source only. Personal WhatsApp history is unavailable through this adapter. No WhatsApp Web automation.',mutations:'Sending remains unavailable until a separately governed official adapter is qualified.'}],authority:false};}
+ status(){return {items:[{id:'gmail',protocol:'Google Gmail API / OAuth 2.0',state:this.#gmail&&this.#secret?'configured':'unavailable',read_only:true,live_qualified:false,setup:'Requires owner-configured OAuth gmail.readonly credential reference. No account connected by qualification.',mutations:'Remote draft/send/archive/delete/label/mark-read require separate canonical capabilities; unavailable in this read-only adapter.'},this.#whatsappItem()],authority:false};}
+ ensureWhatsapp(whatsapp){if(whatsapp)this.#whatsapp=whatsapp;return this;}
+ #whatsappItem(){
+  const base={id:'whatsapp',protocol:'WhatsApp Business Cloud API',read_only:true,live_qualified:false,mutations:'Outbound messaging unavailable until a separately governed official adapter is qualified. Sending is not available through this connector.'};
+  if(!this.#whatsapp)return {...base,state:'unavailable',setup:'Official inbound webhook source only. Personal WhatsApp history is unavailable through this adapter. No WhatsApp Web automation.',capabilities:{graph:'Unavailable',binding_state:'Unbound',callback:'Not prepared',messages:'Not subscribed',inbound_delivery:'Not yet verified',outbound:'Unavailable'},outbound:'Unavailable'};
+  let inbound=null;try{inbound=typeof this.#whatsapp.inboundStatus==='function'?this.#whatsapp.inboundStatus():null;}catch{}
+  if(inbound?.capabilities)return {...base,state:inbound.state||'configured',state_label:inbound.state_label,setup:inbound.setup||base.mutations,capabilities:inbound.capabilities,detail:inbound.detail||null,outbound:inbound.outbound||'Unavailable',inbound_delivery:inbound.inbound_delivery||'Not yet verified',mutations:inbound.mutations||base.mutations};
+  return {...base,state:'configured',setup:'Official inbound webhook source only. Personal WhatsApp history is unavailable through this adapter. No WhatsApp Web automation.',outbound:'Unavailable'};
+ }
  async #get(resource,query={}) {
   if(!this.#gmail||!this.#secret)throw Error('Gmail OAuth connector is not configured.');
   if(this.#gmail.scope!=='https://www.googleapis.com/auth/gmail.readonly')throw Error('Gmail requires the exact read-only OAuth scope.');

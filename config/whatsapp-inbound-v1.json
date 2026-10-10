@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "meta_app_id": "1625559252697626",
+  "business_portfolio_id": "1791528208560099",
+  "waba_id": null,
+  "phone_number_id": null,
+  "production_waba_id": "29094507813569086",
+  "production_phone_number_id": null,
+  "test_waba_id": "28756456347344989",
+  "test_phone_number_id": "1330971766772548",
+  "active_environment": "production",
+  "app_publication_status": "unknown",
+  "webhook_subscription_status": "inactive",
+  "required_permissions": [
+    "whatsapp_business_messaging",
+    "whatsapp_business_management"
+  ],
+  "callback_path": "/webhooks/whatsapp",
+  "max_body_bytes": 512000,
+  "public_ingress": false,
+  "auto_mission_execution": false,
+  "note": "Public IDs only. Production and test WABA/phone are distinct slots. Secrets stay in Vault. Public HTTPS ingress stays inactive until separate owner authorization."
+}

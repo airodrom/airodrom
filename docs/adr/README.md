@@ -23,8 +23,15 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0034 OpenCode pin replacement requalify](0034-opencode-pin-replacement-requalify.md): Proposed; fail-closed requalification when the pinned OpenCode executable was removed by a package upgrade.
 - [0035 OpenCode 2.0.25 qualification](0035-opencode-2.0.25-qualification.md): Proposed; confined live qualification and package evidence cutover for OpenCode 2.0.25.
 - [0036 Live Agent Observatory V1](0036-live-agent-observatory-v1.md): Proposed; Mission-scoped live telemetry, SSE/poll transport and Control Center observatory UI on the canonical ledger.
+- [0037 Cursor IDE task vs Agent](0037-cursor-ide-task-vs-agent.md): Proposed; classified IDE tasks.json dispatch is not Cursor Agent execution; OpenCode remains the Mission coding worker.
+- [0038 WhatsApp Inbound V1](0038-whatsapp-inbound-v1.md): Proposed; loopback Business Cloud webhook challenge/HMAC, durable allowlisted inbox, no Mission auto-dispatch.
+- [0039 Local-first batch merge](0039-local-first-batch-merge.md): Proposed; Development Sessions, fail-closed CI/push/merge defaults, daily merge window without auto-merge.
+- [0041 WhatsApp Conversations V1](0041-whatsapp-conversations-v1.md): Proposed; allowlisted personal AI via ConversationEngine/Qwen, Memory retrieval off, outbound drafts pending, Cloud API send hard OFF. (Feature branch ADR 0039; renumbered on daily integ to avoid collision.)
+- [0042 WhatsApp Production Connection V1](0042-whatsapp-production-connection-v1.md): Proposed; production prerequisites with AI-policy HOLD, stable HTTPS plan, test WABA preserved, no unauthorized messaging. (Feature branch ADR 0040; renumbered on daily integ.)
+- [0043 Core contracts and runtime consistency](0043-core-contracts-runtime-consistency.md): Proposed; versioned core contracts, host-evidence runtime security, installation compatibility without silent durable migration.
 - [0010 personal assistant and qualified routing](0010-personal-assistant-and-qualified-routing.md): Proposed; host-owned intent, data boundaries, handoff and read-only connector foundation.
 - [0011 Conversation Engine and intent routing](0011-conversation-engine-and-intent-routing.md): Proposed; replaces ordinary authenticated chat/Mission semantics of ADRs 0007 and 0010 only, preserving governed work and explicit Mission contracts.
+- [0023 Conversation provider selection](0023-conversation-provider-selection.md): Proposed; persistent Qwen/Claude conversation routing intent, separate from coding-worker qualification; Claude remains WAIT until independently qualified.
 
 - [0012 named private identifiers and research gate](0012-natural-private-vault-and-research-gate.md): Accepted after two independent boundary reviews and owner approval of PR #20; deterministic terminal-only identifiers and unavailable browser research.
 

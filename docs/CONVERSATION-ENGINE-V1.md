@@ -114,6 +114,29 @@ with bounded untrusted excerpts, no Personal Memory and no prior chat history.
 Previews do not send messages or create remote drafts. WhatsApp retains its
 existing authorized official inbound foundation and capability limits.
 
+## Personal AI Channels V1 (Control Center · ChatGPT MCP · macOS)
+
+First-party ordinary conversation uses the same `ConversationEngine` admission
+path across Terminal, Control Center (`channel: browser`) and connector previews.
+Control Center keeps a persistent browser session identity in the private tab
+session, loads history scoped to that conversation, shows local-ollama / model
+identity on turns, and offers an explicit ordinary Memory V2 consent toggle per
+reply. Streaming remains one bounded visible response; activity polling shows
+Thinking state with worker/model identity while a turn is running.
+
+The macOS menu exposes Conversation identity separately from Active Mission and
+provides Open Conversation, which launches Control Center at `?view=Conversation`
+through the existing private discovery URL. Work Mission model/worker selectors
+remain Mission-only; ordinary conversation always admits the qualified local
+Qwen route and cannot acquire Mission, Task, lease, Acceptance or Settlement
+authority.
+
+ChatGPT MCP compatibility is unchanged: Missions, task events and active-chat
+continuation stay on the existing MCP tool surface. WhatsApp production outbound
+and automatic Mission execution remain disabled while the Meta AI Providers
+policy HOLD / PROHIBITED gate applies. WhatsApp Conversations stay inbound-only
+and Memory-denied.
+
 ## Evidence and integration status
 
 Focused synthetic checks cover direct routing, replay/privacy/erasure, secure

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "meta_app_id": "1625559252697626",
+  "business_portfolio_id": "1791528208560099",
+  "production_waba_id": "29094507813569086",
+  "production_phone_number_id": null,
+  "test_waba_id": "28756456347344989",
+  "test_phone_number_id": "1330971766772548",
+  "preserve_test_environment": true,
+  "app_publication_status": "unknown_owner_confirm_in_dashboard",
+  "app_publication_note": "Direct-developer own-WABA Standard Access does not require Advanced Access App Review; Live mode still requires owner confirmation in App Dashboard. Do not switch Live without owner authorization.",
+  "business_verification": {
+    "required_for_own_waba_standard": false,
+    "required_for_advanced_access_or_scale": true,
+    "status": "owner_confirm_in_business_manager",
+    "note": "Verification raises limits and Official Business Account eligibility; not a substitute for AI-provider policy eligibility."
+  },
+  "permissions": {
+    "required": [
+      "whatsapp_business_messaging",
+      "whatsapp_business_management"
+    ],
+    "access_model": "own_waba_standard_direct_developer",
+    "advanced_access": "not_required_for_own_assets_only"
+  },
+  "ai_assistant_policy": {
+    "eligibility": "prohibited",
+    "hold_reason": "meta_ai_providers_clause_general_purpose_assistant",
+    "references": [
+      "https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/ai-providers",
+      "https://www.facebook.com/legal/Meta-Terms-for-WhatsApp-Business-Platform-preview"
+    ],
+    "summary": "Meta Terms (AI Providers, Jan/Sep 2026) prohibit using WhatsApp Business Platform to offer general-purpose AI assistants as primary functionality except where Meta is legally required to permit that use. Airodrom WhatsApp Conversations V1 (personal AI over WhatsApp) is treated as unresolved/ineligible for production messaging until the owner records an explicit policy determination.",
+    "production_messaging": "HOLD",
+    "bypass_forbidden": true,
+    "verdict": "prohibited_except_where_meta_legally_required",
+    "exact_proposed_use": "Authorized WhatsApp Business number as the primary channel for Airodrom general-purpose personal AI (Qwen) conversation replies",
+    "decision": "The exact proposed production use is prohibited under Meta AI Providers terms as published (general-purpose AI assistant as primary WhatsApp functionality), except where Meta is legally required to permit that use. Written Meta/legal clarification would be required before treating any exemption as available. Production messaging remains HOLD. Bypass via branding, routing, phone numbers, or account arrangements is forbidden."
+  },
+  "phone_onboarding": {
+    "production_phone_registered": false,
+    "migrate_personal_whatsapp_without_approval": false,
+    "official_steps": [
+      "Choose a dedicated business number not already on consumer WhatsApp (or obtain explicit owner approval before any migration/deletion path)",
+      "Add number to production WABA 29094507813569086 in WhatsApp Manager",
+      "Verify ownership via SMS or voice code",
+      "Register via Cloud API POST /{PHONE_NUMBER_ID}/register with messaging_product=whatsapp and 6-digit two-step PIN",
+      "Record production_phone_number_id in Airodrom without overwriting test phone 1330971766772548",
+      "Do not enable outbound send from this preparation Mission"
+    ],
+    "reference": "https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/registration"
+  },
+  "stable_https_callback": {
+    "path": "/webhooks/whatsapp",
+    "webhook_only": true,
+    "public_ingress_default": false,
+    "ephemeral_trycloudflare_forbidden_for_production": true,
+    "plan": "Owner-provision named DNS hostname + named Cloudflare Tunnel (or equivalent durable reverse proxy) using scripts/whatsapp-webhook-ingress-prep.cjs --production --hostname <stable> --port <control>",
+    "signature": "X-Hub-Signature-256 HMAC with Vault app_secret",
+    "subscription_fields": [
+      "messages"
+    ],
+    "loopback_host_gate": "httpHostHeader rewrite to 127.0.0.1:<port>; Control Center/API/MCP remain private"
+  },
+  "outbound_enabled": false,
+  "auto_outbound": false,
+  "auto_mission_execution": false,
+  "production_test_procedure": {
+    "prepared": false,
+    "blocked_by": "ai_assistant_policy_prohibited_hold",
+    "when_unblocked": [
+      "Owner lifts HOLD after policy determination",
+      "Production phone registered and allowlisted sender configured",
+      "Stable HTTPS callback subscribed for production WABA",
+      "Send one allowlisted phone-originated text; confirm inbox + conversation turn + Missions unchanged + outbound still OFF unless separately authorized"
+    ]
+  },
+  "note": "Preparation only. No production messaging, no personal-number migration, no outbound activation, no Mission auto-dispatch."
+}
