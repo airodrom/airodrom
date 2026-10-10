@@ -2,7 +2,15 @@
 
 Local-first UX audit and modernization of Control Center and the native menu helper. Mission authority, Acceptance, Settlement, Vault, and provider qualification are unchanged.
 
-**Status:** LOCAL IMPLEMENTATION (branch `feat/control-center-macos-ux-v4`)
+**Status:** SHIPPED + INSTALLED (2026-10-10)
+
+- **PR:** [#67](https://github.com/airodrom/airodrom/pull/67) **MERGED**
+- **Merge on `origin/main`:** `11056596024b7f8847bbc509bbb33f6f764fd58f`
+- **Feature tip:** `2e7ed21380a3462c66614ab027a023ee4ba76f3f`
+- **Installed:** `…/airodrom-ux-v4/install/airodrom-ux-v4-1105659` (`1.0.1-rc.1`) · CFBundleVersion **4**
+- **Backup/rollback:** `~/.airodrom/backups/macos-ux-v4-20261010T233213Z` (prior tip `airodrom-menu-v3-1cff95d`)
+- **Startup:** `local.airodrom.desktop-login` preserved (WorkingDirectory → V4 tip)
+- **Live:** Control / OpenCode / Memory / Provider Ready · Active **0** · Needs review **45** · Failed **20** · Automatic Acceptance OFF · WhatsApp HOLD
 
 ## Design decisions
 

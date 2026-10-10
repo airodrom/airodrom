@@ -1,13 +1,17 @@
 # Current state (2026-10-10)
 
-## Control Center & Premium macOS Experience V4 — LOCAL IMPLEMENTATION (2026-10-10)
+## Control Center & Premium macOS Experience V4 — SHIPPED + INSTALLED (2026-10-10)
 
-- **Branch:** `feat/control-center-macos-ux-v4` (isolated worktree from `origin/main` `9376629`)
-- **Status:** LOCAL IMPLEMENTATION only — **not** merged, **not** installed over tip `airodrom-menu-v3-1cff95d`
-- **Control Center:** Mission history API + Overview Needs review; review banner; humanized chips; Acceptance independent of transport failures
-- **Menu V4:** full-logo gradient status mark (no status disk) · CFBundleVersion **4** · section header `Mission`
-- **Authority unchanged:** Automatic Acceptance OFF · WhatsApp HOLD · Mission Acceptance / Settlement / Vault untouched
-- Evidence: [CONTROL-CENTER-MACOS-UX-V4.md](CONTROL-CENTER-MACOS-UX-V4.md). Operator checkout preserved.
+- **PR:** [#67](https://github.com/airodrom/airodrom/pull/67) **MERGED**
+- **Merge on `origin/main`:** `11056596024b7f8847bbc509bbb33f6f764fd58f`
+- **Feature tip:** `2e7ed21380a3462c66614ab027a023ee4ba76f3f`
+- **Installed:** `…/airodrom-ux-v4/install/airodrom-ux-v4-1105659` (`1.0.1-rc.1`) — Control / OpenCode 2.0.25 / Memory / Provider Ready
+- **Menu V4:** CFBundleVersion **4** · full-logo status gradients (no status disk) · section header `Mission`
+- **Startup:** `local.airodrom.desktop-login` (WorkingDirectory → V4 tip); legacy `local.pi-chatgpt-bridge*` remain disabled
+- **Live Mission presentation:** Active **0** · Needs review **45** · Failed **20** (historical review not shown as active)
+- **Backup/rollback:** `~/.airodrom/backups/macos-ux-v4-20261010T233213Z` (prior `airodrom-menu-v3-1cff95d`)
+- **Authority:** Automatic Acceptance OFF · WhatsApp HOLD · operator checkout preserved
+- Evidence: [CONTROL-CENTER-MACOS-UX-V4.md](CONTROL-CENTER-MACOS-UX-V4.md).
 
 ## macOS Desktop Activation V1 — SHIPPED + INSTALLED (2026-10-10)
 
