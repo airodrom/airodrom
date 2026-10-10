@@ -1,3 +1,7 @@
+## Unreleased — Autonomous Self-Development V1
+
+- Control Center Development Sessions view shows an evidence-backed Active Session Summary (missions, worker, repository/branch, local changes, focused verification, pending integration, last activity, next permitted action) via `public/development-sessions-panel.js`.
+
 # Changelog
 
 ## Unreleased — Coding Reliability & Auto-Acceptance V1

@@ -387,7 +387,7 @@
      if(window.AirodromDevelopmentSessions&&typeof window.AirodromDevelopmentSessions.render==='function'){
        const handled=window.AirodromDevelopmentSessions.render(result,dsPanel,{
          glass,node,button,api,stamp,
-         setNotice:(msg)=>{conversationNotice=msg;}
+         setNotice:(msg)=>{conversationNotice=msg;render();}
        });
        if(handled===true)return result;
      }
