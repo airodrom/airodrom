@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — V1.0.1 hotfix shipped and installed
+
+- Merged PR #46 (`14ee5ab`); installed canonical `1.0.1-rc.1` package at `install/airodrom-1.0.1-rc.1` with Memory/Mission preservation and WhatsApp production HOLD unchanged.
+
 ## Unreleased — Installation Hotfix V1.0.1
 
 - Accept optional Gmail OAuth `clientSecretReference` in ControlServer without weakening unknown-key rejection.

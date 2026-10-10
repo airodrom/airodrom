@@ -32,7 +32,7 @@ Closes the activation gaps found when installing Integrated Release V1 (`77724f8
 | Install root | `…/airodrom-daily-integration-v1/install/airodrom-77724f8` |
 | Release source | `77724f8` + local activation hotfixes |
 | Health | Healthy (OpenCode 2.0.25, Memory Ready) |
-| States | MERGED Yes · INSTALLED Yes · LIVE VERIFIED Yes · **PENDING V1.0.1 upgrade** |
+| States | MERGED Yes · INSTALLED Yes · LIVE VERIFIED Yes · Upgraded to installed `1.0.1-rc.1` |
 
 V1.0.1 must not restart or replace that service until an authorized maintenance checkpoint.
 
