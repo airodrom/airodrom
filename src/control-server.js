@@ -213,6 +213,7 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/conversations')return this.json(res,200,this.bridge.whatsappConversations.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/conversation-turns')return this.json(res,200,this.bridge.whatsappConversations.listTurns({conversation_id:url.searchParams.get('conversation_id')||null,limit:Number(url.searchParams.get('limit')||50)||50}));
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/outbound')return this.json(res,200,this.bridge.whatsappOutbound.status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/production-connection')return this.json(res,200,require('./whatsapp-production-connection').productionConnectionStatus(this.bridge));
       if (req.method === 'GET' && url.pathname === '/api/product/memory') {
         const query=url.searchParams.get('query')||'';if(query.length>240)throw Error('Memory query too long');
         const result=this.interactiveMemory(query);

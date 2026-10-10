@@ -19,13 +19,14 @@
     "mission_dispatch"
   ],
   "meta_prerequisites": {
-    "app_publication": "Development mode for test WABA; Live/App Review required for production messaging at scale",
-    "phone_registration": "Production phone number registration separate from test WABA phone",
-    "business_verification": "Required for production Advanced Access and many production messaging paths",
+    "app_publication": "Owner confirms Development/Live in App Dashboard; own-WABA Standard Access does not alone require Advanced App Review",
+    "phone_registration": "Production phone number registration separate from test WABA phone; personal WhatsApp migration needs explicit owner approval",
+    "business_verification": "Owner confirms in Business Manager; required for Advanced Access/scale paths",
     "permissions": ["whatsapp_business_messaging", "whatsapp_business_management"],
     "conversation_window": "24-hour customer service window after each user message; templates required outside the window",
-    "ai_assistant_policy": "General-purpose AI assistants face Meta ToS/pricing restrictions (2026); personal operator use on owned WABA remains separately authorized by the operator",
+    "ai_assistant_policy": "HOLD: Meta AI Providers clause restricts general-purpose AI assistants as primary WhatsApp functionality except where legally required",
+    "production_messaging": "HOLD",
     "test_waba_limitation": "Meta dashboard tests and test numbers do not prove normal phone-originated production delivery"
   },
-  "note": "Outbound stays OFF until explicit operator authorization. Inbound Mission auto-dispatch remains OFF."
+  "note": "Outbound stays OFF until policy eligibility and explicit operator authorization. Inbound Mission auto-dispatch remains OFF. See config/whatsapp-production-connection-v1.json."
 }
