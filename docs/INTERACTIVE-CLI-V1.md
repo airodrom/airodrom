@@ -82,3 +82,5 @@ See proposed [ADR 0011](adr/0011-conversation-engine-and-intent-routing.md) for 
 ordinary chat distinction, [ADR 0007](adr/0007-local-interactive-missions.md) for
 the retained governed Mission contract, and [the existing runtime
 boundary](OPENCODE-RUNTIME-V1.md) for execution limits.
+
+Shell WhatsApp credential onboarding: `airodrom whatsapp bind|status|discover|prepare-callback`. Requires a global CLI package installed with `npm run install:local` that includes those routes; values use hidden Terminal input only.

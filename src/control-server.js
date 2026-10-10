@@ -152,7 +152,9 @@ class ControlServer {
         if(req.method==='POST'){
           const {readRaw}=require('./whatsapp-inbound');
           const raw=await readRaw(req);
-          return this.json(res,200,inbound.ingest(raw,req.headers['x-hub-signature-256']));
+          const result=inbound.ingest(raw,req.headers['x-hub-signature-256']);
+          try{this.bridge.whatsappConversations?.afterIngest?.(result);}catch{/* webhook ack must not depend on AI */}
+          return this.json(res,200,{...result,conversation_queued:Array.isArray(result.items)?result.items.length:0,outbound_enabled:false,auto_mission_execution:false});
         }
         return this.json(res,405,{error:'GET or POST required'});
       }
@@ -243,6 +245,10 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/live-connection')return this.json(res,200,this.bridge.whatsappInbound.liveConnectionReadiness());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbox')return this.json(res,200,this.bridge.whatsappInbound.list({limit:Number(url.searchParams.get('limit')||50)||50,status:url.searchParams.get('status')||null}));
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/statuses')return this.json(res,200,this.bridge.whatsappInbound.statuses({message_id:url.searchParams.get('message_id')||null,limit:Number(url.searchParams.get('limit')||50)||50}));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/conversations')return this.json(res,200,this.bridge.whatsappConversations.status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/conversation-turns')return this.json(res,200,this.bridge.whatsappConversations.listTurns({conversation_id:url.searchParams.get('conversation_id')||null,limit:Number(url.searchParams.get('limit')||50)||50}));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/outbound')return this.json(res,200,this.bridge.whatsappOutbound.status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/production-connection')return this.json(res,200,require('./whatsapp-production-connection').productionConnectionStatus(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/development-sessions')return this.json(res,200,this.bridge.developmentSessions.list({limit:Number(url.searchParams.get('limit')||20)||20}));
       if(req.method==='GET'&&url.pathname==='/api/assistant/development-sessions/status')return this.json(res,200,this.bridge.developmentSessions.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/sensitive')return this.json(res,200,require('./assistant-service').sensitiveList(this.bridge));
@@ -307,6 +313,10 @@ class ControlServer {
       if(url.pathname==='/api/assistant/whatsapp/inbound/discovery')return this.json(res,200,this.bridge.whatsappInbound.recordDiscovery(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/discover-graph')return this.json(res,200,await this.bridge.whatsappInbound.discoverGraphAccounts(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/prepare-callback')return this.json(res,200,this.bridge.whatsappInbound.preparePublicCallback(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/outbound/enqueue')return this.json(res,200,this.bridge.whatsappOutbound.enqueue(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/outbound/authorize')return this.json(res,200,this.bridge.whatsappOutbound.authorize(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/outbound/cancel')return this.json(res,200,this.bridge.whatsappOutbound.cancel(body,'operator'));
+      if(url.pathname==='/api/assistant/whatsapp/outbound/send')return this.json(res,200,await this.bridge.whatsappOutbound.send(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions')return this.json(res,201,this.bridge.developmentSessions.create(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/resolve')return this.json(res,200,this.bridge.developmentSessions.resolve(body,'operator'));
       if(url.pathname==='/api/assistant/development-sessions/attach')return this.json(res,200,this.bridge.developmentSessions.attach(body,'operator'));
@@ -553,6 +563,7 @@ class ControlServer {
     } catch (error) { if (!res.writableEnded) this.json(res, 400, { error: error.message }); }
   }
   async close() {
+    try{await this.bridge.whatsappConversations?.idle?.();}catch{/* drain best-effort */}
     await this.conversationEngine.close();
     for (const controllers of this.webRequests.values()) for (const controller of controllers) controller.abort();
     if (this.server.listening) await new Promise(resolve => { this.server.close(resolve); this.server.closeAllConnections(); });

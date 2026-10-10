@@ -578,7 +578,13 @@
       "webhook_subscription_status",
       "access_token_reference",
       "prepared_callback_url",
-      "discovery_json"
+      "discovery_json",
+      "subscribed_fields",
+      "production_waba_id",
+      "production_phone_number_id",
+      "test_waba_id",
+      "test_phone_number_id",
+      "active_environment"
     ],
     "source": "src/whatsapp-inbound.js",
     "classification": {
@@ -597,7 +603,13 @@
       "webhook_subscription_status": "A",
       "access_token_reference": "D",
       "prepared_callback_url": "B",
-      "discovery_json": "B"
+      "discovery_json": "B",
+      "production_waba_id": "A",
+      "production_phone_number_id": "A",
+      "test_waba_id": "A",
+      "test_phone_number_id": "A",
+      "active_environment": "A",
+      "subscribed_fields": "A"
     }
   },
   "cp_whatsapp_inbox": {
@@ -3574,6 +3586,139 @@
       "project_alias": "B",
       "workspace_alias": "B",
       "record": "B"
+    }
+  },
+  "cp_whatsapp_conversations": {
+    "fields": [
+      "id",
+      "sender",
+      "thread_id",
+      "engine_conversation_id",
+      "state",
+      "last_inbound_id",
+      "last_turn_id",
+      "last_error_class",
+      "created_at",
+      "updated_at",
+      "authority"
+    ],
+    "source": "src/whatsapp-conversations.js",
+    "classification": {
+      "id": "A",
+      "sender": "B",
+      "thread_id": "A",
+      "engine_conversation_id": "A",
+      "state": "A",
+      "last_inbound_id": "A",
+      "last_turn_id": "A",
+      "last_error_class": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "authority": "A"
+    }
+  },
+  "cp_whatsapp_conversation_turns": {
+    "fields": [
+      "id",
+      "conversation_id",
+      "inbound_message_id",
+      "sender",
+      "inbound_body",
+      "intent",
+      "state",
+      "reply_body",
+      "worker_model",
+      "worker_identity",
+      "engine_turn_id",
+      "outbound_id",
+      "safe_error_class",
+      "created_at",
+      "updated_at",
+      "completed_at",
+      "authority"
+    ],
+    "source": "src/whatsapp-conversations.js",
+    "classification": {
+      "id": "A",
+      "conversation_id": "A",
+      "inbound_message_id": "A",
+      "sender": "B",
+      "inbound_body": "B",
+      "intent": "A",
+      "state": "A",
+      "reply_body": "B",
+      "worker_model": "A",
+      "worker_identity": "A",
+      "engine_turn_id": "A",
+      "outbound_id": "A",
+      "safe_error_class": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "completed_at": "A",
+      "authority": "A"
+    }
+  },
+  "cp_whatsapp_outbound": {
+    "fields": [
+      "id",
+      "recipient",
+      "body",
+      "state",
+      "idempotency_key",
+      "conversation_turn_id",
+      "inbound_message_id",
+      "provider_message_id",
+      "safe_error_class",
+      "created_at",
+      "updated_at",
+      "authorized_at",
+      "sent_at",
+      "authority"
+    ],
+    "source": "src/whatsapp-outbound.js",
+    "classification": {
+      "id": "A",
+      "recipient": "B",
+      "body": "B",
+      "state": "A",
+      "idempotency_key": "A",
+      "conversation_turn_id": "A",
+      "inbound_message_id": "A",
+      "provider_message_id": "A",
+      "safe_error_class": "A",
+      "created_at": "A",
+      "updated_at": "A",
+      "authorized_at": "A",
+      "sent_at": "A",
+      "authority": "A"
+    }
+  },
+  "cp_service_lifecycle": {
+    "fields": [
+      "id",
+      "state",
+      "epoch"
+    ],
+    "source": "src/service-lifecycle.js",
+    "classification": {
+      "id": "A",
+      "state": "A",
+      "epoch": "A"
+    }
+  },
+  "cp_work_templates": {
+    "fields": [
+      "project",
+      "workspace_alias",
+      "record",
+      "state"
+    ],
+    "source": "src/work-templates.js",
+    "classification": {
+      "project": "B",
+      "workspace_alias": "B",
+      "record": "B",
+      "state": "A"
     }
   }
 }

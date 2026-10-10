@@ -46,3 +46,12 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Premium atmosphere/theme/nav mounts were missing from `origin/main` HTML despite Product Experience V2 docs and local preimage assets (2026-10-08). Recovery lives on `feat/control-center-ui-recovery-v1` — **not merged**, **not SHIPPED on main**, **not ACTIVE** in the installed service until authorized cutover.
 - Focused UI evidence: atmosphere + control-center-ui + connection-status + live-observatory **20/20**. Static browser proof is not authenticated live Activation.
 - See [CONTROL-CENTER-UI-RECOVERY-V1.md](CONTROL-CENTER-UI-RECOVERY-V1.md).
+
+## WhatsApp (daily integration reconcile)
+
+- Source tip reconciled from `feat/whatsapp-inbound-v1` @ `0ad82f1` into this daily candidate: inbound, Conversations V1, production-connection HOLD.
+- Meta dashboard webhook evidence (test) remains the verified live proof; phone-originated delivery still pending.
+- Conversations V1: allowlisted → ConversationEngine/Qwen; Memory retrieval off; outbound drafts pending; Cloud API send hard OFF. See [Conversations V1](WHATSAPP-CONVERSATIONS-V1.md), [ADR 0041](adr/0041-whatsapp-conversations-v1.md).
+- Production Connection V1 / Meta policy gate: exact proposed production use (WhatsApp as the primary channel for Airodrom’s general-purpose personal AI) is **prohibited** under Meta’s published AI Providers terms except where Meta is legally required to permit it. **Production messaging remains HOLD.** Do not bypass via branding, routing, alternate numbers, or account arrangements. See [Production Connection V1](WHATSAPP-PRODUCTION-CONNECTION-V1.md), [ADR 0042](adr/0042-whatsapp-production-connection-v1.md).
+- Outbound sending and WhatsApp-triggered Mission execution remain disabled.
+- Distinctions: source integration on this branch ≠ local service activation ≠ Meta dashboard proof ≠ production readiness.

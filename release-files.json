@@ -594,5 +594,15 @@
   "scripts/build-atmosphere.cjs",
   "config/notion-documentation-v1.json",
   "src/notion-documentation-routing.js",
-  "docs/NOTION-DOCUMENTATION-ROUTING-V1.md"
+  "docs/NOTION-DOCUMENTATION-ROUTING-V1.md",
+  "docs/adr/0039-whatsapp-conversations-v1.md",
+  "docs/WHATSAPP-CONVERSATIONS-V1.md",
+  "config/whatsapp-conversations-v1.json",
+  "docs/adr/0040-whatsapp-production-connection-v1.md",
+  "docs/WHATSAPP-PRODUCTION-CONNECTION-V1.md",
+  "config/whatsapp-production-connection-v1.json",
+  "src/whatsapp-production-connection.js",
+  "src/whatsapp-outbound.js",
+  "src/whatsapp-conversations.js",
+  "src/whatsapp-credential-onboarding.js"
 ]

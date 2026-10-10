@@ -26,6 +26,8 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0037 Cursor IDE task vs Agent](0037-cursor-ide-task-vs-agent.md): Proposed; classified IDE tasks.json dispatch is not Cursor Agent execution; OpenCode remains the Mission coding worker.
 - [0038 WhatsApp Inbound V1](0038-whatsapp-inbound-v1.md): Proposed; loopback Business Cloud webhook challenge/HMAC, durable allowlisted inbox, no Mission auto-dispatch.
 - [0039 Local-first batch merge](0039-local-first-batch-merge.md): Proposed; Development Sessions, fail-closed CI/push/merge defaults, daily merge window without auto-merge.
+- [0041 WhatsApp Conversations V1](0041-whatsapp-conversations-v1.md): Proposed; allowlisted personal AI via ConversationEngine/Qwen, Memory retrieval off, outbound drafts pending, Cloud API send hard OFF. (Feature branch ADR 0039; renumbered on daily integ to avoid collision.)
+- [0042 WhatsApp Production Connection V1](0042-whatsapp-production-connection-v1.md): Proposed; production prerequisites with AI-policy HOLD, stable HTTPS plan, test WABA preserved, no unauthorized messaging. (Feature branch ADR 0040; renumbered on daily integ.)
 - [0010 personal assistant and qualified routing](0010-personal-assistant-and-qualified-routing.md): Proposed; host-owned intent, data boundaries, handoff and read-only connector foundation.
 - [0011 Conversation Engine and intent routing](0011-conversation-engine-and-intent-routing.md): Proposed; replaces ordinary authenticated chat/Mission semantics of ADRs 0007 and 0010 only, preserving governed work and explicit Mission contracts.
 

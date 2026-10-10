@@ -6,7 +6,7 @@ Control Center UI recovery (source candidate): [CONTROL-CENTER-UI-RECOVERY-V1.md
 
 Read the [architecture](ARCHITECTURE.md), [installation](INSTALLATION.md), [development guide](DEVELOPMENT.md), [runtime support](RUNTIME-SUPPORT-MATRIX.md), [Memory V2](MEMORY-V2.md), [erasure and retention](PRIVACY-ERASURE.md), [threat model](THREAT-PRIVACY-SUMMARY.md), [limitations](KNOWN-LIMITATIONS.md) and [troubleshooting](TROUBLESHOOTING.md).
 
-WhatsApp Business inbound (source candidate): [Inbound V1](WHATSAPP-INBOUND-V1.md), [V1.1 readiness](WHATSAPP-INBOUND-V1.1.md), [Meta live connection checklist](META-WHATSAPP-LIVE-CONNECTION-V1.md), [ADR 0038](adr/0038-whatsapp-inbound-v1.md). Not merged to main; public ingress inactive.
+WhatsApp Business (source candidate): [Inbound V1](WHATSAPP-INBOUND-V1.md), [Conversations V1](WHATSAPP-CONVERSATIONS-V1.md), [Production Connection V1](WHATSAPP-PRODUCTION-CONNECTION-V1.md), [Daily WhatsApp gate 2026-10-09](DAILY-INTEGRATION-WHATSAPP-GATE-20261009.md), [V1.1 readiness](WHATSAPP-INBOUND-V1.1.md), [Meta live connection checklist](META-WHATSAPP-LIVE-CONNECTION-V1.md), [ADR 0038](adr/0038-whatsapp-inbound-v1.md), [ADR 0041](adr/0041-whatsapp-conversations-v1.md), [ADR 0040](adr/0042-whatsapp-production-connection-v1.md). Credential onboarding: `airodrom whatsapp bind` (hidden Vault capture + auto-configure). Not merged to main; public ingress inactive; outbound send OFF; production messaging on AI-policy HOLD.
 
 Local-first Development Sessions (source candidate): [LOCAL-FIRST-BATCH-MERGE-V1.md](LOCAL-FIRST-BATCH-MERGE-V1.md), [ADR 0039](adr/0039-local-first-batch-merge.md). Not merged to main; no automatic GitHub CI or per-Mission merge.
 
