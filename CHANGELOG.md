@@ -1,3 +1,9 @@
+## Unreleased — Master Personal AI Completion V1
+
+- Synthetic TestBridge fixtures resume admission after recovery so Memory/Mission suites match managed closed-startup without weakening production gates.
+- ChatGPT MCP adds read-only `personal_memory_search` / `personal_memory_get` (ordinary Personal Memory only; writes remain capability-scoped). Surface is 27 tools.
+- Completion matrix and evidence: [MASTER-PERSONAL-AI-COMPLETION-V1.md](docs/MASTER-PERSONAL-AI-COMPLETION-V1.md). WhatsApp remains HOLD.
+
 ## Unreleased — macOS Desktop Activation V1 (shipped locally)
 
 ## Unreleased — Menu Status & WhatsApp Connection Closeout V1

@@ -21,6 +21,15 @@ class TestBridge extends Bridge {
   this.defaultRuntime=options.defaultRuntime||'host';
   this.executable=options.executable||path.join(__dirname,'host-worker.cjs');
  }
+ // Synthetic fixtures need open admission after recovery. Production retains
+ // managed closed-startup until authenticated operator resume (ADR 0026/0030).
+ async initialize(){
+  const self=await super.initialize();
+  if(self.startClosed!==true&&self.lifecycle?.state()==='booting'&&self.lifecycle.status().idle){
+   self.lifecycle.resume(self.lifecycle.epoch);
+  }
+  return self;
+ }
   async _ensureHostRuntime(id) {
     require('../../src/removed-runtime').assertExecutable(this.tasks.get(id));
     const task = this.tasks.get(id);

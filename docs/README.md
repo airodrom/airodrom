@@ -1,5 +1,7 @@
 # Airodrom documentation
 
+**Master Personal AI Completion V1** (implementation program): [MASTER-PERSONAL-AI-COMPLETION-V1.md](MASTER-PERSONAL-AI-COMPLETION-V1.md).
+
 **Menu Status & WhatsApp Connection Closeout V1** (LOCAL IMPLEMENTATION): [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md).
 
 **Control Center & Premium macOS Experience V4** (SHIPPED + INSTALLED): [CONTROL-CENTER-MACOS-UX-V4.md](CONTROL-CENTER-MACOS-UX-V4.md).
