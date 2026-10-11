@@ -1,6 +1,19 @@
 # Airodrom Final Acceptance V2
 
-Master finalization evidence for Personal AI readiness. Distinguishes live tip observations from offline/fixture verification. **Production tip was not cut over.**
+Master finalization evidence for Personal AI readiness. Distinguishes live tip observations from offline/fixture verification.
+
+## V3 cutover readiness (2026-10-11)
+
+| Item | Status |
+| --- | --- |
+| Production cutover | **CUTOVER HOLD** — this prompt is not authorization |
+| Live tip still installed | `airodrom-menu-status-525458c` @ `525458c`, port **60487**, MCP **ready** |
+| Candidate prepared | `install/airodrom-master-completion-3dc3e8c` @ **`3dc3e8c`**, **27** tools |
+| Candidate tests | **91 passed**, 1 skipped, 0 failed (+ typechecks) |
+| Backup / restore | Online `node:sqlite.backup` integrity **ok**; isolated restore rehearsal **ok** |
+| Approval request | [AIRODROM-CUTOVER-APPROVAL-V3.md](AIRODROM-CUTOVER-APPROVAL-V3.md) |
+
+Post-cutover live Memory / ChatGPT / Mission / Web Chat gates remain **BLOCKED** until explicit cutover authorization.
 
 ## 1. Repository baseline
 

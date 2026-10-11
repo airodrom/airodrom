@@ -1,3 +1,9 @@
+## Unreleased — Master Production Cutover Readiness V3
+
+- Prepared isolated candidate install from exact PR tip `3dc3e8c` (27 MCP tools); qualified with focused tests and typechecks. Production tip unchanged (**CUTOVER HOLD**).
+- Online SQLite backup + isolated restore rehearsal of personal-memory DB; LaunchAgent snapshot retained.
+- Operator approval gate: [AIRODROM-CUTOVER-APPROVAL-V3.md](docs/AIRODROM-CUTOVER-APPROVAL-V3.md).
+
 ## Unreleased — Master Finalization & Live Acceptance V2
 
 - Live tip audit: installed `airodrom-menu-status-525458c` exposes MCP health + 25 tools; personal-memory calls fail closed until cutover. Branch stdio catalog remains 27 tools.
