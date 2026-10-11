@@ -2,7 +2,10 @@
 
 - Synthetic TestBridge fixtures resume admission after recovery so Memory/Mission suites match managed closed-startup without weakening production gates.
 - ChatGPT MCP adds read-only `personal_memory_search` / `personal_memory_get` (ordinary Personal Memory only; writes remain capability-scoped). Surface is 27 tools.
-- Completion matrix and evidence: [MASTER-PERSONAL-AI-COMPLETION-V1.md](docs/MASTER-PERSONAL-AI-COMPLETION-V1.md). WhatsApp remains HOLD.
+- Unify Mission lifecycle aliases into one authoritative vocabulary (`canonicalize` / `project`); persist canonical states in control-plane and authority stores; treat `paused` as a first-class transition.
+- Document Personal Memory erasure layers (suppression, cache invalidation, retention, logical purge) and keep physical/forensic wipe unclaimed.
+- Offline always-on qualification tests and bounded Mission Acceptance/restart fixtures; iPhone viewport emulation checks (not physical-device verification).
+- Completion matrix and evidence: [MASTER-PERSONAL-AI-COMPLETION-V1.md](docs/MASTER-PERSONAL-AI-COMPLETION-V1.md). WhatsApp remains HOLD. Production tip unchanged.
 
 ## Unreleased — macOS Desktop Activation V1 (shipped locally)
 

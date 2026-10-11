@@ -131,4 +131,50 @@ function packetUsable(db, packet) {
   const ids = new Set([...(pack?.retrieved_memory_ids || []), ...(pack?.refs || []).map(x => x.memory_id), ...(pack?.records || []).map(x => x.memory_id || x.memoryId)].filter(Boolean));
   return [...ids].every(id => !marker(db, 'personal', id) && !marker(db, 'governed', id));
 }
-module.exports = { migrate, marker, mark, progress, reconcile, scopeHash, exists, redacted, packetUsable, assertCurrent, personalSourceEvent };
+/**
+ * Erasure layers (logical product guarantees only; physical/forensic wipe unclaimed).
+ * - retrieval_suppression: active markers hide records from get/search before purge finishes
+ * - cache_invalidation: context packs / FTS indexes reject erased identities
+ * - retention: immutable non-content envelopes may remain; payloads redacted
+ * - logical_purge: content columns nullified / subject erased under host transaction
+ * - physical_deletion: WAL/SSD/swap/backup/provider copies — NOT claimed (see PRIVACY-ERASURE.md)
+ */
+const ERASURE_LAYERS = Object.freeze({
+  retrieval_suppression: { claimed: true, physical: false },
+  cache_invalidation: { claimed: true, physical: false },
+  retention: { claimed: true, physical: false },
+  logical_purge: { claimed: true, physical: false },
+  physical_deletion: { claimed: false, physical: true }
+});
+
+function classifyAction(action) {
+  if (action === 'forget' || action === 'expiry') {
+    return {
+      action,
+      layers: ['retrieval_suppression', 'cache_invalidation', 'logical_purge'],
+      physicalErasure: false,
+      authority: false
+    };
+  }
+  if (action === 'operator_erasure') {
+    return {
+      action,
+      layers: ['retrieval_suppression', 'cache_invalidation', 'retention', 'logical_purge'],
+      physicalErasure: false,
+      authority: false,
+      note: 'Retained non-content metadata may remain; physical media wipe unclaimed'
+    };
+  }
+  throw Error('Unknown erasure action');
+}
+
+function layerStatus() {
+  return {
+    ...ERASURE_LAYERS,
+    physicalErasure: false,
+    authority: false,
+    documentation: 'docs/PRIVACY-ERASURE.md'
+  };
+}
+
+module.exports = { migrate, marker, mark, progress, reconcile, scopeHash, exists, redacted, packetUsable, assertCurrent, personalSourceEvent, ERASURE_LAYERS, classifyAction, layerStatus };
