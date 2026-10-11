@@ -166,6 +166,7 @@ Note: `/api/product/correct-memory` supersedes with a **new** id; forget must ta
 2. **ChatGPT-side connector refresh** — local MCP readiness ≠ ChatGPT UI verification; human refresh may still be required after cutover.
 3. **Authorized Control Center browser session** — automation without the private menu link remains unauthorized by design.
 4. WhatsApp production ingress remains **HOLD** per prior policy.
+5. **PATH `airodrom` still stale** — points at `airodrom-menu-v3` while tip is `525458c`. Client-attach fix is on PR #70 and verified via `node …/scripts/airodrom.cjs`. Replacing the global command needs explicit `npm unlink -g airodrom` + `npm run install:local` authorization ([CLI-CLIENT-RELIABILITY-V1.md](CLI-CLIENT-RELIABILITY-V1.md)).
 
 ## Classification summary
 

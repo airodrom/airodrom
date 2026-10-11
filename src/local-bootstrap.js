@@ -230,6 +230,26 @@ async function status(home, { allowOlderSource = false, timeoutMs = 10000, signa
   try { s.product = await request(home, '/api/product/native-status', undefined, {timeoutMs, signal}); } catch { s.product=null; }
   return s;
 }
+async function attach(home, { timeoutMs = 10000, signal, retries = 3 } = {}) {
+  if (isStopped(home)) throw Error('Airodrom is stopped. Run airodrom service start.');
+  let last = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const s = await status(home, { allowOlderSource: true, timeoutMs, signal });
+      if (!s.healthy || s.protocol !== 'airodrom-local-v1') throw Error('Local service is not healthy. Existing service and data were preserved.');
+      return s;
+    } catch (error) {
+      last = error;
+      if (signal?.aborted || isStopped(home)) throw error;
+      if (/invalid|ownership|does not match|authorization|refused/i.test(String(error.message || error))) throw error;
+      if (attempt < retries) await pause(200 * (attempt + 1));
+    }
+  }
+  throw last || Error('Local service is unavailable. Existing service and data were preserved.');
+}
+async function ensureService(home) {
+  return attach(home);
+}
 function isStopped(home) {
   try { fs.lstatSync(home); } catch (error) { if (error.code === 'ENOENT') return true; throw error; }
   privateDirectory(home);
@@ -247,13 +267,26 @@ function isStopped(home) {
 }
 async function start(home, env = process.env) {
   privateDirectory(home, true);
+  // Prefer attaching to a healthy managed service before taking the launch lock.
+  // Client packages from another install must not start a second supervisor.
+  if (!isStopped(home)) {
+    try { return await attach(home, { timeoutMs: 2000 }); }
+    catch (error) {
+      const lock = require('../scripts/macos/control.cjs').lock({ dataDir: path.join(home, 'data') });
+      if (lock.blocked) throw Error('Existing service did not respond for attach. No replacement was started. Existing service and data were preserved.');
+      throw error;
+    }
+  }
   // Serialize bootstrap and service launch. A malformed/live lock is never removed.
   const lockFile = path.join(home, 'launch.lock'); let fd;
   try { fd = fs.openSync(lockFile, 'wx', 0o600); fs.writeFileSync(fd, String(process.pid)); }
   catch (error) {
     if (error.code !== 'EEXIST') throw error;
     const deadline = Date.now() + 10000;
-    while (Date.now() < deadline) { try { return await status(home, {timeoutMs:Math.min(1000,deadline-Date.now())}); } catch {} await pause(100); }
+    while (Date.now() < deadline) {
+      try { return await attach(home, { timeoutMs: Math.min(1000, deadline - Date.now()) }); } catch {}
+      await pause(100);
+    }
     throw Error('Another bootstrap owns startup. Inspect its private launch.lock before retrying.');
   }
   const controller = new AbortController(), interrupt = () => controller.abort();
@@ -262,16 +295,18 @@ async function start(home, env = process.env) {
     const dataDir = path.join(home, 'data');
     if (fs.existsSync(dataDir)) {
       try {
-        const attached = await status(home, {timeoutMs:2000,signal:controller.signal});
-        if (attached.opencode?.reason !== 'opencode_runtime_pins_changed') return attached;
+        const attached = await attach(home, { timeoutMs: 2000, signal: controller.signal });
+        const sameSource = attached.source_sha256 === require('./runtime-fingerprint').sourceFingerprint().source_sha256;
+        if (!sameSource || attached.opencode?.reason !== 'opencode_runtime_pins_changed') return attached;
         repairablePins(ownedJSON(path.join(home, 'runtime-pins.json')));
         if (attached.active_runs || attached.quarantined_leases || !attached.managed) throw Error('Runtime pin repair is waiting for owned work to settle.');
         await stop(home);
       } catch (error) {
         const lock = require('../scripts/macos/control.cjs').lock({ dataDir });
-        if (lock.blocked) throw Error('A live or unverified service owns the data directory. Existing service and data were preserved.');
+        if (lock.blocked) throw Error('Existing service did not respond for attach. No replacement was started. Existing service and data were preserved.');
         // Unsafe discovery/config is never silently replaced.
         if (fs.existsSync(path.join(dataDir, 'ui.json'))) discovery(home);
+        if (!/stopped|did not respond|invalid|ownership|does not match/i.test(String(error.message || error))) throw error;
       }
     }
     const config = await prepare(home, env, {signal:controller.signal});
@@ -301,6 +336,16 @@ async function stop(home) {
   if (isStopped(home)) return { stopped: true };
   const before = await status(home, { allowOlderSource: true });
   if (!before.managed) throw Error('This service is not owned by the local CLI. Use its original lifecycle control.');
+  // Drain closes admission first; prepareStop refuses unless idle (ADR 0026).
+  await request(home, '/api/interactive/drain', {});
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    const gate = await request(home, '/api/interactive/lifecycle');
+    if (gate.idle === true) break;
+    await pause(100);
+  }
+  const gate = await request(home, '/api/interactive/lifecycle');
+  if (gate.idle !== true) throw Error('Service drain is not idle. No process was killed; existing service and data were preserved.');
   await request(home, '/api/interactive/stop', {});
   for (let i = 0; i < 150; i++) { if (!require('../scripts/macos/control.cjs').lock({ dataDir: path.join(home, 'data') }).blocked) return { stopped: true }; await pause(100); }
   throw Error('Service is still stopping. Its writer lock was preserved.');
@@ -329,4 +374,4 @@ function open(home, {missionId, view} = {}) {
   const r = spawnSync('/usr/bin/osascript', ['-'], { input: 'open location ' + JSON.stringify(target) + '\n', encoding: 'utf8', timeout: 5000 });
   if (r.status !== 0) throw Error('Control Center could not open. Check the default browser.');
 }
-module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, isStopped, start, stop, admission, open };
+module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, attach, ensureService, isStopped, start, stop, admission, open };

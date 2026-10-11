@@ -9,6 +9,7 @@ function fixture(t, request, {nickname}={}) {
   const calls = [], output = new PassThrough();
   let text = ''; output.on('data', chunk => text += chunk);
   t.mock.method(local, 'start', async () => ({ default_runtime: 'opencode', nickname }));
+  t.mock.method(local, 'attach', async () => ({ default_runtime: 'opencode', nickname, healthy: true, protocol: 'airodrom-local-v1' }));
   t.mock.method(local, 'request', async (home, route, body) => { if(route==='/api/interactive/memory?query=name')return {items:[]};calls.push({ route, body }); return request(route, body); });
   return { calls, output, text: () => text };
 }

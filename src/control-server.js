@@ -479,6 +479,7 @@ class ControlServer {
       }
       if (url.pathname === '/api/interactive/stop') {
         if (Object.keys(body).length || typeof this.localShutdown !== 'function') throw Error('Only the managed local service can be stopped by this endpoint.');
+        if (this.bridge.lifecycle.state() !== 'draining') this.bridge.lifecycle.drain();
         this.bridge.lifecycle.prepareStop();
         this.json(res, 202, { stopping: true }); setImmediate(() => this.localShutdown().catch(() => {})); return;
       }

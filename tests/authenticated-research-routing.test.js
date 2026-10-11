@@ -46,6 +46,7 @@ test('authentication scope and mixed action instructions cannot broaden the appr
 function cliFixture(t,request){
  const input=new PassThrough(),output=new PassThrough(),calls=[];let text='';output.on('data',chunk=>text+=chunk);
  t.mock.method(local,'start',async()=>({default_runtime:'opencode'}));
+ t.mock.method(local,'attach',async()=>({default_runtime:'opencode',healthy:true,protocol:'airodrom-local-v1'}));
  t.mock.method(local,'request',async(home,route,body)=>{if(route==='/api/interactive/memory?query=name')return {items:[]};calls.push({route,body});return request(route,body);});
  const wait=needle=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{output.off('data',check);reject(Error('Synthetic terminal output unavailable'));},3000);const check=()=>{if(text.includes(needle)){clearTimeout(timer);output.off('data',check);resolve();}};output.on('data',check);check();});
  return {input,output,calls,text:()=>text,wait};

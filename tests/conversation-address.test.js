@@ -19,6 +19,7 @@ async function setup(t,canonical=false){
   packets.push(JSON.parse(options.body));return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{role:'assistant',content:'Hello.'}}]}));
  }});server.conversationEngine=engine;t.after(()=>engine.close());
  const requests=[];t.mock.method(local,'start',async()=>({default_runtime:'opencode'}));
+ t.mock.method(local,'attach',async()=>({default_runtime:'opencode',healthy:true,protocol:'airodrom-local-v1'}));
  t.mock.method(local,'request',async(_home,route,body)=>{
   requests.push({route,body});
   if(route==='/api/interactive/memory?query=name')return server.interactiveMemory('name');

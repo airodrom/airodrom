@@ -11,6 +11,7 @@ function fixture(t,{credentialRefusal=false,nickname}={}){
  const CanonicalVault=vaultModule.SecretVault;
  t.mock.method(vaultModule,'SecretVault',function(directory){return new CanonicalVault(directory,port);});
  t.mock.method(local,'start',async()=>({default_runtime:'opencode',nickname}));
+ t.mock.method(local,'attach',async()=>({default_runtime:'opencode',nickname,healthy:true,protocol:'airodrom-local-v1'}));
  t.mock.method(local,'request',async(...args)=>{
   if(args[1]==='/api/interactive/memory?query=name')return {items:[]};
   serviceCalls.push(args);

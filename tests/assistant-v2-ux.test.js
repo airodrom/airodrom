@@ -63,9 +63,10 @@ test('ordinary chat returns a direct answer without registering a Work Mission',
  assert.equal(b.controlStore.listMissions({limit:1}).length,0);assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_conversation_turns WHERE state='completed'").get().n,1);
 });
 test('TTY waiting fish is removed before answer, failure, admission failure and cancellation and never leaks a timer',async t=>{
- const originalStart=local.start,originalRequest=local.request;
- t.after(()=>{local.start=originalStart;local.request=originalRequest;});
+ const originalStart=local.start,originalAttach=local.attach,originalRequest=local.request;
+ t.after(()=>{local.start=originalStart;local.attach=originalAttach;local.request=originalRequest;});
  local.start=async()=>({default_runtime:'opencode'});
+ local.attach=async()=>({default_runtime:'opencode',healthy:true,protocol:'airodrom-local-v1'});
  for(const outcome of ['answer','failure','admission_failure','cancel']){
   const output=new PassThrough();output.isTTY=true;output.columns=32;let text='',cancelRequests=0;
   output.on('data',chunk=>{text+=chunk;if(outcome==='cancel'&&String(chunk).includes('Thinking'))queueMicrotask(()=>process.emit('SIGINT'));});
