@@ -19,7 +19,7 @@ Master finalization evidence for Personal AI readiness. Distinguishes live tip o
 | Item | Value |
 | --- | --- |
 | Prior commits | `3f81b57`, `fc38e27`, `305f03c`, `a4faf15` |
-| This wave | (see tip after push) — legacy-identifier allowlist, removed-runtime fixture cleanup, cutover plan, this report |
+| This wave | `ac73ef6` — legacy-identifier allowlist, removed-runtime fixture cleanup, cutover plan, this report |
 | PR | https://github.com/airodrom/airodrom/pull/70 |
 | Base | `main` |
 | Mergeability | `MERGEABLE` / `CLEAN` (observed) |
