@@ -54,8 +54,10 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  const nickname=/^(?:your nickname is|i(?:['’]ll| will) call you)\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{0,39})$/iu.exec(request);
  if(nickname)return route('CONVERSATION',{kind:'preference',nickname:nickname[1].trim()});
  if(/^(?:save|store|remember)$/i.test(request))return route('MEMORY',{kind:'clarify',message:'What would you like to save? Private facts require a storage choice; credentials require /vault.'});
+ const correction=/^(?:correction|update)\s*:\s*([\s\S]+)$/i.exec(request);
+ if(correction){const content=request;return route('MEMORY',sensitive(content)?{kind:'sensitive',content}:{kind:'remember',content});}
  const remember=/^(?:remember|save|store)\s+(?:that\s+)?([\s\S]+)$/i.exec(request);
- if(remember){const content=remember[1];return route('MEMORY',sensitive(content)?{kind:'sensitive',content}:ordinary(content)?{kind:'remember',content}:/^my preference\.?$/i.test(content)?{kind:'clarify',message:'What preference should I remember? For example: Remember I prefer concise answers.'}:{kind:'clarify',message:'Choose the data class explicitly: /remember <ordinary fact> or /remember-sensitive <private fact>. Credentials require /vault.'});}
+ if(remember){const content=remember[1];return route('MEMORY',sensitive(content)?{kind:'sensitive',content}:ordinary(content)||require('./memory-correction').isCorrectionStatement(content)?{kind:'remember',content}:/^my preference\.?$/i.test(content)?{kind:'clarify',message:'What preference should I remember? For example: Remember I prefer concise answers.'}:{kind:'clarify',message:'Choose the data class explicitly: /remember <ordinary fact> or /remember-sensitive <private fact>. Credentials require /vault.'});}
  const forget=/^forget\s+(?:that\s+)?(?:my\s+)?([\s\S]+?)\.?$/i.exec(request);
  if(forget)return route('MEMORY',{kind:'forget',selection:forget[1]});
  const recall=/^(?:what do you remember(?: about)?|recall|show (?:my )?memories(?: about)?)\s*(.*?)\??$/i.exec(request);

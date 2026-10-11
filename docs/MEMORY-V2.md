@@ -7,3 +7,13 @@ Memory selection enforces domain/project/privacy and byte/top-k limits. Unknown 
 New candidate, memory and ContextPack identities are random UUIDv4. Legacy content-derived identities migrate against independent opaque origins; retained aliases and recoverable old content fingerprints are forbidden. Unknown origins stay unavailable. Active dedupe is erasable payload comparison rather than a permanent reconstructive identity.
 
 Remember, correction, forget, expiry and host erasure are distinct operations. Correction-family erasure validates connected scope and applies retryable dispositions. Covered audit/context, request, result, notification, provenance and replay representations are redacted; minimum non-content operation/order/scope/outcome metadata may remain. Supported restore requires independent current authority before constructing services. See [ADR 0004](adr/0004-memory-erasure-retention.md) and [privacy and erasure](PRIVACY-ERASURE.md).
+
+## Correction identity (current fact)
+
+Ordinary remember and `Correction:` statements share a deterministic fact key derived from the statement (for example `favorite test planet`), not from an LLM ranking choice. A correction supersedes every other active personal row with that fact key, stores a canonical current statement, and retains prior content as `superseded` provenance. Current `/memory` listings, conversation context assembly, and ContextPack selection collapse concurrent actives by fact key and keep only the newest winner.
+
+Existing dual-active conflicts (legacy writes that stored a correction under a distinct subject) are never rewritten automatically. Operators may inspect a copy with:
+
+`node scripts/reconcile-memory-corrections.cjs --db <sqlite>`
+
+Apply is opt-in only (`--apply --confirm-apply`) and must not target the live operator home without explicit authorization. See [MEMORY-CORRECTION-V1.md](MEMORY-CORRECTION-V1.md).

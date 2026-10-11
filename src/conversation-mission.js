@@ -30,8 +30,7 @@ function memoryQuery(message) {
   return [...new Set(words.filter(w => !stop.has(w)))].slice(0, 8).join(' ');
 }
 function subjectFor(content) {
-  const match = /^(?:my|our|the)\s+(.{1,100}?)\s+(?:is|are)\s+/i.exec(content);
-  return (match ? match[1] : content.slice(0, 120)).trim().toLowerCase();
+  return require('./memory-correction').subjectFor(content);
 }
 function assertContract(service, mission) {
   const e = mission.envelope, c = service.program.contract(mission.id);

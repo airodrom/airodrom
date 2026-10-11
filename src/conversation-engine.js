@@ -58,10 +58,11 @@ class ConversationEngine {
  }
  memory(message){
   const query=require('./conversation-mission').memoryQuery(message),b=this.bridge,terms=query.toLowerCase().match(/[\p{L}\p{N}_]+/gu)||[];
+  const present=require('./memory-correction').presentCurrentItems;
   const read=(query,limit)=>b.authorityRuntime?.active?b.authorityRuntime.memoryItems({domain:'personal',query,limit,relevance:'all_query_terms'}):b.personalMemory.search(query,{domain:'personal',limit,includeSensitive:false});
-  const currentName=require('./conversation-address').saved(read('name',20).items);
-  const relevant=query?read(query,6).items.filter(m=>m.sensitivity==='normal'&&m.authority!==true&&!require('./personal-storage-intent').containsPrivate(m.subject+' '+m.content)&&terms.every(t=>(m.subject+' '+m.content).toLowerCase().includes(t))):[];
-  const selected=[...(currentName?[currentName]:[]),...relevant.filter(m=>m.subject!=='name')];
+  const currentName=require('./conversation-address').saved(present(read('name',20).items));
+  const relevant=query?present(read(query,12).items).filter(m=>m.sensitivity==='normal'&&m.authority!==true&&!require('./personal-storage-intent').containsPrivate(m.subject+' '+m.content)&&terms.every(t=>(m.subject+' '+m.content).toLowerCase().includes(t))):[];
+  const selected=[...(currentName?[currentName]:[]),...relevant.filter(m=>m.subject!=='name'&&require('./memory-correction').factKey(m)!=='name')];
   return selected.slice(0,6).map(m=>({id:m.memoryId,content:m.content.slice(0,1000)}));
  }
  nickname(){erasure.assertReadable(this.db);return this.db.prepare('SELECT nickname FROM cp_assistant_preferences WHERE operator_id=?').get(this.owner)?.nickname;}
