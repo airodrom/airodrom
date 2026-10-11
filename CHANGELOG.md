@@ -1,3 +1,10 @@
+## Unreleased — Master Finalization & Live Acceptance V2
+
+- Live tip audit: installed `airodrom-menu-status-525458c` exposes MCP health + 25 tools; personal-memory calls fail closed until cutover. Branch stdio catalog remains 27 tools.
+- Document reversible tip cutover/rollback without applying it ([INSTALLED-TIP-CUTOVER-V2.md](docs/INSTALLED-TIP-CUTOVER-V2.md)).
+- Repair `removed-runtime` legacy-identifier allowlist drift and fixture shutdown for intentional historical quarantine.
+- Final acceptance report: [AIRODROM-FINAL-ACCEPTANCE-V2.md](docs/AIRODROM-FINAL-ACCEPTANCE-V2.md). WhatsApp HOLD. Production unchanged.
+
 ## Unreleased — Master Personal AI Completion V1
 
 - Synthetic TestBridge fixtures resume admission after recovery so Memory/Mission suites match managed closed-startup without weakening production gates.

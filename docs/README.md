@@ -1,6 +1,7 @@
 # Airodrom documentation
 
 **Master Personal AI Completion V1** (implementation program): [MASTER-PERSONAL-AI-COMPLETION-V1.md](MASTER-PERSONAL-AI-COMPLETION-V1.md).
+**Final Acceptance V2** (live tip vs offline evidence): [AIRODROM-FINAL-ACCEPTANCE-V2.md](AIRODROM-FINAL-ACCEPTANCE-V2.md). Cutover plan (not applied): [INSTALLED-TIP-CUTOVER-V2.md](INSTALLED-TIP-CUTOVER-V2.md).
 
 **Menu Status & WhatsApp Connection Closeout V1** (LOCAL IMPLEMENTATION): [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md).
 

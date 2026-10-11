@@ -202,7 +202,7 @@
     },
     {
       "file": "scripts/macos/install.cjs",
-      "sha256": "ff1453f0b6a755fffc34949ee31d61f404812e0fc0956e2c5134f61073e5021f",
+      "sha256": "9c3b6b8796c9d3b65977ffcb09862fe9bc9d67f1c0d5a48500216af6255942d0",
       "count": 1,
       "classification": "stable external protocol/integration identity"
     },
@@ -211,6 +211,42 @@
       "sha256": "2088121b6a770d96c3db1acf405001468848ef39a7fa2b2e95ae5e24c1a38aab",
       "count": 1,
       "classification": "private existing integration storage identity"
+    },
+    {
+      "file": "scripts/macos/desktop-login.cjs",
+      "sha256": "2a573514b12a87808aebc627a0ccff1ed2fdf73c53cb5dfbbfbfc852a543881e",
+      "count": 1,
+      "classification": "legacy LaunchAgent containment documentation"
+    },
+    {
+      "file": "scripts/macos/desktop-login.cjs",
+      "sha256": "8d7f171967dff8f8226147f894d4042141e87e1b55c3fac203cbf89b3874c192",
+      "count": 1,
+      "classification": "legacy LaunchAgent containment documentation"
+    },
+    {
+      "file": "scripts/macos/desktop-login.cjs",
+      "sha256": "976cecca891ee5a9f5037afd06eeb7ec1fc403da8ba72728b9963f53095a7097",
+      "count": 1,
+      "classification": "legacy LaunchAgent containment"
+    },
+    {
+      "file": "src/notion-documentation-routing.js",
+      "sha256": "18373b1d2bc28ec2d710c06b52e72da43dea95e0a16ce00769779679a28a5cb5",
+      "count": 1,
+      "classification": "historical Notion hub denial"
+    },
+    {
+      "file": "config/notion-documentation-v1.json",
+      "sha256": "f41ef84e3370b870fc939fe309d713b63e52fc874bcd2e8954522a88b2981c26",
+      "count": 1,
+      "classification": "historical Notion hub denial"
+    },
+    {
+      "file": "config/notion-documentation-v1.json",
+      "sha256": "5cbd6b577da8d573858e274c71623f9e724aedaccb5ad4bef9b9a9c679c56cd7",
+      "count": 1,
+      "classification": "historical Notion hub denial"
     },
     {
       "file": "scripts/macos/control.cjs",
