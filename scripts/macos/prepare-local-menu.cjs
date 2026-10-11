@@ -1,6 +1,22 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto'),{spawnSync}=require('node:child_process'),local=require('../../src/local-bootstrap');
 function validateTree(directory){const stat=fs.lstatSync(directory);if(stat.uid!==process.getuid()||stat.isSymbolicLink()||stat.mode&0o077||!stat.isDirectory()&&!stat.isFile()||stat.isFile()&&stat.nlink!==1)throw Error('Existing native menu has unsafe ownership or links.');if(stat.isDirectory())for(const entry of fs.readdirSync(directory))validateTree(path.join(directory,entry));}
+function expectedControl(root=local.ROOT){return path.join(root,'scripts/macos/product-control.cjs');}
+function readControlPath(app){
+ const plist=path.join(app,'Contents','Info.plist');
+ const text=fs.readFileSync(plist,'utf8');
+ const match=/<key>AirodromControl<\/key>\s*<string>([^<]+)<\/string>/.exec(text);
+ if(!match)throw Error('Menu Info.plist is missing AirodromControl.');
+ return match[1];
+}
+function assertMenuControlAligned(home=local.localHome(),root=local.ROOT){
+ const app=path.join(home,'menu','Airodrom.app');
+ if(!fs.existsSync(app))throw Error('Native menu app is not prepared.');
+ validateTree(app);
+ const control=readControlPath(app),expected=expectedControl(root);
+ if(control!==expected)throw Error('Menu AirodromControl points at a different installation than the prepared root.');
+ return {app,control,aligned:true};
+}
 function prepare(home=local.localHome()){
  const version=process.versions.node.split('.').map(Number);if(version[0]!==22||version[1]<23||version[1]===23&&version[2]<3)throw Error('Native menu preparation requires supported Node 22.23.3 or later in the 22.x line.');
  local.privateDirectory(home,true);local.privateDirectory(path.join(home,'data'),true);
@@ -21,4 +37,4 @@ function prepare(home=local.localHome()){
  }finally{fs.rmSync(staging,{recursive:true,force:true});}
 }
 if(require.main===module)try{prepare();console.log('Native Airodrom menu prepared. No service or login settings changed.');}catch(e){console.error(e.message);process.exitCode=1;}
-module.exports={prepare,validateTree};
+module.exports={prepare,validateTree,expectedControl,readControlPath,assertMenuControlAligned};
