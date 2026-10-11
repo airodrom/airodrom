@@ -60,7 +60,7 @@ Performed without tip cutover or credential/tunnel rotation:
 | Discovered port | **60487** |
 | Menu control path | tip `…/525458c/scripts/macos/product-control.cjs` |
 | Candidate (not installed) | `install/airodrom-master-completion-3dc3e8c` @ `3dc3e8c` |
-| Feature branch head | `c474074` on PR #70 (recovery `552266d` + report SHA note) |
+| Feature branch | `feat/master-personal-ai-completion` on PR #70 (recovery landed in `552266d`) |
 | PR | [#70](https://github.com/airodrom/airodrom/pull/70) |
 
 ## 6. Service health
