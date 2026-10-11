@@ -66,13 +66,19 @@ Classification: **VERIFIED** under synthetic fixtures. Not production live quali
 | Public release prep | **VERIFIED** (prior gate; no new publish) |
 | WhatsApp | **BLOCKED** (policy HOLD) |
 
-## 11. Remaining external blockers
+## 11. Remaining external blockers / known gaps
+
+From post-implementation audits of tip `525458c` (pre-change) plus this branch:
 
 1. Owner authorization for any installed-service cutover / PR merge.
 2. Live ChatGPT MCP tunnel session verification (credentials/tunnel not modified).
 3. WhatsApp personal AI — Meta terms **NOT SUPPORTED** for Canada GP assistant.
-4. Draft PRs #36–#38 remain owner-review items.
+4. Draft PRs #36–#38 remain owner-review items (KeepAlive supervision, DeepSeek reserve, ops recovery tip).
 5. Pi is removed — Mission text asking to “preserve Pi rollback” conflicts with shipped architecture; OpenCode is sole default execution runtime.
+6. No MCP `verify_mission` tool — independent verification stays host `MissionVerifier` + operator Acceptance (by design).
+7. Mission state vocabulary is dual (`mission-lifecycle.js` vs control-plane store extras); not unified this Mission.
+8. Personal Memory logical erase is **VERIFIED**; physical/forensic wipe remains **unclaimed** (`PRIVACY-ERASURE.md`).
+9. Bootstrap maintenance / launch-barrier scripts present in dirty operator WIP are **absent** on this tip — do not invent cutover from operator checkout.
 
 ## 12. Git
 
