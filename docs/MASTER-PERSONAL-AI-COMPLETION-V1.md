@@ -79,9 +79,9 @@ After tip cutover, point the ChatGPT MCP connector at the Airodrom MCP HTTP endp
 
 - Branch: `feat/master-personal-ai-completion`
 - Base: `origin/main` @ `525458c`
-- Prior commits: `3f81b57`, `fc38e27`
-- This completion wave: see newest commit(s) on the branch after push
-- Draft PR: created when push/permissions allow; **not merged**
+- Commits: `3f81b57` → `fc38e27` → `305f03c` (lifecycle unify + verification evidence)
+- Draft PR: https://github.com/airodrom/airodrom/pull/70 — **not merged**
+- Focused tests: **75 passed**, 1 skipped, 0 failed (`NODE_ENV=test`)
 
 ## 13. Production status
 
