@@ -1,3 +1,10 @@
+## Unreleased — Context & Personal Memory V2 end-to-end
+
+- Align broker/MCP read contracts so ChatGPT `personal_memory_search` / `personal_memory_recent` / `memory_search` accept optional bounded `limit` and default `domain=personal` for recent without weakening unknown-key rejection.
+- Honor `limit` on personal and legacy memory search execution paths; keep defaults (6 / 4) when omitted.
+- Add synthetic contract + acceptance suites for create/retrieve/continuity/correction/forget/isolation/injection/restart. Live owner store untouched.
+- Document canonical tool schemas and SOURCE FIXED vs INSTALLED distinction in [MEMORY-V2.md](docs/MEMORY-V2.md).
+
 ## Unreleased — Master Production Cutover Readiness V3
 
 - Prepared isolated candidate install from exact PR tip `3dc3e8c` (27 MCP tools); qualified with focused tests and typechecks. Production tip unchanged (**CUTOVER HOLD**).

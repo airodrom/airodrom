@@ -119,10 +119,13 @@ function validateWorkerToolInput(toolName, input) {
       validId(input.memoryId, 'memoryId'); return input;
     }
     if (toolName === 'personal_memory_search') {
-      if (!validKeys(input, ['query'], ['domain'])) throw new Error('Invalid personal_memory_search capability input');
-      boundedText(input.query, 'personal memory query', 4_000); optionalEnum(input.domain, DOMAINS, 'memory domain'); return input;
+      // query required; domain defaults to personal at execution; limit bounds result count (1–20).
+      if (!validKeys(input, ['query'], ['domain', 'limit'])) throw new Error('Invalid personal_memory_search capability input');
+      boundedText(input.query, 'personal memory query', 4_000); optionalEnum(input.domain, DOMAINS, 'memory domain');
+      optionalInteger(input.limit, 'memory limit', { minimum: 1, maximum: 20 }); return input;
     }
-    if (!validKeys(input, ['domain'], ['limit'])) throw new Error('Invalid personal_memory_recent capability input');
+    // domain defaults to personal at execution when omitted (matches bridge scope helper).
+    if (!validKeys(input, [], ['domain', 'limit'])) throw new Error('Invalid personal_memory_recent capability input');
     optionalEnum(input.domain, DOMAINS, 'memory domain'); optionalInteger(input.limit, 'memory limit', { minimum: 1, maximum: 20 }); return input;
   }
   if (PERSONAL_MEMORY_WRITE_TOOLS.has(toolName)) {
@@ -257,7 +260,7 @@ function validateToolInput(toolName, input) {
   const rules = {
     read: [['path'], ['offset', 'limit']], ls: [[], ['path']], find: [[], ['path', 'pattern', 'type', 'maxDepth']],
     grep: [['pattern'], ['path', 'offset', 'limit']], write: [['path', 'content'], []], edit: [['path', 'edits'], []],
-    run_job: [['jobName'], ['target']], mission_checkpoint: [['checkpoint'], []], memory_search: [['query'], []],
+    run_job: [['jobName'], ['target']], mission_checkpoint: [['checkpoint'], []], memory_search: [['query'], ['limit']],
     web_fetch: [['url'], ['method']], chatgpt_notify: [['session_id', 'request_id', 'event'], []],
     capability: [['name'], ['input']]
   }[toolName];
@@ -274,7 +277,10 @@ function validateToolInput(toolName, input) {
     return input;
   }
   if (toolName === 'run_job' && input.target !== undefined && (typeof input.target !== 'string' || !input.target || input.target.length > 4096)) throw new Error('Invalid trusted development test target');
-  if (toolName === 'memory_search' && (typeof input.query !== 'string' || input.query.length > 4000)) throw new Error('Invalid memory query');
+  if (toolName === 'memory_search') {
+    if (typeof input.query !== 'string' || input.query.length > 4000) throw new Error('Invalid memory query');
+    optionalInteger(input.limit, 'memory limit', { minimum: 1, maximum: 20 });
+  }
   if (toolName === 'web_fetch' && (typeof input.url !== 'string' || input.url.length > 2048 || (input.method !== undefined && !['GET', 'HEAD'].includes(input.method)))) throw new Error('Invalid web request');
   if (toolName === 'capability') {
     if (typeof input.name !== 'string' || !/^[a-z][a-z0-9_]{1,63}$/.test(input.name)) throw new Error('Invalid capability name');
@@ -318,7 +324,7 @@ function auditInput(toolName, input) {
   if (WORKER_READ_TOOLS.has(toolName) || WORKER_WRITE_TOOLS.has(toolName)) {
     const audit = {};
     for (const [key, value] of Object.entries(input)) {
-      if (/^(?:memoryId|projectId|goalId|missionId|domain|status|sensitivity|confidence|expiresAt|priority|autonomyLevel)$/u.test(key)) audit[key] = value;
+      if (/^(?:memoryId|projectId|goalId|missionId|domain|status|sensitivity|confidence|expiresAt|priority|autonomyLevel|limit)$/u.test(key)) audit[key] = value;
       else if (Array.isArray(value)) Object.assign(audit, { [`${key}Count`]: value.length, [`${key}Sha256`]: hash(JSON.stringify(value)) });
       else if (typeof value === 'string') Object.assign(audit, { [`${key}Bytes`]: Buffer.byteLength(value), [`${key}Sha256`]: hash(value) });
     }
@@ -341,7 +347,10 @@ function auditInput(toolName, input) {
     return result;
   }
   if (toolName === 'mission_checkpoint') { const checkpoint = JSON.stringify(input.checkpoint) || ''; return { checkpointSha256: hash(checkpoint), checkpointBytes: Buffer.byteLength(checkpoint) }; }
-  if (toolName === 'memory_search') { const query = typeof input.query === 'string' ? input.query : ''; return { queryBytes: Buffer.byteLength(query), querySha256: hash(query) }; }
+  if (toolName === 'memory_search') {
+    const query = typeof input.query === 'string' ? input.query : '';
+    return { queryBytes: Buffer.byteLength(query), querySha256: hash(query), ...(input.limit !== undefined ? { limit: input.limit } : {}) };
+  }
   if (toolName === 'chatgpt_notify') return { eventType: input.event?.event_type, eventId: input.event?.event_id, summaryBytes: Buffer.byteLength(typeof input.event?.summary === 'string' ? input.event.summary : '') };
   if (toolName === 'run_job') return { jobName: input.jobName };
   if (toolName === 'capability') return require('./capability-host').auditCapabilityInput(input.name, input.input);

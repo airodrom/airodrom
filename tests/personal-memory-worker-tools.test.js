@@ -86,9 +86,15 @@ test('Pi worker memory writes become candidates; approved legacy reads remain sc
   const found = await call(bridge, current.id, 'personal_memory_search', { query: 'concise review', domain: 'personal' });
   assert.equal(found.allow, true);
   assert.equal(JSON.parse(found.output).items[0].memoryId, personal.memoryId);
+  const chatgptSearch = await call(bridge, current.id, 'personal_memory_search', { query: 'concise review', limit: 5 });
+  assert.equal(chatgptSearch.allow, true, chatgptSearch.decision?.reason);
+  assert.equal(JSON.parse(chatgptSearch.output).items[0].memoryId, personal.memoryId);
   const recent = await call(bridge, current.id, 'personal_memory_recent', { domain: 'personal', limit: 5 });
   assert.equal(recent.allow, true);
   assert.equal(JSON.parse(recent.output).items[0].memoryId, personal.memoryId);
+  const chatgptRecent = await call(bridge, current.id, 'personal_memory_recent', { limit: 5 });
+  assert.equal(chatgptRecent.allow, true, chatgptRecent.decision?.reason);
+  assert.equal(JSON.parse(chatgptRecent.output).items[0].memoryId, personal.memoryId);
   const got = await call(bridge, current.id, 'personal_memory_get', { memoryId: personal.memoryId });
   assert.equal(JSON.parse(got.output).item.content, 'Use concise review summaries.');
   const updated = await autoCall(bridge, current.id, 'personal_memory_update', {

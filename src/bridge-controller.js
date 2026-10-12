@@ -155,7 +155,12 @@ class BridgeController extends EventEmitter {
     const readOnlyTools = {
       mission_checkpoint: input => { if (Object.keys(input).join() !== 'checkpoint') throw new Error('Invalid checkpoint input'); validateCheckpoint(input.checkpoint, { model: true }); },
       web_fetch: input => this.web.validate(input),
-      memory_search: input => { if (Object.keys(input).some(k => k !== 'query') || typeof input.query !== 'string' || input.query.length > 4000) throw new Error('Invalid memory query'); },
+      memory_search: input => {
+        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid memory query');
+        const keys = Object.keys(input);
+        if (!keys.includes('query') || keys.some(k => k !== 'query' && k !== 'limit') || typeof input.query !== 'string' || input.query.length > 4000) throw new Error('Invalid memory query');
+        if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 20)) throw new Error('Invalid memory limit');
+      },
       chatgpt_notify: input => { if (!input || Object.keys(input).sort().join(',') !== 'event,request_id,session_id' || typeof input.session_id !== 'string' || typeof input.request_id !== 'string') throw new Error('Invalid event correlation'); validateEvent(input.event); }
     };
     for (const toolName of WORKER_READ_TOOLS) readOnlyTools[toolName] = input => validateWorkerToolInput(toolName, input);
@@ -238,7 +243,8 @@ class BridgeController extends EventEmitter {
         return { id: saved.id, createdAt: saved.createdAt };
       },
       memorySearch: (task, input) => {
-        const result = this.memory.search(input.query, { taskId: task.id, includeShared: task.includeSharedMemory === true, limit: 4, maxChars: 4000 });
+        const limit = Number.isSafeInteger(input.limit) ? input.limit : 4;
+        const result = this.memory.search(input.query, { taskId: task.id, includeShared: task.includeSharedMemory === true, limit, maxChars: 4000 });
         task.retrievedMemory = result.items; task.retrievalBudget = { usedChars: result.usedChars, estimatedTokens: result.estimatedTokens, truncated: result.truncated };
         this.tasks.save(task); return result;
       },
@@ -1282,7 +1288,8 @@ class BridgeController extends EventEmitter {
     }
     if (toolName === 'personal_memory_search') {
       const scope = this._personalMemoryScopeForTask(task, input.domain || 'personal');
-      return this.personalMemory.search(input.query, { ...scope, limit: 6, maxChars: 4_000, includeSensitive: false });
+      const limit = Number.isSafeInteger(input.limit) ? input.limit : 6;
+      return this.personalMemory.search(input.query, { ...scope, limit, maxChars: 4_000, includeSensitive: false });
     }
     if (toolName === 'personal_memory_recent') {
       const scope = this._personalMemoryScopeForTask(task, input.domain || 'personal');
