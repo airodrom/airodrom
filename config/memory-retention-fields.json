@@ -203,6 +203,21 @@
       "acceptance_strength": "A"
     }
   },
+  "cp_mission_visibility": {
+    "fields": [
+      "mission_id",
+      "archived",
+      "archived_at",
+      "reason"
+    ],
+    "source": "src/mission-visibility.js",
+    "classification": {
+      "mission_id": "A",
+      "archived": "A",
+      "archived_at": "A",
+      "reason": "A"
+    }
+  },
   "cp_grants": {
     "fields": [
       "id",

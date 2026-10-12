@@ -77,8 +77,79 @@ function progress({state, checks = [], declaredChecks = null} = {}) {
  return {mode:ACTIVE.includes(state)?'indeterminate':'paused',label:ACTIVE.includes(state)?'Observed activity; completion denominator unavailable':'No advancing activity observed'};
 }
 const checkLabel = (key, index) => ({read_only_boundary:'Read-only confinement and termination',response:'Response factual accuracy',runtime_provenance:'Runtime provenance',repository_v2:'Repository boundary',creation_repository_v2:'Original scope',workspace:'Workspace available',protected_files:'Protected files',expected_changes:'Expected changes',git_status:'Repository status',task_owned_diff:'Task-owned diff',verification_workspace_stable:'Verification workspace stability',verification_available:'Verification available',native_execution:'Native execution'})[key] || 'Declared check '+(index+1);
+function displayStatus(state, { started = false, settled = false, archived = false } = {}) {
+  if (archived) return { key: 'archived', label: 'Archived', tone: 'muted' };
+  if (settled && state === 'completed') return { key: 'settled', label: 'Settled', tone: 'ready' };
+  if (state === 'draft' || (state === 'ready' && !started)) return { key: 'registered', label: 'Registered — execution not started', tone: 'waiting' };
+  return {
+    key: state,
+    label: ({
+      ready: 'Ready to execute',
+      dispatching: 'Queued',
+      running: 'Running',
+      verifying: 'Independent verification',
+      awaiting_acceptance: 'Waiting for approval',
+      waiting_for_operator: 'Waiting for operator',
+      paused: 'Paused',
+      blocked: 'Blocked',
+      needs_rework: 'Needs rework',
+      completed: 'Completed',
+      cancelled: 'Cancelled'
+    })[state] || 'Not observed',
+    tone: ({ dispatching: 'ready', running: 'ready', verifying: 'ready', awaiting_acceptance: 'waiting', waiting_for_operator: 'waiting', needs_rework: 'degraded', blocked: 'degraded', completed: 'ready', cancelled: 'muted', paused: 'waiting', ready: 'waiting', draft: 'waiting' })[state] || 'muted'
+  };
+}
+function autonomousManaged(bridge, missionId) {
+  try {
+    const row = bridge.controlStore.db.prepare('SELECT p.goal_plan FROM cp_mission_programs p JOIN cp_mission_program_nodes n ON n.program_id=p.id WHERE n.mission_id=?').get(missionId);
+    if (!row?.goal_plan) return false;
+    const plan = JSON.parse(row.goal_plan);
+    return plan.autonomous?.enabled === true && plan.autonomous?.paused !== true;
+  } catch { return false; }
+}
+function outcomeSummary(view) {
+  const verified = view.verification?.status === 'passed' && view.verification?.current === true;
+  const failedVerify = view.verification?.status === 'failed';
+  if (view.archived) return { kind: 'archived', headline: 'Archived', detail: 'Hidden from the primary list; canonical evidence retained.', success: false };
+  if (view.actions?.accept) return { kind: 'decision', headline: 'Owner decision required', detail: verified ? 'Independent verification passed — Acceptance is still required.' : 'Review verification evidence before Acceptance.', success: false };
+  if (view.state === 'waiting_for_operator') return { kind: 'decision', headline: 'Owner decision required', detail: 'Autonomous execution cannot proceed past this gate.', success: false };
+  if (ACTIVE.includes(view.state)) return { kind: 'progress', headline: view.display?.label || 'In progress', detail: view.latest_activity || 'Airodrom is executing within authorized bounds.', success: false };
+  if (view.state === 'needs_rework' || view.state === 'blocked') {
+    if (view.autonomous_managed) return { kind: 'progress', headline: 'Autonomous recovery', detail: 'Airodrom will repair and retry within the authorized goal budget.', success: false };
+    return { kind: 'attention', headline: view.display?.label || 'Needs attention', detail: view.latest_activity || 'Owner or template action required before progress continues.', success: false };
+  }
+  if (view.state === 'completed' && view.settlement?.status === 'settled' && verified) return { kind: 'result', headline: 'Verified result settled', detail: 'Independent verification and Acceptance are recorded.', success: true };
+  if (view.state === 'completed' && verified) return { kind: 'result', headline: 'Verified — awaiting Settlement', detail: 'Do not treat worker completion alone as success.', success: false };
+  if (view.state === 'completed') return { kind: 'result', headline: 'Completed — verification incomplete', detail: failedVerify ? 'Independent verification failed.' : 'No current independent verification — not a verified success.', success: false };
+  if (view.state === 'cancelled') return { kind: 'result', headline: 'Cancelled', detail: 'No verified outcome.', success: false };
+  if (view.state === 'draft' || view.state === 'ready') return { kind: 'registered', headline: 'Registered — execution not started', detail: 'Not running work.', success: false };
+  return { kind: 'observed', headline: view.display?.label || 'Status observed', detail: view.latest_activity || null, success: false };
+}
+function nextActionFor(mission, view) {
+  if (view.archived) return 'Restore from archive only if you need this Mission in the primary list again.';
+  if (view.actions?.accept) return 'Owner decision required: review Acceptance, then accept or request rework.';
+  if (view.state === 'waiting_for_operator') return 'Owner decision required before autonomous work can continue.';
+  if (view.autonomous_managed && (ACTIVE.includes(view.state) || ['needs_rework', 'blocked', 'ready'].includes(view.state))) {
+    return null; // Autonomous path — no routine Continue / Retry / Next Mission.
+  }
+  if (view.state === 'draft' || (view.state === 'ready' && !view.started_at)) return 'Register a bounded workspace template, or cancel if this draft is no longer needed.';
+  if (view.state === 'needs_rework') return 'Owner action: inspect evidence, then authorize rework if autonomous execution is not enabled.';
+  if (view.state === 'blocked') return 'Owner action: resolve the blocker if autonomous recovery is not authorized.';
+  if (view.actions?.dispatch) return 'Run only when you intentionally start this Mission outside autonomous execution.';
+  if (ACTIVE.includes(view.state)) return null;
+  if (view.state === 'completed' && view.verification?.status === 'passed' && view.settlement?.status !== 'settled' && view.actions?.accept) return 'Owner decision required: Acceptance.';
+  if (view.state === 'completed' && view.settlement?.status !== 'settled' && view.acceptance?.status === 'accept') return null;
+  if (view.state === 'completed' || view.state === 'cancelled') return null;
+  return null;
+}
 function missionView(bridge, mission) {
- if(mission.envelope.kind==='work_request')return {id:id(mission.id),task_id:null,state:mission.state,revision:count(mission.revision),label:'Work Mission draft',workspace:'Scope required',runtime:null,created_at:time(mission.created_at),observed_at:Date.now(),authority:{status:'none; scope and registered checks required'},budget:{},memory:{selected_count:0,delivery:'not requested'},verification:{current:false,status:'not_observed',checks:[]},acceptance:{status:'not_applicable'},settlement:{status:'not_applicable'},termination:{verified:true,process_state:'not_started'},attempts:0,progress:progress({state:mission.state}),timeline:[],actions:{cancel:mission.state!=='cancelled',dispatch:false,accept:false}};
+ const visibility = require('./mission-visibility');
+ visibility.ensure(bridge.controlStore.db);
+ const archived = visibility.isArchived(bridge.controlStore.db, mission.id);
+ if(mission.envelope.kind==='work_request'){
+  const base={id:id(mission.id),task_id:null,state:enumValue(mission.state,STATES),revision:count(mission.revision),label:'Work Mission draft',workspace:'Scope required',runtime:null,worker_assigned:false,created_at:time(mission.created_at),started_at:null,finished_at:null,observed_at:Date.now(),authority:{status:'none; scope and registered checks required'},budget:{},memory:{selected_count:0,delivery:'not requested'},verification:{current:false,status:'not_observed',checks:[]},acceptance:{status:'not_applicable'},settlement:{status:'not_applicable'},termination:{verified:true,process_state:'not_started'},attempts:0,progress:progress({state:mission.state}),timeline:[],latest_activity:'Registered — execution not started',archived,actions:{cancel:mission.state!=='cancelled',dispatch:false,accept:false,archive:visibility.archiveEligible(mission),restore:archived}};
+  base.autonomous_managed=false;base.display=displayStatus(base.state,{archived});base.outcome=outcomeSummary(base);base.next_action=nextActionFor(mission,base);base.actions.dispatch=false;return base;
+ }
  const db=bridge.controlStore.db, runs=db.prepare('SELECT id,agent_id,state,created_at,updated_at,termination_verified,process_state FROM cp_runs WHERE mission_id=? ORDER BY created_at DESC LIMIT 200').all(mission.id);
  const worker=db.prepare('SELECT r.id,r.agent_id,r.state,r.created_at,r.updated_at,r.termination_verified,r.process_state FROM cp_runs r JOIN cp_dispatches d ON d.run_id=r.id WHERE d.mission_id=? ORDER BY r.created_at DESC LIMIT 1').get(mission.id), task=bridge.tasks.get(mission.task_id);
  const verification=db.prepare('SELECT id,run_id,revision,result,evidence,created_at FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC LIMIT 1').get(mission.id);
@@ -94,7 +165,10 @@ function missionView(bridge, mission) {
  const delivered=contextCurrent&&ev.events.some(e=>e.event_type==='runtime.context.delivered' && e.metadata?.context_pack_id===context?.id && e.run_id===worker?.id);
  const workerProvenance=worker?.id?bridge.controlStore.run(worker.id).result?.worker_provenance:null;
  const state=enumValue(mission.state,STATES),budget=task.mission?.budget,used=task.mission?.used;
- return {id:id(mission.id),task_id:id(mission.task_id),state,revision:count(mission.revision),label:mission.envelope.kind==='conversation'?'Bounded local conversation':mission.envelope.kind==='browser_research'?'Arecibo product research':'Scoped Mission',workspace:mission.envelope.kind==='conversation'?'Isolated workspace':'Registered workspace',runtime:enumValue(worker?.agent_id||mission.envelope.preferred_agent,['opencode','host','claude_code','codex','cursor']),created_at:time(mission.created_at),started_at:time(worker?.created_at),finished_at:worker?.termination_verified===1&&['completed','failed','cancelled','blocked'].includes(worker.state)?time(worker.updated_at):null,observed_at:Date.now(),
+ const workerAssigned=!!worker?.agent_id;
+ // Prefer an observed worker run; preferred_agent alone is not an assignment error on drafts.
+ const runtime=workerAssigned?enumValue(worker.agent_id,['opencode','host','claude_code','codex','cursor']):(['draft','ready'].includes(state)?null:enumValue(mission.envelope.preferred_agent,['opencode','host','claude_code','codex','cursor'],null));
+ const view={id:id(mission.id),task_id:id(mission.task_id),state,revision:count(mission.revision),label:mission.envelope.kind==='conversation'?'Bounded local conversation':mission.envelope.kind==='browser_research'?'Arecibo product research':'Scoped Mission',workspace:mission.envelope.kind==='conversation'?'Isolated workspace':'Registered workspace',runtime,worker_assigned:workerAssigned,created_at:time(mission.created_at),started_at:time(worker?.created_at),finished_at:worker?.termination_verified===1&&['completed','failed','cancelled','blocked'].includes(worker.state)?time(worker.updated_at):null,observed_at:Date.now(),
   model:mission.envelope.worker_contract?{id:mission.envelope.model,provider:mission.envelope.model_provider,locality:'external',mode:mission.envelope.model_route_mode,declared_context_limit:null,effective_context_limit:null,context_usage:null,tokens:workerProvenance?.usage||null,cost:null,requested:mission.envelope.worker_contract.model,observed:workerProvenance?.observed_model||null}:mission.envelope.preferred_agent==='opencode'&&mission.envelope.model===require('./model-worker-router').MODEL?{id:mission.envelope.model,provider:'ollama',locality:'local',mode:mission.envelope.model_route_mode||'AUTO',declared_context_limit:null,effective_context_limit:null,context_usage:null,tokens:null,cost:null}:null,
   attempts:db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=? AND run_id IS NOT NULL').get(mission.id).n,authority:{status:task.mission?.authorityRevoked?'revoked':'registered; current admission checked by host',expires_at:time(mission.envelope.manifest?.expires_at)},
   ...(['coding','browser_research'].includes(mission.envelope.kind)&&bridge.missions._web?{web:bridge.missions.web.status(mission.id)}:{}),
@@ -106,16 +180,22 @@ function missionView(bridge, mission) {
     const auto=!!(acceptance?.decision==='accept'&&(mission.envelope.risk_auto_acceptance?.authorized||mission.envelope.fixture_auto_acceptance?.authorized||mission.envelope.automatic_acceptance));
     const reviewReason=state==='awaiting_acceptance'?(bridge.missions.riskAcceptance?.reviewReason(mission.id)||null):null;
     return{
-      status:enumValue(acceptance?.decision,['accept','rework'],'pending'),
+      status:enumValue(acceptance?.decision,['accept','rework'], state==='draft'?'not_applicable':'pending'),
       at:time(acceptance?.created_at),
       mode:enumValue(auto?'automatically_verified':state==='awaiting_acceptance'||state==='waiting_for_operator'?'needs_operator_review':'not_applicable',['automatically_verified','needs_operator_review','not_applicable']),
       review_reason:typeof reviewReason==='string'&&reviewReason.length<=120?reviewReason:null
     };
   })(),
   settlement:{status:enumValue(settlement?.state,['waiting_acceptance','needs_rework','settled'],'not_observed'),at:time(settlement?.updated_at)},
-  termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','unknown','not_started'])},
-  progress:progress({state}),timeline:history,history_truncated:ev.has_more,
-  actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent}};
+  termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','unknown','not_started'],'not_started')},
+  progress:progress({state}),timeline:history,history_truncated:ev.has_more,latest_activity:history.at(-1)?.label||(state==='draft'||state==='ready'?'Registered — execution not started':null),
+  archived,actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent,archive:visibility.archiveEligible(mission)&&!archived,restore:archived}};
+ view.autonomous_managed=autonomousManaged(bridge,mission.id);
+ view.display=displayStatus(state,{started:!!view.started_at,settled:view.settlement.status==='settled',archived});
+ view.outcome=outcomeSummary(view);
+ view.next_action=nextActionFor(mission,view);
+ if(view.autonomous_managed)view.actions.dispatch=false;
+ return view;
 }
 function runtimeView(ready) {
  const reason=enumValue(ready?.reason,['opencode_runtime_pins_changed','opencode_unavailable','opencode_version_unqualified','opencode_local_provider_unavailable','opencode_local_provider_not_configured'],ready?.ready===true?null:'opencode_unavailable');
@@ -189,28 +269,69 @@ function operatorTitle(bridge, mission) {
   return require('./event-ledger').redactPayload(projected).value.replace(/[\x00-\x1f\x7f]/g,' ').slice(0,180)||'Scoped Mission';
  }catch{return 'Title unavailable';}
 }
-const FILTERS=['All','Active','Awaiting Review','Completed','Failed','Settled'];
+const FILTERS=['All','Active','Needs Attention','Recent','History','Archived','Awaiting Review','Completed','Failed','Settled'];
+const PAGE_SIZES=[10,15,25,50];
+const RECENT_MS=14*24*60*60*1000;
 function missionIndex(bridge){return bridge.controlStore.db.prepare('SELECT id FROM cp_missions ORDER BY created_at DESC,id DESC').all().map(row=>bridge.missions.require(row.id,'operator'));}
-function matchesFilter(m,filter,settled){return filter==='All'||filter==='Active'&&ACTIVE.includes(m.state)||filter==='Awaiting Review'&&['awaiting_acceptance','waiting_for_operator'].includes(m.state)||filter==='Completed'&&m.state==='completed'||filter==='Failed'&&['blocked','needs_rework'].includes(m.state)||filter==='Settled'&&settled.has(m.id);}
 function settledIds(bridge){return new Set(bridge.controlStore.db.prepare("SELECT mission_id FROM cp_mission_settlements WHERE state='settled'").all().map(r=>r.mission_id));}
+function matchesFilter(m,filter,settled,archived){
+ const isArchived=archived.has(m.id);
+ if(filter==='Archived')return isArchived;
+ if(isArchived)return false;
+ if(filter==='All')return true;
+ if(filter==='Active')return ACTIVE.includes(m.state);
+ if(filter==='Needs Attention'||filter==='Awaiting Review')return filter==='Awaiting Review'?['awaiting_acceptance','waiting_for_operator'].includes(m.state):['awaiting_acceptance','waiting_for_operator','blocked','needs_rework'].includes(m.state);
+ if(filter==='Failed')return ['blocked','needs_rework'].includes(m.state);
+ if(filter==='Completed')return m.state==='completed';
+ if(filter==='Settled')return settled.has(m.id);
+ if(filter==='Recent')return !ACTIVE.includes(m.state)&&!['awaiting_acceptance','waiting_for_operator','blocked','needs_rework'].includes(m.state)&&(Date.now()-(m.created_at||0)<=RECENT_MS||['completed','cancelled'].includes(m.state));
+ if(filter==='History')return ['completed','cancelled','draft','ready','paused','blocked','needs_rework'].includes(m.state)&&!ACTIVE.includes(m.state)&&!['awaiting_acceptance','waiting_for_operator'].includes(m.state);
+ return false;
+}
 function missionCounts(bridge,missions=missionIndex(bridge)){
- const settled=settledIds(bridge);
- return Object.fromEntries(FILTERS.map(name=>[name,missions.filter(m=>matchesFilter(m,name,settled)).length]));
+ const settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db);
+ return Object.fromEntries(FILTERS.map(name=>[name,missions.filter(m=>matchesFilter(m,name,settled,archived)).length]));
+}
+function missionListItem(bridge,mission,{settled,archived}){
+ const title=operatorTitle(bridge,mission);
+ const full=missionView(bridge,mission);
+ const isArchived=archived.has(mission.id);
+ return {
+  id:full.id,label:title,state:full.state,display:full.display,outcome:full.outcome,runtime:full.runtime,worker_assigned:full.worker_assigned,
+  created_at:full.created_at,started_at:full.started_at,finished_at:full.finished_at,
+  latest_activity:full.latest_activity,next_action:full.next_action,archived:isArchived,autonomous_managed:full.autonomous_managed,
+  verification:{status:full.verification.status,current:full.verification.current},
+  acceptance:{status:full.acceptance.status},settlement:{status:full.settlement.status},
+  actions:{accept:full.actions.accept,archive:full.actions.archive,restore:full.actions.restore,cancel:full.actions.cancel,dispatch:full.actions.dispatch},
+  task_id:full.task_id,model:full.model?{id:full.model.id}:null
+ };
 }
 function missionHistory(bridge,url){
  require('./memory-content-erasure').assertReadable(bridge.controlStore.db);
- const filter=url.searchParams.get('filter')||'All',query=(url.searchParams.get('query')||'').trim().toLowerCase(),offset=Number(url.searchParams.get('offset')||0);
- if(!FILTERS.includes(filter)||query.length>180||!Number.isSafeInteger(offset)||offset<0)throw Error('Invalid Mission history query');
- const matches=[],missions=missionIndex(bridge),settled=settledIds(bridge);let total=0;
- // Search the current display projection, never erased raw text; page every retained record.
- for(const mission of missions){
-  if(!matchesFilter(mission,filter,settled))continue;
+ require('./mission-visibility').ensure(bridge.controlStore.db);
+ const filter=url.searchParams.get('filter')||'All',query=(url.searchParams.get('query')||'').trim().toLowerCase();
+ const offset=Number(url.searchParams.get('offset')||0);
+ const limitRaw=url.searchParams.has('limit')?Number(url.searchParams.get('limit')):25;
+ const worker=(url.searchParams.get('worker')||'').trim().toLowerCase();
+ const sort=url.searchParams.get('sort')||'newest';
+ if(!FILTERS.includes(filter)||query.length>180||!Number.isSafeInteger(offset)||offset<0||!PAGE_SIZES.includes(limitRaw)||(worker&&!['opencode','host','claude_code','codex','cursor','none'].includes(worker))||!['newest','oldest'].includes(sort))throw Error('Invalid Mission history query');
+ const limit=limitRaw;
+ const missions=missionIndex(bridge),settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db);
+ const ranked=sort==='oldest'?[...missions].reverse():missions;
+ const matches=[];let total=0;
+ for(const mission of ranked){
+  if(!matchesFilter(mission,filter,settled,archived))continue;
   const title=operatorTitle(bridge,mission);
-  if(query&&![mission.id,title,mission.state,mission.envelope.preferred_agent||''].join(' ').toLowerCase().includes(query))continue;
-  if(total>=offset&&matches.length<25)matches.push({...missionView(bridge,mission),label:title});
+  const preferred=(mission.envelope.preferred_agent||'').toLowerCase();
+  const run=bridge.controlStore.db.prepare('SELECT r.agent_id FROM cp_runs r JOIN cp_dispatches d ON d.run_id=r.id WHERE d.mission_id=? ORDER BY r.created_at DESC LIMIT 1').get(mission.id);
+  const assigned=(run?.agent_id||'').toLowerCase();
+  if(worker==='none'?(assigned||preferred):worker&&assigned!==worker&&preferred!==worker)continue;
+  if(query&&![mission.id,title,mission.state,preferred,assigned].join(' ').toLowerCase().includes(query))continue;
+  if(total>=offset&&matches.length<limit)matches.push(missionListItem(bridge,mission,{settled,archived}));
   total++;
  }
- return {missions:matches,total,offset,has_more:offset+matches.length<total,filter,query,counts:missionCounts(bridge,missions),observed_at:Date.now(),scope:'All retained Missions · newest first · 25 per page'};
+ const page=Math.floor(offset/limit)+1,pages=total?Math.ceil(total/limit):1;
+ return {missions:matches,total,offset,limit,page,pages,has_more:offset+matches.length<total,filter,query,worker:worker||null,sort,counts:missionCounts(bridge,missions),observed_at:Date.now(),scope:`Missions · ${filter} · newest first · ${limit} per page · stable id tie-break`};
 }
 function notificationEvents(bridge,after){
  const epoch=bridge.runtimeFingerprint?.captured_at||null,latest=bridge.controlStore.db.prepare('SELECT coalesce(max(seq),0) n FROM event_ledger_events').get().n;
@@ -255,6 +376,19 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
     }:null
   };
  }catch{/* Cursor projection is best-effort. */}
+ const outcomesBoard=(()=>{
+   const attention=[],progress=[],results=[];
+   for(const m of missions){
+    const o=m.outcome||outcomeSummary(m);
+    let label=m.label;
+    try{const titled=operatorTitle(bridge,bridge.missions.require(m.id,'operator'));if(titled&&titled!=='Scoped Mission')label=titled;}catch{}
+    const row={id:m.id,label:label||'Mission',headline:o.headline,detail:o.detail,state:m.state};
+    if(o.kind==='decision'||o.kind==='attention')attention.push(row);
+    else if(o.kind==='progress')progress.push(row);
+    else if(o.kind==='result'&&['completed','cancelled'].includes(m.state))results.push({...row,success:o.success===true});
+   }
+   return {progress:progress.slice(0,8),decisions:attention.slice(0,12),results:results.slice(0,8),authority:false};
+  })();
  const overviewStatus=bridge.closed?'Unavailable':runtime.ready&&memoryReady&&ledger?.healthy===true&&!leases.some(l=>l.state==='quarantined')?'Ready':'Degraded';
  const connectivity=require('./connection-status').derive({authorized:true,reachable:true,overviewStatus,lastOkAt:Date.now(),maintenance:!!bridge.closed});
  const acceptanceConfig=(()=>{try{return bridge.missions.riskAcceptance.status();}catch{return{preference:{enabled:false},waits:require('./wait-presentation').status(bridge)};}})();
@@ -265,7 +399,7 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
   provider:{state:runtime.ready?'Ready':ready?.provider_ready===false?'Unavailable':'Unavailable',reason:runtime.ready?'Qualified local provider observed':'Readiness unavailable'},
   approvals:{waiting:pending,records:includeMissions?approvals:[],scope:'Up to 50 retained protected Approvals, pending first'},leases:{held:leases.find(l=>l.state==='held')?.count||0,quarantined:leases.find(l=>l.state==='quarantined')?.count||0},
   audit:{state:ledger?.healthy===true?'Ready':ledger?.state==='degraded'?'Degraded':'Unavailable',retained_events:count(db.prepare('SELECT count(*) n FROM event_ledger_events').get().n)},disk:{state:'Unavailable',reason:'Not checked'},
-  missions,mission_counts,current_mission_ids:current.map(m=>m.id),counts:{scope:'Recent 50 retained Missions plus a separate current Mission page',visible:missions.length,active:activeCount,review:reviewCount,failed:failedCount,current:currentCount,current_offset:currentOffset,current_page_size:current.length,current_has_more:currentOffset+current.length<currentCount},
+  missions,mission_counts,outcomes:outcomesBoard,current_mission_ids:current.map(m=>m.id),counts:{scope:'Recent 50 retained Missions plus a separate current Mission page',visible:missions.length,active:activeCount,review:reviewCount,failed:failedCount,current:currentCount,current_offset:currentOffset,current_page_size:current.length,current_has_more:currentOffset+current.length<currentCount},
   core_contracts:(()=>{try{return require('./core-contracts').manifest();}catch{return null;}})(),
   runtime_security:(()=>{try{return require('./runtime-security-conformance').evaluate(bridge);}catch{return null;}})(),
   installation_compatibility:(()=>{try{return require('./installation-compatibility').evaluate(bridge);}catch{return null;}})(),
@@ -305,4 +439,4 @@ function events(bridge,url) {
  const batch=bridge.ledger.list({afterSequence:after,limit:200,...(mission?{missionId:mission}:{})});
  return {events:timeline(batch.events).filter(e=>!category||e.category===category),cursor:batch.events.at(-1)?.sequence||after,has_more:batch.has_more,observed_at:Date.now()};
 }
-module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus,operatorTitle,missionHistory,missionCounts,notificationEvents};
+module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,FILTERS,PAGE_SIZES,displayStatus,outcomeSummary,autonomousManaged,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus,operatorTitle,missionHistory,missionCounts,notificationEvents};
