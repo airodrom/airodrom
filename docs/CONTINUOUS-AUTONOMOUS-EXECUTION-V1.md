@@ -46,10 +46,11 @@ Control-plane actions (authenticated): `authorize-autonomous-goal`, `pause-auton
 | SOURCE IMPLEMENTED | Code and docs on the feature branch |
 | LOCAL TESTS VERIFIED | Disposable fixture suite green |
 | ISOLATED END-TO-END VERIFIED | Full local lifecycle with synthetic workers |
+| ISOLATED REAL OPENCODE VERIFIED | Disposable CAE path with OpenCode 2.0.25 + local Ollama |
 | LIVE INSTALLATION QUALIFIED | Owner-gated install against running service |
 | PRODUCTION ACTIVATED | Owner-gated production mutation |
 
-This document covers the first three when tests pass. Live installation and production remain separately authorized.
+Fixture suites: `npm run test:cae`, `npm run test:cae:restart`. Isolated OpenCode: `npm run test:cae:opencode:live` (requires `AIRODROM_OPENCODE_LIVE=1`). Live installation and production remain separately authorized.
 
 ## Known limitations
 
