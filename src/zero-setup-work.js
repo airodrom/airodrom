@@ -335,10 +335,13 @@ class ZeroSetupWork {
       this.bridge.workTemplates.register({ ...live.proposal, confirmed: true }, 'operator');
       live.template_ready = true;
     }
+    const baseObjective = live.intent?.objective || live.instruction;
+    // Project mission names are unique per Goal; keep ZeroSetup retries from colliding.
+    const objective = String(baseObjective).slice(0, 160) + ' [' + String(request_id).slice(0, 8) + ']';
     const packet = {
       version: 2,
       request_id: 'zero-setup:' + request_id,
-      objective: live.intent?.objective || live.instruction,
+      objective,
       mission_class: 'WORK',
       data_class: 'public',
       privacy: 'local_only',
@@ -354,7 +357,7 @@ class ZeroSetupWork {
       id: 'work',
       depends_on: [],
       mission_id: submitted.mission_id,
-      objective: live.intent?.objective || live.instruction,
+      objective,
       acceptance_criteria: ['Independent host verification passed', 'Owner Acceptance remains required'],
       verification_requirements: ['exact_file_or_registered_tests', 'git_diff_check'],
       human_checkpoint: false,
