@@ -6,13 +6,24 @@
 // 'idle' therefore settles a run only for the host agent, and only with every
 // other proof present. Anything missing, NULL or unrecognised stays unresolved.
 // Global gates (dispatches, effects, invocations, in-memory leases) still apply.
+//
+// Durable waits (retry/Decision/permission) with verified termination and no live
+// process are settled for admission: they must survive restart without holding the
+// writer forever, then continue once admission reopens.
 const TERMINAL = ['completed', 'failed', 'cancelled', 'interrupted'];
+const DURABLE_WAIT = ['waiting_for_operator', 'waiting_for_permission'];
+const NO_ACTIVE_LEASE = `NOT EXISTS (SELECT 1 FROM cp_leases l WHERE l.run_id = r.id AND (l.state IS NULL OR l.state <> 'released'))`;
 
-const SETTLED_RUN = `(r.state IN ('${TERMINAL.join("','")}') AND r.termination_verified IS 1 AND (
+const SETTLED_RUN = `((
+  r.state IN ('${TERMINAL.join("','")}') AND r.termination_verified IS 1 AND (
   r.process_state IN ('exited','not_started')
   OR (r.process_state = 'idle' AND r.agent_id = 'host' AND r.liveness_state = 'settled'
       AND r.pid IS NULL AND r.ended_at IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM cp_leases l WHERE l.run_id = r.id AND (l.state IS NULL OR l.state <> 'released')))))`;
+      AND ${NO_ACTIVE_LEASE}))
+) OR (
+  r.state IN ('${DURABLE_WAIT.join("','")}') AND r.termination_verified IS 1
+  AND r.process_state = 'not_started' AND r.pid IS NULL AND ${NO_ACTIVE_LEASE}
+))`;
 
 // COALESCE turns any NULL comparison into "unresolved" rather than silently passing.
 const UNRESOLVED_RUNS_SQL = `SELECT count(*) n FROM cp_runs r WHERE COALESCE(${SETTLED_RUN}, 0) = 0`;
@@ -23,7 +34,9 @@ function unresolvedRuns(db) { return db.prepare(UNRESOLVED_RUNS_SQL).get().n; }
 function unresolvedReasons(db, limit = 20) {
   return db.prepare(`SELECT r.id run_id, r.agent_id, r.state, r.process_state, r.termination_verified, r.liveness_state FROM cp_runs r WHERE COALESCE(${SETTLED_RUN}, 0) = 0 ORDER BY r.updated_at DESC LIMIT ?`).all(limit)
     .map(r => ({ run_id: r.run_id, agent_id: r.agent_id, state: r.state, process_state: r.process_state,
-      reason: !TERMINAL.includes(r.state) ? 'not_terminal' : r.termination_verified !== 1 ? 'termination_unverified'
+      reason: !(TERMINAL.includes(r.state) || DURABLE_WAIT.includes(r.state)) ? 'not_terminal'
+        : DURABLE_WAIT.includes(r.state) ? 'durable_wait_unresolved'
+        : r.termination_verified !== 1 ? 'termination_unverified'
         : r.process_state === 'idle' ? (r.agent_id !== 'host' ? 'idle_outside_host' : 'idle_without_settlement_proof') : 'process_state_unresolved' }));
 }
 
@@ -44,4 +57,4 @@ function durableBlockers(db) {
   return out;
 }
 
-module.exports = { TERMINAL, SETTLED_RUN, UNRESOLVED_RUNS_SQL, DURABLE, unresolvedRuns, unresolvedReasons, durableBlockers };
+module.exports = { TERMINAL, DURABLE_WAIT, SETTLED_RUN, UNRESOLVED_RUNS_SQL, DURABLE, unresolvedRuns, unresolvedReasons, durableBlockers };

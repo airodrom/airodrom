@@ -63,7 +63,7 @@ test('credentials, absolute sensitive paths and protected locations remain fail-
     'api_key=supersecretvalue123',
     'password: hunter2hunter2',
     'token=ghp_abcdefghijklmnopqrstuvwxyz12',
-    '/Users/andrew/.airodrom/data/memory.sqlite',
+    '/Users/operator/.airodrom/data/memory.sqlite',
     '/home/operator/.airodrom/profile/settings.json',
     '~/secrets/token',
     'C:\\Users\\x\\credentials.json',

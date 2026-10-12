@@ -22,7 +22,7 @@ Post-cutover live Memory / ChatGPT / Mission / Web Chat gates remain **BLOCKED**
 | Remote | `https://github.com/airodrom/airodrom.git` |
 | `origin/main` | `525458c` |
 | Feature branch | `feat/master-personal-ai-completion` |
-| Operator checkout | `/Users/andrew/code/airodrom` — dirty / behind; **unchanged** |
+| Operator checkout | `~/code/airodrom` — dirty / behind; **unchanged** |
 | Worktree | `…/airodrom-master-completion/work/airodrom-completion` |
 | Package version | `1.0.1-rc.1` |
 | Open drafts preserved | #36 startup, #37 DeepSeek, #38 v1.8 ops — **not merged** |

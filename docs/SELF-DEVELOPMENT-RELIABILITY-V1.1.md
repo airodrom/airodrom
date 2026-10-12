@@ -53,6 +53,6 @@ Preserved OpenCode panel `public/development-sessions-panel.js`. Control Center 
 ## Limits
 
 - Automatic Acceptance OFF; no push/PR/hosted CI in this Mission.
-- Operator checkout `/Users/andrew/code/airodrom` untouched.
+- Operator checkout `~/code/airodrom` untouched.
 - Live install cutover still separate (panel not live until package cutover).
 - No AI/editor attribution.

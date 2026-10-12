@@ -128,7 +128,7 @@ test('safe runtime diagnostics export only whitelisted health, refuse non-loopba
 test('accepted handoff after restart can publish, but only trusted termination reconciliation resumes verification',async t=>{
  const s=await setup(t),c=claim(s);report(s,c,{accepted:true});await s.f.reopen();fs.writeFileSync(path.join(s.f.repo,'fixture.txt'),'beta\n');const h=s.h.contract;
  const e={schema_version:'codex-result-v1',mission_id:h.mission_id,task_id:h.task_id,run_id:h.run_id,request_id:h.request_id,agent_id:'codex',transport:'handoff',relay_nonce:h.relay_nonce,result:{status:'completed',summary:'Recovered fixture',changed_files:['fixture.txt'],tests:[],artifacts:[],limitations:[]},timestamps:{started_at:1,finished_at:2},publisher:{identity:'codex-work',mode:'artifact'}};e.content_hash=fingerprint(e);fs.writeFileSync(h.result_publication.path,JSON.stringify(e),{mode:0o600});s.f.bridge.codexRelay.consume(h.run_id);assert.equal(n(s,'cp_verifications'),0);assert.equal(n(s,'cp_leases',"WHERE state='quarantined'"),1);
- s.f.bridge.codexAdapter.reconcile({run_id:h.run_id,termination_verified:true});await s.f.settle(s.m.id);assert.equal(n(s,'cp_verifications'),1);assert.equal(n(s,'cp_leases',"WHERE state IN ('held','quarantined')"),0);
+ s.f.bridge.codexAdapter.reconcile({run_id:h.run_id,termination_verified:true});s.f.ensureAdmission();await s.f.settle(s.m.id);assert.equal(n(s,'cp_verifications'),1);assert.equal(n(s,'cp_leases',"WHERE state IN ('held','quarantined')"),0);
 });
 test('another unresolved Codex transport prevents concurrent Work dispatch even across independent workspaces',async t=>{
  const s=await setup(t),c=claim(s);report(s,c,{accepted:true});const other=path.join(s.f.root,'second-repo');fs.cpSync(s.f.repo,other,{recursive:true});

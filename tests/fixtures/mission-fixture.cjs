@@ -24,6 +24,28 @@ async function fixture(t,{realClaude=false,opencode,defaultRuntime,settleTimeout
  const create=(extra={})=>bridge.missions.create({request_id:require('node:crypto').randomUUID(),project_id:project.projectId,goal_id:goal.goalId,objective:'Change fixture.txt from alpha to beta. Make its test pass.',workspace:repo,allowed_files:['fixture.txt'],criteria:[{id:'expected_file',type:'exact_file',path:'fixture.txt',content:'beta\n'}],verification:{diff_check:'diff-check',tests:['fixture-test'],syntax:[]},preferred_agent:extra.coding_plan?undefined:extra.task_type==='local_files'?'host':'claude_code',...extra});
  const settle=async(id,state='awaiting_acceptance')=>{for(let n=0;n<Math.ceil((settleTimeoutMs??(realClaude?150000:7500))/25);n++){await bridge.missions.tick();const m=bridge.missions.detail(id);if(m.state===state)return m;if(['blocked','needs_rework'].includes(m.state)&&m.state!==state)throw Error(JSON.stringify({state:m.state,reason:m.reason,verifications:m.verifications,runs:m.runs.map(r=>({agent:r.agent_id,state:r.state,result:r.result}))}));await wait(25);}throw Error('Mission did not settle: '+bridge.missions.detail(id).state);};
  t.after(async()=>{await bridge.missions.close();host.shutdown();await Promise.race([Promise.all([...host.jobs.jobs.values()].map(j=>j.done)),wait(6500)]);await bridge.shutdown();if(!realClaude)fs.rmSync(root,{recursive:true,force:true});});
- return{root,repo,get bridge(){return bridge;},get host(){return host;},reopen:async()=>{await bridge.shutdown();host=new CapabilityHost({dataDir,home,exec:executor,env:{},bridgeRoot:path.resolve(__dirname,'../..'),probeHttp:async()=>false,localServicesPath:path.join(root,'none')});bridge=await new Bridge({defaultRuntime:defaultRuntime||'opencode',slack:{env:{}},dataDir,sourceProfile:profile,capabilityHost:host,allowFixtureWorker:true,opencode,workers,executable:path.join(__dirname,'host-worker.cjs')}).initialize();host.saveTask=t=>bridge.tasks.save(t);if(bridge.lifecycle?.state()==='booting')bridge.lifecycle.resume(bridge.lifecycle.epoch);bridge.localOllamaBroker.proxy=()=>{inference++;throw Error('Inference must not be called');};bridge.prompt=()=>{inference++;throw Error('Model inference must not be called');};},create,settle,inference:()=>inference,calls:()=>fs.existsSync(path.join(root,'calls'))?fs.readFileSync(path.join(root,'calls'),'utf8').trim().split('\n').length:0};
+ return{root,repo,get bridge(){return bridge;},get host(){return host;},reopen:async()=>{
+  // Preserve durable ownership across restart; only release this process's writer.
+  await bridge.shutdown({fixtureRestart:true});
+  host=new CapabilityHost({dataDir,home,exec:executor,env:{},bridgeRoot:path.resolve(__dirname,'../..'),probeHttp:async()=>false,localServicesPath:path.join(root,'none')});
+  bridge=await new Bridge({defaultRuntime:defaultRuntime||'opencode',slack:{env:{}},dataDir,sourceProfile:profile,capabilityHost:host,allowFixtureWorker:true,opencode,workers,executable:path.join(__dirname,'host-worker.cjs')}).initialize();
+  host.saveTask=t=>bridge.tasks.save(t);
+  // TestBridge.initialize already resumes when idle. Never force-open over unresolved blockers.
+  if(bridge.lifecycle?.state()==='booting'&&bridge.lifecycle.status().idle){
+   bridge.lifecycle.resume(bridge.lifecycle.epoch);
+   bridge.missions?.schedule();
+  }
+  bridge.localOllamaBroker.proxy=()=>{inference++;throw Error('Inference must not be called');};
+  bridge.prompt=()=>{inference++;throw Error('Model inference must not be called');};
+ },ensureAdmission:()=>{
+  if(bridge.lifecycle?.state()==='open')return bridge.lifecycle.status();
+  if(!bridge.lifecycle?.status().idle)throw Error('Canonical work or termination is unresolved; admission remains closed');
+  if(bridge.lifecycle.state()==='booting'){
+   if(!bridge.lifecycle.reconciled)bridge.lifecycle.finishRecovery();
+   if(bridge.lifecycle.state()==='booting')bridge.lifecycle.resume(bridge.lifecycle.epoch);
+  }
+  bridge.missions?.schedule();
+  return bridge.lifecycle.status();
+ },create,settle,inference:()=>inference,calls:()=>fs.existsSync(path.join(root,'calls'))?fs.readFileSync(path.join(root,'calls'),'utf8').trim().split('\n').length:0};
 }
 module.exports={fixture,wait};

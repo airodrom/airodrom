@@ -15,14 +15,14 @@ Closes the activation gaps found when installing Integrated Release V1 (`77724f8
 | Package version | `1.0.1-rc.1` |
 | Branch | `fix/v1.0.1-install-hotfix` |
 | Base | `origin/main` @ `710971798c0a27d47d3e3e4fdb32a4a3553e1c0a` |
-| Candidate artifacts | `/Users/andrew/Documents/Codex/2026-10-09/airodrom-v101-install-hotfix/release-candidate-v101/` |
+| Candidate artifacts | `~/Documents/Codex/2026-10-09/airodrom-v101-install-hotfix/release-candidate-v101/` |
 | Authoritative digest | `SHA256SUMS` / `SOURCE-MANIFEST.json` in that directory (not embedded in allowlisted docs) |
 
 ## Reproducible qualification (this pass)
 
 - Dual byte-identical source archives; `package:check` forbidden=[]  
 - Extract + `npm ci --ignore-scripts` into a disposable directory with **no** manual overlays  
-- Isolated start under `AIRODROM_HOME=/Users/andrew/.a101` → healthy Control, OpenCode 2.0.25, Memory Ready, overview Ready  
+- Isolated start under `AIRODROM_HOME=~/.a101` → healthy Control, OpenCode 2.0.25, Memory Ready, overview Ready  
 - Disposable service stopped afterward  
 
 ## Running installation (do not disturb)

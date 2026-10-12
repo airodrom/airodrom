@@ -48,5 +48,5 @@ V1 used `public/development-sessions-panel.js` so OpenCode could draft the summa
 
 - Automatic Acceptance remained OFF.
 - No push, PR, or hosted CI.
-- Operator checkout `/Users/andrew/code/airodrom` untouched.
+- Operator checkout `~/code/airodrom` untouched.
 - V1.1 host classifier admits authorized hub source; real secrets and sensitive paths remain fail-closed.

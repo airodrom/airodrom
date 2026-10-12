@@ -12,7 +12,7 @@
 | Installed package | `1.0.1-rc.1` at `…/airodrom-whatsapp-verify-token-safe-rotation/install/airodrom-whatsapp-verify-safe-879daa3` |
 | Feature merge base for install | `879daa3` (WhatsApp verify-token staged rotation) |
 | Native menu helper | `~/.airodrom/menu/Airodrom.app` — includes Open Conversation, Continue Development Session, Open System Health |
-| Operator checkout | `/Users/andrew/code/airodrom` — **protected dirty**, ~86 commits behind main; **do not** use as release source |
+| Operator checkout | `~/code/airodrom` — **protected dirty**, ~86 commits behind main; **do not** use as release source |
 
 ## Release criteria (observed)
 
@@ -60,7 +60,7 @@ No essential code blocker remains for the installed local application. Operator 
 | Claude external conversation | WAIT — credentials/transport/billing qualification |
 | Calendar / Drive reads | Owner API enablement |
 | Web search / live weather | No approved provider |
-| Native Packaging Foundation → Public Release | Roadmap only ([NATIVE-PACKAGING-V1.md](NATIVE-PACKAGING-V1.md)) |
+| Native Packaging Foundation → Public Release | Roadmap only; see [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) |
 | Dirty checkout unique WIP | Preserve; rebase or discard later per owner — never overwrite |
 
 ## Protected assets

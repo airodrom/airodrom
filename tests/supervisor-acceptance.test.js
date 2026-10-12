@@ -18,7 +18,7 @@ async function setup(t) {
   let b = await new Controller(options).initialize();
   const create=b.createTask.bind(b);b.createTask=(...args)=>{const task=create(...args);require('./fixtures/git-baseline.cjs')(task.workspace);return task;};
   t.after(async () => { await b.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
-  return { get bridge() { return b; }, async restart() { await b.shutdown(); b = await new Controller(options).initialize(); return b; } };
+  return { get bridge() { return b; }, async restart() { await b.shutdown({ fixtureRestart: true }); b = await new Controller(options).initialize(); return b; } };
 }
 test('explicit MCP criteria persist in SQLite and one fresh recovery satisfies runtime evidence across restart', async t => {
   const fixture = await setup(t), b = fixture.bridge;
@@ -65,7 +65,7 @@ test('cancellation stops the fixture before settlement and remains stopped after
   assert.equal(restored.tasks.get(task.id).mission.attempts, 0);
 });
 test('schema keeps legacy requests and requires exact opt-in fixture contract', async t => {
-  assert.equal(TOOLS.length, 24);
+  assert.equal(TOOLS.length, 27);
   const legacy = { description: 'Legacy', message: 'Acceptance criterion mentioned only in prose', request_id: 'legacy-request-001' };
   validate('create_task', legacy);
   for (const changed of [{ acceptance_criterion: 'other' }, { workspace: 'bridge' }, { acceptance_mode: 'arbitrary' }, { acceptance_mode: undefined }]) {

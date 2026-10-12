@@ -74,7 +74,7 @@ Failed Mission `668a177e-…` remains in durable history as `needs_rework` / `op
 
 ## Live runtime note
 
-For the Automatic Acceptance pilot, `~/.airodrom/local.json` `source` temporarily pointed at this git worktree. Operator checkout `/Users/andrew/code/airodrom` was not modified.
+For the Automatic Acceptance pilot, `~/.airodrom/local.json` `source` temporarily pointed at this git worktree. Operator checkout `~/code/airodrom` was not modified.
 
 ## Final closeout — runtime source reconciliation (2026-10-10)
 

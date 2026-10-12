@@ -1,6 +1,6 @@
 # Airodrom Master Personal AI Completion V1
 
-Final completion / live verification / release-readiness status on branch `feat/master-personal-ai-completion` from `origin/main` `525458c`. Operator checkout `/Users/andrew/code/airodrom` remains protected (dirty). WhatsApp production remains **HOLD**. Production cutover **not** performed.
+Final completion / live verification / release-readiness status on branch `feat/master-personal-ai-completion` from `origin/main` `525458c`. Operator checkout `~/code/airodrom` remains protected (dirty). WhatsApp production remains **HOLD**. Production cutover **not** performed.
 
 ## 1. Git / architecture preflight
 
