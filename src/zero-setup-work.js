@@ -222,7 +222,7 @@ class ZeroSetupWork {
     };
     this.write(request_id, principal, record, 'awaiting_approval');
     this.bridge.controlStore.event('zero_setup.prepared', null, { request_id, project: projectAlias, workspace_alias: workspaceAlias, authority: false });
-    return this.statusView(record);
+    return this.statusView(this.read(request_id));
   }
 
   statusView(record) {
@@ -263,10 +263,10 @@ class ZeroSetupWork {
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
       message: state === 'awaiting_approval'
-        ? 'Airodrom prepared a bounded task. Confirm Approve this task in the authenticated Control Center. No file writes or autonomous scheduling occur before that confirmation.'
+        ? 'Airodrom prepared a bounded task. Confirm in the authenticated Terminal with y/N, or Approve this task in Control Center. No file writes or autonomous scheduling occur before that confirmation.'
         : presentation.status,
       presentation,
-      next_action: state === 'awaiting_approval' ? 'approve_in_control_center' : 'inspect_result',
+      next_action: state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
       outcome,
       technical: {
         request_id: live.request_id || record.request_id,

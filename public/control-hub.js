@@ -442,6 +442,16 @@
  async function showAssistantReceipt(receipt,version){
    if(version!==generation||!authorized||document.hidden||view!=='Conversation'){if(receipt.kind==='chat'&&authorized)await api('/api/assistant/conversation/cancel',{conversation_id:receipt.conversation_id,turn_id:receipt.turn_id}).catch(()=>{});return;}
    if(receipt.kind==='public_web_offer'){const next=await approvePublicWeb(receipt);if(next){await refresh();if(next.mission_id)selectMission(next.mission_id);}else{conversationNotice='Public web permission cancelled.';render();}return;}
+   if(receipt.kind==='zero_setup'){
+     const state=String(receipt.state||'').toUpperCase();
+     conversationNotice=state==='WAIT'
+       ?'Prepared bounded local work. Approve in Terminal with y/N, or use Autonomous Goals → Approve this task. Nothing has been written yet.'
+       :state==='CLARIFY'
+         ?(receipt.message||'One short clarification is required before preparation can continue.')
+         :(receipt.message||receipt.presentation?.status||'Bounded work update.');
+     if(version===generation&&authorized&&!document.hidden&&view==='Conversation')render();
+     return;
+   }
    let notice=receipt.display||receipt.message||(receipt.mission_id?'Mission registered.':'Request handled.');
    if(receipt.kind==='chat'){
      const turn={conversation_id:receipt.conversation_id,turn_id:receipt.turn_id};activeDirectTurn=turn;conversationNotice=(receipt.activity||'Thinking…')+(receipt.model?' · '+receipt.model+' · local-ollama':'');render();

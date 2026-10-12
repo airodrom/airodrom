@@ -2,11 +2,22 @@
 
 ## Product flow
 
+### Terminal (ordinary local execution)
+
+1. Owner runs `airodrom` and types one natural-language instruction.
+2. Airodrom resolves an authorized Project/workspace (or asks one short clarification).
+3. Terminal shows the exact project, files, worker and permissions.
+4. Owner confirms with explicit local `y` / `yes` (model/chat text is never consent).
+5. Host registers the WORK scope, binds one Mission + Goal Plan, authorizes CAE, and dispatches OpenCode once.
+6. Terminal reports independent verification. Acceptance remains a separate owner decision.
+
+### ChatGPT MCP
+
 1. ChatGPT calls `ask_airodrom` with a natural-language instruction.
 2. Airodrom resolves an authorized Project/workspace (or asks one short clarification).
 3. Airodrom prepares a bounded WORK template proposal and Goal Plan request.
-4. Control Center shows one readable approval card (no UUID form).
-5. Owner clicks **Approve this task**.
+4. Control Center shows one readable approval card (no UUID form), or Terminal can authorize the same prepared request.
+5. Owner confirms **Approve this task** (or Terminal `y/N`).
 6. Host registers the WORK template, binds one Mission, authorizes CAE, and dispatches OpenCode.
 7. Host verifies independently; Acceptance remains a separate owner decision.
 
@@ -25,6 +36,6 @@ If `ask_airodrom` is missing after install:
 
 ## Focused validation
 
-`node scripts/run.cjs --test tests/zero-setup-work.test.js tests/mcp-schema.test.js`
+`node scripts/run.cjs --test tests/zero-setup-work.test.js tests/zero-setup-terminal.test.js tests/mcp-schema.test.js`
 
 Fixture success does not grant live Acceptance.

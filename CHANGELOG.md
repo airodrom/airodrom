@@ -1,3 +1,10 @@
+## Unreleased — Terminal-first autonomous WORK
+
+- Route natural-language Terminal WORK through ZeroSetupWork instead of draft-only Mission intake that demanded UUID WORK-template forms.
+- Add secure inline Terminal `y/N` authorization that shows project, files, worker and permissions; reuse host vault-cli consent (model/chat text is never consent).
+- After owner confirmation, CAE dispatches once; Terminal polls and reports independent verification without Acceptance/Settlement.
+- Focused suite: `tests/zero-setup-terminal.test.js`.
+
 ## Unreleased — Zero-Setup Autonomous Work V1
 
 - Add `ask_airodrom` / `get_ask_status` MCP entry so ChatGPT can request bounded local work without Project/Goal/WORK-template UUID forms.
