@@ -2,6 +2,7 @@
 
 ## Developer Memory V1 / Hindsight (2026-10-12)
 
+- Hosted `candidate.yml` remains `disabled_manually` (owner fast-track / local-first policy). Not a PR #74 change; enablement requires owner approval. Remote `main` currently has no required status checks/rulesets.
 - Feature flags default **off**. Source implementation does not activate on the owner live install, LaunchAgents, or personal-memory stores.
 - Evidence class for `tests/developer-memory-v1.test.js` is **MOCKED CONTRACT PASS** (HTTP shapes, worktree identity, host-bound auth, Mission prefetch, host-verified destructive approval, Control Center layer metrics).
 - Disposable **REAL LOCAL HINDSIGHT PASS** completed against `ghcr.io/vectorize-io/hindsight:0.10.2` + local Ollama (`qwen2.5-coder:14b`) on loopback only; container torn down after smoke. **Not OWNER INSTALLATION VERIFIED**. No cloud fallback.
