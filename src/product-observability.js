@@ -107,15 +107,90 @@ function autonomousManaged(bridge, missionId) {
     return plan.autonomous?.enabled === true && plan.autonomous?.paused !== true;
   } catch { return false; }
 }
+/** Derive recovery presentation from canonical scheduler evidence — never from the enabled flag alone. */
+function recoveryStatus(bridge, mission, view = {}) {
+  const managed = view.autonomous_managed === true || autonomousManaged(bridge, mission.id);
+  const db = bridge.controlStore.db;
+  if (ACTIVE.includes(mission.state) && managed) {
+    return { kind: 'recovering', headline: 'In progress', detail: 'Authorized autonomous execution is underway.', suppress_manual: true };
+  }
+  if (!['blocked', 'needs_rework', 'ready', 'paused'].includes(mission.state)) {
+    return { kind: 'none', headline: null, detail: null, suppress_manual: false };
+  }
+  if (db.prepare("SELECT 1 FROM cp_runs WHERE mission_id=? AND (process_state='unknown' OR (termination_verified=0 AND state NOT IN ('completed','failed','cancelled'))) LIMIT 1").get(mission.id)) {
+    return { kind: 'uncertain', headline: 'Uncertain execution', detail: 'Prior effects or termination cannot be safely established. Automatic retry is unavailable.', suppress_manual: false };
+  }
+  if (db.prepare("SELECT 1 FROM cp_leases WHERE state='quarantined' AND run_id IN (SELECT id FROM cp_runs WHERE mission_id=?) LIMIT 1").get(mission.id)) {
+    return { kind: 'uncertain', headline: 'Uncertain execution', detail: 'A quarantined lease blocks safe automatic recovery.', suppress_manual: false };
+  }
+  if (!managed) {
+    return { kind: 'needs_owner', headline: view.display?.label || 'Needs attention', detail: 'Autonomous execution is not authorized for this Mission.', suppress_manual: false };
+  }
+  try {
+    const link = db.prepare('SELECT p.id AS plan_id, n.id AS stage_id FROM cp_mission_programs p JOIN cp_mission_program_nodes n ON n.program_id=p.id WHERE n.mission_id=?').get(mission.id);
+    if (!link?.plan_id || !bridge.missions?.autonomous) {
+      return { kind: 'waiting', headline: 'Waiting', detail: 'Autonomous goal linkage is incomplete; no automatic retry is promised.', suppress_manual: false };
+    }
+    const inspect = bridge.missions.autonomous.inspect(link.plan_id, 'operator');
+    const autonomous = inspect.autonomous || {};
+    if (autonomous.lifecycle === 'quarantined') {
+      return { kind: 'uncertain', headline: 'Uncertain execution', detail: 'Goal plan is quarantined until execution ownership is reconciled.', suppress_manual: false };
+    }
+    if (autonomous.lifecycle === 'waiting_approval' || autonomous.paused) {
+      return { kind: 'needs_owner', headline: 'Needs owner decision', detail: 'Autonomous execution is paused or waiting for approval.', suppress_manual: false };
+    }
+    if (autonomous.lifecycle === 'waiting_dependency') {
+      return { kind: 'waiting', headline: 'Waiting', detail: 'Airodrom is waiting for a verified dependency before continuing.', suppress_manual: true };
+    }
+    if (autonomous.lifecycle === 'recovering') {
+      return { kind: 'recovering', headline: 'Recovering', detail: 'Bounded autonomous recovery is underway under the authorized goal budget.', suppress_manual: true };
+    }
+    if (inspect.expires_at != null && bridge.controlStore.now() >= inspect.expires_at) {
+      return { kind: 'failed', headline: 'Failed', detail: 'Goal budget expired. Automatic retry is unavailable.', suppress_manual: false };
+    }
+    if ((autonomous.dispatch_count || 0) >= (autonomous.max_dispatches || 0)) {
+      return { kind: 'failed', headline: 'Failed', detail: 'Dispatch budget exhausted. Automatic retry is unavailable.', suppress_manual: false };
+    }
+    const stage = (inspect.stages || []).find(s => s.mission_id === mission.id);
+    const repairs = stage ? (autonomous.repair_counts?.[stage.id] || 0) : 0;
+    if (stage && repairs >= (autonomous.max_repairs || 0)) {
+      return { kind: 'failed', headline: 'Failed', detail: 'Repair budget exhausted. Automatic retry is unavailable.', suppress_manual: false };
+    }
+    if (mission.state === 'ready' && stage) {
+      const gate = bridge.missions.autonomous.eligibleStage(inspect, autonomous, stage);
+      if (gate.ok) {
+        return { kind: 'eligible', headline: 'Eligible for recovery', detail: 'Airodrom can safely retry under existing authorization.', suppress_manual: true };
+      }
+      return { kind: 'blocked', headline: 'Blocked', detail: 'Continuation unavailable: ' + String(gate.reason || 'not eligible').replaceAll('_', ' ') + '.', suppress_manual: false };
+    }
+    if (['blocked', 'needs_rework'].includes(mission.state)) {
+      // Scheduler records a repair and may re-admit a ready stage later — only promise retry when a ready/eligible stage exists.
+      if ((inspect.ready || []).length && autonomous.lifecycle === 'running') {
+        return { kind: 'eligible', headline: 'Eligible for recovery', detail: 'Airodrom can safely continue another authorized stage under the goal budget.', suppress_manual: true };
+      }
+      return { kind: 'blocked', headline: 'Blocked', detail: 'No safe autonomous retry is currently eligible for this Mission.', suppress_manual: false };
+    }
+  } catch {
+    return { kind: 'uncertain', headline: 'Uncertain execution', detail: 'Autonomous recovery eligibility could not be established.', suppress_manual: false };
+  }
+  return { kind: 'waiting', headline: 'Waiting', detail: 'Airodrom is waiting for a known condition before continuing.', suppress_manual: true };
+}
 function outcomeSummary(view) {
   const verified = view.verification?.status === 'passed' && view.verification?.current === true;
   const failedVerify = view.verification?.status === 'failed';
+  const recovery = view.recovery || { kind: 'none' };
   if (view.archived) return { kind: 'archived', headline: 'Archived', detail: 'Hidden from the primary list; canonical evidence retained.', success: false };
   if (view.actions?.accept) return { kind: 'decision', headline: 'Owner decision required', detail: verified ? 'Independent verification passed — Acceptance is still required.' : 'Review verification evidence before Acceptance.', success: false };
   if (view.state === 'waiting_for_operator') return { kind: 'decision', headline: 'Owner decision required', detail: 'Autonomous execution cannot proceed past this gate.', success: false };
   if (ACTIVE.includes(view.state)) return { kind: 'progress', headline: view.display?.label || 'In progress', detail: view.latest_activity || 'Airodrom is executing within authorized bounds.', success: false };
-  if (view.state === 'needs_rework' || view.state === 'blocked') {
-    if (view.autonomous_managed) return { kind: 'progress', headline: 'Autonomous recovery', detail: 'Airodrom will repair and retry within the authorized goal budget.', success: false };
+  if (view.state === 'needs_rework' || view.state === 'blocked' || (view.state === 'ready' && view.autonomous_managed)) {
+    if (recovery.kind === 'recovering') return { kind: 'progress', headline: 'Recovering', detail: recovery.detail, success: false };
+    if (recovery.kind === 'eligible') return { kind: 'progress', headline: 'Eligible for recovery', detail: recovery.detail, success: false };
+    if (recovery.kind === 'waiting') return { kind: 'progress', headline: 'Waiting', detail: recovery.detail, success: false };
+    if (recovery.kind === 'uncertain') return { kind: 'attention', headline: 'Uncertain execution', detail: recovery.detail, success: false };
+    if (recovery.kind === 'failed') return { kind: 'attention', headline: 'Failed', detail: recovery.detail, success: false };
+    if (recovery.kind === 'blocked') return { kind: 'attention', headline: 'Blocked', detail: recovery.detail, success: false };
+    if (recovery.kind === 'needs_owner') return { kind: 'decision', headline: 'Needs owner decision', detail: recovery.detail, success: false };
     return { kind: 'attention', headline: view.display?.label || 'Needs attention', detail: view.latest_activity || 'Owner or template action required before progress continues.', success: false };
   }
   if (view.state === 'completed' && view.settlement?.status === 'settled' && verified) return { kind: 'result', headline: 'Verified result settled', detail: 'Independent verification and Acceptance are recorded.', success: true };
@@ -129,12 +204,10 @@ function nextActionFor(mission, view) {
   if (view.archived) return 'Restore from archive only if you need this Mission in the primary list again.';
   if (view.actions?.accept) return 'Owner decision required: review Acceptance, then accept or request rework.';
   if (view.state === 'waiting_for_operator') return 'Owner decision required before autonomous work can continue.';
-  if (view.autonomous_managed && (ACTIVE.includes(view.state) || ['needs_rework', 'blocked', 'ready'].includes(view.state))) {
-    return null; // Autonomous path — no routine Continue / Retry / Next Mission.
-  }
-  if (view.state === 'draft' || (view.state === 'ready' && !view.started_at)) return 'Register a bounded workspace template, or cancel if this draft is no longer needed.';
-  if (view.state === 'needs_rework') return 'Owner action: inspect evidence, then authorize rework if autonomous execution is not enabled.';
-  if (view.state === 'blocked') return 'Owner action: resolve the blocker if autonomous recovery is not authorized.';
+  if (view.recovery?.suppress_manual) return null;
+  if (view.state === 'draft' || (view.state === 'ready' && !view.started_at && !view.autonomous_managed)) return 'Register a bounded workspace template, or cancel if this draft is no longer needed.';
+  if (view.state === 'needs_rework') return 'Owner action: inspect evidence, then authorize rework if autonomous recovery is not eligible.';
+  if (view.state === 'blocked') return view.recovery?.detail || 'Owner action: resolve the blocker. Automatic retry is not available.';
   if (view.actions?.dispatch) return 'Run only when you intentionally start this Mission outside autonomous execution.';
   if (ACTIVE.includes(view.state)) return null;
   if (view.state === 'completed' && view.verification?.status === 'passed' && view.settlement?.status !== 'settled' && view.actions?.accept) return 'Owner decision required: Acceptance.';
@@ -142,13 +215,27 @@ function nextActionFor(mission, view) {
   if (view.state === 'completed' || view.state === 'cancelled') return null;
   return null;
 }
+function ownerAttentionRequired(mission, view) {
+  if (['awaiting_acceptance', 'waiting_for_operator'].includes(mission.state)) return true;
+  if (view.actions?.accept) return true;
+  if (!['blocked', 'needs_rework'].includes(mission.state)) return false;
+  // Historical non-autonomous failures stay in Failed/History — not the primary attention queue.
+  if (!view.autonomous_managed) return false;
+  const kind = view.recovery?.kind;
+  if (kind === 'recovering' || kind === 'eligible' || kind === 'waiting') return false;
+  return ['needs_owner', 'blocked', 'failed', 'uncertain'].includes(kind);
+}
+function autonomouslyCurrent(mission, view) {
+  if (ACTIVE.includes(mission.state)) return true;
+  return view.autonomous_managed && ['recovering', 'eligible', 'waiting'].includes(view.recovery?.kind);
+}
 function missionView(bridge, mission) {
  const visibility = require('./mission-visibility');
  visibility.ensure(bridge.controlStore.db);
  const archived = visibility.isArchived(bridge.controlStore.db, mission.id);
  if(mission.envelope.kind==='work_request'){
-  const base={id:id(mission.id),task_id:null,state:enumValue(mission.state,STATES),revision:count(mission.revision),label:'Work Mission draft',workspace:'Scope required',runtime:null,worker_assigned:false,created_at:time(mission.created_at),started_at:null,finished_at:null,observed_at:Date.now(),authority:{status:'none; scope and registered checks required'},budget:{},memory:{selected_count:0,delivery:'not requested'},verification:{current:false,status:'not_observed',checks:[]},acceptance:{status:'not_applicable'},settlement:{status:'not_applicable'},termination:{verified:true,process_state:'not_started'},attempts:0,progress:progress({state:mission.state}),timeline:[],latest_activity:'Registered — execution not started',archived,actions:{cancel:mission.state!=='cancelled',dispatch:false,accept:false,archive:visibility.archiveEligible(mission),restore:archived}};
-  base.autonomous_managed=false;base.display=displayStatus(base.state,{archived});base.outcome=outcomeSummary(base);base.next_action=nextActionFor(mission,base);base.actions.dispatch=false;return base;
+  const base={id:id(mission.id),task_id:null,state:enumValue(mission.state,STATES),revision:count(mission.revision),label:'Work Mission draft',workspace:'Scope required',runtime:null,worker_assigned:false,created_at:time(mission.created_at),started_at:null,finished_at:null,observed_at:Date.now(),authority:{status:'none; scope and registered checks required'},budget:{},memory:{selected_count:0,delivery:'not requested'},verification:{current:false,status:'not_observed',checks:[]},acceptance:{status:'not_applicable'},settlement:{status:'not_applicable'},termination:{verified:true,process_state:'not_started'},attempts:0,progress:progress({state:mission.state}),timeline:[],latest_activity:'Registered — execution not started',archived,actions:{cancel:mission.state!=='cancelled',dispatch:false,accept:false,archive:visibility.archiveEligible(mission,bridge),restore:archived}};
+  base.autonomous_managed=false;base.display=displayStatus(base.state,{archived});base.recovery=recoveryStatus(bridge,mission,base);base.outcome=outcomeSummary(base);base.next_action=nextActionFor(mission,base);base.actions.dispatch=false;return base;
  }
  const db=bridge.controlStore.db, runs=db.prepare('SELECT id,agent_id,state,created_at,updated_at,termination_verified,process_state FROM cp_runs WHERE mission_id=? ORDER BY created_at DESC LIMIT 200').all(mission.id);
  const worker=db.prepare('SELECT r.id,r.agent_id,r.state,r.created_at,r.updated_at,r.termination_verified,r.process_state FROM cp_runs r JOIN cp_dispatches d ON d.run_id=r.id WHERE d.mission_id=? ORDER BY r.created_at DESC LIMIT 1').get(mission.id), task=bridge.tasks.get(mission.task_id);
@@ -189,12 +276,13 @@ function missionView(bridge, mission) {
   settlement:{status:enumValue(settlement?.state,['waiting_acceptance','needs_rework','settled'],'not_observed'),at:time(settlement?.updated_at)},
   termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','unknown','not_started'],'not_started')},
   progress:progress({state}),timeline:history,history_truncated:ev.has_more,latest_activity:history.at(-1)?.label||(state==='draft'||state==='ready'?'Registered — execution not started':null),
-  archived,actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent,archive:visibility.archiveEligible(mission)&&!archived,restore:archived}};
+  archived,actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent,archive:visibility.archiveEligible(mission,bridge)&&!archived,restore:archived}};
  view.autonomous_managed=autonomousManaged(bridge,mission.id);
  view.display=displayStatus(state,{started:!!view.started_at,settled:view.settlement.status==='settled',archived});
+ view.recovery=recoveryStatus(bridge,mission,view);
  view.outcome=outcomeSummary(view);
  view.next_action=nextActionFor(mission,view);
- if(view.autonomous_managed)view.actions.dispatch=false;
+ if(view.recovery?.suppress_manual||view.autonomous_managed&&['recovering','eligible','waiting'].includes(view.recovery?.kind))view.actions.dispatch=false;
  return view;
 }
 function runtimeView(ready) {
@@ -274,23 +362,32 @@ const PAGE_SIZES=[10,15,25,50];
 const RECENT_MS=14*24*60*60*1000;
 function missionIndex(bridge){return bridge.controlStore.db.prepare('SELECT id FROM cp_missions ORDER BY created_at DESC,id DESC').all().map(row=>bridge.missions.require(row.id,'operator'));}
 function settledIds(bridge){return new Set(bridge.controlStore.db.prepare("SELECT mission_id FROM cp_mission_settlements WHERE state='settled'").all().map(r=>r.mission_id));}
-function matchesFilter(m,filter,settled,archived){
+function filterView(bridge,m){
+ const managed=autonomousManaged(bridge,m.id);
+ const recovery=recoveryStatus(bridge,m,{autonomous_managed:managed,display:displayStatus(m.state),state:m.state});
+ return {autonomous_managed:managed,recovery,actions:{accept:m.state==='awaiting_acceptance'},state:m.state,display:displayStatus(m.state)};
+}
+function matchesFilter(bridge,m,filter,settled,archived){
  const isArchived=archived.has(m.id);
  if(filter==='Archived')return isArchived;
  if(isArchived)return false;
  if(filter==='All')return true;
- if(filter==='Active')return ACTIVE.includes(m.state);
- if(filter==='Needs Attention'||filter==='Awaiting Review')return filter==='Awaiting Review'?['awaiting_acceptance','waiting_for_operator'].includes(m.state):['awaiting_acceptance','waiting_for_operator','blocked','needs_rework'].includes(m.state);
- if(filter==='Failed')return ['blocked','needs_rework'].includes(m.state);
+ const view=filterView(bridge,m);
+ if(filter==='Active')return autonomouslyCurrent(m,view);
+ if(filter==='Needs Attention'||filter==='Awaiting Review'){
+  if(filter==='Awaiting Review')return ['awaiting_acceptance','waiting_for_operator'].includes(m.state);
+  return ownerAttentionRequired(m,view);
+ }
+ if(filter==='Failed')return ['blocked','needs_rework'].includes(m.state)&&!autonomouslyCurrent(m,view)&&!ownerAttentionRequired(m,view);
  if(filter==='Completed')return m.state==='completed';
  if(filter==='Settled')return settled.has(m.id);
- if(filter==='Recent')return !ACTIVE.includes(m.state)&&!['awaiting_acceptance','waiting_for_operator','blocked','needs_rework'].includes(m.state)&&(Date.now()-(m.created_at||0)<=RECENT_MS||['completed','cancelled'].includes(m.state));
+ if(filter==='Recent')return !autonomouslyCurrent(m,view)&&!ownerAttentionRequired(m,view)&&(Date.now()-(m.created_at||0)<=RECENT_MS||['completed','cancelled'].includes(m.state));
  if(filter==='History')return ['completed','cancelled','draft','ready','paused','blocked','needs_rework'].includes(m.state)&&!ACTIVE.includes(m.state)&&!['awaiting_acceptance','waiting_for_operator'].includes(m.state);
  return false;
 }
 function missionCounts(bridge,missions=missionIndex(bridge)){
  const settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db);
- return Object.fromEntries(FILTERS.map(name=>[name,missions.filter(m=>matchesFilter(m,name,settled,archived)).length]));
+ return Object.fromEntries(FILTERS.map(name=>[name,missions.filter(m=>matchesFilter(bridge,m,name,settled,archived)).length]));
 }
 function missionListItem(bridge,mission,{settled,archived}){
  const title=operatorTitle(bridge,mission);
@@ -299,7 +396,7 @@ function missionListItem(bridge,mission,{settled,archived}){
  return {
   id:full.id,label:title,state:full.state,display:full.display,outcome:full.outcome,runtime:full.runtime,worker_assigned:full.worker_assigned,
   created_at:full.created_at,started_at:full.started_at,finished_at:full.finished_at,
-  latest_activity:full.latest_activity,next_action:full.next_action,archived:isArchived,autonomous_managed:full.autonomous_managed,
+  latest_activity:full.latest_activity,next_action:full.next_action,archived:isArchived,autonomous_managed:full.autonomous_managed,recovery:full.recovery,
   verification:{status:full.verification.status,current:full.verification.current},
   acceptance:{status:full.acceptance.status},settlement:{status:full.settlement.status},
   actions:{accept:full.actions.accept,archive:full.actions.archive,restore:full.actions.restore,cancel:full.actions.cancel,dispatch:full.actions.dispatch},
@@ -311,7 +408,7 @@ function missionHistory(bridge,url){
  require('./mission-visibility').ensure(bridge.controlStore.db);
  const filter=url.searchParams.get('filter')||'All',query=(url.searchParams.get('query')||'').trim().toLowerCase();
  const offset=Number(url.searchParams.get('offset')||0);
- const limitRaw=url.searchParams.has('limit')?Number(url.searchParams.get('limit')):25;
+ const limitRaw=url.searchParams.has('limit')?Number(url.searchParams.get('limit')):15;
  const worker=(url.searchParams.get('worker')||'').trim().toLowerCase();
  const sort=url.searchParams.get('sort')||'newest';
  if(!FILTERS.includes(filter)||query.length>180||!Number.isSafeInteger(offset)||offset<0||!PAGE_SIZES.includes(limitRaw)||(worker&&!['opencode','host','claude_code','codex','cursor','none'].includes(worker))||!['newest','oldest'].includes(sort))throw Error('Invalid Mission history query');
@@ -320,7 +417,7 @@ function missionHistory(bridge,url){
  const ranked=sort==='oldest'?[...missions].reverse():missions;
  const matches=[];let total=0;
  for(const mission of ranked){
-  if(!matchesFilter(mission,filter,settled,archived))continue;
+  if(!matchesFilter(bridge,mission,filter,settled,archived))continue;
   const title=operatorTitle(bridge,mission);
   const preferred=(mission.envelope.preferred_agent||'').toLowerCase();
   const run=bridge.controlStore.db.prepare('SELECT r.agent_id FROM cp_runs r JOIN cp_dispatches d ON d.run_id=r.id WHERE d.mission_id=? ORDER BY r.created_at DESC LIMIT 1').get(mission.id);
@@ -439,4 +536,4 @@ function events(bridge,url) {
  const batch=bridge.ledger.list({afterSequence:after,limit:200,...(mission?{missionId:mission}:{})});
  return {events:timeline(batch.events).filter(e=>!category||e.category===category),cursor:batch.events.at(-1)?.sequence||after,has_more:batch.has_more,observed_at:Date.now()};
 }
-module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,FILTERS,PAGE_SIZES,displayStatus,outcomeSummary,autonomousManaged,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus,operatorTitle,missionHistory,missionCounts,notificationEvents};
+module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,FILTERS,PAGE_SIZES,displayStatus,outcomeSummary,autonomousManaged,recoveryStatus,ownerAttentionRequired,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus,operatorTitle,missionHistory,missionCounts,notificationEvents};

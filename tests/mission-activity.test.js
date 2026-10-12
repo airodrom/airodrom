@@ -7,11 +7,12 @@ test('Mission activity searches all retained IDs/titles, paginates recent first 
  const f=await fixture(t),b=f.bridge,created=[];
  for(let i=0;i<31;i++){const m=f.create({objective:'Activity fixture '+i});created.push(m.id);b.controlStore.db.prepare('UPDATE cp_missions SET created_at=? WHERE id=?').run(1000+i,m.id);}
  const state=(n,s)=>b.controlStore.db.prepare('UPDATE cp_missions SET state=? WHERE id=?').run(s,created[n]);state(0,'running');state(1,'verifying');state(2,'awaiting_acceptance');state(3,'waiting_for_operator');state(4,'blocked');state(5,'needs_rework');state(6,'completed');
- const page=display.missionHistory(b,url(''));assert.equal(page.total,31);assert.equal(page.missions.length,25);assert.equal(page.missions[0].id,created[30]);assert.equal(page.has_more,true);
- const older=display.missionHistory(b,url('offset=25'));assert.equal(older.missions.length,6);assert.equal(older.missions.at(-1).id,created[0]);
+ const page=display.missionHistory(b,url(''));assert.equal(page.total,31);assert.equal(page.limit,15);assert.equal(page.missions.length,15);assert.equal(page.missions[0].id,created[30]);assert.equal(page.has_more,true);
+ const older=display.missionHistory(b,url('offset=15'));assert.equal(older.missions.length,15);assert.equal(older.missions[0].id,created[15]);
+ const last=display.missionHistory(b,url('offset=30'));assert.equal(last.missions.length,1);assert.equal(last.missions.at(-1).id,created[0]);
  assert.equal(display.missionHistory(b,url('query='+created[0].slice(0,12))).missions[0].id,created[0]);
  assert.equal(display.missionHistory(b,url('query=Activity%20fixture%200')).total,1);
- for(const [filter,n] of [['Active',2],['Awaiting Review',2],['Failed',2],['Completed',1],['Settled',0],['Needs Attention',4]])assert.equal(display.missionHistory(b,url('filter='+encodeURIComponent(filter))).total,n,filter);
+ for(const [filter,n] of [['Active',2],['Awaiting Review',2],['Failed',2],['Completed',1],['Settled',0],['Needs Attention',2]])assert.equal(display.missionHistory(b,url('filter='+encodeURIComponent(filter))).total,n,filter);
  assert.equal(display.missionHistory(b,url('query=not-found')).total,0);
  assert.throws(()=>display.missionHistory(b,url('filter=invalid')));assert.throws(()=>display.missionHistory(b,url('offset=-1')));assert.throws(()=>display.missionHistory(b,url('limit=7')));
  const native=await display.nativeStatus(b);assert.equal(native.active_missions,2);assert.equal(native.review_missions,2);assert.equal(native.failed_missions,2);
@@ -97,10 +98,51 @@ test('organize history archives only settled or cancelled presentation rows and 
  b.controlStore.db.prepare("INSERT INTO cp_mission_settlements(mission_id,review_id,state,recommendation,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(mission_id) DO UPDATE SET state=excluded.state,recommendation=excluded.recommendation,updated_at=excluded.updated_at").run(settled.id,null,'settled','Organized fixture settlement',Date.now());
  const review=f.create({objective:'Review keep'});b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance' WHERE id=?").run(review.id);
  const preview=visibility.previewOrganize(b,{});
+ assert.ok(preview.preview_id);assert.ok(preview.digest);
  assert.ok(preview.items.some(i=>i.id===settled.id));
  assert.equal(preview.items.some(i=>i.id===review.id),false);
- const result=visibility.organizeHistory(b,{confirmed:true,request_id:require('node:crypto').randomUUID()});
+ assert.throws(()=>visibility.organizeHistory(b,{confirmed:true,request_id:require('node:crypto').randomUUID()}),/preview identity/i);
+ const result=visibility.organizeHistory(b,{confirmed:true,request_id:require('node:crypto').randomUUID(),preview_id:preview.preview_id,digest:preview.digest});
  assert.ok(result.archived.includes(settled.id));
  assert.equal(b.missions.require(review.id).state,'awaiting_acceptance');
  assert.equal(display.missionHistory(b,url('filter=Archived')).missions.some(m=>m.id===settled.id),true);
+});
+
+test('archive confirmation is bound to the exact preview set and rejects stale previews',async t=>{
+ const f=await fixture(t),b=f.bridge,visibility=require('../src/mission-visibility'),{randomUUID}=require('node:crypto');
+ const a=f.create({objective:'Preview A'});const c=f.create({objective:'Preview C'});
+ b.controlStore.db.prepare("UPDATE cp_missions SET state='completed' WHERE id IN (?,?)").run(a.id,c.id);
+ const preview=visibility.previewArchive(b,{});
+ assert.ok(preview.items.some(i=>i.id===a.id));
+ // Mutate eligibility after preview: put A into awaiting acceptance.
+ b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance' WHERE id=?").run(a.id);
+ assert.throws(()=>visibility.archiveMissions(b,{confirmed:true,request_id:randomUUID(),preview_id:preview.preview_id,digest:preview.digest}),/Stale archive preview rejected/);
+ assert.equal(visibility.isArchived(b.controlStore.db,a.id),false);
+ assert.equal(visibility.isArchived(b.controlStore.db,c.id),false);
+ // Fresh preview archives only still-eligible C.
+ const fresh=visibility.previewArchive(b,{});
+ assert.equal(fresh.items.some(i=>i.id===a.id),false);
+ assert.ok(fresh.items.some(i=>i.id===c.id));
+ const archived=visibility.archiveMissions(b,{confirmed:true,request_id:randomUUID(),preview_id:fresh.preview_id,digest:fresh.digest});
+ assert.deepEqual(archived.archived,[c.id]);
+ // Consumed preview cannot be reused.
+ assert.throws(()=>visibility.archiveMissions(b,{confirmed:true,request_id:randomUUID(),preview_id:fresh.preview_id,digest:fresh.digest}),/already consumed|Stale|not found/i);
+});
+
+test('archive refuses uncertain leases, unknown process and pending Acceptance; recovery labels stay truthful',async t=>{
+ const f=await fixture(t),b=f.bridge,visibility=require('../src/mission-visibility'),{randomUUID}=require('node:crypto');
+ const live=f.create({objective:'Running archive deny'});b.controlStore.db.prepare("UPDATE cp_missions SET state='running' WHERE id=?").run(live.id);
+ const review=f.create({objective:'Acceptance archive deny'});b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance' WHERE id=?").run(review.id);
+ const unknown=f.create({objective:'Unknown process deny'});b.controlStore.db.prepare("UPDATE cp_missions SET state='completed' WHERE id=?").run(unknown.id);
+ const unk=b.missions.require(unknown.id);
+ b.controlStore.db.prepare("INSERT INTO cp_runs(id,mission_id,task_id,agent_id,generation,state,process_state,liveness_state,termination_verified,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+  .run(randomUUID(),unknown.id,unk.task_id,'host',1,'running','unknown','unknown',0,Date.now(),Date.now());
+ assert.equal(visibility.archiveEligible(b.missions.require(live.id),b),false);
+ assert.equal(visibility.archiveEligible(b.missions.require(review.id),b),false);
+ assert.equal(visibility.archiveEligible(b.missions.require(unknown.id),b),false);
+ assert.ok(visibility.archiveBlockers(b,b.missions.require(unknown.id)).includes('unknown_process_state')||visibility.archiveBlockers(b,b.missions.require(unknown.id)).includes('unverified_termination'));
+ const blocked=f.create({objective:'Blocked recovery truth'});b.controlStore.db.prepare("UPDATE cp_missions SET state='blocked' WHERE id=?").run(blocked.id);
+ const view=display.missionView(b,b.missions.require(blocked.id));
+ assert.notEqual(view.outcome.headline,'Autonomous recovery');
+ assert.doesNotMatch(view.outcome.detail||'',/will repair and retry/);
 });
