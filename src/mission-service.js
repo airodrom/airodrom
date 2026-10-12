@@ -151,7 +151,9 @@ class MissionService {
     });
   }
   async tick(){
-    if(this.busy||this.stopped||this.bridge.closed)return;this.busy=true;
+    // Do not enter the busy gate while admission is closed/booting. A recover()
+    // microtask that races finishRecovery would otherwise block auto-open forever.
+    if(this.busy||this.stopped||this.bridge.closed||this.bridge.lifecycle&&this.bridge.lifecycle.state()!=='open')return;this.busy=true;
     try{
       this.store.expireDecisions();this.acceptanceEngine.reconcile();this.riskAcceptance.reconcile();this.program.tick();
       for(const c of this.db.prepare("SELECT * FROM cp_continuations WHERE state='queued'").all()){

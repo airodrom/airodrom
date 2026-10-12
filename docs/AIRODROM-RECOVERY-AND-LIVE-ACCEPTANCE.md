@@ -144,7 +144,7 @@ Note: `/api/product/correct-memory` supersedes with a **new** id; forget must ta
 
 | Item | Status |
 | --- | --- |
-| Operator checkout `/Users/andrew/code/airodrom` | Preserved dirty / not used for mutation |
+| Operator checkout `~/code/airodrom` | Preserved dirty / not used for mutation |
 | Worktree branch | `feat/master-personal-ai-completion` |
 | PR #70 | Updated with this recovery evidence |
 | PRs #36–#38 | Untouched |

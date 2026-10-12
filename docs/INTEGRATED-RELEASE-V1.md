@@ -6,16 +6,16 @@ Local-first release candidate prepared from one verified source revision. This i
 
 | Field | Value |
 | --- | --- |
-| Worktree | `/Users/andrew/Documents/Codex/2026-10-09/airodrom-daily-integration-v1/work/airodrom-daily-integration` |
+| Worktree | `~/Documents/Codex/2026-10-09/airodrom-daily-integration-v1/work/airodrom-daily-integration` |
 | Branch | `integ/daily-candidate-v1-20261009` |
 | Integration tip (preflight) | `2aac9c72d184fbae1754fcf43104e865ff4a4403` |
 | Release source HEAD | `77724f83569eadae41727c86b201e433a801f910` |
 | Merged on `origin/main` | `0e5f0a86da1a21526105ebda24984ec309f91897` (PR #45) |
 | Package | `airodrom` `1.0.0-rc.1` (`private: true`) |
-| Operator checkout | `/Users/andrew/code/airodrom` on `main` — preserved; not the install source |
+| Operator checkout | `~/code/airodrom` on `main` — preserved; not the install source |
 
 Canonical package artifacts (outside Git):  
-`/Users/andrew/Documents/Codex/2026-10-09/airodrom-daily-integration-v1/release-candidate-2aac9c7/`
+`~/Documents/Codex/2026-10-09/airodrom-daily-integration-v1/release-candidate-2aac9c7/`
 
 - `airodrom-source-a.tar.gz` / `airodrom-source-b.tar.gz` — byte-identical allowlisted source archives  
 - `SOURCE-MANIFEST.json` — exact file list and per-file SHA-256  
@@ -92,7 +92,7 @@ Preserve before any install:
 - Keychain / Vault references  
 - `~/.airodrom/runtime-pins.json` (+ `.previous`)  
 - Mission records and local approvals  
-- Protected dirty operator checkout at `/Users/andrew/code/airodrom`  
+- Protected dirty operator checkout at `~/code/airodrom`  
 
 Plan (owner-authorized only):
 

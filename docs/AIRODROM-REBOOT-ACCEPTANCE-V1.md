@@ -90,7 +90,7 @@ Prepare creates one synthetic ordinary memory (`Airodrom-Orbit-2026`), a `VACUUM
 After login, the companion agent runs `reboot-acceptance.cjs verify` with bounded retries. Manual continuation (session-independent):
 
 ```bash
-cd /Users/andrew/Documents/Codex/2026-10-11/airodrom-master-completion/work/airodrom-reboot-acceptance
+cd ~/Documents/Codex/2026-10-11/airodrom-master-completion/work/airodrom-reboot-acceptance
 NODE_ENV=test node --experimental-sqlite scripts/macos/reboot-acceptance.cjs status
 NODE_ENV=test node --experimental-sqlite scripts/macos/reboot-acceptance.cjs verify
 AIRODROM_HOME=$HOME/.airodrom PATH=$HOME/.local/npm/bin:/opt/homebrew/opt/node@22/bin:/usr/bin:/bin airodrom status

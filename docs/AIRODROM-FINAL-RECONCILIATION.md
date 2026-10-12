@@ -10,7 +10,7 @@ Evidence recorded 2026-10-12. Updated after PR #70 merge.
 | Primary PR | [#70](https://github.com/airodrom/airodrom/pull/70) |
 | Pre-merge head | `fc9b83e2ba22fedfb3e65d52f52862a6567b76ef` |
 | Pre-merge main | `525458c945b48f6341320600c081ea163fd5a14f` |
-| Operator checkout | `/Users/andrew/code/airodrom` — **dirty / PROTECTED** — not reset |
+| Operator checkout | `~/code/airodrom` — **dirty / PROTECTED** — not reset |
 
 ## 2. Final `origin/main` SHA
 
@@ -21,7 +21,7 @@ Evidence recorded 2026-10-12. Updated after PR #70 merge.
 
 Clean synchronized checkout:
 
-`/Users/andrew/Documents/Codex/2026-10-11/airodrom-master-completion/work/airodrom-main-clean` @ `ce33767` (`handoff/main-clean-20261012`).
+`~/Documents/Codex/2026-10-11/airodrom-master-completion/work/airodrom-main-clean` @ `ce33767` (`handoff/main-clean-20261012`).
 
 Feature tip `fc9b83e` is an ancestor of `origin/main`.
 
@@ -72,7 +72,7 @@ Merging the repository does **not** update the installed service.
 
 ## 13. Protected work
 
-- Dirty operator checkout `/Users/andrew/code/airodrom`
+- Dirty operator checkout `~/code/airodrom`
 - Open draft PRs #36–#38 and their worktrees/commits
 - Active install + rollback kit + `~/.airodrom` private state
 - Other dirty/unique worktrees not proven fully merged

@@ -121,10 +121,20 @@ test('authorized Development Session metadata is usable; credentials stay blocke
     'session synthetic-canary',
     'SESSION_TOKEN=abc123secretvalue',
     'My password is synthetic-private-canary',
-    'Authorization: Bearer sk-ant-abcdefghijklmnopqrstuvwxyz',
+    // Use a synthetic Bearer shape that still trips ingress screening without
+    // matching the public sk-ant-/sk-proj- provider-key scanner fingerprint.
+    'Authorization: Bearer syn-fixture-not-a-provider-key',
     'Open an authenticated browser session for app.monarch.com. password is synthetic-canary'
   ];
   for (const message of denied) {
+    assert.equal(intent.parse(message).kind, 'secret', message);
+  }
+  // Adversarial: real provider-key shapes must still be classified secret and
+  // must not be weakened by the synthetic Bearer fixture above.
+  for (const message of [
+    'Authorization: Bearer sk-ant-api03-FIXTUREONLYVALUE0123456789abcdef',
+    'ANTHROPIC_API_KEY=sk-proj-FIXTUREONLYVALUE0123456789abcdefABCD'
+  ]) {
     assert.equal(intent.parse(message).kind, 'secret', message);
   }
   assert.equal(policy.operatorSecretLike('Verify Session Continuity across current Missions.'), false);
