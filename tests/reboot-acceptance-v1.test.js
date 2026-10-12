@@ -28,12 +28,18 @@ test('status reports absence without throwing', t => {
   assert.equal(s.authority, false);
 });
 
-test('verify requires pending state', async t => {
+test('verify without pending is idle success for RunAtLoad', async t => {
   const home = tempHome(t);
-  await assert.rejects(reboot.verify(home, {
+  const receipt = await reboot.verify(home, {
     status: async () => ({ healthy: true, pid: 1, opencode: { ready: true } }),
     request: async () => ({ items: [] })
-  }), /No pending/);
+  });
+  assert.equal(receipt.ok, true);
+  assert.equal(receipt.skipped, true);
+  assert.equal(receipt.acceptance_ok, null);
+  assert.equal(receipt.reason, 'no_pending_reboot_acceptance_state');
+  assert.equal(receipt.authority, false);
+  assert.equal(reboot.status(home).idle_verify_expected, true);
 });
 
 test('verify settles pending when checks pass', async t => {

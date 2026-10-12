@@ -18,7 +18,8 @@ async function main(argv = process.argv.slice(2)) {
   if (command === 'verify') {
     const receipt = await reboot.verify(home, local);
     process.stdout.write(JSON.stringify(receipt) + '\n');
-    // Exit 0 only means the verifier ran; acceptance requires receipt.ok.
+    // Exit 0 means the verifier completed, including idle skip when no pending
+    // stamp exists (RunAtLoad). Reboot acceptance success is receipt.acceptance_ok.
     if (receipt.ok !== true) process.exitCode = 2;
     return;
   }
