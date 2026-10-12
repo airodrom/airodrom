@@ -1,3 +1,8 @@
+## main — Developer Memory V1 merged (PR #74)
+
+- Merged PR #74 at `bc927eb51ebb816c76090d85fe6a2606f1abd8e1`. Feature flags remain off. Live installation is not automatically cut over; candidate staged at `install/airodrom-developer-memory-bc927eb`.
+- Destructive developer-memory approvals require authenticated control-plane minting; ContextPack cache drops on repository identity change.
+
 ## Unreleased — Developer Memory V1 (Hindsight subordinate provider)
 
 - Add governed Developer Memory adapter with loopback Hindsight HTTP transport (`/v1/default/banks/…`, retain `{ items }`), repository bank isolation via `git-common-dir`+remote, host-bound authorize-before retain/retrieve, operator approval for suppress/delete, cache invalidation, Mission-lifecycle prefetch, and sync ContextPack contribution.

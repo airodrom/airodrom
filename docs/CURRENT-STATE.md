@@ -175,3 +175,7 @@ No new feature milestone was invented for this consolidation. Live status observ
 ## WhatsApp verify-token staged rotation — see SHIPPED + INSTALLED above
 
 Owner Meta test callback verification remains pending: stage in owner TTY → Meta Verify/Save → explicit `commit-verify-token` (or `rollback-verify-token`).
+
+## Developer Memory V1 (2026-10-12)
+
+- PR #74 merged to `main` as `bc927eb`. Owner live tip not cut over. Candidate: `install/airodrom-developer-memory-bc927eb`. Flags off. Hosted `candidate.yml` remains `disabled_manually`.
