@@ -1,4 +1,13 @@
-## Unreleased — ZeroSetup unique Mission names\n\n- Append a short request-id suffix to ZeroSetup Mission objectives so repeated asks under one Goal do not hit project_missions uniqueness.\n\n## Unreleased — Zero-setup scope filter for No Production limitations
+## Unreleased — Repair spawn with parent-baseline dirt
+
+- Corrective Mission create allows dirty paths already recorded on the parent Mission baseline (for example owner README notes) while still denying newly introduced dirt outside `allowed_files`.
+- Focused regression in `tests/autonomous-self-repair.test.js`.
+
+## Unreleased — ZeroSetup unique Mission names
+
+- Append a short request-id suffix to ZeroSetup Mission objectives so repeated asks under one Goal do not hit project_missions uniqueness.
+
+## Unreleased — Zero-setup scope filter for No Production limitations
 
 - Do not treat Project limitations that explicitly deny Production as production Projects when resolving disposable WORK scope.
 - Prefer instruction-named Projects and exact-byte self-repair disposables over bare human-acceptance name matches.
