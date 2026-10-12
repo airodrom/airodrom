@@ -8,7 +8,7 @@ const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
 const {
-  DeveloperMemory, loadConfig, authorize, repositoryIdentity, TRUST, prepareSchema
+  DeveloperMemory, loadConfig, authorize, repositoryIdentity, TRUST, prepareSchema, OPERATOR_CONTROL_SURFACE
 } = require('../src/developer-memory');
 const { HindsightHttpTransport, classifyError, bankPath, API_PREFIX } = require('../src/developer-memory-hindsight');
 const BridgeController = require('./fixtures/test-bridge.cjs');
@@ -301,7 +301,7 @@ test('K–N suppress/delete require operator approval; cache invalidates', async
   await dm.prefetchContext({ taskId: 'cache-1', workspaceRoot: repo, query: 'OpenCode', capabilityScopes: ['repo'] });
   assert.equal(dm.contextContribution({ taskId: 'cache-1' }).status, 'ok');
 
-  const approval = dm.mintOperatorApproval({ operation: 'delete', taskId: 't1', repositoryId: id.repositoryId });
+  const approval = dm.mintOperatorApproval(DeveloperMemory.withOperatorControlSurface({ operation: 'delete', taskId: 't1', repositoryId: id.repositoryId }));
   const forgotten = await dm.delete({
     taskId: 't1',
     repositoryId: id.repositoryId,
@@ -530,15 +530,53 @@ test('negative: caller boolean cannot authorize suppress/delete; approval is sin
     operation: 'delete', taskId: 't1', ...bank, operatorApproved: true, operatorApprovalId: 'x'
   }, enabledConfig(), forgedHost).reason, 'denied_by_host');
 
-  const mint = dm.mintOperatorApproval({ operation: 'suppress', taskId: 't1' });
+  const mint = dm.mintOperatorApproval(DeveloperMemory.withOperatorControlSurface({ operation: 'suppress', taskId: 't1' }));
   assert.equal((await dm.suppress({
     taskId: 't2', ...bank, contentHash: 'abc', operatorApprovalId: mint.approvalId
   })).status, 'operator_approval_task_mismatch');
-  const mint2 = dm.mintOperatorApproval({ operation: 'suppress', taskId: 't1' });
+  const mint2 = dm.mintOperatorApproval(DeveloperMemory.withOperatorControlSurface({ operation: 'suppress', taskId: 't1' }));
   assert.equal((await dm.suppress({
     taskId: 't1', ...bank, contentHash: 'abc', operatorApprovalId: mint2.approvalId
   })).status, 'suppressed');
   assert.equal((await dm.suppress({
     taskId: 't1', ...bank, contentHash: 'abc', operatorApprovalId: mint2.approvalId
   })).status, 'operator_approval_unknown');
+});
+
+test('mintOperatorApproval requires authenticated operator control surface', t => {
+  const dm = new DeveloperMemory({ db: memoryDb(t), config: enabledConfig(), transport: mockTransport() });
+  assert.throws(() => dm.mintOperatorApproval({ operation: 'delete', taskId: 't1' }), /operator_control_surface_required/);
+  const minted = dm.mintOperatorApproval(DeveloperMemory.withOperatorControlSurface({ operation: 'delete', taskId: 't1' }));
+  assert.equal(typeof minted.approvalId, 'string');
+});
+
+test('cached developer context dies when task repository identity changes', async t => {
+  const repoA = tempRepo(t, { remote: 'https://example.test/a.git' });
+  const repoB = tempRepo(t, { remote: 'https://example.test/b.git' });
+  const idA = repositoryIdentity(repoA);
+  const tasks = new Map([['task-1', {
+    id: 'task-1',
+    workspace: repoA,
+    mission: { envelope: { workspace: repoA, capability_scopes: ['repo'], objective: 'ADR routing' } }
+  }]]);
+  const dm = new DeveloperMemory({
+    db: memoryDb(t),
+    config: enabledConfig(),
+    transport: mockTransport({
+      recall: async () => ({ results: [{ id: '1', text: 'Host-owned routing.', document_id: 'd1' }] })
+    }),
+    resolveTask: id => tasks.get(id) || null
+  });
+  const pre = await dm.prefetchForMission(tasks.get('task-1').mission, tasks.get('task-1'));
+  assert.equal(pre.status, 'ok');
+  assert.equal(dm.contextContribution({ taskId: 'task-1' }).items.length, 1);
+  tasks.set('task-1', {
+    id: 'task-1',
+    workspace: repoB,
+    mission: { envelope: { workspace: repoB, capability_scopes: ['repo'], objective: 'ADR routing' } }
+  });
+  const after = dm.contextContribution({ taskId: 'task-1' });
+  assert.equal(after.status, 'repository_identity_changed');
+  assert.equal(after.items.length, 0);
+  assert.notEqual(idA.repositoryId, repositoryIdentity(repoB).repositoryId);
 });

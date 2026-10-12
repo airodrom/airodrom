@@ -25,6 +25,8 @@ const TRUST = Object.freeze({
 const DEFAULT_CONFIG_PATH = path.join(__dirname, '../config/developer-memory-v1.json');
 const ALLOWED_SCOPES = new Set(['repo', 'developer_environment']);
 const DESTRUCTIVE = new Set(['suppress', 'delete']);
+/** Only ControlServer operator-authenticated surfaces may pass this token into mintOperatorApproval. */
+const OPERATOR_CONTROL_SURFACE = Symbol('airodrom.developerMemory.operatorControlSurface');
 
 function loadConfig(file = DEFAULT_CONFIG_PATH) {
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -307,10 +309,15 @@ class DeveloperMemory {
   }
 
   /**
-   * Host-only mint of a single-use destructive approval. Not exposed through
-   * worker/broker tools. Callers cannot forge approval with a boolean.
+   * Mint a single-use destructive approval. Requires the authenticated
+   * operator control-plane surface token — models, workers, MCP, and bare
+   * in-process callers cannot manufacture human consent.
    */
-  mintOperatorApproval({ operation, taskId, repositoryId = null, ttlMs = 120_000 } = {}) {
+  mintOperatorApproval(input = {}) {
+    if (input?.[OPERATOR_CONTROL_SURFACE] !== true) {
+      throw new Error('operator_control_surface_required');
+    }
+    const { operation, taskId, repositoryId = null, ttlMs = 120_000 } = input;
     if (!DESTRUCTIVE.has(operation)) throw new Error('Not a destructive developer-memory operation');
     if (typeof taskId !== 'string' || !taskId) throw new Error('taskId required for operator approval');
     const approvalId = randomUUID();
@@ -322,6 +329,11 @@ class DeveloperMemory {
       expiresAt
     });
     return { approvalId, expiresAt, operation, taskId, single_use: true, authority: false };
+  }
+
+  /** Test/host helper: mark an options object as coming from the operator control plane. */
+  static withOperatorControlSurface(input = {}) {
+    return { ...input, [OPERATOR_CONTROL_SURFACE]: true };
   }
 
   _verifyApproval({ operation, taskId, approvalId } = {}) {
@@ -675,12 +687,14 @@ class DeveloperMemory {
       return { status: this.config.enabled ? 'retrieval_disabled' : 'disabled', items: [], authority: false };
     }
     if (!taskId) return { status: 'missing_task_identity', items: [], authority: false };
+    let hostIdentity = null;
     if (this.resolveTask) {
       const auth = authorize({ operation: 'search', taskId }, this.config, this._host());
       if (!auth.allow) {
         this._contextCache.delete(taskId);
         return { status: auth.reason, items: [], authority: false };
       }
+      hostIdentity = auth.identity;
     }
     const cached = this._contextCache.get(taskId);
     if (!cached) return { status: 'not_prefetched', items: [], authority: false };
@@ -691,6 +705,13 @@ class DeveloperMemory {
     if (cached.policy_version !== `developer-memory-v${this.config.version}`) {
       this._contextCache.delete(taskId);
       return { status: 'policy_changed', items: [], authority: false };
+    }
+    // Stale cache must not survive task repository identity change/revocation.
+    if (hostIdentity) {
+      if (cached.repositoryId !== hostIdentity.repositoryId || cached.bankId !== hostIdentity.bankId) {
+        this._contextCache.delete(taskId);
+        return { status: 'repository_identity_changed', items: [], authority: false };
+      }
     }
     const items = (cached.items || []).filter(item => !this._suppressed(cached.repositoryId, {
       memoryId: item.memoryId,
@@ -771,5 +792,6 @@ module.exports = {
   prepareSchema,
   TRUST,
   DEFAULT_CONFIG_PATH,
-  scopesFromTask
+  scopesFromTask,
+  OPERATOR_CONTROL_SURFACE
 };

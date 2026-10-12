@@ -157,6 +157,20 @@ function controlPlaneWrite(bridge, action, input) {
     object(input, ['id','request_id','decision','content']); identifier(input.id); identifier(input.request_id);
     return bridge.controlStore.request('operator', input.request_id, { action, ...input }, () => bridge.controlContext.review(input.id, { decision: input.decision, content: input.content, reviewer: 'operator' }));
   }
+  if (action === 'developer-memory-mint-approval') {
+    object(input, ['request_id', 'operation', 'task_id']); identifier(input.request_id);
+    if (!bridge.developerMemory) throw new Error('Developer Memory is unavailable');
+    if (!['suppress', 'delete'].includes(input.operation)) throw new Error('Invalid destructive developer-memory operation');
+    if (typeof input.task_id !== 'string' || !input.task_id) throw new Error('task_id required');
+    return bridge.controlStore.request('operator', input.request_id, { action, ...input }, () =>
+      bridge.developerMemory.mintOperatorApproval(require('./developer-memory').DeveloperMemory.withOperatorControlSurface({
+        operation: input.operation,
+        taskId: input.task_id,
+        repositoryId: typeof input.repository_id === 'string' ? input.repository_id : null,
+        ttlMs: input.ttl_ms
+      }))
+    );
+  }
   throw new Error('Control operation is not enabled');
 }
 module.exports = { controlPlaneRead, controlPlaneWrite };

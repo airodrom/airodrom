@@ -75,7 +75,7 @@ Host-derived identity from realpath + `git rev-parse --git-common-dir` + optiona
 - `repositoryId` = SHA-256 of `{ git_common_dir, remote }`
 - `bankId` = `airo-dev-{first 32 hex of repositoryId}`
 
-Subdirectories and linked Git worktrees share the same bank via `git-common-dir`. Model-supplied bank IDs are denied. When a host task resolver is bound, caller-supplied `repositoryId`/`bankId` cannot override host identity. Capability scopes must be present (`repo` or `developer_environment`). Destructive suppress/delete require a **host-minted single-use** `operatorApprovalId` (`mintOperatorApproval` / `host.verifyOperatorApproval`). A caller-supplied `operatorApproved: true` boolean is rejected and never independently grants approval. Cross-repository retrieval fails closed.
+Subdirectories and linked Git worktrees share the same bank via `git-common-dir`. Model-supplied bank IDs are denied. When a host task resolver is bound, caller-supplied `repositoryId`/`bankId` cannot override host identity. Capability scopes must be present (`repo` or `developer_environment`). Destructive suppress/delete require a **host-minted single-use** `operatorApprovalId`. Minting is only allowed through the authenticated operator control-plane action `developer-memory-mint-approval` (Symbol-gated `mintOperatorApproval`). Models, workers, MCP, and bare in-process callers cannot manufacture consent. A caller-supplied `operatorApproved: true` boolean is rejected. ContextPack contributions revalidate host repository identity and drop stale cache on identity change/revocation. Cross-repository retrieval fails closed.
 
 ## Authorization
 
