@@ -1,3 +1,9 @@
+## Unreleased — Zero-setup scope filter for No Production limitations
+
+- Do not treat Project limitations that explicitly deny Production as production Projects when resolving disposable WORK scope.
+- Prefer instruction-named Projects and exact-byte self-repair disposables over bare human-acceptance name matches.
+- Focused regression in `tests/zero-setup-work.test.js`.
+
 ## Unreleased — Terminal intent routing & live self-repair proof
 
 - Classify natural-language WORK when file/repository actions follow contextual preambles (not only leading verbs); ordinary discussion about files stays conversation.
