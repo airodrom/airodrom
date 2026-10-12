@@ -1,6 +1,6 @@
 # ADR 0047 — Autonomous reliability and intelligence V1
 
-Status: Proposed. Implements the owner's bounded V1 engineering request; does not authorize installation, automatic dispatch, merge, cloud activation or personal-memory mutation. Extends accepted ADRs 0004, 0005 and 0008.
+Status: Proposed (merge-ready source after PR #79 reconciliation). Implements the owner's bounded V1 engineering request; does not authorize installation, automatic dispatch, cloud activation or personal-memory mutation. Extends accepted ADRs 0004, 0005 and 0008. Continuous Autonomous Execution V1 remains a separate milestone.
 
 ## Decision
 

@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## Autonomous Reliability & Intelligence V1 — MERGE-READY SOURCE (2026-10-12)
+
+- **PR:** [#78](https://github.com/airodrom/airodrom/pull/78) reconciled onto `origin/main` after Repository Health Qualification V1 ([#79](https://github.com/airodrom/airodrom/pull/79) merged @ `0a5d079`)
+- **Preserved health invariants:** Mission tick busy-gate while admission closed; durable-wait settlement; synthetic fixture disposal ≠ real termination; fail-closed production shutdown
+- **Not installed / not activated:** no automatic goal dispatcher; Developer Memory off; Hindsight unactivated by this PR; live installation unchanged
+- **Next product milestone (separate):** Continuous Autonomous Execution V1 — see [AUTONOMOUS-RELIABILITY-V1.md](AUTONOMOUS-RELIABILITY-V1.md)
+- Evidence: [AUTONOMOUS-RELIABILITY-V1.md](AUTONOMOUS-RELIABILITY-V1.md), [ADR 0047](adr/0047-autonomous-reliability-intelligence.md)
+
 ## Menu Status & WhatsApp Connection Closeout V1 — LOCAL IMPLEMENTATION (2026-10-10)
 
 - **Branch:** `feat/menu-status-whatsapp-closeout` (isolated worktree from `origin/main` `f6e13ca`)

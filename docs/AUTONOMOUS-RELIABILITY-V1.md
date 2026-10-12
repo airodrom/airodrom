@@ -54,7 +54,19 @@ Evidence classes are distinct: MOCKED CONTRACT PASS, DISPOSABLE FIXTURE PASS, RE
 
 ## Initial comparative measurements
 
-Final stabilization rebases the evidence comparison (without rewriting feature history) onto main after the Developer Memory repository-allowlist change. The narrow OpenCode public-source timestamp repair addresses a pre-existing false denial that blocked repeatable qualification. It does not relax prose sanitization, change receipts, enable Developer Memory, or activate Hindsight. Shutdown remains fail-closed for unresolved runs, leases and uncertain external effects; a test process forced to exit is never evidence of clean shutdown. Exact-head counts, baseline failure classification and release-gate exceptions belong in the PR evidence, and Draft status remains until those gates are satisfied or the owner accepts an exception under policy.
+Final stabilization rebases the evidence comparison (without rewriting feature history) onto main after Repository Health Qualification V1 (PR #79). The merge preserves Mission tick admission busy-gate, durable-wait settlement, synthetic fixture disposal isolation and fail-closed production shutdown. The narrow OpenCode public-source timestamp repair addresses a pre-existing false denial that blocked repeatable qualification. It does not relax prose sanitization, change receipts, enable Developer Memory, or activate Hindsight. Shutdown remains fail-closed for unresolved runs, leases and uncertain external effects; a test process forced to exit is never evidence of clean shutdown. Exact-head counts, baseline failure classification and release-gate exceptions belong in the PR evidence.
+
+## Continuous Autonomous Execution V1 (next milestone — not this PR)
+
+Out of scope for Autonomy Reliability & Intelligence V1. After this PR merges and is owner-activated, the next product milestone is Continuous Autonomous Execution V1:
+
+1. Owner supplies one goal and authorizes a qualified worker.
+2. Airodrom owns durable dependent Missions, authorized starts, progress, stall detection, bounded recovery, checkpoint resume, authorized worker switching, independent verification and automatic continuation.
+3. Closing ChatGPT or Cursor must not terminate an authorized continuing goal.
+4. Workers remain replaceable; a model cannot grant itself authority.
+5. Stop only at genuine safety or authorization boundaries; complete only when the original goal is satisfied.
+
+This V1 supplies observing Goal Plans, Flight Recorder, evaluation and discovery. It does **not** add an automatic goal dispatcher.
 
 At the starting main revision `7efebfb2730a2ededdb1bbb42b11ca15e07f319a`, all 20 selected baseline contracts passed. The first candidate run also passed all 20. Positive-objective success and independent assertion pass rates were 100% within that selected fixture suite; four recovery contracts passed. Baseline unauthorized execution, false-denial and approval counters were unmeasured. The new instrumented injection fixture separately observed one denied unauthorized write and one successful authorized Mission. These are bounded fixture counts, not deployment or general model guarantees.
 
