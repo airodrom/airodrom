@@ -31,3 +31,17 @@ operator home without separate authorization.
 Correction semantics execute in the managed service process. Updating the Terminal
 CLI link alone does not change live tip handlers until the owned service is restarted
 from a package that includes this change.
+
+## Activation readiness (PR #70 / adc7f1e)
+
+Pre-activation kit (service still on tip `525458c` until operator approval):
+
+- Backup root pattern: `~/.airodrom/backups/memory-correction-adc7f1e-*`
+- Contains: online `memory.sqlite` backup, `local.json`, LaunchAgent snapshot,
+  `candidate-local.json`, candidate LaunchAgent, `APPROVAL-REQUEST.md`
+- Prepared install: `…/airodrom-master-completion/install/airodrom-memory-correction-adc7f1e`
+- Copy verification: `presentCurrentItems` returns Proxima-77 as current without
+  mutating the live database; optional reconcile apply is separate and opt-in
+
+Do not change `local.json`, LaunchAgent, or stop the managed service without the
+single explicit activation approval recorded in the backup kit.
