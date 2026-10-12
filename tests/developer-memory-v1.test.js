@@ -682,3 +682,138 @@ test('empty allowlist fails closed while feature enabled; Personal Memory untouc
   })).status, 'repository_not_allowlisted');
   assert.equal(bridge.personalMemory.stats().generation, before.generation);
 });
+
+test('post-revocation cleanup: owner delete works; retrieval stays denied; replay/cross-repo blocked', async t => {
+  const repoA = tempRepo(t, { remote: 'https://github.com/airodrom/airodrom.git' });
+  const repoB = tempRepo(t, { remote: 'https://example.test/other.git' });
+  const idA = repositoryIdentity(repoA);
+  const idB = repositoryIdentity(repoB);
+  const transport = mockTransport();
+  const dm = new DeveloperMemory({ db: memoryDb(t), config: withRepo(idA), transport });
+  const bank = {
+    repositoryId: idA.repositoryId, bankId: idA.bankId, expectedBankId: idA.bankId, capabilityScopes: ['repo']
+  };
+
+  const retained = await dm.retain({
+    taskId: 't-clean', ...bank,
+    sourceKind: 'approved_engineering_note',
+    content: 'Revocation cleanup target evidence.',
+    documentId: 'doc-clean-1'
+  });
+  assert.equal(retained.status, 'retained');
+
+  // Revoke allowlist: retrieval/retain/ContextPack fail closed immediately.
+  dm.config = enabledConfig({ allowed_repositories: [] });
+  assert.equal((await dm.search({
+    taskId: 't-clean', ...bank, query: 'cleanup'
+  })).status, 'repository_not_allowlisted');
+  assert.equal((await dm.retain({
+    taskId: 't-clean', ...bank, sourceKind: 'approved_engineering_note', content: 'no'
+  })).status, 'repository_not_allowlisted');
+
+  // Unauthorized deletion after revocation remains denied.
+  assert.equal((await dm.delete({
+    taskId: 't-clean', ...bank, memoryId: retained.memoryId, documentId: 'doc-clean-1'
+  })).status, 'operator_approval_required');
+  assert.equal((await dm.delete({
+    taskId: 't-clean', ...bank, memoryId: retained.memoryId, operatorApproved: true
+  })).status, 'operator_approval_boolean_rejected');
+
+  // Owner-authenticated cleanup succeeds without restoring retrieval.
+  const approval = dm.mintOperatorApproval(DeveloperMemory.withOperatorControlSurface({
+    operation: 'delete', taskId: 't-clean', repositoryId: idA.repositoryId
+  }));
+  const forgotten = await dm.delete({
+    taskId: 't-clean', ...bank,
+    memoryId: retained.memoryId,
+    documentId: 'doc-clean-1',
+    operatorApprovalId: approval.approvalId
+  });
+  assert.equal(forgotten.status, 'deleted_logical');
+  assert.equal(forgotten.cleanup_only, true);
+  assert.equal(forgotten.authority, false);
+  assert.equal(transport.calls.some(c => c.op === 'deleteDocument' && c.bankId === idA.bankId), true);
+
+  // Approval replay fails closed.
+  assert.equal((await dm.delete({
+    taskId: 't-clean', ...bank,
+    memoryId: retained.memoryId,
+    operatorApprovalId: approval.approvalId
+  })).status, 'operator_approval_unknown');
+
+  // Retrieval still denied after cleanup.
+  assert.equal((await dm.search({
+    taskId: 't-clean', ...bank, query: 'cleanup'
+  })).status, 'repository_not_allowlisted');
+
+  // Cross-repository isolation: cannot erase repo B rows under repo A identity / approval.
+  dm.config = withRepo(idB);
+  const other = await dm.retain({
+    taskId: 't-b',
+    repositoryId: idB.repositoryId, bankId: idB.bankId, expectedBankId: idB.bankId,
+    capabilityScopes: ['repo'],
+    sourceKind: 'approved_engineering_note',
+    content: 'Other repository evidence.',
+    documentId: 'doc-b-1'
+  });
+  assert.equal(other.status, 'retained');
+  dm.config = enabledConfig({ allowed_repositories: [] });
+  const crossApproval = dm.mintOperatorApproval(DeveloperMemory.withOperatorControlSurface({
+    operation: 'delete', taskId: 't-cross', repositoryId: idA.repositoryId
+  }));
+  assert.equal((await dm.delete({
+    taskId: 't-cross',
+    repositoryId: idA.repositoryId, bankId: idA.bankId, expectedBankId: idA.bankId,
+    capabilityScopes: ['repo'],
+    memoryId: other.memoryId,
+    operatorApprovalId: crossApproval.approvalId
+  })).status, 'repository_mismatch');
+
+  const bridge = await bridgeFixture(t);
+  const before = bridge.personalMemory.stats();
+  assert.equal(bridge.personalMemory.stats().generation, before.generation);
+});
+
+test('host-bound cleanup after revocation invalidates cache and blocks ContextPack', async t => {
+  const repo = tempRepo(t, { remote: 'https://github.com/airodrom/airodrom.git' });
+  const id = repositoryIdentity(repo);
+  const tasks = new Map([['task-rev', {
+    id: 'task-rev', workspace: repo,
+    mission: { envelope: { workspace: repo, capability_scopes: ['repo'], objective: 'Cleanup objective' } }
+  }]]);
+  const transport = mockTransport({
+    recall: async () => ({ results: [{ id: '1', text: 'Cached fact.', document_id: 'd1' }] })
+  });
+  const dm = new DeveloperMemory({
+    db: memoryDb(t), config: withRepo(id), transport,
+    resolveTask: taskId => tasks.get(taskId) || null
+  });
+  const retained = await dm.retain({
+    taskId: 'task-rev',
+    sourceKind: 'approved_engineering_note',
+    content: 'Host cleanup target.',
+    documentId: 'doc-host-1'
+  });
+  assert.equal(retained.status, 'retained');
+  const pre = await dm.prefetchForMission(tasks.get('task-rev').mission, tasks.get('task-rev'));
+  assert.equal(pre.status, 'ok');
+  assert.equal(dm.contextContribution({ taskId: 'task-rev' }).status, 'ok');
+
+  dm.config = enabledConfig({ allowed_repositories: [] });
+  assert.equal(dm.contextContribution({ taskId: 'task-rev' }).status, 'repository_not_allowlisted');
+  assert.equal(dm._contextCache.size, 0);
+
+  const approval = dm.mintOperatorApproval(DeveloperMemory.withOperatorControlSurface({
+    operation: 'delete', taskId: 'task-rev'
+  }));
+  assert.equal(approval.repositoryId, id.repositoryId);
+  const deleted = await dm.delete({
+    taskId: 'task-rev',
+    memoryId: retained.memoryId,
+    operatorApprovalId: approval.approvalId
+  });
+  assert.equal(deleted.status, 'deleted_logical');
+  assert.equal(deleted.cleanup_only, true);
+  assert.equal(dm.contextContribution({ taskId: 'task-rev' }).status, 'repository_not_allowlisted');
+  assert.equal((await dm.search({ taskId: 'task-rev', query: 'x' })).status, 'repository_not_allowlisted');
+});
