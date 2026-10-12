@@ -84,3 +84,18 @@ test('approval boundary rejects unconfirmed approve and MCP cannot register temp
   }, 'mcp:boundary'), /operator/);
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
 });
+
+test('limitations denying Production do not hide disposable Projects', async t => {
+  const f = await fixture(t);
+  const { ZeroSetupWork } = require('../src/zero-setup-work');
+  const z = new ZeroSetupWork(f.bridge);
+  const p = f.bridge.projects.createProject({
+    name: 'Self-Repair Scope Fixture',
+    repositories: [f.repo],
+    limitations: ['Disposable self-repair acceptance only. No Production.'],
+  });
+  fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'alpha\n');
+  const scope = z.resolveScope('In the Self-Repair Scope Fixture project, change fixture.txt from alpha to beta.', { kind: 'exact_file', file: 'fixture.txt', from: 'alpha\n', to: 'beta\n' });
+  assert.equal(scope.ok, true);
+  assert.equal(scope.project.projectId, p.projectId);
+});

@@ -22,7 +22,14 @@ function slugAlias(name, fallback) {
 }
 
 function isProductionProject(project) {
-  return PRODUCTION.test(project.name || '') || (project.limitations || []).some(l => PRODUCTION.test(l));
+  const hit = (value) => {
+    const text = String(value || '');
+    if (!PRODUCTION.test(text)) return false;
+    // Explicit denials ("No Production") are not production projects.
+    if (/\bno\s+production\b|\bnot\s+production\b|\bnon[-\s]?production\b/i.test(text)) return false;
+    return true;
+  };
+  return hit(project.name) || (project.limitations || []).some(hit);
 }
 
 function readablePath(workspace) {
@@ -75,12 +82,18 @@ class ZeroSetupWork {
     }
     if (matches.length === 1) return { ok: true, project: matches[0].project, workspace: matches[0].workspace };
     if (matches.length > 1) {
+      // Prefer a Project whose exact name appears in the instruction.
+      const namedInInstruction = matches.filter(m => (instruction || '').toLowerCase().includes(String(m.project.name || '').toLowerCase()));
+      if (namedInInstruction.length === 1) return { ok: true, project: namedInInstruction[0].project, workspace: namedInInstruction[0].workspace };
       // Prefer an explicitly named disposable over generic fixture projects sharing the same root.
-      const preferred = matches.filter(m => m.reasons.includes('named_human_acceptance') || m.reasons.includes('named_self_repair'));
+      // named_human_acceptance alone (without exact bytes) must not beat exact-file disposables.
+      const preferred = matches.filter(m => m.reasons.includes('exact_initial_bytes') && (m.reasons.includes('named_human_acceptance') || m.reasons.includes('named_self_repair')));
       if (preferred.length === 1) return { ok: true, project: preferred[0].project, workspace: preferred[0].workspace };
       if (/self[- ]?repair/i.test(instruction || '')) {
-        const selfRepair = matches.filter(m => m.reasons.includes('named_self_repair'));
+        const selfRepair = matches.filter(m => m.reasons.includes('named_self_repair') && m.reasons.includes('exact_initial_bytes'));
         if (selfRepair.length === 1) return { ok: true, project: selfRepair[0].project, workspace: selfRepair[0].workspace };
+        const mentioned = selfRepair.filter(m => (instruction || '').toLowerCase().includes(readablePath(m.workspace).toLowerCase()) || (instruction || '').toLowerCase().includes(String(m.project.name || '').toLowerCase()));
+        if (mentioned.length === 1) return { ok: true, project: mentioned[0].project, workspace: mentioned[0].workspace };
       }
       const exact = matches.filter(m => m.reasons.includes('exact_initial_bytes'));
       if (exact.length === 1) return { ok: true, project: exact[0].project, workspace: exact[0].workspace };
