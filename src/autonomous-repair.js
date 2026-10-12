@@ -88,6 +88,22 @@ function repairManifest(env) {
   return { mission };
 }
 
+function repairAuthority(env, now = Date.now()) {
+  const a = env.authority;
+  if (!a || typeof a !== 'object') return undefined;
+  // Envelope authority includes normalized version/label; create() rejects those extras.
+  let expiresAt = a.expiresAt;
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + 24 * 60 * 60 * 1000) {
+    expiresAt = now + 60 * 60 * 1000;
+  }
+  return {
+    level: a.level,
+    permissions: a.permissions,
+    filesystem: a.filesystem,
+    expiresAt,
+  };
+}
+
 function repairInput(parent, diagnosis) {
   const env = parent.envelope;
   const criteria = env.criteria || [];
@@ -97,6 +113,7 @@ function repairInput(parent, diagnosis) {
     ...(env.task_type === 'local_files' && native.length ? { native_actions: native } : {}),
   } : undefined;
   const manifest = repairManifest(env);
+  const authority = repairAuthority(env);
   return {
     request_id: 'cae-repair:' + randomUUID(),
     project_id: parent.project_id,
@@ -113,7 +130,7 @@ function repairInput(parent, diagnosis) {
     ...(Number.isInteger(env.priority) ? { priority: env.priority } : {}),
     task_type: env.task_type,
     ...(dispatch ? { dispatch_policy: dispatch } : {}),
-    ...(env.authority ? { authority: env.authority } : {}),
+    ...(authority ? { authority } : {}),
     ...(manifest ? { manifest } : {}),
     // Do not rebind work_template: assertInput fingerprints the live template ceiling,
     // which diverges from a failed parent (expiresAt, normalized manifest, dispatch).
@@ -272,4 +289,4 @@ class AutonomousRepair {
   }
 }
 
-module.exports = { AutonomousRepair, diagnose, failedChecks, repairInput, sameScope };
+module.exports = { AutonomousRepair, diagnose, failedChecks, repairInput, repairAuthority, sameScope };
