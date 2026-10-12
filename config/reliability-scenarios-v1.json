@@ -1,0 +1,722 @@
+[
+  {
+    "id": "normal-completion",
+    "version": 1,
+    "category": "A",
+    "objective": "normal completion",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "complete",
+    "verification_criteria": [
+      "Independent host assertions in mission-program"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-program.test.js",
+    "test_name_pattern": "Native manifested execution",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "coding-completion",
+    "version": 1,
+    "category": "B",
+    "objective": "coding completion",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "complete",
+    "verification_criteria": [
+      "Independent host assertions in opencode-runtime"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/opencode-runtime.test.js",
+    "test_name_pattern": "OpenCode Mission runs through",
+    "evidence_class": "MOCKED_CONTRACT"
+  },
+  {
+    "id": "tool-selection",
+    "version": 1,
+    "category": "C",
+    "objective": "tool selection",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "complete",
+    "verification_criteria": [
+      "Independent host assertions in capability-broker"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/capability-broker.test.js",
+    "test_name_pattern": "fixture-labeled host broker",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "authorized-execution",
+    "version": 1,
+    "category": "D",
+    "objective": "authorized execution",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "complete",
+    "verification_criteria": [
+      "Independent host assertions in mission-program"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-program.test.js",
+    "test_name_pattern": "Native manifested execution",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "unauthorized-denial",
+    "version": 1,
+    "category": "E",
+    "objective": "unauthorized denial",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in mission-program"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-program.test.js",
+    "test_name_pattern": "Broker enforces durable budget",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "prompt-injection",
+    "version": 1,
+    "category": "F",
+    "objective": "prompt injection",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in authority-plane"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/authority-plane.test.js",
+    "test_name_pattern": "runtime health, capability and privacy",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "memory-poisoning",
+    "version": 1,
+    "category": "G",
+    "objective": "memory poisoning",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in authority-plane"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/authority-plane.test.js",
+    "test_name_pattern": "runtime health, capability and privacy",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "repository-poisoning",
+    "version": 1,
+    "category": "H",
+    "objective": "repository poisoning",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in opencode-runtime"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/opencode-runtime.test.js",
+    "test_name_pattern": "child environment is isolated",
+    "evidence_class": "MOCKED_CONTRACT"
+  },
+  {
+    "id": "context-isolation",
+    "version": 1,
+    "category": "I",
+    "objective": "context isolation",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in opencode-runtime"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/opencode-runtime.test.js",
+    "test_name_pattern": "bounded context, changed executable",
+    "evidence_class": "MOCKED_CONTRACT"
+  },
+  {
+    "id": "project-isolation",
+    "version": 1,
+    "category": "J",
+    "objective": "project isolation",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in project-memory-v2"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/project-memory-v2.test.js",
+    "test_name_pattern": "isolation|scope",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "worker-recovery",
+    "version": 1,
+    "category": "K",
+    "objective": "worker recovery",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "recover",
+    "verification_criteria": [
+      "Independent host assertions in opencode-runtime"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/opencode-runtime.test.js",
+    "test_name_pattern": "timeout and cancellation",
+    "evidence_class": "MOCKED_CONTRACT"
+  },
+  {
+    "id": "mission-resumption",
+    "version": 1,
+    "category": "L",
+    "objective": "mission resumption",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "recover",
+    "verification_criteria": [
+      "Independent host assertions in mission-program"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-program.test.js",
+    "test_name_pattern": "Graph rejects cycles",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "timeout-handling",
+    "version": 1,
+    "category": "M",
+    "objective": "timeout handling",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "recover",
+    "verification_criteria": [
+      "Independent host assertions in opencode-runtime"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/opencode-runtime.test.js",
+    "test_name_pattern": "timeout and cancellation",
+    "evidence_class": "MOCKED_CONTRACT"
+  },
+  {
+    "id": "retry-correctness",
+    "version": 1,
+    "category": "N",
+    "objective": "retry correctness",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "recover",
+    "verification_criteria": [
+      "Independent host assertions in mission-service"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-service.test.js",
+    "test_name_pattern": "Decision.*exactly one continuation",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "duplicate-prevention",
+    "version": 1,
+    "category": "O",
+    "objective": "duplicate prevention",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in mcp-protocol"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mcp-protocol.test.js",
+    "test_name_pattern": "duplicate in-flight",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "independent-verification",
+    "version": 1,
+    "category": "P",
+    "objective": "independent verification",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "validate",
+    "verification_criteria": [
+      "Independent host assertions in mission-service"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-service.test.js",
+    "test_name_pattern": "a real failing registered verifier",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "acceptance-boundary",
+    "version": 1,
+    "category": "Q",
+    "objective": "acceptance boundary",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in mission-program"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-program.test.js",
+    "test_name_pattern": "Failed independent evidence",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "sensitive-protection",
+    "version": 1,
+    "category": "R",
+    "objective": "sensitive protection",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "deny",
+    "verification_criteria": [
+      "Independent host assertions in opencode-runtime"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/opencode-runtime.test.js",
+    "test_name_pattern": "redaction drops raw runtime",
+    "evidence_class": "MOCKED_CONTRACT"
+  },
+  {
+    "id": "tool-result-validation",
+    "version": 1,
+    "category": "S",
+    "objective": "tool result validation",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "validate",
+    "verification_criteria": [
+      "Independent host assertions in mcp-protocol"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mcp-protocol.test.js",
+    "test_name_pattern": "oversized tool output|tool failures return",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  },
+  {
+    "id": "objective-hallucination",
+    "version": 1,
+    "category": "T",
+    "objective": "objective hallucination",
+    "environment": "disposable_synthetic",
+    "required_capabilities": [
+      "existing_host_contracts"
+    ],
+    "authorized_operations": [
+      "synthetic fixture operations through current authority path"
+    ],
+    "prohibited_operations": [
+      "owner memory mutation",
+      "external services",
+      "cloud inference",
+      "policy bypass"
+    ],
+    "expected_outcome": "validate",
+    "verification_criteria": [
+      "Independent host assertions in mission-program"
+    ],
+    "max_duration_ms": 120000,
+    "resource_budget": {
+      "max_model_invocations": 0,
+      "max_output_bytes": 1048576,
+      "max_external_cost": 0
+    },
+    "security_properties": [
+      "No fixture output grants authority",
+      "No worker self-acceptance"
+    ],
+    "test_file": "tests/mission-program.test.js",
+    "test_name_pattern": "Failed independent evidence",
+    "evidence_class": "DISPOSABLE_FIXTURE"
+  }
+]

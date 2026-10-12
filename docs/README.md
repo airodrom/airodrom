@@ -46,3 +46,5 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Grounded Assistant Accuracy V1](GROUNDED-ASSISTANT-ACCURACY-V1.md) (SHIPPED + INSTALLED)
 - [Conversation UX Bugfix V1](CONVERSATION-UX-BUGFIX-V1.md) (SHIPPED + INSTALLED)
 - [Git Repository Cleanup V1](GIT-REPOSITORY-CLEANUP-V1.md)
+
+- [Autonomous Reliability & Intelligence V1](AUTONOMOUS-RELIABILITY-V1.md): local evaluations, memory metrics, durable observing goals, flight traces and discovery diagnostics.

@@ -136,7 +136,7 @@ function sandboxProfile(root, executable, writable) {
   for (const f of writable) profile += `(allow file-write* (literal ${quote(path.join(root, 'workspace', f))}))\n`;
   return profile;
 }
-function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable, onStart, onLine }) {
+function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable, onStart, onLine, onContextDelivered }) {
   if (process.platform !== 'darwin' && !fixtureExecutable) fail('opencode_platform_unqualified');
   const file = fixtureExecutable || '/usr/bin/sandbox-exec';
   const args = fixtureExecutable ? [] : ['-p', sandboxProfile(root, executable, writable), executable, 'run', '--standalone', '--format', 'json', '--agent', 'airodrom', '--model', env.OPENCODE_MODEL || JSON.parse(env.OPENCODE_CONFIG_CONTENT).model];
@@ -171,7 +171,7 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
       for(let i=0;i<20;i++){try{process.kill(-child.pid,0);}catch(e){groupGone=e.code==='ESRCH';break;}await new Promise(r=>setTimeout(r,25));}
       resolve({ code, signal: childSignal, stdout, timedOut, cancelled, overflow, termination_verified: groupGone });
     });
-    child.stdin.end(input);
+    child.stdin.end(input, error => { if (!error) { try { onContextDelivered?.(); } catch { /* Metadata observation does not alter execution. */ } } });
   });
 }
 class OpenCodeAdapter extends AgentAdapter {
@@ -233,7 +233,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const p=run.result?.opencode_provenance,executable=this.executable();
     if(run.state!=='completed'||!run.termination_verified||!p||p.runtime_id!=='opencode'||p.runtime_version!==VERSION||p.authority!==false||p.workspace_bound!==true||p.termination_verified!==true||p.session_state!=='disposable'||!executable||p.executable_sha256!==hash(fs.readFileSync(executable)))fail('opencode_provenance_unavailable');
   }
-  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart, onLine, conversation = false } = {}) {
+  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart, onLine, onContextDelivered, conversation = false } = {}) {
     if (sessionId) fail('opencode_session_reuse_denied');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || deadline !== null && !Number.isSafeInteger(deadline) || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
@@ -258,7 +258,7 @@ class OpenCodeAdapter extends AgentAdapter {
       const executable = this.verifyArtifact(this.executable()), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
       const remaining = expiresAt - Date.now();
       if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
-      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart, onLine });
+      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart, onLine, onContextDelivered });
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
       if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
       if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
@@ -296,6 +296,7 @@ class OpenCodeAdapter extends AgentAdapter {
         try { observatory.record(b,{eventType:'worker.started',missionId:m.id,runId,metadata:{agent_id:'opencode'},idempotencyKey:`obs-worker-start:${m.id}:${runId}`}); } catch {}
         b.emit('change');
       },
+      onContextDelivered: () => b.controlStore.event('runtime.context.delivered',m.id,{context_pack_id:context.id,agent_id:'opencode',delivery:'stdin_written',authority:false},{runId}),
       onLine: line => { try { observatory.observeOpenCodeLine(b,{missionId:m.id,runId,line,agentId:'opencode'}); b.emit('change'); } catch {} }
     });
       if (result?.changes?.length && m.envelope.kind !== 'conversation') {

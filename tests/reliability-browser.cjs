@@ -1,0 +1,18 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {fixture}=require('./fixtures/mission-fixture.cjs'),{manifest}=require('./fixtures/opencode-fixture.cjs');
+const ControlServer=require('../src/control-server');
+test('Reliability, Memory Intelligence, Goals, Flight Recorder and MCP views preserve privacy and responsive layout',async t=>{
+ const f=await fixture(t),b=f.bridge,server=new ControlServer(b,{port:0});await server.start();t.after(()=>server.close());
+ const m=f.create({task_type:'local_files',manifest:manifest(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
+ const g=b.missions.goalPlanner.create({request_id:'browser-goal',goal_id:m.goal_id,max_runtime_hours:1,max_attempts:2,stages:[{id:'verify',depends_on:[],mission_id:m.id,objective:'PRIVATE_GOAL_TEXT',acceptance_criteria:['Synthetic'],verification_requirements:['Host checks']}]});
+ require('../src/reliability-observations').record(b,{request_id:'browser-eval',summary:{source_sha:'a'.repeat(40),evidence_class:'DISPOSABLE_FIXTURE',scenarios:2,passed:2,failed:0,security_failures:0,recovery_passed:1,recovery_failed:0,duration_ms:100,task_success_rate:1,memory:{precision:1,recall:1,provenance:1,budget_utilization:.25,forbidden_hits:0,relevant:2,irrelevant:0,correction_passed:true,forgetting_passed:true}}});
+ b.controlStore.event('provider.request.failed',m.id,{error_class:'provider_unavailable',prompt:'PRIVATE_PROMPT_CANARY'});
+ const browser=await require('playwright-core').chromium.launch({channel:'chrome',headless:true});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1280,height:900}});await page.addInitScript(token=>sessionStorage.setItem('airodromToken',token),server.token);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(server.origin);await page.getByRole('button',{name:'Reliability',exact:true}).waitFor();
+ for(const width of [1280,320]){await page.setViewportSize({width,height:900});for(const name of ['Reliability','Autonomous Goals','MCP Diagnostics']){await page.getByRole('button',{name,exact:true}).click();await page.waitForTimeout(3000);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,name+' at '+width);assert.doesNotMatch(await page.locator('body').innerText(),/PRIVATE_GOAL_TEXT|PRIVATE_PROMPT_CANARY|Bearer/);}}
+ await page.setViewportSize({width:1280,height:900});await page.getByRole('button',{name:'Reliability',exact:true}).click();await page.getByRole('heading',{name:'Memory Intelligence'}).waitFor();
+ if(process.env.AIRODROM_BROWSER_CAPTURE)await page.screenshot({path:process.env.AIRODROM_BROWSER_CAPTURE,fullPage:true});
+ await page.getByRole('button',{name:'Autonomous Goals',exact:true}).click();await page.getByRole('button',{name:'Inspect Mission',exact:true}).waitFor();await page.getByRole('button',{name:'Inspect Mission',exact:true}).click();await page.getByRole('heading',{name:'Mission Flight Recorder'}).waitFor();assert.doesNotMatch(await page.locator('body').innerText(),/PRIVATE_PROMPT_CANARY/);assert.equal(errors.length,0);
+ const denied=await fetch(server.origin+'/api/control-v2/goal-plans');assert.equal(denied.status,401);assert.equal(b.missions.goalPlanner.inspect(g.id).execution_enabled,false);await page.close();await server.close();for(let n=0;n<300&&b.lifecycle.status().blockers.requests;n++)await new Promise(r=>setTimeout(r,50));assert.equal(b.lifecycle.status().blockers.requests,0);
+});

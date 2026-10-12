@@ -18,7 +18,7 @@ function fixture(t, db = new DatabaseSync(':memory:')) {
   store.requireMission = () => ({ envelope: { manifest } }); store.run = () => ({ mission_id: missionId });
   db.prepare('INSERT INTO host_reasoning_admissions VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(), randomUUID(), missionId, randomUUID(), randomUUID(), randomUUID(), fingerprint({ fixture: true }), JSON.stringify({ context: 'fixture retained admission canary' }), 100, 'settled');
   db.prepare('INSERT INTO cp_mission_contracts VALUES(?,?,?,?,?)').run(missionId, JSON.stringify(manifest), fingerprint(manifest), null, 1);
-  db.prepare('INSERT INTO cp_mission_programs VALUES(?,?,?,?,?,?,?,?)').run(programId, 'operator', JSON.stringify([{ id: randomUUID(), depends_on: [], objective: 'fixture retained graph canary' }]), fingerprint({ fixture: true }), 'waiting_acceptance', 1, 100, randomUUID());
+  db.prepare('INSERT INTO cp_mission_programs(id,owner,graph,fingerprint,state,started_at,expires_at,request_id) VALUES(?,?,?,?,?,?,?,?)').run(programId, 'operator', JSON.stringify([{ id: randomUUID(), depends_on: [], objective: 'fixture retained graph canary' }]), fingerprint({ fixture: true }), 'waiting_acceptance', 1, 100, randomUUID());
   db.prepare('INSERT INTO cp_codex_handoffs VALUES(?,?,?,?,?,?)').run(runId, randomUUID(), JSON.stringify({ protocol: 'codex-handoff-v2', run_id: runId, objective: 'fixture retained handoff canary', context_pack: { records: [], refs: [], authority: false } }), 'awaiting_handoff', 1, 1);
   const reads = [() => admission.views(), () => program.contract(missionId), () => program.inspect(programId), () => codex.getTask(runId)];
   return { db, reads };

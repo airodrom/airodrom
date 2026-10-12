@@ -48,7 +48,12 @@
     "test:workers": "NODE_ENV=test node scripts/run.cjs --test tests/multi-worker-v2.test.js tests/multi-worker-ui.test.js",
     "test:codex:live": "AIRODROM_CODEX_LIVE=1 node scripts/run.cjs tests/live-codex.cjs",
     "build:atmosphere": "node scripts/build-atmosphere.cjs",
-    "macos:reboot-acceptance": "node scripts/run.cjs scripts/macos/reboot-acceptance.cjs"
+    "macos:reboot-acceptance": "node scripts/run.cjs scripts/macos/reboot-acceptance.cjs",
+    "test:reliability": "node scripts/run.cjs --test tests/autonomous-reliability.test.js",
+    "evaluate:reliability": "node scripts/run.cjs scripts/evaluate-reliability.cjs --extended",
+    "benchmark:memory": "node scripts/run.cjs scripts/benchmark-memory-quality.cjs",
+    "benchmark:reliability": "NODE_ENV=test node scripts/run.cjs scripts/benchmark-reliability.cjs",
+    "test:reliability:browser": "node scripts/run.cjs --test tests/reliability-browser.cjs"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -470,6 +475,21 @@
     "tests/install-hotfix-v101.test.js",
     "tests/mission-activity.test.js",
     "tests/reboot-acceptance-v1.test.js",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "config/reliability-scenarios-v1.json",
+    "docs/AUTONOMOUS-RELIABILITY-V1.md",
+    "docs/adr/0047-autonomous-reliability-intelligence.md",
+    "scripts/benchmark-memory-quality.cjs",
+    "scripts/benchmark-reliability.cjs",
+    "scripts/evaluate-reliability.cjs",
+    "src/evaluation-engine.js",
+    "src/goal-planner.js",
+    "src/mcp-discovery.js",
+    "src/memory-quality.js",
+    "src/mission-flight-recorder.js",
+    "src/reliability-observations.js",
+    "tests/autonomous-reliability.test.js",
+    "tests/reliability-browser.cjs",
+    "tests/reliability-opencode-live.cjs"
   ]
 }
