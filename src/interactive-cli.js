@@ -35,7 +35,7 @@ Connectors ${p?.connectors||'Unavailable'}
 Privacy    Local inference · scoped Memory · credentials stay private
 `;
 }
-function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) Interactive terminal\n  menu         Open the native macOS menu helper\n  help         Show full command guidance\n  browser options  Show browser connection availability\n  doctor       Inspect safe readiness and pin categories\n  requalify    Fresh confined qualification while stopped\n  status       Inspect the local service\n  start        Start or attach to the local service\n  stop         Gracefully stop the owned local service\n  restart      Stop and start the owned local service\n  open         Open the optional Control Center\n  memory       List/search Personal Memory V2\n  task <file>  Register and dispatch a scoped Mission JSON\n  whatsapp     bind | status | discover | use-test | rotate-verify-token | commit-verify-token | rollback-verify-token | prepare-callback <https://host/webhooks/whatsapp>\n  secret       prepare | put [operator|gmail|whatsapp] | forget <ref> | status\n  mcp          Existing MCP stdio transport\n  --version    Show version\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nWhatsApp credentials use hidden Terminal input only (airodrom whatsapp bind). Public ingress stays OFF.\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
+function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) / chat   Attach to the managed service and open conversation\n  status                Show live service health (client; never starts a supervisor)\n  doctor                Safe readiness, pins, and CLI install alignment\n  help                  Show this guidance\n  open                  Open Control Center through private discovery\n  memory [query]        List/search Personal Memory V2\n  service start         Start the managed local service when stopped\n  service stop          Gracefully stop the owned local service\n  service restart       Stop then start the owned local service\n  service status        Same as airodrom status\n  start|stop|restart    Legacy aliases for service start|stop|restart\n  menu                  Open the native macOS menu helper\n  requalify             Fresh confined qualification while stopped\n  browser options       Show browser connection availability\n  task <file>           Register and dispatch a scoped Mission JSON\n  whatsapp              bind | status | discover | use-test | rotate-verify-token | commit-verify-token | rollback-verify-token | prepare-callback <https://host/webhooks/whatsapp>\n  secret                prepare | put [operator|gmail|whatsapp] | forget <ref> | status\n  mcp                   Existing MCP stdio transport\n  --version             Show version\n\nClient commands discover the existing managed service and never launch a second supervisor.\nUse airodrom service start only when the service is stopped.\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nWhatsApp credentials use hidden Terminal input only (airodrom whatsapp bind). Public ingress stays OFF.\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
 async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
   const deadline = Date.now() + timeoutMs; let lastState=null;
   while (Date.now() < deadline) {
@@ -96,7 +96,8 @@ async function scopedTask(home, file,preferences={}) {
 }
 async function interactive(home, { input = process.stdin, output = process.stdout, env = process.env } = {}) {
   output.write(intro({ mode: terminalBrand.colorMode({tty:!!output.isTTY,env}), graphics:terminalBrand.imageProtocol({tty:!!output.isTTY,env}), unicode: env.TERM !== 'dumb', columns:output.columns||80, rows:output.rows||40 }));
-  const s = await local.start(home, env);
+  // Client-first: attach to the managed service. Never spawn a second supervisor.
+  const s = await local.attach(home);
   output.write('\nType a question, or /help for commands. Chat is visible while you type.\nPasswords and API keys belong only in /vault’s hidden prompt. Screening after Enter cannot hide echoed text or detect every secret.\n');
   const address=require('./conversation-address');
   let userName=null,nameOffered=false;
@@ -420,16 +421,39 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       showPrompt();
     }
   } finally { indicator?.stop();process.removeListener('SIGINT', interrupt); await detachReader(); }
-  output.write('Local service remains available. Use airodrom stop to stop it.\n');
+  output.write('Local service remains available. Use airodrom service stop to stop it.\n');
+}
+async function showStatus(home, json = false) {
+  if (local.isStopped(home)) {
+    show(process.stdout, { state: 'stopped' }, () => 'Airodrom is stopped. Run airodrom service start.', json);
+    return;
+  }
+  show(process.stdout, await local.attach(home), rows, json);
+}
+async function serviceCommand(home, action, rest = []) {
+  if (!action || action === 'status') return showStatus(home, rest.includes('--json'));
+  if (action === 'start' && !rest.length) { process.stdout.write(rows(await local.start(home))); return; }
+  if (action === 'stop' && !rest.length) { await local.stop(home); process.stdout.write('Airodrom stopped. Personal Memory is preserved.\n'); return; }
+  if (action === 'restart' && !rest.length) { await local.stop(home); process.stdout.write(rows(await local.start(home))); return; }
+  throw Error('Use airodrom service start|stop|restart|status.');
 }
 async function main(args = process.argv.slice(2)) {
   const [command, ...rest] = args, home = local.localHome();
-  if (!command) return interactive(home);
+  if (!command || command === 'chat') return interactive(home);
   if (['help', '--help', '-h'].includes(command)) { process.stdout.write(help()); return; }
   if (command === 'menu') { const app = require('../scripts/macos/prepare-local-menu.cjs').prepare(home); const r = require('node:child_process').spawnSync('/usr/bin/open',[app],{stdio:'ignore',timeout:5000}); if(r.status!==0) throw Error('Native menu could not open.'); process.stdout.write('Airodrom menu opened. Service lifecycle is separate.\n'); return; }
   if(command==='browser'&&rest[0]==='options'&&rest.length===1){process.stdout.write(require('./browser-render').render(require('./browser-connections').availability()));return;}
-  if (command === 'doctor') { show(process.stdout,await require('./product-diagnostics').doctor(home),require('./product-diagnostics').summary,rest.includes('--json')); return; }
-  if (command === 'requalify') { await local.requalify(home); process.stdout.write('OpenCode requalified. Run airodrom start.\n'); return; }
+  if (command === 'doctor') {
+    const report = await require('./product-diagnostics').doctor(home);
+    const install = require('./cli-command-inspect').inspectInstalledCommand({ root: local.ROOT });
+    if (rest.includes('--json')) show(process.stdout, { ...report, install }, () => '', true);
+    else {
+      show(process.stdout, report, require('./product-diagnostics').summary, false);
+      process.stdout.write(require('./cli-command-inspect').formatInstallAdvice(install) + '\n');
+    }
+    return;
+  }
+  if (command === 'requalify') { await local.requalify(home); process.stdout.write('OpenCode requalified. Run airodrom service start.\n'); return; }
   if(command==='gmail'&&rest[0]==='setup'){if(rest.length!==2||!rest[1].endsWith('.apps.googleusercontent.com'))throw Error('Use airodrom gmail setup <Google desktop client ID>');local.privateDirectory(home,true);const data=local.privateDirectory(path.join(home,'data'),true),file=path.join(data,'gmail-oauth-config.json');if(fs.existsSync(file))throw Error('Existing Gmail config preserved. Configure through an explicitly reviewed change.');local.writePrivate(file,{clientId:rest[1]});process.stdout.write('Owner OAuth client configured. Prepare the Keychain helper, restart Airodrom, then /connect gmail. No account connected.\n');return;}
   if(command==='secret'){
     if(rest[0]==='put'&&rest[1]==='whatsapp'&&(rest[2]==='bind'||rest[2]==='onboard')){
@@ -451,15 +475,28 @@ async function main(args = process.argv.slice(2)) {
     throw Error('Use airodrom whatsapp bind|status|discover|use-test|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback <https://host/webhooks/whatsapp>');
   }
   if (command === '--version') { process.stdout.write(branding.name + ' ' + require('../package.json').version + '\n'); return; }
-  if (command === 'status') { if(local.isStopped(home))show(process.stdout,{state:'stopped'},()=> 'Airodrom is stopped. Run airodrom to start.',rest.includes('--json'));else show(process.stdout,await local.status(home),rows,rest.includes('--json')); return; }
-  if (command === 'stop') { await local.stop(home); process.stdout.write('Airodrom stopped. Personal Memory is preserved.\n'); return; }
-  if (command === 'restart') { await local.stop(home); process.stdout.write(rows(await local.start(home))); return; }
-  if (!['start', 'open', 'memory', 'task'].includes(command) || ['start', 'open'].includes(command) && rest.length) throw Error('Unknown command. Use airodrom --help.');
-  const s = await local.start(home);
-  if (command === 'start') process.stdout.write(rows(s));
-  else if (command === 'open') { local.open(home); process.stdout.write('Control Center opened.\n'); }
-  else if (command === 'memory') await memory(home, rest.filter(x=>x!=='--json').join(' '), process.stdout,rest.includes('--json'));
-  else process.stdout.write('Scoped Mission dispatched: ' + await scopedTask(home, rest[0]) + '\n');
+  if (command === 'status') return showStatus(home, rest.includes('--json'));
+  if (command === 'service') return serviceCommand(home, rest[0], rest.slice(1));
+  if (command === 'stop') return serviceCommand(home, 'stop');
+  if (command === 'restart') return serviceCommand(home, 'restart');
+  if (command === 'start') return serviceCommand(home, 'start');
+  if (command === 'open') {
+    await local.attach(home);
+    local.open(home);
+    process.stdout.write('Control Center opened.\n');
+    return;
+  }
+  if (command === 'memory') {
+    await local.attach(home);
+    await memory(home, rest.filter(x => x !== '--json').join(' '), process.stdout, rest.includes('--json'));
+    return;
+  }
+  if (command === 'task') {
+    await local.attach(home);
+    process.stdout.write('Scoped Mission dispatched: ' + await scopedTask(home, rest[0]) + '\n');
+    return;
+  }
+  throw Error('Unknown command. Use airodrom --help.');
 }
 if (require.main === module) main().catch(error => { console.error('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message))); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
-module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, missionReceipt, interactive, main };
+module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, missionReceipt, interactive, main, showStatus, serviceCommand };

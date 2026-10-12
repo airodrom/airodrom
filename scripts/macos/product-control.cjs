@@ -9,9 +9,19 @@ function launcher(home){local.privateDirectory(home);const file=path.join(home,'
  const temp=path.join(home,'.cli-'+require('node:crypto').randomUUID());try{fs.writeFileSync(temp,body,{mode:0o700,flag:'wx'});fs.renameSync(temp,file);}finally{fs.rmSync(temp,{force:true});}
  return file;
 }
-async function status(home){const stopped=local.isStopped(home);let product=null;if(!stopped)try{product=await local.request(home,'/api/product/native-status');}catch{}
+async function mcpStatus(home){
+ try{
+  const d=local.discovery(home),mcp=local.ownedJSON(path.join(home,'data','mcp.json'));
+  if(!Number.isSafeInteger(mcp.port)||mcp.port!==Number(new URL(d.origin).port)||!Number.isSafeInteger(mcp.pid)||mcp.pid!==d.pid)return {ready:false,lastCallAt:null};
+  const r=await fetch(d.origin+'/api/mcp/health',{headers:{Authorization:'Bearer '+mcp.token},redirect:'error',signal:AbortSignal.timeout(5000)});
+  const body=await r.json();
+  return {ready:r.ok&&body.ready===true&&body.pid===d.pid,lastCallAt:null};
+ }catch{return {ready:false,lastCallAt:null};}
+}
+async function status(home){const stopped=local.isStopped(home);let product=null;let mcp={ready:false,lastCallAt:null};
+ if(!stopped){try{product=await local.request(home,'/api/product/native-status');}catch{}mcp=await mcpStatus(home);}
  const diagnostic=product?.diagnostic||summary(await doctor(home));
- return {state:stopped?'Stopped':product?'Connected':'Error',message:product?null:stopped?'Local service is stopped.':'Local status unavailable. Existing service and data preserved.',pid:null,managed:true,now:Date.now(),mcp:{ready:false,lastCallAt:null},tasks:{active:product?.active_missions||0,connected:0,total:0,counts:{}},lastActivityAt:null,lastHeartbeatAt:null,
+ return {state:stopped?'Stopped':product?'Connected':'Error',message:product?null:stopped?'Local service is stopped.':'Local status unavailable. Existing service and data preserved.',pid:null,managed:true,now:Date.now(),mcp,tasks:{active:product?.active_missions||0,connected:0,total:0,counts:{}},lastActivityAt:null,lastHeartbeatAt:null,
  product:product||{control:'Unavailable',status:'Unavailable',runtime:'Unavailable',runtimeReason:null,memory:'Unavailable',provider:'Unavailable',approvals:null,mission:null,diagnostic}};
 }
 async function action(command,home=local.localHome(),missionId){

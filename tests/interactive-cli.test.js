@@ -30,9 +30,9 @@ test('compact brand, no-color and command help are available without bootstrap',
   assert.match(intro(), /AIRODROM/);
   assert.doesNotMatch(intro({ color: false, unicode: false }), /\x1b|◈/);
   assert.match(intro({ color: true }), /\x1b/);
-  for (const command of ['status', 'start', 'stop', 'restart', 'open', 'memory', '/remember', '/forget', '/runtime', '/quit']) assert.ok(help().includes(command));
+  for (const command of ['status', 'chat', 'service start', 'service stop', 'start', 'stop', 'restart', 'open', 'memory', '/remember', '/forget', '/runtime', '/quit']) assert.ok(help().includes(command));
   const r = spawnSync(process.execPath, ['scripts/airodrom.cjs', '--help'], { cwd: local.ROOT, encoding: 'utf8', env: { PATH: process.env.PATH, NO_COLOR: '1' } });
-  assert.equal(r.status, 0); assert.match(r.stdout, /Interactive terminal/); assert.doesNotMatch(r.stdout, /#token=|Bearer /);
+  assert.equal(r.status, 0); assert.match(r.stdout, /Attach to the managed service|Interactive/); assert.doesNotMatch(r.stdout, /#token=|Bearer /);
 });
 test('private directories/config reject public modes, symlinks and credential mismatches', t => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'airo-private-'))); t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -52,7 +52,7 @@ test('stopped lifecycle is idempotent and missing discovery never hides a live w
   fs.chmodSync(home, 0o700); local.privateDirectory(path.join(home, 'data'), true);
   assert.equal(local.isStopped(home), true); assert.deepEqual(await local.stop(home), { stopped: true });
   const result = spawnSync(process.execPath, ['scripts/airodrom.cjs', 'status'], { cwd: local.ROOT, env: { PATH: process.env.PATH, AIRODROM_HOME: home }, encoding: 'utf8' });
-  assert.equal(result.status, 0); assert.match(result.stdout, /stopped/);
+  assert.equal(result.status, 0); assert.match(result.stdout, /stopped|service start/);
   fs.writeFileSync(path.join(home, 'data/bridge.lock'), String(process.pid), { mode: 0o600 });
   assert.equal(local.isStopped(home), false); await assert.rejects(local.stop(home));
   assert.equal(fs.readFileSync(path.join(home, 'data/bridge.lock'), 'utf8'), String(process.pid));
@@ -141,7 +141,7 @@ test('unsafe discovery and launch locks are preserved without sending requests t
   const f = await conversationFixture(t), file = path.join(f.home, 'data/ui.json'), original = local.ownedJSON(file);
   local.writePrivate(file, { ...original, url: original.url.replace('127.0.0.1', 'evil.invalid') });
   assert.throws(() => local.discovery(f.home), /invalid/);
-  await assert.rejects(local.start(f.home), /live or unverified/); assert.match(local.ownedJSON(file).url, /evil.invalid/);
+  await assert.rejects(local.start(f.home), /did not respond for attach|no replacement was started/); assert.match(local.ownedJSON(file).url, /evil.invalid/);
   local.writePrivate(file, original);
   local.writePrivate(path.join(f.home, 'data/control-credential.json'), { token: 'f'.repeat(64) });
   assert.throws(() => local.discovery(f.home), /invalid/);
@@ -194,8 +194,13 @@ test('signed near-expiry conversation terminates inference at its absolute autho
   assert.equal(f.b.opencodeAdapter.active.has(m.task_id),true);
   while(Date.now()<expiry+700)await new Promise(r=>setTimeout(r,25));
   assert.equal(f.b.opencodeAdapter.active.has(m.task_id),false);
+  for(let i=0;i<80&&f.b.controlStore.db.prepare("SELECT count(*) n FROM cp_dispatches WHERE mission_id=? AND state='running'").get(m.mission_id).n;i++){
+    await f.b.missions.tick();await new Promise(r=>setTimeout(r,25));
+  }
   const done=f.b.missions.detail(m.mission_id),run=done.runs.find(r=>r.agent_id==='opencode');
   assert.equal(run.termination_verified,1);assert.equal(run.process_state,'exited');assert.equal(done.acceptance.length,0);assert.notEqual(done.state,'awaiting_acceptance');
+  assert.equal(f.b.controlStore.db.prepare("SELECT count(*) n FROM cp_dispatches WHERE mission_id=? AND state='running'").get(m.mission_id).n,0);
+  assert.equal(f.b.lifecycle.status().blockers.dispatches,0);
 });
 test('local installer preserves an unrelated dangling command', t => {
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'airo-install-')));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

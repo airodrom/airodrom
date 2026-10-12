@@ -420,6 +420,40 @@ class PersonalMemory {
     return forgotten;
   }
 
+  /**
+   * Mark active memories superseded by an existing current winner without rewriting its content.
+   * Preserves historical provenance (content retained; status becomes superseded).
+   */
+  supersedeActive(memoryIds, supersededBy) {
+    identifier(supersededBy, 'supersededBy', { optional: false });
+    if (!Array.isArray(memoryIds) || !memoryIds.length) return { superseded: [], supersededBy };
+    const winner = this.db.prepare("SELECT * FROM personal_memories WHERE memory_id = ? AND status = 'active'").get(supersededBy);
+    if (!winner) throw new Error('Memory supersession winner is not active');
+    const now = this.now();
+    const superseded = [];
+    this.db.exec('SAVEPOINT personal_memory_write');
+    try {
+      for (const memoryId of memoryIds) {
+        identifier(memoryId, 'memoryId', { optional: false });
+        if (memoryId === supersededBy) continue;
+        const prior = this.db.prepare("SELECT * FROM personal_memories WHERE memory_id = ? AND status = 'active'").get(memoryId);
+        if (!prior) continue;
+        if (prior.domain !== winner.domain || prior.project_id !== winner.project_id || prior.task_id !== winner.task_id || prior.session_id !== winner.session_id) {
+          throw new Error('Memory supersession scope cannot change');
+        }
+        this.db.prepare("UPDATE personal_memories SET status = 'superseded', superseded_by = ?, updated_at = ? WHERE memory_id = ? AND status = 'active'")
+          .run(supersededBy, now, memoryId);
+        superseded.push(memoryId);
+        this._record('memory.superseded', { memoryId, domain: prior.domain, taskId: prior.task_id, sessionId: prior.session_id, projectId: prior.project_id, source: prior.source, sensitivity: prior.sensitivity });
+      }
+      this.db.exec('RELEASE SAVEPOINT personal_memory_write');
+    } catch (error) {
+      try { this.db.exec('ROLLBACK TO SAVEPOINT personal_memory_write; RELEASE SAVEPOINT personal_memory_write'); } catch { /* Transaction was not opened. */ }
+      throw error;
+    }
+    return { superseded, supersededBy };
+  }
+
   get(memoryId, { includeInactive = false, includeSensitive = true } = {}) {
     identifier(memoryId, 'memoryId', { optional: false });
     if (typeof includeInactive !== 'boolean') throw new Error('includeInactive must be boolean');

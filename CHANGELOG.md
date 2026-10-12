@@ -1,3 +1,25 @@
+## Unreleased — Master Production Cutover Readiness V3
+
+- Prepared isolated candidate install from exact PR tip `3dc3e8c` (27 MCP tools); qualified with focused tests and typechecks. Production tip unchanged (**CUTOVER HOLD**).
+- Online SQLite backup + isolated restore rehearsal of personal-memory DB; LaunchAgent snapshot retained.
+- Operator approval gate: [AIRODROM-CUTOVER-APPROVAL-V3.md](docs/AIRODROM-CUTOVER-APPROVAL-V3.md).
+
+## Unreleased — Master Finalization & Live Acceptance V2
+
+- Live tip audit: installed `airodrom-menu-status-525458c` exposes MCP health + 25 tools; personal-memory calls fail closed until cutover. Branch stdio catalog remains 27 tools.
+- Document reversible tip cutover/rollback without applying it ([INSTALLED-TIP-CUTOVER-V2.md](docs/INSTALLED-TIP-CUTOVER-V2.md)).
+- Repair `removed-runtime` legacy-identifier allowlist drift and fixture shutdown for intentional historical quarantine.
+- Final acceptance report: [AIRODROM-FINAL-ACCEPTANCE-V2.md](docs/AIRODROM-FINAL-ACCEPTANCE-V2.md). WhatsApp HOLD. Production unchanged.
+
+## Unreleased — Master Personal AI Completion V1
+
+- Synthetic TestBridge fixtures resume admission after recovery so Memory/Mission suites match managed closed-startup without weakening production gates.
+- ChatGPT MCP adds read-only `personal_memory_search` / `personal_memory_get` (ordinary Personal Memory only; writes remain capability-scoped). Surface is 27 tools.
+- Unify Mission lifecycle aliases into one authoritative vocabulary (`canonicalize` / `project`); persist canonical states in control-plane and authority stores; treat `paused` as a first-class transition.
+- Document Personal Memory erasure layers (suppression, cache invalidation, retention, logical purge) and keep physical/forensic wipe unclaimed.
+- Offline always-on qualification tests and bounded Mission Acceptance/restart fixtures; iPhone viewport emulation checks (not physical-device verification).
+- Completion matrix and evidence: [MASTER-PERSONAL-AI-COMPLETION-V1.md](docs/MASTER-PERSONAL-AI-COMPLETION-V1.md). WhatsApp remains HOLD. Production tip unchanged.
+
 ## Unreleased — macOS Desktop Activation V1 (shipped locally)
 
 ## Unreleased — Menu Status & WhatsApp Connection Closeout V1

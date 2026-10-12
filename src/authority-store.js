@@ -7,6 +7,8 @@ const { containsSecret } = require('./personal-memory');
 const { sensitiveKey } = require('./secret-observation');
 const LOCAL_PROJECT = 'authority:local';
 const erasure = require('./memory-erasure');
+const {canonicalize: canonicalizeMissionState, ALIASES: MISSION_STATE_ALIASES, CANONICAL_STATES: MISSION_CANONICAL_STATES}=require('./mission-lifecycle');
+const MISSION_STATES = new Set([...MISSION_CANONICAL_STATES, ...Object.keys(MISSION_STATE_ALIASES)]);
 const REF_EVENTS = new Set(['instruction.added','constraint.added','decision.recorded','checkpoint.created','evidence.received','verification.completed','acceptance.recorded','memory.proposed','memory.approved','memory.superseded','memory.forgotten','memory.expired','memory.conflict','memory.conflict_resolved','context.created','context.diffed','routing.decided','activation.changed','migration.imported','grant.issued','grant.revoked','nonce.consumed','observation.recorded','runtime.updated','result.received','registry.updated']);
 const json = value => Buffer.from(canonicalSerialize(value)).toString('utf8');
 // Arbitrary content addressing is no longer an identity API. Kept only as a
@@ -243,11 +245,13 @@ class AuthorityStore {
   setState(id,state,by=this.host) {
     actor(by);return transaction(this.db,()=>{
       const m=this.getMission(id);if(!m)throw new Error('Unknown mission');
-      if(!['draft','planned','dispatching','verifying','awaiting_acceptance','ready','running','waiting_for_operator','waiting_for_dependency','waiting_for_agent','verification','awaiting_orchestrator_acceptance','needs_rework','blocked','paused','cancelled','completed'].includes(state)||['completed','cancelled'].includes(m.current_state)&&m.current_state!==state)throw new Error('Invalid Mission state transition');
-      if(this.getMissionRevision(id,m.current_revision).envelope.kind==='work_request'&&!['draft','cancelled'].includes(state))throw Error('Work request draft grants no execution authority');
-      if(state==='completed'&&!this.db.prepare("SELECT 1 FROM authority_acceptance_records WHERE mission_id=? AND mission_revision=? AND decision='accepted'").get(id,m.current_revision)&&this.getMissionRevision(id,m.current_revision).binding_quality!=='legacy_snapshot')throw new Error('Completion requires acceptance');
-      this.db.prepare('UPDATE authority_missions SET current_state=?,updated_at=? WHERE id=?').run(state,this.now(),id);
-      this.append('mission.state_changed',{version:1,mission_id:id,state,previous:m.current_state},{projectId:m.project_id||LOCAL_PROJECT,missionId:id,revision:m.current_revision,by});return this.getMission(id);
+      if(!MISSION_STATES.has(state))throw new Error('Invalid Mission state transition');
+      const next=canonicalizeMissionState(state);
+      if(['completed','cancelled'].includes(m.current_state)&&m.current_state!==next)throw new Error('Invalid Mission state transition');
+      if(this.getMissionRevision(id,m.current_revision).envelope.kind==='work_request'&&!['draft','cancelled'].includes(next))throw Error('Work request draft grants no execution authority');
+      if(next==='completed'&&!this.db.prepare("SELECT 1 FROM authority_acceptance_records WHERE mission_id=? AND mission_revision=? AND decision='accepted'").get(id,m.current_revision)&&this.getMissionRevision(id,m.current_revision).binding_quality!=='legacy_snapshot')throw new Error('Completion requires acceptance');
+      this.db.prepare('UPDATE authority_missions SET current_state=?,updated_at=? WHERE id=?').run(next,this.now(),id);
+      this.append('mission.state_changed',{version:1,mission_id:id,state:next,previous:m.current_state},{projectId:m.project_id||LOCAL_PROJECT,missionId:id,revision:m.current_revision,by});return this.getMission(id);
     });
   }
   startRun(input,by=this.host) {

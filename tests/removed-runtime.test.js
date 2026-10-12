@@ -49,4 +49,8 @@ test('queued historical continuation is cancelled without releasing uncertain wr
  assert.equal(db.prepare("SELECT state FROM cp_continuations WHERE id='old-continuation'").get().state,'cancelled');
  assert.equal(db.prepare("SELECT state FROM cp_dispatches WHERE id='old-uncertain'").get().state,'unknown');
  assert.equal(b.missions.detail(m.id).state,'completed');assert.equal(db.prepare('SELECT state FROM cp_leases WHERE id=?').get(lease).state,'quarantined');assert.equal(b.controlStore.run('old-uncertain-run').state,'termination_unverified');
+ // Fixture shutdown requires verified idle writers; settle intentional quarantine after assertions only.
+ b.controlStore.updateRun('old-uncertain-run',{state:'failed',processState:'not_started',verified:true});
+ db.prepare("UPDATE cp_leases SET state='released' WHERE id=?").run(lease);
+ db.prepare("UPDATE cp_dispatches SET state='cancelled' WHERE id='old-uncertain'").run();
 });

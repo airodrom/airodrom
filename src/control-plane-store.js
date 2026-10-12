@@ -8,9 +8,10 @@ const { containsSecret } = require('./personal-memory');
 const { redactPayload } = require('./event-ledger');
 const VERSION = 3;
 const {migrateMissionSchema}=require('./mission-schema');
-const {assertTransition}=require('./mission-lifecycle');
+const {assertTransition,canonicalize,ALIASES,CANONICAL_STATES}=require('./mission-lifecycle');
 const TERMINAL = new Set(['completed','failed','cancelled','interrupted']);
-const STATES = new Set(['draft','planned','dispatching','verifying','awaiting_acceptance','ready','running','waiting_for_operator','waiting_for_dependency','waiting_for_agent','verification','awaiting_orchestrator_acceptance','needs_rework','blocked','paused','cancelled','completed']);
+// Accept canonical states plus historical aliases; writes always persist the canonical form.
+const STATES = new Set([...CANONICAL_STATES, ...Object.keys(ALIASES)]);
 const json = JSON.stringify;
 function fingerprint(value) {
   const stable = x => Array.isArray(x) ? x.map(stable) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, stable(x[k])])) : x;
@@ -153,7 +154,7 @@ class ControlPlaneStore {
   event(type, missionId, metadata={}, extra={}) { return transaction(this.db,()=>{const m=missionId?this.getMission(missionId):null;const event=this.ledger.record({ eventType:type,agent:'bridge',direction:'internal',missionId:missionId||null,taskId:m?.task_id||extra.taskId||null,metadata:{ ...(['mission.paused','mission.resumed','mission.cancelled','mission.created'].includes(type)?{dispatch_path:'native_workflow'}:{}),...metadata,...(m?{mission_revision:m.revision}:{}) },...extra });
     if(this.outbox&&m?.envelope.kind!=='work_request'&&m?.envelope.control_version===2&&require('./slack-runtime').ROUTES[type])this.outbox.enqueue({key:`ledger:${event.event_id}`,destination:'slack_event',ref:missionId,eventType:type,correlation:{mission_id:missionId,task_id:m.task_id,run_id:extra.runId||null},payload:{event_id:event.event_id,decision_id:metadata.decision_id||null}});return event;}); }
 
-  getMission(id) {require('./memory-content-erasure').assertReadable(this.db); const r=this.db.prepare('SELECT * FROM cp_missions WHERE id=?').get(id);if(!r)return null;const canonical=this.authorityRuntime?.active?this.authorityRuntime.store.getMission(id):null;return {...r,...(canonical?{revision:canonical.current_revision,state:canonical.current_state,task_id:canonical.task_id}:{}),envelope:JSON.parse(r.envelope)}; }
+  getMission(id) {require('./memory-content-erasure').assertReadable(this.db); const r=this.db.prepare('SELECT * FROM cp_missions WHERE id=?').get(id);if(!r)return null;const authority=this.authorityRuntime?.active?this.authorityRuntime.store.getMission(id):null;const raw=authority?authority.current_state:r.state;const state=canonicalize(raw);return {...r,...(authority?{revision:authority.current_revision,task_id:authority.task_id}:{}),state,state_raw:raw,envelope:JSON.parse(r.envelope)}; }
   requireMission(id,owner=null) { const m=this.getMission(identifier(id));if(!m || (owner && m.owner!==owner))throw new Error('Mission not found in this caller context');return m; }
   missionForTask(taskId) { const r=this.db.prepare('SELECT id FROM cp_missions WHERE task_id=? UNION SELECT mission_id AS id FROM cp_mission_tasks WHERE task_id=?').get(taskId,taskId);return r?this.getMission(r.id):null; }
   listMissions({owner=null,limit=100,after=0}={}) { if(!Number.isInteger(limit)||limit<1||limit>200||!Number.isSafeInteger(after)||after<0)throw new Error('Invalid mission page');return this.db.prepare(`SELECT id FROM cp_missions ${owner?'WHERE owner=?':''} ORDER BY created_at DESC,id LIMIT ? OFFSET ?`).all(...(owner?[owner]:[]),limit,after).map(r=>this.getMission(r.id)); }
@@ -167,12 +168,12 @@ class ControlPlaneStore {
       this.event('mission.request_received',id);this.event('mission.created',id,{legacy,grant_id:grant});this.event('mission.authority_registered',id);return this.getMission(id);
     });
   }
-  state(id,state,reason=null) { if(!STATES.has(state))throw new Error('Invalid Mission state');return transaction(this.db,()=>{
-    const m=this.requireMission(id);if(m.envelope.kind==='work_request'&&!['draft','cancelled'].includes(state))throw Error('Work request draft grants no execution authority');if(m.envelope.control_version===2)assertTransition(m.state,state);if(['completed','cancelled'].includes(m.state)&&state!==m.state)throw new Error('Terminal Mission cannot resume');
-    if(this.authorityRuntime?.active)this.authorityRuntime.store.setState(id,state);
-    this.db.prepare(`UPDATE cp_missions SET state=?,reason=?,updated_at=?,revision=revision+${this.authorityRuntime?.active?0:1} WHERE id=?`).run(state,reason?text(reason,'state reason',1000):null,this.now(),id);
-    this.db.prepare('UPDATE project_missions SET status=?,updated_at=? WHERE mission_id=?').run(['completed','cancelled'].includes(state)?state:['blocked','needs_rework'].includes(state)?'blocked':'active',this.now(),id);
-    this.event(`mission.${state}`,id,{previous:m.state,state});return this.getMission(id);
+  state(id,state,reason=null) { if(!STATES.has(state))throw new Error('Invalid Mission state');const next=canonicalize(state);return transaction(this.db,()=>{
+    const m=this.requireMission(id);if(m.envelope.kind==='work_request'&&!['draft','cancelled'].includes(next))throw Error('Work request draft grants no execution authority');if(m.envelope.control_version===2)assertTransition(m.state,next);if(['completed','cancelled'].includes(m.state)&&next!==m.state)throw new Error('Terminal Mission cannot resume');
+    if(this.authorityRuntime?.active)this.authorityRuntime.store.setState(id,next);
+    this.db.prepare(`UPDATE cp_missions SET state=?,reason=?,updated_at=?,revision=revision+${this.authorityRuntime?.active?0:1} WHERE id=?`).run(next,reason?text(reason,'state reason',1000):null,this.now(),id);
+    this.db.prepare('UPDATE project_missions SET status=?,updated_at=? WHERE mission_id=?').run(['completed','cancelled'].includes(next)?next:['blocked','needs_rework'].includes(next)?'blocked':'active',this.now(),id);
+    this.event(`mission.${next}`,id,{previous:m.state,state:next,requested:state});return this.getMission(id);
   }); }
   run(id){require('./memory-content-erasure').assertReadable(this.db);const r=this.db.prepare('SELECT * FROM cp_runs WHERE id=?').get(id);return r?{...r,result:r.result?JSON.parse(r.result):null}:null;}
   startRun({id,taskId,missionId=null,agentId='host',generation=1,nativeSessionId=null,role='worker'}) {require('./removed-runtime').assertExecutable(agentId);return transaction(this.db,()=>{this.lifecycle?.assertOpen();

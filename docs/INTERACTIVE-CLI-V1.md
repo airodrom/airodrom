@@ -12,13 +12,17 @@ The reversible local install uses the existing user-owned npm prefix, refuses to
 replace another command and never edits shell startup files. Remove the command
 with `npm unlink -g airodrom`; private service data remains available.
 
-`airodrom` shows the compact brand and runtime status, starts or attaches to the
-private local control plane and opens a terminal conversation. The browser is
-optional. Bootstrap requires installed qualified OpenCode 2.0.25 and local Ollama
-with `qwen3-coder:30b`. It generates actual host pins and runs a disposable
-synthetic sandbox probe. No provider credentials are copied or printed. First
-startup can take longer while the local model warms. Failed prerequisites give an
-actionable error rather than enable another provider.
+`airodrom` (and `airodrom chat`) shows the compact brand, **attaches as a client**
+to the existing managed local control plane, and opens a terminal conversation.
+It does **not** implicitly launch a second supervisor when a live or unverifiable
+writer already owns `~/.airodrom/data`. Use `airodrom service start` only when the
+service is stopped. The browser is optional. Bootstrap for an explicit service
+start requires installed qualified OpenCode 2.0.25 and local Ollama with
+`qwen3-coder:30b`. No provider credentials are copied or printed. Failed
+prerequisites give an actionable error rather than enable another provider.
+Client attach accepts a healthy managed service even when the Terminal package
+revision differs from the running tip (source identity is still enforced for
+same-source pin repair and owning lifecycle restart).
 
 The startup logo defaults to colored terminal text with the canonical geometry,
 subdued gradient and fine 3D depth. Its geometry is bundled in application code:
@@ -41,10 +45,13 @@ but never rewrites another installation's configuration.
 
 | Command | Behavior |
 | --- | --- |
-| `airodrom status` | Read aggregate local runtime status |
-| `airodrom start` | Start or attach; no duplicate writer |
-| `airodrom stop` | Stop the owned service; preserve memory |
-| `airodrom restart` | Stop then start the owned service |
+| `airodrom` / `airodrom chat` | Client attach + interactive conversation; never starts a second supervisor |
+| `airodrom status` | Read aggregate local runtime status (client attach) |
+| `airodrom doctor` | Safe readiness, pins, and Terminal CLI install alignment |
+| `airodrom service start` | Start the managed service when stopped; attach if already healthy |
+| `airodrom service stop` | Stop the owned service; preserve memory |
+| `airodrom service restart` | Stop then start the owned service |
+| `airodrom start\|stop\|restart` | Legacy aliases for `service …` |
 | `airodrom open` | Open optional Control Center without token copying |
 | `airodrom memory [query]` | List/search current Personal Memory V2 |
 | `airodrom task mission.json` | Register and dispatch an explicit scoped Mission |

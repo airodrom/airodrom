@@ -114,7 +114,7 @@ if (args[0] === '-p') {
 
 test('MCP schemas: create_task exposes array capability_scopes from the V2 policy; new orchestrator tools are exact', () => {
   const policy = loadCapabilityPolicy();
-  assert.deepEqual(TOOLS.map(tool => tool.name), ['create_task', 'continue_task', 'get_task_status', 'approve_once', 'reject', 'cancel_task', 'get_task_events', 'acknowledge_task_event', 'native_tool_invoke', 'capability_invoke', 'capability_status', 'capability_inventory', 'agent_status', 'get_agent_results', 'get_agent_dispatches', 'claim_agent_dispatch', 'report_agent_dispatch', 'get_provider_status', 'get_reasoning_admissions', 'list_architecture_memories', 'inspect_context_pack', 'submit_mission', 'get_mission_handoff', 'cancel_mission_handoff']);
+  assert.deepEqual(TOOLS.map(tool => tool.name), ['create_task', 'continue_task', 'get_task_status', 'approve_once', 'reject', 'cancel_task', 'get_task_events', 'acknowledge_task_event', 'native_tool_invoke', 'capability_invoke', 'capability_status', 'capability_inventory', 'agent_status', 'get_agent_results', 'get_agent_dispatches', 'claim_agent_dispatch', 'report_agent_dispatch', 'get_provider_status', 'get_reasoning_admissions', 'list_architecture_memories', 'inspect_context_pack', 'personal_memory_search', 'personal_memory_get', 'get_worker_catalog', 'submit_mission', 'get_mission_handoff', 'cancel_mission_handoff']);
   const create = TOOLS[0].inputSchema;
   assert.equal(create.properties.capability_scopes.type, 'array');
   assert.equal(create.properties.capability_scopes.maxItems, 16);
@@ -401,8 +401,8 @@ test('read-only introspection: capability_status, capability_inventory and agent
   assert.equal(gmail.dependency.available, false);
 
   const all = await f.call('capability_inventory', {});
-  assert.equal(all.total, 181);
-  assert.equal(all.returned, 181);
+  assert.equal(all.total, 187);
+  assert.equal(all.returned, 187);
   const approvals = await f.call('capability_inventory', { approval_required: true });
   assert.ok(approvals.returned > 0 && approvals.capabilities.every(row => row.effective_decision === 'approval_required'));
   const automatic = await f.call('capability_inventory', { automatic: true, group: 'claude_code' });

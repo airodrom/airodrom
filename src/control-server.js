@@ -104,12 +104,15 @@ class ControlServer {
   }
   interactiveMemory(query = '') {
     const b = this.bridge;
+    const current = require('./memory-correction').presentCurrentItems;
     if (b.authorityRuntime?.active) {
       const result = b.authorityRuntime.memoryItems({ domain: 'personal', query, limit: 20 });
       const terms = query.toLowerCase().match(/[\p{L}\p{N}_]+/gu) || [];
-      return { ...result, items: result.items.filter(m => !terms.length || terms.every(term => (m.subject + ' ' + m.content).toLowerCase().includes(term))) };
+      const items = result.items.filter(m => !terms.length || terms.every(term => (m.subject + ' ' + m.content).toLowerCase().includes(term)));
+      return { ...result, items: current(items) };
     }
-    return query ? b.personalMemory.search(query, { domain: 'personal', limit: 20, includeSensitive: false }) : b.personalMemory.recent({ domain: 'personal', limit: 20, includeSensitive: false });
+    const result = query ? b.personalMemory.search(query, { domain: 'personal', limit: 20, includeSensitive: false }) : b.personalMemory.recent({ domain: 'personal', limit: 20, includeSensitive: false });
+    return { ...result, items: current(result.items) };
   }
   interactiveTask(id) {
     const m = this.bridge.controlStore.requireMission(id), task = this.bridge.tasks.get(m.task_id);
@@ -122,10 +125,36 @@ class ControlServer {
     require('./control-plane-store').text(content, 'memory content', 2000);
     if(require('./assistant-intent').secret(content))throw Error('Secret content requires the Secret Vault secure input path.');
     if(require('./assistant-intent').sensitive(content))throw Error('Explicit Sensitive Memory command required.');
-    const subject = require('./conversation-mission').subjectFor(content);
-    const same = this.interactiveMemory(subject).items.filter(m => m.subject === subject);
-    if (same.length > 1) throw Error('Memory subject is ambiguous; correct an explicit memory ID.');
-    return same.length ? this.bridge.updatePersonalMemory(same[0].memoryId, { content }) : this.bridge.rememberPersonalMemory({ domain: 'personal', type: 'fact', subject, content, source: 'user_explicit', sensitivity: 'normal' });
+    const correction = require('./memory-correction');
+    const subject = correction.subjectFor(content);
+    const stored = correction.isCorrectionStatement(content) ? correction.canonicalFactContent(content) : content;
+    const matches = [];
+    const seen = new Set();
+    const consider = (item) => {
+      const id = item?.memoryId || item?.id;
+      if (!id || seen.has(id)) return;
+      if (item.subject !== subject && correction.factKey(item) !== subject) return;
+      seen.add(id);
+      matches.push(item);
+    };
+    // Authority-aware current listing (governed or personal).
+    for (const item of this.interactiveMemory(subject).items) consider(item);
+    // Personal SQLite may still hold legacy dual-active rows under divergent subjects.
+    if (!this.bridge.authorityRuntime?.active) {
+      for (const item of this.bridge.personalMemory.search(subject, { domain: 'personal', limit: 20, includeSensitive: false }).items) consider(item);
+      for (const item of this.bridge.personalMemory.recent({ domain: 'personal', limit: 50, includeSensitive: false }).items) consider(item);
+    }
+    if (!matches.length) {
+      return this.bridge.rememberPersonalMemory({ domain: 'personal', type: 'fact', subject, content: stored, source: 'user_explicit', sensitivity: 'normal' });
+    }
+    const keep = matches.reduce(correction.newerItem);
+    const keepId = keep.memoryId || keep.id;
+    const updated = this.bridge.updatePersonalMemory(keepId, { content: stored, subject });
+    if (!this.bridge.authorityRuntime?.active && typeof this.bridge.personalMemory.supersedeActive === 'function') {
+      const stale = matches.map(item => item.memoryId || item.id).filter(id => id !== keepId && id !== updated.memoryId);
+      if (stale.length) this.bridge.personalMemory.supersedeActive(stale, updated.memoryId);
+    }
+    return updated;
   }
   status() {
     const tasks = this.bridge.tasks.list().map(task => this.bridge.snapshotTask(task)), counts = {};
@@ -479,6 +508,7 @@ class ControlServer {
       }
       if (url.pathname === '/api/interactive/stop') {
         if (Object.keys(body).length || typeof this.localShutdown !== 'function') throw Error('Only the managed local service can be stopped by this endpoint.');
+        if (this.bridge.lifecycle.state() !== 'draining') this.bridge.lifecycle.drain();
         this.bridge.lifecycle.prepareStop();
         this.json(res, 202, { stopping: true }); setImmediate(() => this.localShutdown().catch(() => {})); return;
       }
