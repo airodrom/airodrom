@@ -192,3 +192,23 @@ test('new dirty outside allowed_files still blocks repair create', async t => {
   const input = repairInput(f.bridge.controlStore.requireMission(parent.id), diagnosis);
   assert.throws(() => f.bridge.missions.create(input, 'operator'), /dirty_outside_repair_scope/);
 });
+
+test('repair objectives include parent id before 180-char Mission name truncation', async t => {
+  const f = await fixture(t), parent = failingNative(f);
+  f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });
+  await f.settle(parent.id, 'needs_rework');
+  const diagnosis = diagnose(f.bridge.controlStore.requireMission(parent.id), f.bridge.controlStore);
+  assert.equal(diagnosis.ok, true);
+  assert.match(diagnosis.objective, new RegExp('Repair \\[' + parent.id.slice(0, 8) + '\\]'));
+  assert.ok(diagnosis.objective.indexOf(parent.id.slice(0, 8)) < 180);
+  // Prior truncated names collided across parents on the same Goal; the parent marker prevents that.
+  const legacy = 'Repair failed verification (' + diagnosis.summary + '). Restore the original approved outcome. Original objective: '
+    + 'Change fixture.txt from alpha to beta. Preserve exactly one trailing newline. Do not commit, push, merge or deploy. [aaaaaaaa]';
+  const legacyOther = 'Repair failed verification (' + diagnosis.summary + '). Restore the original approved outcome. Original objective: '
+    + 'Change fixture.txt from alpha to beta. Preserve exactly one trailing newline. Do not commit, push, merge or deploy. [bbbbbbbb]';
+  assert.equal(legacy.slice(0, 180), legacyOther.slice(0, 180));
+  assert.notEqual(diagnosis.objective.slice(0, 180), legacy.slice(0, 180));
+  const created = f.bridge.missions.create(repairInput(f.bridge.controlStore.requireMission(parent.id), diagnosis), 'operator');
+  assert.equal(created.envelope.repair_of, parent.id);
+  assert.match(created.envelope.objective, new RegExp('Repair \\[' + parent.id.slice(0, 8) + '\\]'));
+});

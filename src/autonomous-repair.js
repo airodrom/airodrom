@@ -41,12 +41,14 @@ function diagnose(mission, store) {
   if (!checks) return { ok: false, reason: 'no_host_verification_failure' };
   const run = lastRunSafe(mission, store);
   if (!run.ok) return run;
+  // Put the parent id in the first 180 chars so project_missions UNIQUE(goal_id, name)
+  // cannot collide when several controlled failures share the same Goal.
   return {
     ok: true,
     summary: checks.summary,
     checks: checks.checks,
     run_id: run.run.id,
-    objective: 'Repair failed verification (' + checks.summary + '). Restore the original approved outcome. Original objective: ' + String(mission.envelope.objective || '').slice(0, 1200),
+    objective: 'Repair [' + String(mission.id).slice(0, 8) + '] failed verification (' + checks.summary + '). Restore the original approved outcome. Original objective: ' + String(mission.envelope.objective || '').slice(0, 1200),
   };
 }
 
@@ -236,7 +238,12 @@ class AutonomousRepair {
       return transaction(this.db, () => {
         const row = this.execution.planRow(planId);
         const a = this.execution.readAutonomous(row);
-        const reason = /^[a-z_]+$/.test(error.message) ? error.message : 'repair_spawn_failed';
+        const message = String(error.message || '');
+        let reason = 'repair_spawn_failed';
+        if (/^[a-z_]+$/.test(message)) reason = message;
+        else if (/UNIQUE constraint failed:\s*project_missions/i.test(message) || /unique.*project_missions\.name/i.test(message)) {
+          reason = 'repair_mission_name_conflict';
+        }
         a.repair_blocked = { ...(a.repair_blocked || {}), [stage.id]: reason };
         a.last_action = 'repair_blocked';
         this.execution.writeAutonomous(planId, a);

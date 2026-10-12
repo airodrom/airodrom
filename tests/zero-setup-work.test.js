@@ -99,3 +99,96 @@ test('limitations denying Production do not hide disposable Projects', async t =
   assert.equal(scope.ok, true);
   assert.equal(scope.project.projectId, p.projectId);
 });
+
+test('prepared self-repair test workspace resolves to Self-Repair Acceptance when registered', async t => {
+  const f = await fixture(t);
+  const otherRoot = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'airodrom-other-self-repair-'));
+  t.after(() => fs.rmSync(otherRoot, { recursive: true, force: true }));
+  for (const root of [f.repo, otherRoot]) {
+    fs.mkdirSync(path.join(root, 'tests'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'fixture.txt'), 'alpha\n');
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', private: true }));
+    require('node:child_process').spawnSync('git', ['-C', root, 'init'], { encoding: 'utf8' });
+    require('node:child_process').spawnSync('git', ['-C', root, 'add', '.'], { encoding: 'utf8' });
+    require('node:child_process').spawnSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'init'], { encoding: 'utf8' });
+  }
+  const acceptance = f.bridge.projects.createProject({ name: 'Self-Repair Acceptance', repositories: [f.repo], privacyPolicy: 'local_only' });
+  f.bridge.projects.createProject({ name: 'Self-Repair Scratch', repositories: [otherRoot], privacyPolicy: 'local_only' });
+  const { ZeroSetupWork } = require('../src/zero-setup-work');
+  const z = new ZeroSetupWork(f.bridge);
+  const scope = z.resolveScope(
+    'In the prepared self-repair test workspace, change fixture.txt from alpha to beta.',
+    { kind: 'exact_file', file: 'fixture.txt', from: 'alpha\n', to: 'beta\n' },
+  );
+  assert.equal(scope.ok, true);
+  assert.equal(scope.project.projectId, acceptance.projectId);
+  assert.equal(scope.workspace, fs.realpathSync(f.repo));
+});
+
+test('needs_rework stays non-terminal until repair is genuinely blocked', async t => {
+  const f = await fixture(t);
+  f.bridge.missionAuthority.initializeOperatorKey();
+  const project = f.bridge.projects.createProject({ name: 'Self-Repair Acceptance', repositories: [f.repo], privacyPolicy: 'local_only' });
+  const goal = f.bridge.projects.createGoal({ projectId: project.projectId, name: 'Exact-file alpha to beta' });
+  const { manifest } = require('./fixtures/opencode-fixture.cjs');
+  const parent = f.create({
+    project_id: project.projectId,
+    goal_id: goal.goalId,
+    objective: 'Change fixture.txt from alpha to beta. Preserve exactly one trailing newline.',
+    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'gamma\n' }],
+    manifest: manifest(f.repo),
+    task_type: 'local_files',
+    dispatch_policy: {
+      privacy: 'local_only', providers: ['local'], billing_classes: ['local'],
+      task_category: 'deterministic_files',
+      native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'gamma\n' }],
+    },
+  });
+  const plan = f.bridge.missions.goalPlanner.create({
+    request_id: randomUUID(),
+    goal_id: goal.goalId,
+    stages: [{
+      id: 'work', depends_on: [], mission_id: parent.id,
+      objective: parent.envelope.objective,
+      acceptance_criteria: ['Independent host verification passed'],
+      verification_requirements: ['exact_file_or_registered_tests'],
+      human_checkpoint: false,
+    }],
+    max_runtime_hours: 1,
+    max_attempts: 2,
+  }, 'operator');
+  f.bridge.autonomousExecution.authorize(plan.id, {
+    request_id: randomUUID(), workers: ['host'], max_concurrent_missions: 1,
+    max_dispatches: 3, max_repairs: 1, confirmed: true,
+  }, 'operator');
+  const request_id = randomUUID();
+  f.bridge.zeroSetupWork.write(request_id, 'operator', {
+    version: 1,
+    instruction: 'change fixture',
+    intent: { kind: 'exact_file', file: 'fixture.txt', from: 'alpha\n', to: 'beta\n' },
+    project_id: project.projectId,
+    project_name: project.name,
+    goal_id: goal.goalId,
+    mission_id: parent.id,
+    plan_id: plan.id,
+    presentation: { status: 'Working', files: ['fixture.txt'] },
+    execution_enabled: true,
+    authority: false,
+  }, 'running');
+  f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });
+  await f.settle(parent.id, 'needs_rework');
+
+  const pending = f.bridge.zeroSetupWork.refreshState(request_id);
+  assert.equal(pending.state, 'RUNNING');
+  assert.match(pending.presentation.status, /Verification failed|Repairing|preparing automatic repair/i);
+  assert.notEqual(pending.state, 'BLOCKED');
+
+  const autonomous = f.bridge.autonomousExecution.readAutonomous(f.bridge.autonomousExecution.planRow(plan.id));
+  autonomous.repair_blocked = { work: 'repair_budget' };
+  autonomous.last_action = 'repair_blocked';
+  f.bridge.autonomousExecution.writeAutonomous(plan.id, autonomous);
+  const blocked = f.bridge.zeroSetupWork.refreshState(request_id);
+  assert.equal(blocked.state, 'BLOCKED');
+  assert.equal(blocked.technical.repair_blocked_reason, 'repair_budget');
+  assert.match(blocked.presentation.status, /repair_budget/);
+});

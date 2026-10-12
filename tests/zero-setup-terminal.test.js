@@ -205,3 +205,58 @@ test('remembered request identity resumes observation without creating a duplica
   assert.match(text, /Verification passed/);
   clearActive(f.root);
 });
+
+test('poll keeps observing the same request_id through needs_rework until repair finishes or is blocked', async t => {
+  const requestId = randomUUID();
+  const views = [
+    {
+      kind: 'zero_setup',
+      state: 'RUNNING',
+      outcome: { mission_state: 'needs_rework', verification: { result: 'failed' } },
+      presentation: { status: 'Verification failed; preparing automatic repair', files: ['fixture.txt'] },
+      technical: { request_id: requestId, mission_id: 'parent-1' },
+      authority: false,
+    },
+    {
+      kind: 'zero_setup',
+      state: 'RUNNING',
+      outcome: { mission_state: 'running', verification: { result: 'failed' } },
+      presentation: { status: 'Repairing failed verification', files: ['fixture.txt'] },
+      technical: { request_id: requestId, mission_id: 'repair-1', repair_of: 'parent-1' },
+      authority: false,
+    },
+    {
+      kind: 'zero_setup',
+      state: 'AWAITING_ACCEPTANCE',
+      outcome: { mission_state: 'awaiting_acceptance', verification: { result: 'passed' } },
+      presentation: { status: 'Repair completed. Verification passed', files: ['fixture.txt'] },
+      technical: { request_id: requestId, mission_id: 'repair-1', repair_of: 'parent-1' },
+      authority: false,
+    },
+  ];
+  const done = await poll('/tmp/unused-home', requestId, {
+    sleep: async () => {},
+    request: async (_home, route) => {
+      assert.match(route, new RegExp(encodeURIComponent(requestId)));
+      return views.shift();
+    },
+  });
+  assert.equal(views.length, 0);
+  assert.equal(done.state, 'AWAITING_ACCEPTANCE');
+  assert.equal(done.technical.repair_of, 'parent-1');
+  assert.match(resultText(done), /Repair completed/);
+
+  const blocked = await poll('/tmp/unused-home', requestId, {
+    sleep: async () => {},
+    request: async () => ({
+      kind: 'zero_setup',
+      state: 'BLOCKED',
+      outcome: { mission_state: 'needs_rework', verification: { result: 'failed' } },
+      presentation: { status: 'Automatic repair blocked (repair_budget)' },
+      technical: { request_id: requestId, mission_id: 'parent-2', repair_blocked_reason: 'repair_budget' },
+      authority: false,
+    }),
+  });
+  assert.equal(blocked.state, 'BLOCKED');
+  assert.match(resultText(blocked), /repair_budget/);
+});

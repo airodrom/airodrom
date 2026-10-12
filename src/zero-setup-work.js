@@ -85,6 +85,13 @@ class ZeroSetupWork {
       // Prefer a Project whose exact name appears in the instruction.
       const namedInInstruction = matches.filter(m => (instruction || '').toLowerCase().includes(String(m.project.name || '').toLowerCase()));
       if (namedInInstruction.length === 1) return { ok: true, project: namedInInstruction[0].project, workspace: namedInInstruction[0].workspace };
+      // Owner phrase for the registered disposable Self-Repair Acceptance workspace.
+      if (/prepared\s+self[- ]?repair(\s+test)?\s+workspace/i.test(instruction || '')) {
+        const prepared = matches.filter(m => m.reasons.includes('named_self_repair') && m.reasons.includes('exact_initial_bytes'));
+        const acceptance = prepared.filter(m => /self[- ]?repair\s+acceptance/i.test(m.project.name || ''));
+        if (acceptance.length === 1) return { ok: true, project: acceptance[0].project, workspace: acceptance[0].workspace };
+        if (prepared.length === 1) return { ok: true, project: prepared[0].project, workspace: prepared[0].workspace };
+      }
       // Prefer an explicitly named disposable over generic fixture projects sharing the same root.
       // named_human_acceptance alone (without exact bytes) must not beat exact-file disposables.
       const preferred = matches.filter(m => m.reasons.includes('exact_initial_bytes') && (m.reasons.includes('named_human_acceptance') || m.reasons.includes('named_self_repair')));
@@ -260,21 +267,27 @@ class ZeroSetupWork {
         };
       } catch { /* mission may not exist yet */ }
     }
+    const presentationHint = live.presentation?.status || '';
+    const repairing = !!(live.repair_of
+      || outcome?.mission_state === 'needs_rework'
+      || /Repairing|repair completed|preparing automatic repair|Verification failed/i.test(presentationHint));
     const statusLabel = ({
       clarify: 'Needs a short clarification',
       awaiting_approval: 'Waiting for your approval',
       approved: 'Working',
-      running: 'Working',
-      verifying: 'Verification underway',
+      running: repairing ? (presentationHint || 'Repairing failed verification') : 'Working',
+      verifying: repairing ? (presentationHint || 'Repair verification underway') : 'Verification underway',
       verified: 'Completed and verified',
-      awaiting_acceptance: 'Completed and verified',
-      blocked: 'Blocked',
+      awaiting_acceptance: repairing ? (presentationHint || 'Repair completed. Verification passed') : 'Completed and verified',
+      blocked: live.repair_blocked_reason
+        ? ('Automatic repair blocked (' + live.repair_blocked_reason + ')')
+        : 'Blocked',
       failed: 'Failed',
       rejected: 'Cancelled',
-    })[state] || live.presentation?.status || state;
+    })[state] || presentationHint || state;
     const presentation = { ...(live.presentation || {}), status: statusLabel };
     if (outcome?.verification?.result === 'passed' && ['awaiting_acceptance', 'verified', 'completed'].includes(outcome.mission_state || state)) {
-      presentation.status = 'Completed and verified';
+      presentation.status = repairing ? 'Repair completed. Verification passed' : 'Completed and verified';
       presentation.result = 'Updated ' + (presentation.files || []).join(', ');
       presentation.verification_label = 'Passed';
     }
@@ -293,6 +306,7 @@ class ZeroSetupWork {
         plan_id: live.plan_id,
         mission_id: live.mission_id,
         repair_of: live.repair_of || null,
+        repair_blocked_reason: live.repair_blocked_reason || null,
         project_alias: live.project_alias,
         workspace_alias: live.workspace_alias,
       },
@@ -408,35 +422,84 @@ class ZeroSetupWork {
     return this.statusView(live);
   }
 
+  repairObservation(live) {
+    if (!live.plan_id) return null;
+    try {
+      const plan = this.bridge.autonomousExecution.inspect(live.plan_id);
+      const autonomous = plan.autonomous || {};
+      const lineage = autonomous.repair_lineage || {};
+      const stage = plan.stages.find(s => s.mission_id === live.mission_id)
+        || plan.stages.find(s => lineage[s.id]?.parent_mission_id === live.mission_id || lineage[s.id]?.repair_mission_id === live.mission_id)
+        || plan.stages[0];
+      if (!stage) return { plan, autonomous, stage: null, lineage: null, blocked: null };
+      const stageLineage = lineage[stage.id] || null;
+      const blocked = autonomous.repair_blocked?.[stage.id] || null;
+      return { plan, autonomous, stage, lineage: stageLineage, blocked };
+    } catch {
+      return null;
+    }
+  }
+
   refreshState(request_id) {
     const live = this.read(request_id);
     if (!live || !live.mission_id) return live ? this.statusView(live) : null;
     try {
+      const observation = this.repairObservation(live);
       // Follow CAE repair rebind when the Goal Plan stage moved to a corrective Mission.
-      if (live.plan_id) {
-        try {
-          const plan = this.bridge.autonomousExecution.inspect(live.plan_id);
-          const lineage = plan.autonomous?.repair_lineage || {};
-          const stage = plan.stages.find(s => s.mission_id === live.mission_id)
-            || plan.stages.find(s => lineage[s.id]?.parent_mission_id === live.mission_id || lineage[s.id]?.repair_mission_id === live.mission_id)
-            || plan.stages[0];
-          if (stage?.mission_id && stage.mission_id !== live.mission_id) {
-            live.mission_id = stage.mission_id;
-            live.repair_of = lineage[stage.id]?.parent_mission_id || live.repair_of || null;
-          }
-          if (plan.autonomous?.last_action === 'repair_dispatched' || plan.autonomous?.lifecycle === 'recovering') {
-            live.presentation = { ...(live.presentation || {}), status: 'Repairing failed verification' };
-          }
-        } catch { /* plan may be unavailable */ }
+      if (observation?.stage?.mission_id && observation.stage.mission_id !== live.mission_id) {
+        live.mission_id = observation.stage.mission_id;
+        live.repair_of = observation.lineage?.parent_mission_id || live.repair_of || null;
+      }
+      if (observation?.lineage?.parent_mission_id) {
+        live.repair_of = observation.lineage.parent_mission_id;
       }
       const m = this.bridge.missions.require(live.mission_id);
       let state = live.state;
-      if (m.state === 'running' || m.state === 'dispatched' || m.state === 'dispatching') state = 'running';
-      else if (m.state === 'verifying') state = 'verifying';
-      else if (m.state === 'awaiting_acceptance') state = 'awaiting_acceptance';
-      else if (m.state === 'blocked' || m.state === 'needs_rework') state = 'blocked';
-      else if (m.state === 'failed' || m.state === 'cancelled') state = 'failed';
-      if (state !== live.state || live.repair_of) {
+      let presentationStatus = live.presentation?.status || null;
+      if (m.state === 'running' || m.state === 'dispatched' || m.state === 'dispatching') {
+        state = 'running';
+        if (live.repair_of || observation?.lineage?.repair_mission_id) {
+          presentationStatus = 'Repairing failed verification';
+        }
+      } else if (m.state === 'verifying') {
+        state = 'verifying';
+        if (live.repair_of || observation?.lineage?.repair_mission_id) {
+          presentationStatus = 'Repair verification underway';
+        }
+      } else if (m.state === 'awaiting_acceptance') {
+        state = 'awaiting_acceptance';
+        if (live.repair_of || observation?.lineage?.repair_mission_id) {
+          presentationStatus = 'Repair completed. Verification passed';
+        }
+      } else if (m.state === 'blocked') {
+        state = 'blocked';
+        live.repair_blocked_reason = observation?.blocked || live.repair_blocked_reason || m.reason || 'blocked';
+      } else if (m.state === 'needs_rework') {
+        // needs_rework is not a terminal Blocked outcome while CAE may still repair.
+        const blocked = observation?.blocked || null;
+        const repairMissionId = observation?.lineage?.repair_mission_id || null;
+        if (blocked && !repairMissionId) {
+          state = 'blocked';
+          live.repair_blocked_reason = blocked;
+          presentationStatus = 'Automatic repair blocked (' + blocked + ')';
+        } else if (repairMissionId && repairMissionId !== m.id) {
+          state = 'running';
+          presentationStatus = 'Repairing failed verification';
+          live.mission_id = repairMissionId;
+          live.repair_of = observation.lineage.parent_mission_id || m.id;
+        } else {
+          state = 'running';
+          presentationStatus = repairMissionId
+            ? 'Repairing failed verification'
+            : 'Verification failed; preparing automatic repair';
+        }
+      } else if (m.state === 'failed' || m.state === 'cancelled') {
+        state = 'failed';
+      }
+      if (presentationStatus) {
+        live.presentation = { ...(live.presentation || {}), status: presentationStatus };
+      }
+      if (state !== live.state || live.repair_of || live.repair_blocked_reason || presentationStatus) {
         live.state = state;
         this.write(request_id, live.principal, live, state);
       }
