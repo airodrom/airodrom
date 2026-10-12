@@ -238,8 +238,11 @@ class McpTools {
       return {plan_id:view.id,state:view.state,execution_enabled:false,message:'Goal Plan recorded. Continuous execution remains disabled until the local owner confirms authorize-autonomous-goal in Control Center.',authority:false};
     }
     if(name==='request_autonomous_authorization'){
-      const view=this.bridge.autonomousExecution.inspect(args.plan_id);
-      return {state:'WAIT',reason:'Confirm authorize-autonomous-goal in the authenticated local Control Center. ChatGPT/MCP cannot enable continuous execution.',plan_id:args.plan_id,request_id:args.request_id,proposed:{workers:args.workers,max_concurrent_missions:args.max_concurrent_missions,max_dispatches:args.max_dispatches,max_repairs:args.max_repairs},current:{execution_enabled:view.execution_enabled,lifecycle:view.autonomous?.lifecycle||null},authority:false};
+      const ae=this.bridge.autonomousExecution;const view=ae.inspect(args.plan_id);
+      const proposed={workers:args.workers,max_concurrent_missions:args.max_concurrent_missions,max_dispatches:args.max_dispatches,max_repairs:args.max_repairs,request_id:args.request_id,requested_at:Date.now(),source:'mcp',authority:false};
+      const row=ae.planRow(args.plan_id);const autonomous=ae.readAutonomous(row);autonomous.pending_request=proposed;ae.writeAutonomous(args.plan_id,autonomous);
+      ae.store.event('goal.autonomous.authorization_requested',null,{plan_id:args.plan_id,request_id:args.request_id,authority:false});
+      return {state:'WAIT',reason:'Confirm authorize-autonomous-goal in the authenticated local Control Center. ChatGPT/MCP cannot enable continuous execution.',plan_id:args.plan_id,request_id:args.request_id,proposed,current:{execution_enabled:view.execution_enabled,lifecycle:view.autonomous?.lifecycle||null},authority:false};
     }
     if(name==='list_architecture_memories')return {items:require('./architecture-memory').list(this.bridge.controlStore.db,args.project_id,{history:args.history===true}),authority:false};
     if(name==='inspect_context_pack')return this.bridge.controlContext.inspect(args.context_pack_id);

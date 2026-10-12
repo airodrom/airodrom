@@ -718,7 +718,7 @@
      ['Worker',(a.workers||[]).join(', ')||null],
      ['Last checkpoint',a.progress_at?stampKnown(a.progress_at):null],
      ['Current blocker',blocked?(readable(blocked.reason||blocked)||blocked):null],
-     ['Next action',(a.next_eligible||g.ready||[])[0]?('Dispatch '+((a.next_eligible||g.ready)[0])):g.execution_enabled?'Waiting for a ready stage':'Authorize continuous execution to schedule work'],
+     ['Next action',(a.next_eligible||g.ready||[])[0]?('Dispatch '+((a.next_eligible||g.ready)[0])):g.execution_enabled?'Waiting for a ready stage':(a.pending_request?'ChatGPT requested authorization — confirm Authorize continuous execution':'Authorize continuous execution to schedule work')],
      ['Budget',a.max_dispatches!=null?`${a.max_dispatches} dispatches · ${a.max_repairs||0} repairs · ${a.max_concurrent_missions||1} concurrent`:null]
    ]){if(!present(value))continue;const fact=node('div');fact.append(node('small',label),node('span',value));facts.append(fact);}
    card.append(facts);

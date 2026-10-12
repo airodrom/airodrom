@@ -19,11 +19,19 @@ test('MCP exposes discovery and CAE request tools without granting autonomous au
   assert.throws(()=>validate('request_autonomous_authorization',{plan_id:randomUUID(),request_id:'x',workers:['opencode'],max_concurrent_missions:1,max_dispatches:3,max_repairs:1,confirmed:true}),/Unknown tool argument/);
 
   const plans=[];
+  const pending=[];
   const bridge={
     projects:{listProjects:()=>[{projectId:'p1',name:'Fixture',status:'active',repositories:['/tmp/x']}],summary:()=>({goals:[{goalId:'g1',name:'Goal',status:'active'}]})},
     workTemplates:{list:()=>[{project:'fixture',workspace_alias:'local',state:'active',template_hash:'h',allowed_files:['fixture.txt'],privacy:'local_only',data_class:'public',workers:['opencode'],expires_at:Date.now()+1000,workspace:'/secret/path'}]},
     missions:{goalPlanner:{list:()=>[],inspect:id=>({id,state:'observing',execution_enabled:false,ready:[],blocked:[],authority:false}),create:(input)=>({id:'plan-1',state:'observing',execution_enabled:false,...input})}},
-    autonomousExecution:{list:()=>[],inspect:id=>({id,state:'observing',execution_enabled:false,ready:[],blocked:[],stages:[],autonomous:{lifecycle:'created',enabled:false}})}
+    autonomousExecution:{
+      list:()=>[],
+      inspect:id=>({id,state:'observing',execution_enabled:false,ready:[],blocked:[],stages:[],autonomous:{lifecycle:'created',enabled:false,pending_request:pending[0]||null}}),
+      planRow:id=>({id,plan:{autonomous:{version:1,enabled:false}}}),
+      readAutonomous:row=>({version:1,enabled:false,...(row.plan.autonomous||{})}),
+      writeAutonomous:(id,a)=>{pending[0]=a.pending_request;},
+      store:{event:()=>{}}
+    }
   };
   const mcp=new McpTools(bridge,{});
   mcp.handoffPrincipal='fixture-session';
@@ -38,6 +46,8 @@ test('MCP exposes discovery and CAE request tools without granting autonomous au
   assert.equal(wait.state,'WAIT');
   assert.equal(wait.authority,false);
   assert.match(wait.reason,/Control Center/);
+  assert.equal(wait.proposed.source,'mcp');
+  assert.ok(pending[0]);
   const proposed=await mcp.call('propose_goal_plan',{request_id:'req-plan-1',goal_id:randomUUID(),stages:[{id:randomUUID(),depends_on:[],mission_id:null,objective:'Disposable exact-file milestone',acceptance_criteria:['exact file'],verification_requirements:['fixture-test']}],max_runtime_hours:1,max_attempts:2},{name:'chatgpt',version:'1'});
   assert.equal(proposed.execution_enabled,false);
   assert.equal(proposed.authority,false);
