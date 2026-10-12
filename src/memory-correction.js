@@ -122,6 +122,51 @@ function reconcileActiveConflicts(memory, { dryRun = true, confirmApply = false,
   return { dryRun: false, applied: true, conflictCount: conflicts.length, conflicts, results: applied };
 }
 
+/**
+ * Normalize an explicit forget selection into a subject/value pair for
+ * Memory V2 lookup and conversation-history suppression. Does not invent facts.
+ */
+function conversationalForgetTarget(selection) {
+  const text = String(selection || '').normalize('NFC').trim().replace(/\.+$/, '');
+  if (!text) return null;
+  const inverted = /^([\p{L}\p{N}][\p{L}\p{N} .'-]{0,79}?)\s+is\s+my\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{0,79})$/iu.exec(text);
+  if (inverted) {
+    const value = inverted[1].trim().toLowerCase().replace(/\s+/g, ' ');
+    const subject = inverted[2].trim().toLowerCase().replace(/\s+/g, ' ');
+    return { key: subject, subject, value, tokens: uniqueTokens(subject + ' ' + value) };
+  }
+  const canonical = /^(?:my|our|the)\s+(.{1,100}?)\s+(?:is|are)\s+(.+)$/i.exec(text);
+  if (canonical) {
+    const subject = canonical[1].trim().toLowerCase().replace(/\s+/g, ' ');
+    const value = canonical[2].trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.!?]+$/, '');
+    return { key: subject, subject, value, tokens: uniqueTokens(subject + ' ' + value) };
+  }
+  const key = factKey(text);
+  return { key, subject: key, value: null, tokens: uniqueTokens(text) };
+}
+
+const STOP = new Set(['that', 'this', 'the', 'my', 'our', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'for', 'and', 'or', 'of', 'to', 'in', 'on', 'it', 'me', 'i', 'you', 'we', 'as', 'at', 'by', 'from', 'with', 'about', 'forget', 'remember', 'please']);
+
+function uniqueTokens(text) {
+  const tokens = String(text).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'-]{1,40}/gu) || [];
+  return [...new Set(tokens.filter(t => t.length >= 2 && !STOP.has(t)))];
+}
+
+/** True when prompt/response text carries the forgotten personal fact. */
+function textMatchesForgetTarget(text, target) {
+  if (!target || !text) return false;
+  const hay = String(text).toLowerCase();
+  if (target.subject && target.value) {
+    return hay.includes(target.subject) && hay.includes(target.value);
+  }
+  if (target.key && hay.includes(target.key) && target.tokens.length >= 2) {
+    return target.tokens.filter(t => hay.includes(t)).length >= Math.min(2, target.tokens.length);
+  }
+  if (target.tokens.length === 1) return hay.includes(target.tokens[0]);
+  if (target.tokens.length >= 2) return target.tokens.filter(t => hay.includes(t)).length >= 2;
+  return false;
+}
+
 module.exports = {
   stripCorrectionPreamble,
   subjectFor,
@@ -132,5 +177,8 @@ module.exports = {
   currentItems,
   presentCurrentItems,
   planActiveConflicts,
-  reconcileActiveConflicts
+  reconcileActiveConflicts,
+  conversationalForgetTarget,
+  textMatchesForgetTarget,
+  uniqueTokens
 };

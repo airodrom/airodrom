@@ -141,7 +141,29 @@ async function start(home = local.localHome()) {
   local.privateDirectory(home, true);
   const ollama = await ensureOllama();
   const service = await ensureService(home);
+  // Healthy HTTP alone is not operational readiness when admission stays closed.
+  if (service.healthy && service.admission && service.admission !== 'open') {
+    let gate = null;
+    try { gate = await local.admission(home, 'status'); } catch {}
+    if (gate?.closed_startup !== true && gate?.reconciled === true && gate?.idle === true) {
+      throw Error('Desktop login left admission closed after owned start (' + (gate.hold_reason || service.admission) + '). Data was preserved.');
+    }
+  }
   const menu = ensureMenu(home);
+  let reboot_acceptance = null;
+  try {
+    const reboot = require('../../src/reboot-acceptance');
+    if (require('node:fs').existsSync(reboot.pendingPath(home))) {
+      reboot_acceptance = await reboot.verify(home, local);
+      // Verifier process success must not hide acceptance failure.
+      if (reboot_acceptance && reboot_acceptance.ok === false) {
+        throw Error('Reboot acceptance failed: ' + (reboot_acceptance.failed || []).join(', '));
+      }
+    }
+  } catch (error) {
+    if (/Reboot acceptance failed|Desktop login left admission/.test(String(error && error.message || error))) throw error;
+    reboot_acceptance = { ok: false, error: String(error && error.message || error), authority: false };
+  }
   return {
     ollama,
     service: {
@@ -151,6 +173,7 @@ async function start(home = local.localHome()) {
       managed: service.managed === true
     },
     menu,
+    reboot_acceptance,
     authority: false
   };
 }

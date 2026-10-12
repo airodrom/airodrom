@@ -10,14 +10,47 @@ function sensitiveList(bridge){return {items:bridge.personalMemory.recent({domai
 function reveal(bridge,id){const m=bridge.personalMemory.get(id);if(!m||m.domain!=='personal'||m.sensitivity==='normal')throw Error('Current sensitive identity required.');return {memoryId:id,content:m.content,operator_only:true,authority:false};}
 function forget(server,selection){
  text(selection,'memory selection',240);const b=server.bridge;
+ const correction=require('./memory-correction');
+ const target=correction.conversationalForgetTarget(selection);
  let items;
  if(/^[a-f0-9-]{36}$/i.test(selection)){
   const p=b.personalMemory.get(selection),a=b.authorityRuntime?.active?b.authorityRuntime.memory.get(selection):null;
   items=p?.domain==='personal'&&p.status==='active'?[{memoryId:selection,store:'personal'}]:a?.operator_id===b.authorityRuntime.store.operatorId&&a.scope==='global'&&a.status==='active'?[{memoryId:selection,store:'authority'}]:[];
- }else items=server.interactiveMemory(selection).items.map(m=>({...m,store:b.authorityRuntime?.active?'authority':'personal'}));
- if(items.length!==1)return {kind:'clarify',message:items.length?'Choose one current memory ID with /forget <id>.':'No matching ordinary memory. Use /sensitive for sensitive IDs.',choices:items.map(m=>({memoryId:m.memoryId,subject:m.subject}))};
- const m=items[0];if(m.store==='personal')b.personalMemory.forget(m.memoryId);else b.forgetPersonalMemory(m.memoryId);
- return {kind:'forgotten',memoryId:m.memoryId,message:'Forgotten.'};
+ }else{
+  items=server.interactiveMemory(selection).items.map(m=>({...m,store:b.authorityRuntime?.active?'authority':'personal'}));
+  // Also try the derived subject key (e.g. "car" from "Range Rover is my car").
+  if(!items.length&&target?.subject&&target.subject!==selection.toLowerCase()){
+   items=server.interactiveMemory(target.subject).items.map(m=>({...m,store:b.authorityRuntime?.active?'authority':'personal'}));
+  }
+ }
+ if(items.length>1)return {kind:'clarify',message:'Choose one current memory ID with /forget <id>.',choices:items.map(m=>({memoryId:m.memoryId,subject:m.subject}))};
+ let memoryId=null;
+ if(items.length===1){
+  const m=items[0];memoryId=m.memoryId;
+  if(m.store==='personal')b.personalMemory.forget(m.memoryId);else b.forgetPersonalMemory(m.memoryId);
+ }
+ // Always suppress matching conversation-history text so history-only facts
+ // cannot resurrect after an explicit forget, including when Memory V2 had no row.
+ const history=server.conversationEngine?.suppressForgottenFact
+  ?server.conversationEngine.suppressForgottenFact(selection)
+  :{suppressed:0};
+ if(memoryId||history.suppressed>0){
+  return {
+   kind:'forgotten',
+   memoryId,
+   history_suppressed:history.suppressed||0,
+   fact_key:history.fact_key||target?.key||null,
+   message:memoryId?'Forgotten.':(history.suppressed?'Forgotten from conversation context. It was not stored in ordinary Memory V2.':'Forgotten.'),
+   authority:false
+  };
+ }
+ // Sensitive records are never returned by ordinary interactiveMemory.
+ const sensitiveHits=b.personalMemory.search(target?.subject||selection,{domain:'personal',limit:5,includeSensitive:true}).items
+  .filter(m=>m.sensitivity!=='normal'&&m.status==='active');
+ if(sensitiveHits.length){
+  return {kind:'clarify',message:'That may be Sensitive Memory. Use /sensitive and forget by exact ID; ordinary forget cannot remove it.',choices:sensitiveHits.map(m=>({memoryId:m.memoryId,sensitivity:m.sensitivity})),authority:false};
+ }
+ return {kind:'clarify',message:'No matching ordinary memory or conversation context. Use /sensitive for sensitive IDs.',choices:[],authority:false};
 }
 async function submit(server,input){
  object(input,['message','request_id','conversation_id','include_memory','model','worker','workspace']);identifier(input.request_id,'request ID',160);

@@ -6,6 +6,8 @@
 **Recovery and live acceptance** (service healthy; cutover still HOLD): [AIRODROM-RECOVERY-AND-LIVE-ACCEPTANCE.md](AIRODROM-RECOVERY-AND-LIVE-ACCEPTANCE.md).
 
 **Final reconciliation V4** (PR inventory, merge HOLD, Memory/CLI/Mission/MCP evidence, Arecibo handoff): [AIRODROM-FINAL-RECONCILIATION.md](AIRODROM-FINAL-RECONCILIATION.md).
+**Always-On / Full Mac Reboot Acceptance V1** (login auto-start qualification): [AIRODROM-REBOOT-ACCEPTANCE-V1.md](AIRODROM-REBOOT-ACCEPTANCE-V1.md).
+
 **CLI client reliability** (attach-first Terminal; PATH install alignment): [CLI-CLIENT-RELIABILITY-V1.md](CLI-CLIENT-RELIABILITY-V1.md).
 
 **Menu Status & WhatsApp Connection Closeout V1** (LOCAL IMPLEMENTATION): [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md).

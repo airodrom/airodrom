@@ -106,3 +106,24 @@ test('Unicode credential ingress, selected context and credential output fail cl
  await assert.rejects(()=>f.start('Summarize selected mail.',{include_memory:false,context:[{id:'test',subject:'Mail',content:'Your ＰＩＮ: 818',untrusted:true}]}),/minimum selected/);assert.equal(f.packets.length,0);
  const r=await f.start('Hi');assert.equal((await f.settle(r)).state,'failed');assert.equal(f.engine.history()[0].response,null);
 });
+
+test('history-only personal fact cannot survive explicit conversational forget',async t=>{
+ const service=require('../src/assistant-service');
+ let calls=0;
+ const f=await setup(t,false,async()=>{
+  calls++;
+  return response(calls===1?'Your car is a SyntheticOrbitRover.':'I do not have that information.');
+ });
+ const session=f.engine.session();
+ const first=await f.start('What is my car?',session);assert.equal((await f.settle(first)).summary,'Your car is a SyntheticOrbitRover.');
+ assert.equal(f.bridge.personalMemory.search('SyntheticOrbitRover',{domain:'personal'}).items.length,0);
+ const server={bridge:f.bridge,interactiveMemory:q=>({items:f.bridge.personalMemory.search(q,{domain:'personal',includeSensitive:false}).items}),conversationEngine:f.engine};
+ const forgotten=service.forget(server,'SyntheticOrbitRover is my car');
+ assert.equal(forgotten.kind,'forgotten');assert.ok(forgotten.history_suppressed>=1);assert.equal(forgotten.memoryId,null);
+ assert.equal(f.engine.history(session.conversation_id).length,0);
+ const rows=f.bridge.controlStore.db.prepare('SELECT prompt,response,context_json FROM cp_conversation_turns WHERE conversation_id=?').all(session.conversation_id);
+ assert.ok(rows.every(r=>r.prompt==null&&r.response==null&&JSON.parse(r.context_json).content_state==='erased'));
+ const again=await f.start('What is my car?',session);assert.equal((await f.settle(again)).summary,'I do not have that information.');
+ assert.doesNotMatch(JSON.stringify(f.packets.at(-1).messages),/SyntheticOrbitRover/);
+ assert.match(JSON.stringify(f.packets.at(-1).messages),/no current ordinary Memory V2|do not invent personal facts/i);
+});
