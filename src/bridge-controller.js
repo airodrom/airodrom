@@ -299,6 +299,12 @@ class BridgeController extends EventEmitter {
       this.ledger = new EventLedger(this.memory.db);
       this.reasoningAdmission = new (require('./reasoning-admission').ReasoningAdmission)(this);
       this.personalMemory = new PersonalMemory({ db: this.memory.db, record: event => this._ledgerRecord(event) });
+      // Developer Memory V1: disabled by default; Hindsight is optional subordinate repo knowledge.
+      this.developerMemory = new (require('./developer-memory').DeveloperMemory)({
+        db: this.memory.db,
+        configPath: path.join(__dirname, '../config/developer-memory-v1.json'),
+        ...(this.options.developerMemory || {})
+      });
       this.projectMemoryV2 = new ProjectMemoryV2Adapter({ db: this.memory.db });
       this.missionCoordinator = new MissionCoordinator(this.memory.db, { provider: null, callbackVerifier: null, dispatchTaskB: null });
       this.level1Flow = new Level1MissionFlow(this.memory.db, {

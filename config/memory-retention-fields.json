@@ -847,6 +847,77 @@
       "updated_at": "A"
     }
   },
+  "developer_memory_items": {
+    "fields": [
+      "memory_id",
+      "repository_id",
+      "bank_id",
+      "provider_ref",
+      "document_id",
+      "source_kind",
+      "source_ref",
+      "content_hash",
+      "trust_label",
+      "status",
+      "supersedes",
+      "policy_version",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/developer-memory.js",
+    "classification": {
+      "memory_id": "A",
+      "repository_id": "A",
+      "bank_id": "A",
+      "provider_ref": "A",
+      "document_id": "A",
+      "source_kind": "A",
+      "source_ref": "B",
+      "content_hash": "D",
+      "trust_label": "A",
+      "status": "A",
+      "supersedes": "A",
+      "policy_version": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "developer_memory_meta": {
+    "fields": [
+      "key",
+      "value"
+    ],
+    "source": "src/developer-memory.js",
+    "classification": {
+      "key": "A",
+      "value": "A"
+    }
+  },
+  "developer_memory_suppressions": {
+    "fields": [
+      "suppression_id",
+      "repository_id",
+      "memory_id",
+      "provider_ref",
+      "document_id",
+      "content_hash",
+      "reason",
+      "policy_version",
+      "created_at"
+    ],
+    "source": "src/developer-memory.js",
+    "classification": {
+      "suppression_id": "A",
+      "repository_id": "A",
+      "memory_id": "A",
+      "provider_ref": "A",
+      "document_id": "A",
+      "content_hash": "D",
+      "reason": "A",
+      "policy_version": "A",
+      "created_at": "A"
+    }
+  },
   "task_states": {
     "fields": [
       "id",

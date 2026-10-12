@@ -2,6 +2,8 @@
 
 PersonalMemory is explicit scoped reference data. Project Memory V2 provides task-scoped checkpoints and reuse with provenance. Canonical architecture excerpts are validated against pinned public source documents. Conversation retrieval supplies reference context; it does not automatically import or promote history. Candidate proposals require host review.
 
+**Developer Memory V1** (optional, disabled by default) is a separate repository-knowledge plane. It does not replace Personal Memory V2 and never migrates personal records into Hindsight. See [DEVELOPER-MEMORY-V1.md](DEVELOPER-MEMORY-V1.md) and [ADR 0046](adr/0046-developer-memory-hindsight.md).
+
 Memory selection enforces domain/project/privacy and byte/top-k limits. Unknown scope, stale lifecycle disposition or incomplete propagation deny retrieval and dispatch. Neither stored content, embeddings, summaries nor model assertions can change authority, approve tools, choose a forbidden runtime or satisfy Acceptance.
 
 New candidate, memory and ContextPack identities are random UUIDv4. Legacy content-derived identities migrate against independent opaque origins; retained aliases and recoverable old content fingerprints are forbidden. Unknown origins stay unavailable. Active dedupe is erasable payload comparison rather than a permanent reconstructive identity.
@@ -37,7 +39,7 @@ ChatGPT shapes `{ query, limit }` for search and `{ limit }` for recent are vali
 
 ## Context assembly
 
-Host-built ContextPacks select bounded authorized refs: current request, conversation continuity, ranked personal/project memory, architecture excerpts, and provenance. Workers receive the approved pack only. They do not mount the Personal Memory database, bypass broker scope checks, or promote model interpretation into durable memory without policy + approval.
+Host-built ContextPacks select bounded authorized refs: current request, conversation continuity, ranked personal/project memory, architecture excerpts, provenance, and (when Developer Memory retrieval is explicitly enabled) a short-lived host prefetch of untrusted repository-knowledge evidence. Workers receive the approved pack only. They do not mount the Personal Memory database, call Hindsight directly, bypass broker scope checks, or promote model interpretation into durable memory without policy + approval.
 
 Retrieval classes remain distinct: verified fact, current canonical memory, historical/superseded memory, user-provided unverified information, model interpretation, and unknown. Forgotten or superseded rows must not reappear through FTS, caches, ContextPack rebuild, or worker snapshots as current facts. Logical suppression is not claimed as forensic wipe.
 

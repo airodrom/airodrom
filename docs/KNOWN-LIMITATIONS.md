@@ -1,5 +1,14 @@
 # Known limitations
 
+## Developer Memory V1 / Hindsight (2026-10-12)
+
+- Feature flags default **off**. Source implementation does not activate on the owner live install, LaunchAgents, or personal-memory stores.
+- Evidence class for `tests/developer-memory-v1.test.js` is **MOCKED CONTRACT PASS** only. Not isolated-backend pass, not real local Hindsight pass, not owner-installation verified.
+- No Hindsight daemon is launched by Airodrom. Local Ollama/Hindsight compatibility is not claimed until a disposable backend is qualified under separate authorization.
+- Hindsight agent plugins (OpenCode/Claude/Codex/Cursor) are intentionally **not** installed. Standalone agent sessions outside Airodrom are not covered by Airodrom memory policy.
+- Provider delete is best-effort; suppression remains authoritative until confirmed. Forensic erasure is never claimed.
+- Retrieved developer-memory text is untrusted evidence (`authority: false`) and cannot grant tools or rewrite Personal Memory.
+
 ## Context & Personal Memory V2 contracts (2026-10-11)
 
 - ChatGPT calls such as `personal_memory_search({query, limit})`, `personal_memory_recent({limit})`, and `memory_search({query, limit})` previously failed closed with `invalid_tool_arguments` because broker `validKeys` rejected optional `limit` and required `domain` for recent. Current source accepts those shapes with bounded `limit` (1–20) and default `domain=personal` for recent/search execution. Extra keys remain denied.

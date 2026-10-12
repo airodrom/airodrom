@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "enabled": false,
+  "provider": "hindsight",
+  "allow_ingest": false,
+  "allow_retrieval": false,
+  "allow_external": false,
+  "hindsight": {
+    "base_url": "http://127.0.0.1:8888",
+    "api_token_env": "HINDSIGHT_API_TOKEN",
+    "timeout_ms": 4000,
+    "max_retries": 1,
+    "circuit_failures": 3,
+    "circuit_cooldown_ms": 30000,
+    "pinned_client_version": "0.10.3",
+    "transport": "http_loopback"
+  },
+  "limits": {
+    "max_results": 8,
+    "max_item_chars": 1200,
+    "max_pack_chars": 2400,
+    "max_retain_chars": 4000
+  },
+  "allowed_source_kinds": [
+    "architecture_decision_record",
+    "approved_technical_documentation",
+    "verified_git_commit",
+    "accepted_implementation_result",
+    "confirmed_bug_fix",
+    "approved_engineering_note"
+  ],
+  "notes": "Disabled by default. Hindsight is a subordinate repository-knowledge provider; Airodrom remains authoritative. No agent plugins, no auto-retain, no cloud fallback."
+}
