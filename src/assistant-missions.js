@@ -50,9 +50,20 @@ function draft(server,input,message){
 }
 function matchingTemplates(bridge,workspace,selectedWorker){
  if(!workspace)return [];
- const candidates=[];if(['codex','claude_code'].includes(selectedWorker))for(const r of bridge.workers.templates())if(r.template.workspace===workspace&&r.template.workers.includes(selectedWorker))candidates.push(r.template);
+ const root=path.resolve(workspace),candidates=[];
+ if(['codex','claude_code'].includes(selectedWorker))for(const r of bridge.workers.templates())if(r.template.workspace===workspace&&r.template.workers.includes(selectedWorker))candidates.push(r.template);
  for(const entries of Object.values(bridge.options.externalMissionTemplates||{}))for(const template of Object.values(entries||{})){
-  if(template&&typeof template.workspace==='string'&&path.isAbsolute(template.workspace)&&path.resolve(template.workspace)===path.resolve(workspace))candidates.push(template);
+  if(template&&typeof template.workspace==='string'&&path.isAbsolute(template.workspace)&&path.resolve(template.workspace)===root)candidates.push(template);
+ }
+ // Owner-registered local WORK templates participate in NL matching (fail-closed on invalid/expired).
+ if(bridge.workTemplates){
+  for(const item of bridge.workTemplates.list('operator')||[]){
+   if(item.state!=='active')continue;
+   try{
+    const t=bridge.workTemplates.template(item.project,item.workspace_alias);
+    if(t&&path.resolve(t.workspace)===root&&(!selectedWorker||selectedWorker==='auto'||selectedWorker==='opencode'||(t.workers||[]).includes(selectedWorker)))candidates.push(t);
+   }catch{/* invalid template stays unavailable */}
+  }
  }
  return candidates;
 }

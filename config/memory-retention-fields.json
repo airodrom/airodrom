@@ -3854,5 +3854,39 @@
       "record": "B",
       "state": "A"
     }
+  },
+  "cp_work_template_proposals": {
+    "fields": [
+      "project",
+      "workspace_alias",
+      "record",
+      "state"
+    ],
+    "source": "src/work-templates.js",
+    "classification": {
+      "project": "B",
+      "workspace_alias": "B",
+      "record": "B",
+      "state": "A"
+    }
+  },
+  "cp_zero_setup_requests": {
+    "fields": [
+      "request_id",
+      "principal",
+      "record",
+      "state",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/zero-setup-work.js",
+    "classification": {
+      "request_id": "B",
+      "principal": "B",
+      "record": "B",
+      "state": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
   }
 }

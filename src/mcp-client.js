@@ -21,7 +21,8 @@ function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,s
     let connection;
     try { connection = discovery(dataDir); }
     catch { const error = new Error('Bridge discovery failed'); error.publicMessage = 'Local bridge unavailable or private discovery invalid. Start the bridge with npm start.'; throw error; }
-    if(['submit_mission','get_mission_handoff','cancel_mission_handoff'].includes(name)&&(!session||session.pid!==connection.pid||session.port!==connection.port||session.token!==connection.token||session.expires_at<Date.now())){
+    const needsSession=['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status'].includes(name);
+    if(needsSession&&(!session||session.pid!==connection.pid||session.port!==connection.port||session.token!==connection.token||session.expires_at<Date.now())){
       if(!sessionPromise)sessionPromise=(async()=>{
       const response=await fetch('http://127.0.0.1:'+connection.port+'/api/mcp/session',{method:'POST',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},body:JSON.stringify(session?.session_id?{session_id:session.session_id}:resumeSession?{session_id:resumeSession}:{}),redirect:'error',signal:AbortSignal.timeout(5000)});
       if(!response.ok)throw Error('Authenticated handoff session unavailable');const value=await response.json();if(!/^[a-f0-9-]{36}$/.test(value.session_id)||!Number.isSafeInteger(value.expires_at))throw Error('Invalid handoff session');session={...value,...connection};if(sessionFile)require('./local-bootstrap').writePrivate(sessionFile,{version:1,session_id:session.session_id});

@@ -22,8 +22,8 @@ function diagnose({ source = TOOLS, installed = null, advertised = null, client 
  return { schema_version: 1, server_version: require('../package.json').version, observed, source_sha: sha(sourceSha), installed_sha: sha(installedSha),
   version_mismatch: sha(sourceSha) && sha(installedSha) ? sourceSha !== installedSha : null,
   differences, health: differences.length ? 'observed_mismatch' : observed.installed && observed.advertised && observed.client ? 'observed_match' : 'incomplete_observation',
-  list_changed: false, catalog_lifetime: 'fixed_process_snapshot',
-  limitations: ['Client catalog is unknown unless separately supplied by the client.', 'A mismatch alone cannot distinguish filtering from a cached client snapshot.', 'Restart or reconnect must be authorized separately; this diagnostic performs neither.'], authority: false };
+  list_changed: true, catalog_lifetime: 'process_snapshot_with_list_changed_capability',
+  limitations: ['Client catalog is unknown unless separately supplied by the client.', 'A mismatch alone cannot distinguish filtering from a cached client snapshot.', 'ChatGPT may keep a conversation-scoped tool catalog; a new conversation is required when ask_airodrom is missing after install refresh.', 'Restart or reconnect must be authorized separately; this diagnostic performs neither.'], authority: false };
 }
 async function advertisedCatalog() {
  const { McpStdio } = require('./mcp-stdio');

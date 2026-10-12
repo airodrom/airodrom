@@ -1,3 +1,10 @@
+## Unreleased — Zero-Setup Autonomous Work V1
+
+- Add `ask_airodrom` / `get_ask_status` MCP entry so ChatGPT can request bounded local work without Project/Goal/WORK-template UUID forms.
+- Prepare owner-readable Control Center approval cards; registration, Goal Plan binding, and CAE authorization remain distinct confirmed host operations.
+- Fix MCP handoff session minting for discovery/CAE tools; advertise `listChanged` and document new-conversation refresh when ChatGPT caches an old catalog.
+- Focused suite: `tests/zero-setup-work.test.js` + updated `tests/mcp-schema.test.js`.
+
 ## Unreleased — Continuous Autonomous Execution V1
 
 - Extend Goal Planner with versioned `autonomous` authorization, durable `cp_autonomous_claims`, and a Mission-path scheduler that continues authorized goals without ChatGPT/Cursor ownership ([ADR 0048](docs/adr/0048-continuous-autonomous-execution.md)).

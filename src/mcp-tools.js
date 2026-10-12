@@ -54,6 +54,8 @@ const TOOLS = [
   tool('inspect_autonomous_goal','Read durable continuous autonomous execution status for one Goal Plan. Grants no authority and cannot enable execution.',{plan_id:id},['plan_id'],true),
   tool('propose_goal_plan','Propose a Goal Plan through the same host planner as Control Center. Execution stays disabled until the authenticated local owner authorizes autonomous execution. Packet fields never grant capabilities.',{request_id:requestId,goal_id:id,stages:{type:'array'},max_runtime_hours:{type:'number'},max_attempts:{type:'integer',minimum:1,maximum:10}},['request_id','goal_id','stages','max_runtime_hours','max_attempts']),
   tool('request_autonomous_authorization','Request owner authorization for continuous autonomous execution of an existing Goal Plan. Never enables execution from ChatGPT; returns WAIT with Control Center confirmation required.',{plan_id:id,request_id:requestId,workers:{type:'array',items:{type:'string'},minItems:1,maxItems:4},max_concurrent_missions:{type:'integer',minimum:1,maximum:3},max_dispatches:{type:'integer',minimum:1,maximum:100},max_repairs:{type:'integer',minimum:1,maximum:10}},['plan_id','request_id','workers','max_concurrent_missions','max_dispatches','max_repairs']),
+  tool('ask_airodrom','Primary natural-language entry: ask Airodrom to do bounded local work. Resolves Project/workspace, prepares WORK scope and Goal Plan, then returns WAIT for one owner approval in Control Center. Never grants authority, writes files, or starts OpenCode from ChatGPT text alone. Prefer this over manually assembling Project IDs, WORK templates, or Mission packets.',{instruction:text(4000,'Natural-language work instruction. Do not include secrets, credentials, or private vault material.'),request_id:requestId},['instruction','request_id']),
+  tool('get_ask_status','Read the human-readable status of a prior ask_airodrom request (approval, working, verified). Grants no authority.',{request_id:requestId},['request_id'],true),
 ];
 
 
@@ -227,8 +229,14 @@ class McpTools {
       return {projects,goals,authority:false};
     }
     if(name==='list_work_templates'){
-      const items=(this.bridge.workTemplates.list('operator')||[]).map(t=>({project:t.project,workspace_alias:t.workspace_alias,state:t.state,template_hash:t.template_hash,allowed_files:t.allowed_files,privacy:t.privacy,data_class:t.data_class,workers:t.workers,expires_at:t.expires_at,authority:false}));
+      const items=(this.bridge.workTemplates.list('operator')||[]).map(t=>({project:t.project,workspace_alias:t.workspace_alias,project_id:t.project_id,goal_id:t.goal_id,state:t.state,template_hash:t.template_hash,allowed_files:t.allowed_files,privacy:t.privacy,data_class:t.data_class,workers:t.workers,expires_at:t.expires_at,authority:false}));
       return {items,authority:false};
+    }
+    if(name==='ask_airodrom')return this.bridge.zeroSetupWork.ask({instruction:args.instruction,request_id:args.request_id},'mcp:'+(this.handoffPrincipal ||= randomUUID()));
+    if(name==='get_ask_status'){
+      const view=this.bridge.zeroSetupWork.refreshState(args.request_id);
+      if(!view)throw Error('Prepared ask request unavailable');
+      return view;
     }
     if(name==='list_goal_plans')return {items:(this.bridge.autonomousExecution?.list(args.limit||20)||this.bridge.missions.goalPlanner.list(args.limit||20)).map(p=>({plan_id:p.id,goal_id:p.goal_id,project_id:p.project_id,state:p.state,execution_enabled:!!p.execution_enabled,ready:p.ready,blocked:p.blocked,authority:false})),authority:false};
     if(name==='inspect_goal_plan'){const view=this.bridge.missions.goalPlanner.inspect(args.plan_id);return {...view,authority:false};}

@@ -255,7 +255,7 @@ class ControlServer {
         if (Object.keys(body).some(k => !['name', 'args', 'clientInfo'].includes(k)) || typeof body.name !== 'string') throw new Error('Invalid MCP operation');
         if (body.clientInfo !== undefined && (!body.clientInfo || typeof body.clientInfo !== 'object' || Array.isArray(body.clientInfo) || Object.keys(body.clientInfo).some(k => !['name', 'version'].includes(k)) || Object.values(body.clientInfo).some(v => typeof v !== 'string' || v.length > 100))) throw new Error('Invalid MCP client metadata');
         const session=this.mcpSessions.get(req.headers['x-airodrom-session']);
-        if(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization'].includes(body.name)&&(!session||session.expires_at<Date.now()))throw Error('Fresh authenticated handoff session required');
+        if(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status'].includes(body.name)&&(!session||session.expires_at<Date.now()))throw Error('Fresh authenticated handoff session required');
         const result = await (session?.mcp||this.mcp).call(body.name, body.args, body.clientInfo);
         this.lastMcpCallAt = Date.now();
         return this.json(res, 200, result);
@@ -303,6 +303,8 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/provider')return this.json(res,200,await require('./assistant-service').providerStatus(this));
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/work-templates')return this.json(res,200,{items:this.bridge.workTemplates.list('operator'),authority:false});
+      if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup')return this.json(res,200,{items:this.bridge.zeroSetupWork.listPending('operator'),authority:false});
+      if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup/status'){const id=url.searchParams.get('request_id');return this.json(res,200,this.bridge.zeroSetupWork.refreshState(id)||{error:'Prepared ask request unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/connectors')return this.json(res,200,require('./assistant-service').connectors(this.bridge).status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
@@ -405,6 +407,8 @@ class ControlServer {
       if(url.pathname==='/api/assistant/development-sessions/close')return this.json(res,200,this.bridge.developmentSessions.close(body,'operator'));
       if(url.pathname==='/api/assistant/work-templates/register')return this.json(res,201,this.bridge.workTemplates.register(body,'operator'));
       if(url.pathname==='/api/assistant/work-templates/revoke')return this.json(res,200,this.bridge.workTemplates.revoke(body,'operator'));
+      if(url.pathname==='/api/assistant/zero-setup/approve')return this.json(res,200,await this.bridge.zeroSetupWork.approve(body,'operator'));
+      if(url.pathname==='/api/assistant/zero-setup/reject')return this.json(res,200,this.bridge.zeroSetupWork.reject(body,'operator'));
       if(url.pathname==='/api/assistant/workspaces/register')return this.json(res,201,this.bridge.workers.registerTemplate(body,'operator'));
       if (url.pathname.startsWith('/api/product/')) {
         try {

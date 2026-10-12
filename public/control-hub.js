@@ -701,42 +701,66 @@
  }
  function goalsView(){
   const root=node('div');
-  root.append(node('h2','Continuous Autonomous Execution'),node('p','Primary operator surface: authorize a goal, then Airodrom plans, dispatches, monitors, repairs and verifies within bounds. You are asked only for genuine decisions and final Acceptance — not routine Continue, Retry, Verify or Next Mission. Pausing stops future scheduling only.','muted'));
+  root.append(node('h2','Ask Airodrom'),node('p','One instruction from ChatGPT prepares a bounded task. You approve protected access once. Airodrom then plans, runs OpenCode, verifies, and reports — without Continue loops or UUID setup.','muted'));
+  const pending=snapshot.zero_setup?.items||[];
+  for(const item of pending){
+   const p=item.presentation||{};
+   const card=node('article',null,'glass goal-card');
+   card.append(node('span','AIRODROM','eyebrow'),node('h3',p.goal||'Prepared task'),statusChip({display:{key:'waiting',label:p.status||'Waiting for your approval',tone:'waiting'}}));
+   const facts=node('div',null,'live-facts');
+   for(const [label,value] of [
+     ['Goal',p.goal],
+     ['Project',item.project_name||p.project_name],
+     ['File',(p.files||[]).join(', ')],
+     ['Worker',p.worker||'Local OpenCode'],
+     ['Verification',p.verification],
+     ['Network',p.network||'No external access'],
+     ['GitHub',p.github||'No commits or pushes'],
+     ['Production',p.production||'No access'],
+   ]){if(!present(value))continue;const fact=node('div');fact.append(node('small',label),node('span',value));facts.append(fact);}
+   card.append(facts);
+   const controls=node('div',null,'actions');
+   const approve=button('Approve this task',async()=>{if(!window.confirm('Approve this bounded local task?\n\n'+ (p.goal||'') +'\nProject: '+(item.project_name||'')+'\nFiles: '+((p.files||[]).join(', ')||'none')+'\n\nThis registers the WORK scope, authorizes one Goal Plan, and allows local OpenCode to run. Acceptance remains a separate owner decision.'))return;try{await api('/api/assistant/zero-setup/approve',{request_id:item.request_id,confirmed:true});await refresh();}catch(e){$('notice').textContent=e.message;}},true);
+   approve.dataset.focusKey='zero-setup:'+item.request_id+':approve';
+   const cancel=button('Cancel',async()=>{if(!window.confirm('Cancel this prepared task? Nothing has been written yet.'))return;try{await api('/api/assistant/zero-setup/reject',{request_id:item.request_id,confirmed:true});await refresh();}catch(e){$('notice').textContent=e.message;}});
+   cancel.dataset.focusKey='zero-setup:'+item.request_id+':cancel';
+   const advanced=node('details');advanced.append(node('summary','View technical details'),node('pre',JSON.stringify({request_id:item.request_id,template_ready:item.template_ready},null,2)));
+   controls.append(approve,cancel);card.append(controls,advanced);root.append(card);
+  }
+  root.append(node('h2','Continuous Autonomous Execution'),node('p','After approval, Airodrom schedules, monitors, repairs and verifies within bounds. You are asked only for genuine decisions and final Acceptance.','muted'));
   const items=snapshot.autonomous_goals?.items||snapshot.goal_plans?.items||[];
   for(const g of items){
    const life=g.autonomous?.lifecycle||g.state;
    const a=g.autonomous||{};
    const activeStage=(g.stages||[]).find(s=>['dispatched','running','verifying'].includes(s.state))||(g.stages||[]).find(s=>s.mission_id);
    const blocked=(g.blocked||[])[0]||(g.stages||[]).find(s=>s.state==='blocked');
+   const verifiedCount=(g.stages||[]).filter(s=>s.state==='verified').length;
+   const stageCount=(g.stages||[]).length||0;
+   const outcomeLabel=verifiedCount&&verifiedCount===stageCount?'Completed and verified':['dispatched','running'].includes(activeStage?.state)?'Working':activeStage?.state==='verifying'?'Verification underway':g.execution_enabled?'Working':(a.pending_request||!g.execution_enabled)?'Waiting for your approval':readable(life);
+   const title=g.presentation?.goal||g.goal_name||g.project_name||'Authorized goal';
    const card=node('article',null,'glass goal-card');
-   card.append(node('span','AUTHORIZED GOAL','eyebrow'),node('h3',g.goal_id||g.id||'Goal plan'),statusChip({display:{key:life,label:readable(life)||life,tone:g.execution_enabled?'ready':'waiting'}}));
+   card.append(node('span','AIRODROM','eyebrow'),node('h3',title),statusChip({display:{key:life,label:outcomeLabel,tone:g.execution_enabled?'ready':'waiting'}}));
    const facts=node('div',null,'live-facts');
    for(const [label,value] of [
-     ['Lifecycle',readable(life)],
-     ['Active Mission',activeStage?.mission_id?activeStage.mission_id.slice(0,8)+'…':null],
-     ['Progress',`${(g.stages||[]).filter(s=>s.state==='verified').length}/${(g.stages||[]).length||0} stages verified`],
-     ['Worker',(a.workers||[]).join(', ')||null],
-     ['Last checkpoint',a.progress_at?stampKnown(a.progress_at):null],
+     ['Status',outcomeLabel],
+     ['Progress',stageCount?`${verifiedCount}/${stageCount} stages verified`:null],
+     ['Worker',(a.workers||[]).join(', ')||'Local OpenCode'],
+     ['Result',g.presentation?.result||null],
+     ['Verification',g.presentation?.verification_label||(verifiedCount&&verifiedCount===stageCount?'Passed':null)],
      ['Current blocker',blocked?(readable(blocked.reason||blocked)||blocked):null],
-     ['Next action',(a.next_eligible||g.ready||[])[0]?('Dispatch '+((a.next_eligible||g.ready)[0])):g.execution_enabled?'Waiting for a ready stage':(a.pending_request?'ChatGPT requested authorization — confirm Authorize continuous execution':'Authorize continuous execution to schedule work')],
-     ['Budget',a.max_dispatches!=null?`${a.max_dispatches} dispatches · ${a.max_repairs||0} repairs · ${a.max_concurrent_missions||1} concurrent`:null]
+     ['Next action',g.execution_enabled?(activeStage?.mission_id?'Open Mission for details':'Waiting for a ready stage'):(a.pending_request?'Confirm authorization below':'Authorize to schedule work')],
    ]){if(!present(value))continue;const fact=node('div');fact.append(node('small',label),node('span',value));facts.append(fact);}
    card.append(facts);
-   const dep=node('ol',null,'goal-stages');
-   for(const s of g.stages||[]){
-     const li=node('li',null,'goal-stage '+(s.state||''));
-     li.append(node('strong',s.id),node('span',readable(s.state)||s.state||'unknown'));
-     if(s.depends_on?.length)li.append(node('small','depends on '+(s.depends_on.join(', '))));
-     if(s.reason)li.append(node('small',readable(s.reason)));
-     if(s.mission_id)li.append(button('View Mission',()=>selectMission(s.mission_id)));
-     dep.append(li);
-   }
-   if(dep.children.length)card.append(node('h3','Stages'),dep);
-   else card.append(empty('No stage graph available for this goal.'));
+   if(activeStage?.mission_id)card.append(button('View result',()=>selectMission(activeStage.mission_id)));
+   const advanced=node('details');advanced.append(node('summary','View technical details'),node('pre',JSON.stringify({plan_id:g.id,goal_id:g.goal_id,stages:g.stages,autonomous:a},null,2)));
+   card.append(advanced);
    const controls=node('div',null,'actions');
    const goalSend=async(action,body)=>{try{await api('/api/control-v2/'+action,{...body,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}};
-   if(!g.execution_enabled){const b=button('Authorize continuous execution',()=>goalSend('authorize-autonomous-goal',{id:g.id,workers:['host','opencode'],max_concurrent_missions:1,max_dispatches:40,max_repairs:3,confirmed:true}),true);b.dataset.focusKey='goal:'+g.id+':authorize';controls.append(b);}
-   else{
+   if(!g.execution_enabled){
+     const req=a.pending_request||{};
+     const b=button('Approve this task',()=>goalSend('authorize-autonomous-goal',{id:g.id,workers:req.workers||['opencode'],max_concurrent_missions:req.max_concurrent_missions||1,max_dispatches:req.max_dispatches||3,max_repairs:req.max_repairs||1,confirmed:true}),true);
+     b.dataset.focusKey='goal:'+g.id+':authorize';controls.append(b);
+   }else{
      const p=button('Pause scheduling',()=>goalSend('pause-autonomous-goal',{id:g.id}));p.dataset.focusKey='goal:'+g.id+':pause';
      const r=button('Resume scheduling',()=>goalSend('resume-autonomous-goal',{id:g.id}));r.dataset.focusKey='goal:'+g.id+':resume';
      const s=button('Stop future scheduling',()=>{if(!window.confirm('Stop future scheduling for this goal? Active external execution is not terminated by this action.'))return;goalSend('stop-autonomous-goal',{id:g.id});});s.dataset.focusKey='goal:'+g.id+':stop';
@@ -744,12 +768,13 @@
    }
    card.append(controls);root.append(card);
   }
-  if(!items.length)root.append(empty('No durable goal plans. Register a proposal through authenticated Goal Planning controls.'));
+  if(!pending.length&&!items.length)root.append(empty('No prepared tasks yet. Ask Airodrom from ChatGPT, then approve here.'));
   return root;
  }
  function mcpView(){const root=node('div'),d=snapshot.mcp_discovery;root.append(glass('MCP Diagnostics',d?.health||'Unavailable','Discovery does not grant authority'));
   for(const [key,label]of [['source','Source tools'],['installed','Installed server tools'],['advertised','Advertised MCP tools'],['client','Client-visible tools']])root.append(node('p',label+': '+(d?.observed?.[key]?.count??'Not observed')));
-  root.append(node('p','Server package: '+(d?.server_version||'Not observed')),node('p','Source version: '+(d?.source_sha||'Not observed')),node('p','Installed version: '+(d?.installed_sha||'Not observed')),node('p','Fixed process catalog · list-change notification not advertised'));
+  root.append(node('p','Server package: '+(d?.server_version||'Not observed')),node('p','Source version: '+(d?.source_sha||'Not observed')),node('p','Installed version: '+(d?.installed_sha||'Not observed')),node('p','Catalog capability: listChanged='+String(d?.list_changed===true)+' · lifetime '+(d?.catalog_lifetime||'unknown')));
+  root.append(node('p','If ChatGPT still shows an old tool list (missing ask_airodrom), start a new conversation after the connector points at this install. Conversation-scoped catalogs do not always refresh in place.'));
   for(const line of d?.limitations||[])root.append(node('p',line));return root;
  }
  function flightView(){const root=node('section',null,'glass'),trace=snapshot.flight_recorder;root.append(node('h2','Mission Flight Recorder'));if(!trace){root.append(empty('Trace unavailable.'));return root;}
@@ -758,7 +783,7 @@
  function selectMission(id){missionListContext={filter:missionFilter,tab:missionTab,offset:missionOffset,limit:missionLimit,worker:missionWorker,sort:missionSort,query:searchQuery};clearMemory();stopObsStream();observatory=null;obsCursor=0;diffCache.clear();missionDetailTab='Outcome';generation++;missionId=id;view='Missions';$('heading').textContent='Mission';render();$('content').focus();refresh();}
  for(const name of views){const b=button(name,()=>{const keepSession=conversationSessionId;const keepPending=pendingNewConversation;const keepPrevious=previousConversationSessionId;clearMemory();conversationSessionId=keepSession;pendingNewConversation=keepPending;previousConversationSessionId=keepPrevious;view=name;missionId=null;generation++;for(const [n,item]of nav)item.setAttribute('aria-current',n===name?'page':'false');$('heading').textContent=name;render();refresh();});nav.set(name,b);$('nav').append(b);}nav.get(view)?.setAttribute('aria-current','page');$('heading').textContent=missionId?'Mission':view;
  async function send(action,body){generation++;inflight?.abort();try{await api('/api/product/'+action,{...body,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}}
- async function refresh(){clearTimeout(timer);timer=null;if(busy||paused||document.hidden||!authorized)return;busy=true;const version=generation,filter=category;inflight=new AbortController();try{let live=null;const current=await api('/api/product/overview?current_offset='+currentOffset,undefined,inflight.signal);let history=null,nextMissionPage=null;if(view==='Reliability')current.reliability=await api('/api/control-v2/reliability',undefined,inflight.signal);if(view==='Autonomous Goals'||view==='Overview'){current.goal_plans=await api('/api/control-v2/goal-plans',undefined,inflight.signal);current.autonomous_goals=await api('/api/control-v2/autonomous-goals',undefined,inflight.signal);}if(view==='MCP Diagnostics')current.mcp_discovery=await api('/api/control-v2/mcp-discovery',undefined,inflight.signal);if(missionId)current.flight_recorder=await api('/api/control-v2/flight-recorder?id='+encodeURIComponent(missionId),undefined,inflight.signal);if(view==='Missions'&&!missionId&&current.mission_counts)nextMissionPage=await api('/api/product/missions?filter='+encodeURIComponent(missionFilter)+'&query='+encodeURIComponent(searchQuery)+'&offset='+missionOffset+'&limit='+missionLimit+'&sort='+encodeURIComponent(missionSort)+(missionWorker?'&worker='+encodeURIComponent(missionWorker):''),undefined,inflight.signal);if(view==='Google Connections')current.google=await api('/api/assistant/google',{action:'status'},inflight.signal);if(view==='AI & Workers'||view==='Conversation'){try{current.provider=await api('/api/assistant/provider',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.provider=null;}}if(view==='AI & Workers'||view==='Overview'){try{current.orchestration=await api('/api/assistant/preferences',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.orchestration=null;}}if(['WORK Templates','Automation & Permissions'].includes(view))current.work_templates=await api('/api/assistant/work-templates',undefined,inflight.signal);if(missionId)current.selected_mission=await api('/api/product/mission?id='+encodeURIComponent(missionId),undefined,inflight.signal);try{live=await api('/api/product/observatory?mission='+encodeURIComponent(missionId),undefined,inflight.signal);}catch(e){secondaryNotice='Observatory snapshot unavailable';live=null;}if(view==='Conversation'||missionId&&current.selected_mission?.label==='Bounded local conversation'){
+ async function refresh(){clearTimeout(timer);timer=null;if(busy||paused||document.hidden||!authorized)return;busy=true;const version=generation,filter=category;inflight=new AbortController();try{let live=null;const current=await api('/api/product/overview?current_offset='+currentOffset,undefined,inflight.signal);let history=null,nextMissionPage=null;if(view==='Reliability')current.reliability=await api('/api/control-v2/reliability',undefined,inflight.signal);if(view==='Autonomous Goals'||view==='Overview'){current.goal_plans=await api('/api/control-v2/goal-plans',undefined,inflight.signal);current.autonomous_goals=await api('/api/control-v2/autonomous-goals',undefined,inflight.signal);try{current.zero_setup=await api('/api/assistant/zero-setup',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.zero_setup={items:[]};}}if(view==='MCP Diagnostics')current.mcp_discovery=await api('/api/control-v2/mcp-discovery',undefined,inflight.signal);if(missionId)current.flight_recorder=await api('/api/control-v2/flight-recorder?id='+encodeURIComponent(missionId),undefined,inflight.signal);if(view==='Missions'&&!missionId&&current.mission_counts)nextMissionPage=await api('/api/product/missions?filter='+encodeURIComponent(missionFilter)+'&query='+encodeURIComponent(searchQuery)+'&offset='+missionOffset+'&limit='+missionLimit+'&sort='+encodeURIComponent(missionSort)+(missionWorker?'&worker='+encodeURIComponent(missionWorker):''),undefined,inflight.signal);if(view==='Google Connections')current.google=await api('/api/assistant/google',{action:'status'},inflight.signal);if(view==='AI & Workers'||view==='Conversation'){try{current.provider=await api('/api/assistant/provider',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.provider=null;}}if(view==='AI & Workers'||view==='Overview'){try{current.orchestration=await api('/api/assistant/preferences',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.orchestration=null;}}if(['WORK Templates','Automation & Permissions'].includes(view))current.work_templates=await api('/api/assistant/work-templates',undefined,inflight.signal);if(missionId)current.selected_mission=await api('/api/product/mission?id='+encodeURIComponent(missionId),undefined,inflight.signal);try{live=await api('/api/product/observatory?mission='+encodeURIComponent(missionId),undefined,inflight.signal);}catch(e){secondaryNotice='Observatory snapshot unavailable';live=null;}if(view==='Conversation'||missionId&&current.selected_mission?.label==='Bounded local conversation'){
        // Do not auto-restore the latest browser session while the operator asked for a new conversation.
        if(view==='Conversation'&&!conversationSessionId&&authorized&&!pendingNewConversation){try{await conversationSession();}catch{}}
        const historyQuery=missionId?'?mission_id='+encodeURIComponent(missionId):(conversationSessionId&&!pendingNewConversation?'?conversation_id='+encodeURIComponent(conversationSessionId):'');
