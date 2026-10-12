@@ -710,5 +710,20 @@
   "tests/worker-preflight.test.js",
   "tests/zero-click-routing.test.js",
   "tsconfig.authority.json",
-  "tsconfig.sdk.json"
+  "tsconfig.sdk.json",
+  "config/reliability-scenarios-v1.json",
+  "docs/AUTONOMOUS-RELIABILITY-V1.md",
+  "docs/adr/0047-autonomous-reliability-intelligence.md",
+  "scripts/benchmark-memory-quality.cjs",
+  "scripts/benchmark-reliability.cjs",
+  "scripts/evaluate-reliability.cjs",
+  "src/evaluation-engine.js",
+  "src/goal-planner.js",
+  "src/mcp-discovery.js",
+  "src/memory-quality.js",
+  "src/mission-flight-recorder.js",
+  "src/reliability-observations.js",
+  "tests/autonomous-reliability.test.js",
+  "tests/reliability-browser.cjs",
+  "tests/reliability-opencode-live.cjs"
 ]

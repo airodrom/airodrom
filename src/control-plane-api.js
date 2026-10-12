@@ -29,6 +29,11 @@ function controlPlaneRead(bridge, url) {
     execution: { default_runtime: bridge.defaultRuntime, opencode: 'bounded_local_adapter', host: 'control_plane_primitives', claude_code: 'existing_capability_runner', cursor_agent: 'acp_status_only_execution_unqualified', codex_agent: bridge.codexAdapter?.health()||'unimplemented' },
     limitations: ['Ordinary projects default to observe; explicit bounded development chains can execute. Cursor Agent execution is unavailable.']
   };
+  if(section==='reliability')return require('./reliability-observations').recent(bridge);
+  if(section==='goal-plans')return {items:bridge.missions.goalPlanner.list(limit),execution_enabled:false,authority:false};
+  if(section==='goal-plan')return bridge.missions.goalPlanner.inspect(url.searchParams.get('id'));
+  if(section==='flight-recorder')return require('./mission-flight-recorder').flightRecorder(bridge,{missionId:url.searchParams.get('id'),after:Number(url.searchParams.get('after')||0),limit});
+  if(section==='mcp-discovery')return require('./mcp-discovery').diagnose({installed:require('./mcp-tools').TOOLS});
   if(section==='architecture-memory'){
     const arch=require('./architecture-memory'),projectId=url.searchParams.get('project_id'),history=url.searchParams.get('history')==='true';
     const ids=projectId?[projectId]:store.db.prepare('SELECT project_id FROM projects LIMIT 200').all().map(p=>p.project_id);
@@ -78,6 +83,14 @@ function controlPlaneRead(bridge, url) {
   return { items, next_cursor: more ? rows.at(-1).cursor : null };
 }
 function controlPlaneWrite(bridge, action, input) {
+  if(action==='record-evaluation-summary')return require('./reliability-observations').record(bridge,input);
+  if(action==='create-goal-plan')return bridge.missions.goalPlanner.create(input);
+  if(['continue-goal-plan','cancel-goal-plan','confirm-goal-checkpoint','bind-goal-mission'].includes(action)){
+    object(input,action==='bind-goal-mission'?['id','stage_id','mission_id','request_id']:action==='confirm-goal-checkpoint'?['id','stage_id','request_id']:['id','request_id']);
+    if(action==='confirm-goal-checkpoint')return bridge.missions.goalPlanner.checkpoint(input.id,input.stage_id,input.request_id);
+    if(action==='bind-goal-mission')return bridge.missions.goalPlanner.bind(input.id,input.stage_id,input.mission_id,input.request_id);
+    return bridge.missions.goalPlanner[action==='continue-goal-plan'?'continue':'cancel'](input.id,input.request_id);
+  }
   if (action === 'project-memory-retention') {
     object(input, ['mission_id', 'expires_at']);
     identifier(input.mission_id);

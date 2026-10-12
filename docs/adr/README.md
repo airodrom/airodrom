@@ -48,3 +48,5 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0018 qualified Multi-Worker V2](0018-qualified-multi-worker-v2.md): Proposed; public no-tools vendor proposals, signed owner qualification/templates and V2 handoff.
 
 - [0019 Codex live qualification](0019-codex-live-qualification.md): Signed bundle snapshot, supported no-child host setting, pinned public TLS roots and truthful local MCP qualification.
+
+- [0047 Autonomous reliability and intelligence](0047-autonomous-reliability-intelligence.md): Proposed; local measurement and observing goal plans over existing authority primitives.

@@ -99,6 +99,45 @@ test('browser storage budget is reserved before artifact write, including refuse
  const f=await fixture(t),dir=path.join(f.root,'public-evidence'),{ResearchBrowser}=require('../src/research-browser');const browser=new ResearchBrowser({scope:{origins:['https://example.com']},evidenceDir:dir,signal:new AbortController().signal,onEvidenceBytes:()=>{throw Error('synthetic storage budget exhausted');}});const id=randomUUID();assert.throws(()=>browser.write(id+'.png',Buffer.alloc(10)),/storage budget/);assert.equal(fs.existsSync(path.join(dir,id+'.png')),false);await browser.close();
 });
 
+test('public source timestamps do not become card false positives and cannot exempt secret prose',async t=>{
+ const runtime=require('./fixtures/opencode-fixture.cjs').runtime(t);
+ const f=await fixture(t,{opencode:runtime.options}),web=f.bridge.missions.web,m=native(f);synthetic(f);
+ web.configure(m.id,{request_id:randomUUID(),mode:'on',entries:['https://example.com/'],confirmed:true});
+ f.bridge.missions.dispatch(m.id,{request_id:randomUUID()});await f.settle(m.id);
+ const pack=f.bridge.controlContext.build(f.bridge.controlStore.requireMission(m.id));
+ f.bridge.controlStore.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,m.task_id);
+ const base={evidence_id:randomUUID(),classification:'documented',title:'Public document',text:'Public documentation.',url:'https://example.com/',links:[],source:{source_id:'public_document',source_url:'https://example.com/',fetched_at:1791820000001},untrusted:true,authority:false};
+ const original=web.context;let evidence;
+ web.context=()=>[evidence];
+ const context=()=>f.bridge.opencodeAdapter.authorizedContext({id:pack.id});
+ try{
+  // The prior classifier rejects exactly ten of these 100 fixed milliseconds.
+  for(let i=0;i<100;i++){
+   evidence={...base,source:{...base.source,fetched_at:1791820000000+i}};
+   const before=JSON.stringify(evidence),delivered=context();
+   assert.equal(delivered.web[0].source.fetched_at,evidence.source.fetched_at);
+   assert.equal(JSON.stringify(evidence),before,'receipt must remain immutable');
+   assert.equal(delivered.web[0].authority,false);
+  }
+  for(const time of ['1791820000001',-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER,Date.now()+120000]){
+   evidence={...base,source:{...base.source,fetched_at:time}};
+   assert.throws(context,/opencode_sensitive_context/);
+  }
+  const card='4111 1111 1111 1111'; // Public synthetic checksum fixture.
+  for(const extra of [{text:card},{title:card},{source:{...base.source,notes:card}},
+   {source:{...base.source,other:{fetched_at:1791820000001}}},{authority:true},{untrusted:false}]){
+   evidence={...base,...extra};assert.throws(context,/opencode_sensitive_context/);
+  }
+  evidence=base;
+  // Cover the second gate over the serialized launch envelope as well.
+  fs.writeFileSync(runtime.options.executable,fs.readFileSync(runtime.options.executable,'utf8').replace(
+   "const p=JSON.parse(raw),o=p.objective", "const p=JSON.parse(raw);if(p.current_context.web[0].source.fetched_at!==1791820000001)throw Error('timestamp changed');const o=p.objective"));
+  let deliveries=0;
+  const result=await f.bridge.opencodeAdapter.execute({...runtime.request,timeoutMs:5000,context:{id:pack.id},onContextDelivered:()=>deliveries++});
+  assert.equal(result.provenance.termination_verified,true);assert.equal(deliveries,1);
+ }finally{web.context=original;}
+});
+
 test('qualified web-assisted OpenCode builds a real bounded input with public URL/source/link metadata',async t=>{
  const r=require('./fixtures/opencode-fixture.cjs').runtime(t);const runtimeFile=r.options.executable;fs.writeFileSync(runtimeFile,fs.readFileSync(runtimeFile,'utf8').replace("if(o.includes('alpha to beta'))","if(o.includes('WEB_ROUND')&&!p.current_context.web.some(e=>e.url==='https://example.org/')){result.status='needs_web';result.web_requests=[{type:'inspect',url:'https://example.org/'}];}if(result.status!=='needs_web'&&o.includes('alpha to beta'))"));const f=await fixture(t,{opencode:r.options}),b=f.bridge;require('./fixtures/opencode-fixture.cjs').qualifyCanonical(b);synthetic(f);const m=f.create({objective:'WEB_ROUND Read https://example.com/ and change alpha to beta using public documentation.',preferred_agent:'opencode',fallback_agents:[],authority:authority(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],native_actions:[]}});b.missions.web.configure(m.id,{request_id:randomUUID(),mode:'all',entries:['https://example.com/'],confirmed:true});b.missions.dispatch(m.id,{request_id:randomUUID()});const done=await f.settle(m.id);assert.equal(done.state,'awaiting_acceptance');assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'beta\n');assert.equal(b.missions.web.rows(b.controlStore.requireMission(m.id)).length,2);
 });

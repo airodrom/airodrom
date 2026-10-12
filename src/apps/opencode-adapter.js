@@ -73,7 +73,17 @@ function webTextSafety(value){
 }
 function webSafetyView(web){return web.map(e=>{
  if(e.authority!==false||e.untrusted!==true)fail('opencode_sensitive_context');
- const view=value=>{if(Array.isArray(value))return value.map(view);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,['id','evidence_id'].includes(k)&&require('../mission-web-policy').UUID.test(v||'')?'[evidence UUID]':view(v)]));return typeof value==='string'?webTextSafety(value):value;};return view(e);
+ // Host receipts use numeric epoch milliseconds. Some satisfy the card-number
+ // checksum by chance. Scan only this typed source timestamp as an ISO date;
+ // preserve the immutable receipt and the delivered value. Prose, unknown fields
+ // and malformed/future timestamps must not gain a secret-scanning exemption.
+ let scan=e;
+ if(e.source&&Object.hasOwn(e.source,'fetched_at')){
+  const time=e.source.fetched_at;
+  if(!Number.isSafeInteger(time)||time<0||time>Date.now()+60000)fail('opencode_sensitive_context');
+  scan={...e,source:{...e.source,fetched_at:new Date(time).toISOString()}};
+ }
+ const view=value=>{if(Array.isArray(value))return value.map(view);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,['id','evidence_id'].includes(k)&&require('../mission-web-policy').UUID.test(v||'')?'[evidence UUID]':view(v)]));return typeof value==='string'?webTextSafety(value):value;};return view(scan);
 });}
 function relative(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_.\/-]{1,300}$/.test(value) || path.isAbsolute(value) || value.split('/').some(p => !p || p === '.' || p === '..') || /(^|\/)(?:\.git|\.opencode|\.agents|\.claude|node_modules|\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|auth\.json|[^/]+\.(?:sqlite|db|pem|key))($|\/)/i.test(value)) fail('opencode_file_scope');
@@ -136,7 +146,7 @@ function sandboxProfile(root, executable, writable) {
   for (const f of writable) profile += `(allow file-write* (literal ${quote(path.join(root, 'workspace', f))}))\n`;
   return profile;
 }
-function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable, onStart, onLine }) {
+function launch({ executable, root, writable, env, input, timeoutMs, signal, fixtureExecutable, onStart, onLine, onContextDelivered }) {
   if (process.platform !== 'darwin' && !fixtureExecutable) fail('opencode_platform_unqualified');
   const file = fixtureExecutable || '/usr/bin/sandbox-exec';
   const args = fixtureExecutable ? [] : ['-p', sandboxProfile(root, executable, writable), executable, 'run', '--standalone', '--format', 'json', '--agent', 'airodrom', '--model', env.OPENCODE_MODEL || JSON.parse(env.OPENCODE_CONFIG_CONTENT).model];
@@ -171,7 +181,7 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
       for(let i=0;i<20;i++){try{process.kill(-child.pid,0);}catch(e){groupGone=e.code==='ESRCH';break;}await new Promise(r=>setTimeout(r,25));}
       resolve({ code, signal: childSignal, stdout, timedOut, cancelled, overflow, termination_verified: groupGone });
     });
-    child.stdin.end(input);
+    child.stdin.end(input, error => { if (!error) { try { onContextDelivered?.(); } catch { /* Metadata observation does not alter execution. */ } } });
   });
 }
 class OpenCodeAdapter extends AgentAdapter {
@@ -233,7 +243,7 @@ class OpenCodeAdapter extends AgentAdapter {
     const p=run.result?.opencode_provenance,executable=this.executable();
     if(run.state!=='completed'||!run.termination_verified||!p||p.runtime_id!=='opencode'||p.runtime_version!==VERSION||p.authority!==false||p.workspace_bound!==true||p.termination_verified!==true||p.session_state!=='disposable'||!executable||p.executable_sha256!==hash(fs.readFileSync(executable)))fail('opencode_provenance_unavailable');
   }
-  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart, onLine, conversation = false } = {}) {
+  async execute({ workspace, files, writable = [], objective, context = null, timeoutMs = 60000, deadline = null, signal, sessionId, onStart, onLine, onContextDelivered, conversation = false } = {}) {
     if (sessionId) fail('opencode_session_reuse_denied');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || deadline !== null && !Number.isSafeInteger(deadline) || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
@@ -258,7 +268,7 @@ class OpenCodeAdapter extends AgentAdapter {
       const executable = this.verifyArtifact(this.executable()), executableHash = hash(fs.readFileSync(executable)), config = runtimeConfig(this.options.model, path.join(root, 'workspace'), files, writable);
       const remaining = expiresAt - Date.now();
       if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
-      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart, onLine });
+      const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart, onLine, onContextDelivered });
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
       if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
       if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
@@ -296,6 +306,7 @@ class OpenCodeAdapter extends AgentAdapter {
         try { observatory.record(b,{eventType:'worker.started',missionId:m.id,runId,metadata:{agent_id:'opencode'},idempotencyKey:`obs-worker-start:${m.id}:${runId}`}); } catch {}
         b.emit('change');
       },
+      onContextDelivered: () => b.controlStore.event('runtime.context.delivered',m.id,{context_pack_id:context.id,agent_id:'opencode',delivery:'stdin_written',authority:false},{runId}),
       onLine: line => { try { observatory.observeOpenCodeLine(b,{missionId:m.id,runId,line,agentId:'opencode'}); b.emit('change'); } catch {} }
     });
       if (result?.changes?.length && m.envelope.kind !== 'conversation') {

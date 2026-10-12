@@ -11,6 +11,7 @@ const {normalizeResult}=require('./mission-result');
 function relative(value){text(value,'file path',300);if(path.isAbsolute(value)||value.split(/[\\/]/).some(p=>!p||p==='.'||p==='..'||p==='.git')||/(^|\/)(\.env|\.ssh|credentials|secrets)/i.test(value))throw Error('Unsafe Mission file path');return value;}
 class MissionService {
   constructor(bridge){this.bridge=bridge;this.store=bridge.controlStore;this.db=this.store.db;this.db.exec('CREATE TABLE IF NOT EXISTS cp_continuity_checks(run_id TEXT PRIMARY KEY,mission_id TEXT NOT NULL,status TEXT NOT NULL,evidence TEXT NOT NULL,checked_at INTEGER NOT NULL)');this.program=new (require('./mission-program').MissionProgram)(this);this.codingAdapter=new (require('./qualified-coding-adapter').QualifiedCodingAdapter)(this);this.acceptanceEngine=new (require('./deterministic-acceptance').DeterministicAcceptance)(this);this.riskAcceptance=new (require('./risk-acceptance').RiskAcceptance)(this);this.agents=new MissionAgents(bridge,this.store);this.verifier=new MissionVerifier(bridge,this.store);this.busy=false;this.stopped=false;}
+  get goalPlanner(){return this._goalPlanner||(this._goalPlanner=new(require('./goal-planner').AirodromGoalPlanner)(this));}
   createConversation(input,owner='operator'){return require('./conversation-mission').create(this,input,owner);}
   get web(){return this._web||(this._web=new (require('./mission-web').MissionWeb)(this));}
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}

@@ -2235,7 +2235,8 @@
       "state",
       "started_at",
       "expires_at",
-      "request_id"
+      "request_id",
+      "goal_plan"
     ],
     "source": "src/mission-program.js",
     "classification": {
@@ -2246,7 +2247,8 @@
       "state": "A",
       "started_at": "A",
       "expires_at": "A",
-      "request_id": "B"
+      "request_id": "B",
+      "goal_plan": "B"
     }
   },
   "cp_mission_program_nodes": {
