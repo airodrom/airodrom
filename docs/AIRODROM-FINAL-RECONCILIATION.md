@@ -14,11 +14,14 @@ Evidence recorded 2026-10-12. Updated after PR #70 merge.
 
 ## 2. Final `origin/main` SHA
 
-`2800b31b61e8a4ccb1c61b735f52846e6310b0a1` — merge commit for PR #70.
+| Ref | SHA |
+| --- | --- |
+| PR #70 merge commit | `2800b31b61e8a4ccb1c61b735f52846e6310b0a1` |
+| Current `origin/main` tip | `ce337671e2e29948db2f0f8f66bd30ea13ff8cae` (this report) |
 
 Clean synchronized checkout:
 
-`/Users/andrew/Documents/Codex/2026-10-11/airodrom-master-completion/work/airodrom-main-clean` @ `2800b31` (`handoff/main-clean-20261012`).
+`/Users/andrew/Documents/Codex/2026-10-11/airodrom-master-completion/work/airodrom-main-clean` @ `ce33767` (`handoff/main-clean-20261012`).
 
 Feature tip `fc9b83e` is an ancestor of `origin/main`.
 
@@ -103,7 +106,7 @@ Merging the repository does **not** update the installed service.
 
 | Topic | State |
 | --- | --- |
-| Airodrom repository | PR #70 **merged**; `origin/main` = `2800b31` |
+| Airodrom repository | PR #70 **merged** (`2800b31`); `origin/main` tip = `ce33767` |
 | Runtime availability | Local managed service healthy (PID 79806); Arecibo must not assume install upgrade |
 | Personal Memory V2 | Ready on installed service; historical dual-active rows preserved |
 | Mission execution | Deadline settlement on main; no interference with live Missions |
