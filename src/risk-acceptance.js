@@ -81,9 +81,11 @@ class RiskAcceptance {
   }
 
   validateCreation(input, owner) {
+    // Owner-registered WORK templates require explicit Acceptance; they never opt into risk auto-acceptance.
+    if (input.work_template) return null;
     const explicit = input.risk_auto_acceptance;
     const preferenceOn = this.preference().enabled === true;
-    const opted = explicit === true || Boolean(input.work_template) || (explicit !== false && preferenceOn);
+    const opted = explicit === true || (explicit !== false && preferenceOn);
     if (!opted) return null;
     if (owner !== 'operator') throw Error('Risk auto acceptance requires operator authorization');
     if (input.automatic_acceptance === true) throw Error('Risk auto acceptance cannot combine with coding-plan automatic Acceptance');

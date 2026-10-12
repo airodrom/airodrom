@@ -474,6 +474,8 @@
     "src/whatsapp-production-connection.js",
     "src/work-execution-adapter.js",
     "src/worker-registry.js",
+      "src/work-templates.js",
+    "src/exact-file-prompt.js",
     "tests/conversation-grounding-v1.test.js",
     "tests/install-hotfix-v101.test.js",
     "tests/mission-activity.test.js",
