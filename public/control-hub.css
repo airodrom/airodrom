@@ -120,3 +120,29 @@ nav button{transition:color .15s ease,background-color .15s ease,border-color .1
 @media(max-width:1100px){.memory-layers.compact .memory-layer-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.memory-layers.compact .memory-layer-list{grid-template-columns:1fr}.memory-layer-head{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){.memory-layer{animation:none}.memory-layer.live .memory-layer-track.active:not(.determinate):after{animation:none}}
+
+/* Control Center UX V2 — Missions list, details, goals */
+.mission-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+.mission-tabs button{border-radius:8px;padding:8px 12px;background:transparent;color:var(--muted)}
+.mission-tabs button.active-tab,.mission-tabs button[aria-selected="true"]{color:var(--text);border-color:var(--blue);background:#5091ff14}
+.mission-list{display:grid;gap:10px;margin:12px 0 18px}
+.mission-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:start;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--elevated)}
+.mission-row-main{min-width:0}
+.mission-title,.mission-row h3{margin:0 0 6px;font-size:16px;font-weight:650;overflow-wrap:anywhere;background:transparent;border:0;padding:0;color:var(--text);text-align:left;cursor:pointer}
+.mission-row-meta,.latest-activity{margin:0 0 4px;color:var(--muted);font-size:13px}
+.mission-next{display:block;margin-top:6px;color:var(--cyan);font-size:12px}
+.pagination{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 20px}
+.page-indicator{color:var(--muted);font-size:13px}
+.mission-summary{margin:12px 0 18px}
+.detail-panel{margin-top:8px}
+.detail-tabs{margin-top:18px}
+.goal-card{margin-bottom:18px}
+.goal-stages{list-style:none;padding:0;margin:12px 0;display:grid;gap:8px}
+.goal-stage{display:grid;gap:4px;padding:12px;border:1px solid var(--border);border-radius:10px}
+.goal-stage strong{font-size:13px}
+.chip.muted{color:var(--muted);border-color:var(--border);background:transparent}
+.filters select,.filters input{min-width:140px}
+@media(max-width:760px){.mission-row{grid-template-columns:1fr;}.mission-row .actions{justify-content:flex-start}.filters{flex-direction:column}.filters>*{width:100%}}
+@media(max-width:1024px){.mission-row{grid-template-columns:minmax(0,1fr) auto}}
+:root[data-theme="light"] .mission-row{background:var(--surface)}
+:root[data-theme="light"] .mission-tabs button.active-tab{background:#5091ff18;color:#173f60}

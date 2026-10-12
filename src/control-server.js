@@ -291,7 +291,7 @@ class ControlServer {
         req.setTimeout(0); res.setTimeout(0);
         return require('./live-observatory').attachSse(req, res, this.bridge, url);
       }
-      if (req.method === 'GET' && url.pathname === '/api/product/mission') return this.json(res, 200, require('./product-observability').missionView(this.bridge, this.bridge.missions.require(url.searchParams.get('id'))));
+      if (req.method === 'GET' && url.pathname === '/api/product/mission') {const mission=this.bridge.missions.require(url.searchParams.get('id'),'operator');return this.json(res,200,{...require('./product-observability').missionView(this.bridge,mission),label:require('./product-observability').operatorTitle(this.bridge,mission)});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/history'){
         const selected=url.searchParams.get('mission_id');
         if(selected&&!require('./product-observability').id(selected))throw Error('Invalid Mission ID');
@@ -420,6 +420,26 @@ class ControlServer {
           if(action==='archive-project'){
             require('./control-plane-store').object(body,['id','request_id']);if(body.request_id)require('./control-plane-store').text(body.request_id,'request id',240);const project=this.bridge.projects.archiveProject(body.id);
             return this.json(res,200,{project_id:require('./product-observability').id(project.projectId),status:'archived'});
+          }
+          if(action==='archive-missions-preview'){
+            require('./control-plane-store').object(body,['query','limit','request_id']);
+            return this.json(res,200,require('./mission-visibility').previewArchive(this.bridge,{query:body.query||'',limit:body.limit}));
+          }
+          if(action==='archive-missions'){
+            require('./control-plane-store').object(body,['ids','confirmed','request_id','reason']);
+            return this.json(res,200,require('./mission-visibility').archiveMissions(this.bridge,body));
+          }
+          if(action==='restore-mission'){
+            require('./control-plane-store').object(body,['id','confirmed','request_id']);
+            return this.json(res,200,require('./mission-visibility').restoreMission(this.bridge,{id:body.id,confirmed:body.confirmed,request_id:body.request_id}));
+          }
+          if(action==='organize-missions-preview'){
+            require('./control-plane-store').object(body,['older_than_ms','limit','request_id']);
+            return this.json(res,200,require('./mission-visibility').previewOrganize(this.bridge,{older_than_ms:body.older_than_ms||0,limit:body.limit}));
+          }
+          if(action==='organize-missions'){
+            require('./control-plane-store').object(body,['confirmed','request_id','older_than_ms','limit','reason']);
+            return this.json(res,200,require('./mission-visibility').organizeHistory(this.bridge,body));
           }
           if (!['dispatch-mission','cancel-mission','accept-mission'].includes(action)) return this.json(res, 404, { error: 'Product action unavailable' });
           require('./control-plane-store').object(body, action === 'accept-mission' ? ['id','request_id','verification_id','decision','rationale','evidence'] : ['id','request_id']);

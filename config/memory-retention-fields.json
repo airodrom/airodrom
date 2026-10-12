@@ -203,6 +203,44 @@
       "acceptance_strength": "A"
     }
   },
+  "cp_mission_visibility": {
+    "fields": [
+      "mission_id",
+      "archived",
+      "archived_at",
+      "reason"
+    ],
+    "source": "src/mission-visibility.js",
+    "classification": {
+      "mission_id": "A",
+      "archived": "A",
+      "archived_at": "A",
+      "reason": "A"
+    }
+  },
+  "cp_mission_archive_previews": {
+    "fields": [
+      "preview_id",
+      "kind",
+      "digest",
+      "mission_ids",
+      "created_at",
+      "expires_at",
+      "request_id",
+      "used_at"
+    ],
+    "source": "src/mission-visibility.js",
+    "classification": {
+      "preview_id": "A",
+      "kind": "A",
+      "digest": "A",
+      "mission_ids": "A",
+      "created_at": "A",
+      "expires_at": "A",
+      "request_id": "A",
+      "used_at": "A"
+    }
+  },
   "cp_grants": {
     "fields": [
       "id",
