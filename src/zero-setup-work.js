@@ -274,6 +274,7 @@ class ZeroSetupWork {
         goal_id: live.goal_id,
         plan_id: live.plan_id,
         mission_id: live.mission_id,
+        repair_of: live.repair_of || null,
         project_alias: live.project_alias,
         workspace_alias: live.workspace_alias,
       },
@@ -390,14 +391,31 @@ class ZeroSetupWork {
     const live = this.read(request_id);
     if (!live || !live.mission_id) return live ? this.statusView(live) : null;
     try {
+      // Follow CAE repair rebind when the Goal Plan stage moved to a corrective Mission.
+      if (live.plan_id) {
+        try {
+          const plan = this.bridge.autonomousExecution.inspect(live.plan_id);
+          const lineage = plan.autonomous?.repair_lineage || {};
+          const stage = plan.stages.find(s => s.mission_id === live.mission_id)
+            || plan.stages.find(s => lineage[s.id]?.parent_mission_id === live.mission_id || lineage[s.id]?.repair_mission_id === live.mission_id)
+            || plan.stages[0];
+          if (stage?.mission_id && stage.mission_id !== live.mission_id) {
+            live.mission_id = stage.mission_id;
+            live.repair_of = lineage[stage.id]?.parent_mission_id || live.repair_of || null;
+          }
+          if (plan.autonomous?.last_action === 'repair_dispatched' || plan.autonomous?.lifecycle === 'recovering') {
+            live.presentation = { ...(live.presentation || {}), status: 'Repairing failed verification' };
+          }
+        } catch { /* plan may be unavailable */ }
+      }
       const m = this.bridge.missions.require(live.mission_id);
       let state = live.state;
-      if (m.state === 'running' || m.state === 'dispatched') state = 'running';
+      if (m.state === 'running' || m.state === 'dispatched' || m.state === 'dispatching') state = 'running';
       else if (m.state === 'verifying') state = 'verifying';
       else if (m.state === 'awaiting_acceptance') state = 'awaiting_acceptance';
       else if (m.state === 'blocked' || m.state === 'needs_rework') state = 'blocked';
       else if (m.state === 'failed' || m.state === 'cancelled') state = 'failed';
-      if (state !== live.state) {
+      if (state !== live.state || live.repair_of) {
         live.state = state;
         this.write(request_id, live.principal, live, state);
       }

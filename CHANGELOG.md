@@ -1,3 +1,10 @@
+## Unreleased — Autonomous Self-Repair & Mission Resume V1
+
+- After a safe host verification failure, CAE may spawn one in-scope corrective Mission (`repair_of`), rebind the Goal Plan stage, and dispatch once without a second owner Continue.
+- Fail closed on uncertain termination, quarantine, scope expansion, or exhausted `max_repairs`; Acceptance and Settlement remain owner-only.
+- Terminal/zero-setup status follows the repair Mission and reports independent verification.
+- Focused suite: `tests/autonomous-self-repair.test.js`.
+
 ## Unreleased — Terminal-first autonomous WORK
 
 - Route natural-language Terminal WORK through ZeroSetupWork instead of draft-only Mission intake that demanded UUID WORK-template forms.

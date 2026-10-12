@@ -317,17 +317,22 @@ test('25 repair budget exhaustion reaches blocked lifecycle without infinite ret
   const f = await fixture(t), m = native(f), g = plan(f, [stage(m)]);
   authorize(f, g.id, { max_repairs: 1, max_dispatches: 5 });
   await f.bridge.autonomousExecution.tick();
+  // Synthetic needs_rework without host verification evidence must fail closed (no repair spawn).
   f.bridge.controlStore.db.prepare("UPDATE cp_missions SET state='needs_rework' WHERE id=?").run(m.id);
   await f.bridge.autonomousExecution.tick();
-  assert.equal(f.bridge.autonomousExecution.inspect(g.id).autonomous.repair_counts.one, 1);
+  const blocked = f.bridge.autonomousExecution.inspect(g.id);
+  assert.equal(blocked.autonomous.last_action, 'repair_blocked');
+  assert.equal(blocked.autonomous.repair_lineage?.one?.repair_mission_id || null, null);
+  // Force a spent repair budget, then ensure no further autonomous dispatch.
+  const row = f.bridge.autonomousExecution.planRow(g.id);
+  const a = f.bridge.autonomousExecution.readAutonomous(row);
+  a.repair_counts.one = 1;
+  a.repair_lineage = { one: { parent_mission_id: m.id, repair_mission_id: randomUUID(), diagnosis: 'synthetic', at: Date.now() } };
+  f.bridge.autonomousExecution.writeAutonomous(g.id, a);
   f.bridge.controlStore.db.prepare("UPDATE cp_missions SET state='ready' WHERE id=?").run(m.id);
   f.bridge.controlStore.db.prepare("UPDATE cp_dispatches SET state='cancelled' WHERE mission_id=?").run(m.id);
   f.bridge.controlStore.db.prepare("UPDATE cp_autonomous_claims SET state='abandoned' WHERE plan_id=?").run(g.id);
-  // Repair budget already consumed while mission still looks recoverable — eligibleStage blocks.
-  const view = f.bridge.autonomousExecution.inspect(g.id);
-  assert.equal(view.autonomous.repair_counts.one >= 1, true);
   await f.bridge.autonomousExecution.tick();
-  // Only the first dispatch should exist; no further autonomous claim after repair budget.
   assert.equal(f.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_autonomous_claims WHERE plan_id=? AND state='dispatched'").get(g.id).n, 0);
 });
 

@@ -24,12 +24,13 @@ class MissionVerifier {
       snapshot=workspaceSnapshot(envelope.workspace);
       const lease=this.store.db.prepare("SELECT baseline FROM cp_leases WHERE run_id=? AND mode='write'").get(run.id);
       if(!lease)throw Error('Run baseline missing');const baseline=JSON.parse(lease.baseline);
-      const receipt=baseline.version===2?require('./repository-verification').compare(baseline,snapshot,envelope.allowed_files,[],{creation:envelope.baseline}):null;
+      const repairScope=!!envelope.repair_of;
+      const receipt=baseline.version===2?require('./repository-verification').compare(baseline,snapshot,envelope.allowed_files,[],{creation:envelope.baseline,allowPreDirtyScope:repairScope}):null;
       if(receipt)add('repository_v2',receipt.status,receipt);
       const changed=[...new Set([...Object.keys(baseline.files),...Object.keys(snapshot.files)])].filter(f=>baseline.files[f]!==snapshot.files[f]);
-      const protectedChanged=changed.filter(f=>!envelope.allowed_files.includes(f)||baseline.dirty.includes(f));
+      const protectedChanged=changed.filter(f=>!envelope.allowed_files.includes(f)||(baseline.dirty.includes(f)&&!repairScope));
       const creation=envelope.baseline;
-      if(creation.version===2)add('creation_repository_v2',require('./repository-verification').compare(creation,snapshot,envelope.allowed_files).status,{baseline_hash:creation.hash,identity_and_original_scope_checked:true});
+      if(creation.version===2)add('creation_repository_v2',require('./repository-verification').compare(creation,snapshot,envelope.allowed_files,[],{allowPreDirtyScope:repairScope}).status,{baseline_hash:creation.hash,identity_and_original_scope_checked:true});
       for(const [file,digest]of Object.entries(creation.files))if(!envelope.allowed_files.includes(file)&&snapshot.files[file]!==digest&&!protectedChanged.includes(file))protectedChanged.push(file);
       add('workspace', 'passed',{exists:true});
       add('protected_files',protectedChanged.length||baseline.head!==snapshot.head?'failed':'passed',{changed:protectedChanged,head_unchanged:baseline.head===snapshot.head});
