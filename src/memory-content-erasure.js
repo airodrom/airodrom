@@ -49,6 +49,7 @@ function validateSchema(db,table) {
     for(const row of db.prepare(`SELECT ${keys.map(quoted).join(',')} FROM ${quoted(table)}`).all())if(keys.some(k=>!UUID.test(row[k]||'')))throw Error('Unknown dispatch envelope identity');
   }
   if(table==='cp_autonomy_claims')for(const row of db.prepare('SELECT request_id FROM cp_autonomy_claims').all())if(!/^autonomy:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.request_id||''))throw Error('Unknown autonomy request identity');
+  if(table==='cp_autonomous_claims')for(const row of db.prepare('SELECT request_id FROM cp_autonomous_claims').all())if(!/^cae:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.request_id||''))throw Error('Unknown autonomous claim identity');
   if(table==='cp_result_receipts')for(const row of db.prepare('SELECT event_key,run_id FROM cp_result_receipts').all())if(!UUID.test(row.run_id||'')||row.event_key!==`result:${row.run_id}`)throw Error('Unknown result receipt identity');
   return actual;
 }

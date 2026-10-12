@@ -39,6 +39,7 @@ class ServiceLifecycle {
    conversations:b.controlServer?.conversationEngine?.active?.size||0,
    google_reads:b.controlServer?.googleWorkspace?.active||0,
    mission_tick:b.missions?.busy?1:0,
+   autonomous_execution:b.autonomousExecution?.busy?1:0,
    next_actions:b.boundedNextActions?.reconciling||b.boundedNextActions?.busy?1:0,
    agent_dispatch:b.agentDispatch?.busy?1:0,
    outbox:b.controlStore.outbox.busy?1:0,

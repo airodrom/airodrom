@@ -50,7 +50,11 @@ class AirodromGoalPlanner {
       const prior = this.db.prepare('SELECT id,fingerprint FROM cp_mission_programs WHERE owner=? AND request_id=?').get(owner, input.request_id);
       if (prior) { if (prior.fingerprint !== hash) throw Error('Goal plan idempotency conflict'); return this.inspect(prior.id, owner); }
       const id = randomUUID(), now = this.store.now();
-      const plan = { version: 1, goal_id: goal.goalId, project_id: goal.projectId, max_attempts: input.max_attempts, checkpoints: [], recovery: { continuations: 0, last_at: null }, execution_enabled: false };
+      const plan = {
+        version: 1, goal_id: goal.goalId, project_id: goal.projectId, max_attempts: input.max_attempts,
+        checkpoints: [], recovery: { continuations: 0, last_at: null }, execution_enabled: false,
+        autonomous: require('./autonomous-execution').defaultAutonomous()
+      };
       this.db.prepare('INSERT INTO cp_mission_programs(id,owner,graph,fingerprint,state,started_at,expires_at,request_id,goal_plan) VALUES(?,?,?,?,?,?,?,?,?)').run(id, owner, JSON.stringify(stages), hash, 'goal_observing', now, now + input.max_runtime_hours * 3600000, input.request_id, JSON.stringify(plan));
       for (const s of stages) this.db.prepare('INSERT INTO cp_mission_program_nodes VALUES(?,?,?,?,?)').run(id, s.id, s.mission_id, JSON.stringify(s), 'pending');
       this.store.event('goal.plan.created', null, { plan_id: id, goal_id: goal.goalId, milestones: stages.length, authority: false });
@@ -115,7 +119,9 @@ class AirodromGoalPlanner {
   }
   inspect(id, owner = 'operator') {
     const row = this.row(id, owner), stages = this.status(row);
-    return { id: row.id, goal_id: row.plan.goal_id, project_id: row.plan.project_id, owner: row.owner, state: row.state !== 'goal_observing' ? 'cancelled' : stages.every(s => s.state === 'verified') ? 'completed' : 'observing', expires_at: row.expires_at, stages, ready: stages.filter(s => s.state === 'ready').map(s => s.id), blocked: stages.filter(s => s.state === 'blocked').map(s => s.id), recovery: row.plan.recovery, execution_enabled: false, authority: false };
+    const autonomous = row.plan.autonomous || {};
+    const executionEnabled = autonomous.enabled === true && autonomous.paused !== true;
+    return { id: row.id, goal_id: row.plan.goal_id, project_id: row.plan.project_id, owner: row.owner, state: row.state !== 'goal_observing' ? 'cancelled' : stages.every(s => s.state === 'verified') ? 'completed' : 'observing', expires_at: row.expires_at, stages, ready: stages.filter(s => s.state === 'ready').map(s => s.id), blocked: stages.filter(s => s.state === 'blocked').map(s => s.id), recovery: row.plan.recovery, execution_enabled: executionEnabled, autonomous_enabled: autonomous.enabled === true, authority: false };
   }
   list(limit = 50) { return this.db.prepare('SELECT id FROM cp_mission_programs WHERE goal_plan IS NOT NULL ORDER BY started_at DESC LIMIT ?').all(limit).map(r => this.inspect(r.id)); }
   assertMission(mission) {

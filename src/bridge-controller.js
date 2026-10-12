@@ -388,7 +388,9 @@ class BridgeController extends EventEmitter {
       this.policy.manifestGuard=(task,call)=>this.missions.program.guardTask(task,call);
       this.providerGateway.beforeInference=(input,provider,attempt,profile,providerRecordId)=>{const run=this.controlStore.run(input.run_id),m=run?.mission_id?this.controlStore.getMission(run.mission_id):null;if(!m?.envelope.manifest)return;this.missions.program.assert(m);const p=m.envelope.manifest.permissions.providers;if(!(provider==='ollama'?p.local_reasoning:p.approved_external))throw Error('Manifest provider denied');if(provider!=='ollama'){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(providerRecordId||''))throw Error('Provider budget origin unavailable');this.missions.program.reserve(m.id,'external_reasoning',['provider',providerRecordId,provider,attempt,profile].join(':'),1,{run_id:run.id,provider,attempt,profile});}};
       this.boundedNextActions = new (require('./bounded-next-action').BoundedNextAction)(this,{enabled:true});
+      this.autonomousExecution = new (require('./autonomous-execution').AutonomousExecution)(this);
       this.missions.recover();
+      this.autonomousExecution.recover();
       if (!this.startClosed) this.codexRelay.start();
       this.agentDispatch.recover();
       this.slackRuntime = new SlackRuntime(this, this.options.slack || {});
@@ -413,6 +415,7 @@ class BridgeController extends EventEmitter {
         this.agentDispatch?.reconcile().catch(()=>{});
         this.missions?.schedule();
         this.boundedNextActions?.reconcile().catch(() => {});
+        this.autonomousExecution?.tick().catch(() => {});
         this.slackRuntime?.tick().catch(() => {});
         this.controlStore?.outbox.dispatch().catch(() => {});
         try { this.reconcileExecution(); } catch { /* Reconciliation must not crash the host. */ }

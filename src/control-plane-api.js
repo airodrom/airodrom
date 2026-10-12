@@ -30,8 +30,10 @@ function controlPlaneRead(bridge, url) {
     limitations: ['Ordinary projects default to observe; explicit bounded development chains can execute. Cursor Agent execution is unavailable.']
   };
   if(section==='reliability')return require('./reliability-observations').recent(bridge);
-  if(section==='goal-plans')return {items:bridge.missions.goalPlanner.list(limit),execution_enabled:false,authority:false};
+  if(section==='goal-plans'){const items=bridge.missions.goalPlanner.list(limit);return {items,execution_enabled:items.some(g=>g.execution_enabled),authority:false};}
   if(section==='goal-plan')return bridge.missions.goalPlanner.inspect(url.searchParams.get('id'));
+  if(section==='autonomous-goals')return {items:bridge.autonomousExecution?.list(limit)||[],client_independent:true,authority:false};
+  if(section==='autonomous-goal')return bridge.autonomousExecution.inspect(url.searchParams.get('id'));
   if(section==='flight-recorder')return require('./mission-flight-recorder').flightRecorder(bridge,{missionId:url.searchParams.get('id'),after:Number(url.searchParams.get('after')||0),limit});
   if(section==='mcp-discovery')return require('./mcp-discovery').diagnose({installed:require('./mcp-tools').TOOLS});
   if(section==='architecture-memory'){
@@ -91,6 +93,11 @@ function controlPlaneWrite(bridge, action, input) {
     if(action==='bind-goal-mission')return bridge.missions.goalPlanner.bind(input.id,input.stage_id,input.mission_id,input.request_id);
     return bridge.missions.goalPlanner[action==='continue-goal-plan'?'continue':'cancel'](input.id,input.request_id);
   }
+  if(action==='authorize-autonomous-goal'){object(input,['id','request_id','workers','max_concurrent_missions','max_dispatches','max_repairs','confirmed']);const{id,...body}=input;return bridge.autonomousExecution.authorize(id,body);}
+  if(action==='switch-autonomous-worker'){object(input,['id','request_id','from_worker','to_worker','confirmed']);const{id,...body}=input;return bridge.autonomousExecution.switchWorker(id,body);}
+  if(action==='pause-autonomous-goal'){object(input,['id','request_id']);return bridge.autonomousExecution.pause(input.id,input.request_id);}
+  if(action==='resume-autonomous-goal'){object(input,['id','request_id']);return bridge.autonomousExecution.resume(input.id,input.request_id);}
+  if(action==='stop-autonomous-goal'){object(input,['id','request_id']);return bridge.autonomousExecution.stop(input.id,input.request_id);}
   if (action === 'project-memory-retention') {
     object(input, ['mission_id', 'expires_at']);
     identifier(input.mission_id);
