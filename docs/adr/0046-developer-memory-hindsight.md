@@ -16,11 +16,11 @@ Coding Missions need durable repository knowledge (ADRs, verified commits, accep
 Introduce **Developer Memory V1** as an Airodrom-owned adapter:
 
 1. Stable host interface (`DeveloperMemory`) with health/search/retrieve/retain/suppress/delete/provenance and sync ContextPack contribution from a host prefetch cache.
-2. Optional **Hindsight loopback HTTP** transport as a replaceable subordinate provider. No hard npm dependency on Hindsight SDKs; no agent plugins; no automatic ingest, Git harvest, transcript retention, package updates, or cloud fallback.
-3. Repository banks derived only from trusted host git toplevel + remote fingerprint (`airo-dev-{32hex}`). Model-supplied bank IDs denied.
-4. Authorize before retain and retrieval using existing task identity and capability scopes. Feature flags default all-off.
-5. Host suppression tables exclude forgotten content bodies. Logical delete + best-effort provider delete; never claim forensic erasure.
-6. ContextPack integration appends untrusted developer-memory refs last; `authority: false` always.
+2. Optional **Hindsight loopback HTTP** transport as a replaceable subordinate provider using API 0.10 paths (`/v1/default/banks/{bank_id}/…`) and retain `{ items: [...] }`. No hard npm dependency on Hindsight SDKs; no agent plugins; no automatic ingest, Git harvest, transcript retention, package updates, or cloud fallback.
+3. Repository banks derived from trusted host `git-common-dir` + remote fingerprint (`airo-dev-{32hex}`) so linked worktrees share a bank. Model-/caller-supplied bank IDs denied when a host task resolver is bound.
+4. Authorize before retain and retrieval using authenticated host task identity and capability scopes (absent scopes denied). Destructive suppress/delete require operator approval. Feature flags default all-off.
+5. Host suppression tables exclude forgotten content bodies. Logical delete + best-effort provider delete; never claim forensic erasure. Prefetch caches invalidate on suppress/delete and revalidate policy before ContextPack contribution.
+6. `MissionService` prefetches before ContextPack build; integration appends untrusted developer-memory refs last; `authority: false` always.
 
 ## Alternatives considered
 
@@ -42,7 +42,7 @@ Benefits: shared governed repo knowledge across Airodrom-managed workers. Costs:
 
 ## Validation and evidence
 
-`node scripts/run.cjs --test tests/developer-memory-v1.test.js` — **MOCKED CONTRACT PASS**. Distinguish from isolated-backend / real-Hindsight / owner-install verification (not claimed here).
+`node scripts/run.cjs --test tests/developer-memory-v1.test.js` — **MOCKED CONTRACT PASS**. Disposable **REAL LOCAL HINDSIGHT PASS** recorded 2026-10-12 against loopback `hindsight:0.10.2` + Ollama; owner-install activation remains unauthorized.
 
 ## Rollback
 

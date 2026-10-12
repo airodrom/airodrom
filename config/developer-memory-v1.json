@@ -5,6 +5,7 @@
   "allow_ingest": false,
   "allow_retrieval": false,
   "allow_external": false,
+  "require_operator_approval_for_destructive": true,
   "hindsight": {
     "base_url": "http://127.0.0.1:8888",
     "api_token_env": "HINDSIGHT_API_TOKEN",

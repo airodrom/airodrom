@@ -3,6 +3,7 @@
 /**
  * Developer Memory V1 — Airodrom-governed repository knowledge.
  * Hindsight (when configured) is a subordinate provider; Personal Memory V2 is unchanged.
+ * Repository identity and permissions are derived from trusted host task state only.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,6 +23,8 @@ const TRUST = Object.freeze({
 });
 
 const DEFAULT_CONFIG_PATH = path.join(__dirname, '../config/developer-memory-v1.json');
+const ALLOWED_SCOPES = new Set(['repo', 'developer_environment']);
+const DESTRUCTIVE = new Set(['suppress', 'delete']);
 
 function loadConfig(file = DEFAULT_CONFIG_PATH) {
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -33,6 +36,7 @@ function loadConfig(file = DEFAULT_CONFIG_PATH) {
     allow_ingest: raw.allow_ingest === true,
     allow_retrieval: raw.allow_retrieval === true,
     allow_external: raw.allow_external === true,
+    require_operator_approval_for_destructive: raw.require_operator_approval_for_destructive !== false,
     hindsight: {
       base_url: String(raw.hindsight?.base_url || 'http://127.0.0.1:8888'),
       api_token_env: String(raw.hindsight?.api_token_env || 'HINDSIGHT_API_TOKEN'),
@@ -68,7 +72,6 @@ function gitBin() {
 
 function repositoryIdentity(workspaceRoot) {
   if (typeof workspaceRoot !== 'string' || !workspaceRoot) throw new Error('Repository workspace required');
-  // Resolve symlinks first so worktree/subdir paths cannot escape via link tricks.
   const observed = fs.realpathSync(workspaceRoot);
   const git = gitBin();
   if (!git) throw new Error('Git unavailable for repository identity');
@@ -80,7 +83,6 @@ function repositoryIdentity(workspaceRoot) {
     if (r.status !== 0) throw new Error('Repository identity observation unavailable');
     return r.stdout.trim();
   };
-  // Canonical identity is the git toplevel (works for subdirs and linked worktrees).
   const toplevel = fs.realpathSync(run(observed, ['rev-parse', '--show-toplevel']));
   if (toplevel !== observed && !observed.startsWith(`${toplevel}${path.sep}`)) {
     throw new Error('Workspace is outside repository toplevel');
@@ -92,7 +94,12 @@ function repositoryIdentity(workspaceRoot) {
   });
   if (remoteProbe.status === 0) remote = remoteProbe.stdout.trim() || null;
   const head = run(toplevel, ['rev-parse', 'HEAD']);
-  const material = JSON.stringify({ toplevel, remote });
+  // Linked worktrees share --git-common-dir but have distinct toplevels. Canonical bank
+  // identity is therefore git-common-dir + remote (not mutable basename / worktree path).
+  let gitDirRaw = run(toplevel, ['rev-parse', '--git-common-dir']);
+  if (!path.isAbsolute(gitDirRaw)) gitDirRaw = path.resolve(toplevel, gitDirRaw);
+  const gitDir = fs.realpathSync(gitDirRaw);
+  const material = JSON.stringify({ git_common_dir: gitDir, remote });
   const repositoryId = createHash('sha256').update(material).digest('hex');
   const bankId = `airo-dev-${repositoryId.slice(0, 32)}`;
   return {
@@ -100,7 +107,8 @@ function repositoryIdentity(workspaceRoot) {
     bankId,
     root: toplevel,
     head,
-    remote_fingerprint: remote ? createHash('sha256').update(remote).digest('hex') : null
+    remote_fingerprint: remote ? createHash('sha256').update(remote).digest('hex') : null,
+    git_common_dir: gitDir
   };
 }
 
@@ -146,28 +154,88 @@ function prepareSchema(db) {
   if (!version) db.prepare("INSERT INTO developer_memory_meta(key,value) VALUES('schema_version','1')").run();
 }
 
-function authorize(request, config) {
+function scopesFromTask(task) {
+  const fromMission = task?.mission?.envelope?.capability_scopes
+    || task?.mission?.capability_scopes
+    || task?.capabilityScopes
+    || task?.capability_scopes;
+  if (!Array.isArray(fromMission)) return null;
+  return fromMission.filter(s => typeof s === 'string');
+}
+
+/**
+ * Authorize a developer-memory operation from trusted host state.
+ * Caller-supplied repositoryId/bankId are never trusted — host identity wins.
+ */
+function authorize(request, config, host = null) {
   if (!request || typeof request !== 'object') return { allow: false, reason: 'missing_request' };
   if (!config.enabled) return { allow: false, reason: 'feature_disabled' };
   if (!request.taskId || typeof request.taskId !== 'string') return { allow: false, reason: 'missing_task_identity' };
-  if (!request.repositoryId || typeof request.repositoryId !== 'string') return { allow: false, reason: 'missing_repository_identity' };
   if (request.modelBankId !== undefined) return { allow: false, reason: 'model_bank_impersonation_denied' };
+  if (!['search', 'retrieve', 'retain', 'suppress', 'delete', 'health', 'provenance'].includes(request.operation)) {
+    return { allow: false, reason: 'unknown_operation' };
+  }
   if (request.operation === 'retain' && !config.allow_ingest) return { allow: false, reason: 'ingest_disabled' };
   if ((request.operation === 'search' || request.operation === 'retrieve') && !config.allow_retrieval) {
     return { allow: false, reason: 'retrieval_disabled' };
   }
-  if (!['search', 'retrieve', 'retain', 'suppress', 'delete', 'health', 'provenance'].includes(request.operation)) {
-    return { allow: false, reason: 'unknown_operation' };
+  if (DESTRUCTIVE.has(request.operation) && config.require_operator_approval_for_destructive) {
+    if (request.operatorApproved !== true) return { allow: false, reason: 'operator_approval_required' };
   }
+
+  let identity = null;
+  let scopes = null;
+  if (host && typeof host.resolveTask === 'function') {
+    let task;
+    try { task = host.resolveTask(request.taskId); }
+    catch { return { allow: false, reason: 'task_lookup_failed' }; }
+    if (!task || !task.id || task.id !== request.taskId) return { allow: false, reason: 'task_not_authenticated' };
+    const workspace = task.mission?.envelope?.workspace || task.workspace;
+    if (!workspace) return { allow: false, reason: 'missing_host_workspace' };
+    try { identity = repositoryIdentity(workspace); }
+    catch { return { allow: false, reason: 'repository_unresolved' }; }
+    scopes = scopesFromTask(task);
+    if (!scopes || !scopes.length) return { allow: false, reason: 'capability_scope_absent' };
+    if (!scopes.some(s => ALLOWED_SCOPES.has(s))) return { allow: false, reason: 'capability_scope_denied' };
+    // Reject caller impersonation of another repository/bank.
+    if (request.repositoryId && request.repositoryId !== identity.repositoryId) {
+      return { allow: false, reason: 'caller_repository_impersonation_denied' };
+    }
+    if (request.bankId && request.bankId !== identity.bankId) {
+      return { allow: false, reason: 'caller_bank_impersonation_denied' };
+    }
+    if (request.expectedBankId && request.expectedBankId !== identity.bankId) {
+      return { allow: false, reason: 'repository_mismatch' };
+    }
+  } else {
+    // Fixture / unit path: require explicit host-derived identity fields, never modelBankId.
+    if (!request.repositoryId || typeof request.repositoryId !== 'string') {
+      return { allow: false, reason: 'missing_repository_identity' };
+    }
+    if (!request.bankId || request.bankId !== request.expectedBankId) {
+      return { allow: false, reason: 'repository_mismatch' };
+    }
+    if (!Array.isArray(request.capabilityScopes) || !request.capabilityScopes.length) {
+      return { allow: false, reason: 'capability_scope_absent' };
+    }
+    if (!request.capabilityScopes.some(s => ALLOWED_SCOPES.has(s))) {
+      return { allow: false, reason: 'capability_scope_denied' };
+    }
+    identity = { repositoryId: request.repositoryId, bankId: request.bankId };
+    scopes = request.capabilityScopes;
+  }
+
   if (request.operation === 'retain') {
     if (!config.allowed_source_kinds.includes(request.sourceKind)) return { allow: false, reason: 'source_kind_denied' };
   }
-  if (request.capabilityScopes && Array.isArray(request.capabilityScopes)) {
-    if (!request.capabilityScopes.includes('repo') && !request.capabilityScopes.includes('developer_environment')) {
-      return { allow: false, reason: 'capability_scope_denied' };
-    }
-  }
-  return { allow: true, reason: 'authorized', policy_version: `developer-memory-v${config.version}` };
+
+  return {
+    allow: true,
+    reason: 'authorized',
+    policy_version: `developer-memory-v${config.version}`,
+    identity,
+    scopes
+  };
 }
 
 function truncate(text, maximum) {
@@ -187,16 +255,22 @@ class DeveloperMemory {
     config = null,
     transport = null,
     now = Date.now,
-    env = process.env
+    env = process.env,
+    resolveTask = null
   } = {}) {
     this.configPath = configPath;
     this.config = config || loadConfig(configPath);
     this.db = db;
     this.now = now;
     this.env = env;
+    this.resolveTask = typeof resolveTask === 'function' ? resolveTask : null;
     if (this.db) prepareSchema(this.db);
     this.transport = transport || this._buildTransport();
     this._contextCache = new Map();
+  }
+
+  _host() {
+    return this.resolveTask ? { resolveTask: this.resolveTask } : null;
   }
 
   _buildTransport() {
@@ -245,14 +319,20 @@ class DeveloperMemory {
     return Boolean(row);
   }
 
+  _invalidateCache({ taskId = null, repositoryId = null } = {}) {
+    if (taskId) this._contextCache.delete(taskId);
+    if (repositoryId) {
+      for (const [key, value] of this._contextCache.entries()) {
+        if (value?.repositoryId === repositoryId) this._contextCache.delete(key);
+      }
+    }
+  }
+
   async search(input) {
-    const auth = authorize({ ...input, operation: 'search' }, this.config);
+    const auth = authorize({ ...input, operation: 'search' }, this.config, this._host());
     if (!auth.allow) return { status: auth.reason, items: [], authority: false };
     if (!this.transport) return { status: 'unavailable', items: [], authority: false };
-    const bankId = input.bankId;
-    if (!bankId || bankId !== input.expectedBankId) {
-      return { status: 'repository_mismatch', items: [], authority: false };
-    }
+    const { repositoryId, bankId } = auth.identity;
     let recalled;
     try {
       recalled = await this.transport.recall(bankId, String(input.query || '').slice(0, 2000), {
@@ -273,7 +353,7 @@ class DeveloperMemory {
       const contentHash = hashContent(text);
       const providerRef = row.id || row.memory_id || row.chunk_id || null;
       const documentId = row.document_id || row.documentId || null;
-      if (this._suppressed(input.repositoryId, { providerRef, documentId, contentHash })) continue;
+      if (this._suppressed(repositoryId, { providerRef, documentId, contentHash })) continue;
       const size = Buffer.byteLength(text);
       if (used + size > this.config.limits.max_pack_chars) break;
       used += size;
@@ -286,11 +366,11 @@ class DeveloperMemory {
         trustLabel: TRUST.UNVERIFIED_RETRIEVED_CONTENT,
         type: row.type || 'unknown',
         authority: false,
-        repositoryId: input.repositoryId,
+        repositoryId,
         bankId
       });
     }
-    return { status: 'ok', items, usedChars: used, authority: false, trust: TRUST.UNVERIFIED_RETRIEVED_CONTENT };
+    return { status: 'ok', items, usedChars: used, authority: false, trust: TRUST.UNVERIFIED_RETRIEVED_CONTENT, repositoryId, bankId };
   }
 
   async retrieve(input) {
@@ -298,29 +378,29 @@ class DeveloperMemory {
   }
 
   async retain(input) {
-    const auth = authorize({ ...input, operation: 'retain' }, this.config);
+    const auth = authorize({ ...input, operation: 'retain' }, this.config, this._host());
     if (!auth.allow) return { status: auth.reason, authority: false };
     if (!this.transport) return { status: 'unavailable', authority: false };
-    if (!input.bankId || input.bankId !== input.expectedBankId) return { status: 'repository_mismatch', authority: false };
+    const { repositoryId, bankId } = auth.identity;
     const content = truncate(String(input.content || ''), this.config.limits.max_retain_chars);
     if (!content.trim()) return { status: 'empty_content', authority: false };
     if (looksSecret(content)) return { status: 'secret_content_denied', authority: false };
     const contentHash = hashContent(content);
-    if (this._suppressed(input.repositoryId, { contentHash, documentId: input.documentId || null })) {
+    if (this._suppressed(repositoryId, { contentHash, documentId: input.documentId || null })) {
       return { status: 'suppressed', authority: false };
     }
     const memoryId = randomUUID();
     const documentId = input.documentId || `airo-${memoryId}`;
     try {
-      await this.transport.ensureBank(input.bankId, { name: `Airodrom ${input.repositoryId.slice(0, 12)}` });
-      await this.transport.retain(input.bankId, content, {
+      await this.transport.ensureBank(bankId, { name: `Airodrom ${repositoryId.slice(0, 12)}` });
+      await this.transport.retain(bankId, content, {
         context: input.context || input.sourceKind,
         documentId,
         metadata: {
           airodrom_memory_id: memoryId,
           source_kind: input.sourceKind,
           source_ref: input.sourceRef || null,
-          repository_id: input.repositoryId,
+          repository_id: repositoryId,
           trust_label: TRUST.VERIFIED_ENGINEERING_EVIDENCE,
           authority: false
         },
@@ -337,19 +417,19 @@ class DeveloperMemory {
           content_hash, trust_label, status, supersedes, policy_version, created_at, updated_at
         ) VALUES (?,?,?,?,?,?,?,?,?,'active',?,?,?,?)
       `).run(
-        memoryId, input.repositoryId, input.bankId, null, documentId, input.sourceKind, input.sourceRef || null,
+        memoryId, repositoryId, bankId, null, documentId, input.sourceKind, input.sourceRef || null,
         contentHash, TRUST.VERIFIED_ENGINEERING_EVIDENCE, input.supersedes || null, auth.policy_version, now, now
       );
     }
-    return { status: 'retained', memoryId, documentId, contentHash, authority: false, trustLabel: TRUST.VERIFIED_ENGINEERING_EVIDENCE };
+    this._invalidateCache({ taskId: input.taskId, repositoryId });
+    return { status: 'retained', memoryId, documentId, contentHash, authority: false, trustLabel: TRUST.VERIFIED_ENGINEERING_EVIDENCE, repositoryId, bankId };
   }
 
   suppress(input) {
-    const auth = authorize({ ...input, operation: 'suppress' }, this.config);
-    // Suppression must work even when ingest/retrieval flags are off, as long as feature enabled + identity present.
-    if (!this.config.enabled) return { status: 'feature_disabled', authority: false };
-    if (!input.taskId || !input.repositoryId) return { status: 'missing_identity', authority: false };
+    const auth = authorize({ ...input, operation: 'suppress' }, this.config, this._host());
+    if (!auth.allow) return { status: auth.reason, authority: false };
     if (!this.db) return { status: 'store_unavailable', authority: false };
+    const { repositoryId } = auth.identity;
     const suppressionId = randomUUID();
     const now = this.now();
     this.db.prepare(`
@@ -357,24 +437,27 @@ class DeveloperMemory {
         suppression_id, repository_id, memory_id, provider_ref, document_id, content_hash, reason, policy_version, created_at
       ) VALUES (?,?,?,?,?,?,?,?,?)
     `).run(
-      suppressionId, input.repositoryId, input.memoryId || null, input.providerRef || null,
+      suppressionId, repositoryId, input.memoryId || null, input.providerRef || null,
       input.documentId || null, input.contentHash || null, String(input.reason || 'operator_suppress').slice(0, 200),
-      `developer-memory-v${this.config.version}`, now
+      auth.policy_version, now
     );
     if (input.memoryId) {
       this.db.prepare("UPDATE developer_memory_items SET status='suppressed', updated_at=? WHERE memory_id=? AND repository_id=?")
-        .run(now, input.memoryId, input.repositoryId);
+        .run(now, input.memoryId, repositoryId);
     }
-    return { status: 'suppressed', suppressionId, authority: false };
+    this._invalidateCache({ taskId: input.taskId, repositoryId });
+    return { status: 'suppressed', suppressionId, authority: false, repositoryId };
   }
 
   async delete(input) {
+    const auth = authorize({ ...input, operation: 'delete' }, this.config, this._host());
+    if (!auth.allow) return { status: auth.reason, authority: false };
     const suppressed = this.suppress({ ...input, reason: input.reason || 'operator_delete' });
     if (suppressed.status !== 'suppressed') return suppressed;
     let provider = 'not_requested';
-    if (this.config.enabled && this.transport && input.bankId === input.expectedBankId && input.documentId) {
+    if (this.config.enabled && this.transport && auth.identity.bankId && input.documentId) {
       try {
-        await this.transport.deleteDocument(input.bankId, input.documentId, { signal: input.signal });
+        await this.transport.deleteDocument(auth.identity.bankId, input.documentId, { signal: input.signal });
         provider = 'requested';
       } catch {
         provider = 'request_failed_suppression_held';
@@ -382,8 +465,9 @@ class DeveloperMemory {
     }
     if (this.db && input.memoryId) {
       this.db.prepare("UPDATE developer_memory_items SET status='deleted', updated_at=? WHERE memory_id=? AND repository_id=?")
-        .run(this.now(), input.memoryId, input.repositoryId);
+        .run(this.now(), input.memoryId, auth.identity.repositoryId);
     }
+    this._invalidateCache({ taskId: input.taskId, repositoryId: auth.identity.repositoryId });
     return {
       status: 'deleted_logical',
       suppressionId: suppressed.suppressionId,
@@ -393,10 +477,25 @@ class DeveloperMemory {
     };
   }
 
-  getProvenance(memoryId) {
+  getProvenance(input) {
+    const memoryId = typeof input === 'string' ? input : input?.memoryId;
+    const request = typeof input === 'string'
+      ? { operation: 'provenance', taskId: null, memoryId }
+      : { ...input, operation: 'provenance' };
     if (!this.db || typeof memoryId !== 'string') return null;
+    // Provenance requires authenticated task when host binding is present.
+    if (this.resolveTask) {
+      const auth = authorize(request, this.config, this._host());
+      if (!auth.allow) return { status: auth.reason, authority: false };
+    }
     const row = this.db.prepare('SELECT * FROM developer_memory_items WHERE memory_id=?').get(memoryId);
     if (!row) return null;
+    if (this.resolveTask) {
+      const auth = authorize(request, this.config, this._host());
+      if (auth.allow && row.repository_id !== auth.identity.repositoryId) {
+        return { status: 'repository_mismatch', authority: false };
+      }
+    }
     return {
       memoryId: row.memory_id,
       repositoryId: row.repository_id,
@@ -414,35 +513,68 @@ class DeveloperMemory {
   }
 
   /**
-   * Prefetch authorized developer-memory evidence into a short-lived host cache.
-   * ContextPack assembly remains synchronous and only reads this cache.
+   * Prefetch from an authenticated Mission/task — host derives identity and scopes.
    */
+  async prefetchForMission(mission, task, { signal } = {}) {
+    if (!this.config.enabled || !this.config.allow_retrieval) {
+      return { status: this.config.enabled ? 'retrieval_disabled' : 'disabled', items: [], authority: false };
+    }
+    if (!mission || !task?.id) return { status: 'missing_task_identity', items: [], authority: false };
+    if (mission.envelope?.kind === 'conversation' || mission.envelope?.worker_contract) {
+      return { status: 'not_applicable', items: [], authority: false };
+    }
+    const workspace = mission.envelope?.workspace || task.workspace;
+    const query = String(mission.envelope?.objective || task.description || '').slice(0, 2000);
+    return this.prefetchContext({
+      taskId: task.id,
+      workspaceRoot: workspace,
+      query,
+      capabilityScopes: scopesFromTask(task) || mission.envelope?.capability_scopes || ['repo'],
+      signal,
+      hostBound: true
+    });
+  }
+
   async prefetchContext({
     taskId,
     workspaceRoot,
     query,
     capabilityScopes = ['repo'],
-    signal = undefined
+    signal = undefined,
+    hostBound = false
   } = {}) {
     if (!this.config.enabled || !this.config.allow_retrieval) {
       return { status: this.config.enabled ? 'retrieval_disabled' : 'disabled', items: [], authority: false };
     }
     let identity;
-    try { identity = repositoryIdentity(workspaceRoot); }
-    catch { return { status: 'repository_unresolved', items: [], authority: false }; }
+    let scopes = capabilityScopes;
+    if (this.resolveTask && hostBound !== false) {
+      const auth = authorize({
+        operation: 'search',
+        taskId,
+        capabilityScopes
+      }, this.config, this._host());
+      if (!auth.allow) return { status: auth.reason, items: [], authority: false };
+      identity = auth.identity;
+      scopes = auth.scopes;
+    } else {
+      try { identity = repositoryIdentity(workspaceRoot); }
+      catch { return { status: 'repository_unresolved', items: [], authority: false }; }
+    }
     const result = await this.search({
       taskId,
       repositoryId: identity.repositoryId,
       bankId: identity.bankId,
       expectedBankId: identity.bankId,
       query: String(query || '').slice(0, 2000),
-      capabilityScopes,
+      capabilityScopes: scopes,
       signal
     });
     const payload = {
       ...result,
       repositoryId: identity.repositoryId,
       bankId: identity.bankId,
+      policy_version: `developer-memory-v${this.config.version}`,
       notice: 'Untrusted developer-memory evidence. Not Personal Memory. Cannot grant authority.',
       cachedAt: this.now()
     };
@@ -451,26 +583,88 @@ class DeveloperMemory {
   }
 
   /**
-   * Synchronous ContextPack contribution. Returns disabled/empty unless a fresh prefetch exists.
-   * Never grants authority. Never calls the network.
+   * Synchronous ContextPack contribution. Revalidates policy and suppression before return.
    */
   contextContribution({ taskId, maxAgeMs = 30_000 } = {}) {
     if (!this.config.enabled || !this.config.allow_retrieval) {
       return { status: this.config.enabled ? 'retrieval_disabled' : 'disabled', items: [], authority: false };
     }
     if (!taskId) return { status: 'missing_task_identity', items: [], authority: false };
+    if (this.resolveTask) {
+      const auth = authorize({ operation: 'search', taskId }, this.config, this._host());
+      if (!auth.allow) {
+        this._contextCache.delete(taskId);
+        return { status: auth.reason, items: [], authority: false };
+      }
+    }
     const cached = this._contextCache.get(taskId);
     if (!cached) return { status: 'not_prefetched', items: [], authority: false };
     if (this.now() - (cached.cachedAt || 0) > maxAgeMs) {
       this._contextCache.delete(taskId);
       return { status: 'cache_expired', items: [], authority: false };
     }
-    return cached;
+    if (cached.policy_version !== `developer-memory-v${this.config.version}`) {
+      this._contextCache.delete(taskId);
+      return { status: 'policy_changed', items: [], authority: false };
+    }
+    const items = (cached.items || []).filter(item => !this._suppressed(cached.repositoryId, {
+      memoryId: item.memoryId,
+      providerRef: item.providerRef,
+      documentId: item.documentId,
+      contentHash: item.contentHash
+    }));
+    if (items.length !== (cached.items || []).length) {
+      cached.items = items;
+      this._contextCache.set(taskId, cached);
+    }
+    return { ...cached, items, authority: false };
   }
 
   clearContextCache(taskId = null) {
     if (taskId) this._contextCache.delete(taskId);
     else this._contextCache.clear();
+  }
+
+  /**
+   * Safe operator-facing stats for Control Center. Never returns memory content.
+   */
+  stats() {
+    const cfg = this.config;
+    const transport = this.transport?.status?.() || null;
+    let items = { active: 0, superseded: 0, suppressed: 0, deleted: 0 };
+    let suppressions = 0;
+    if (this.db) {
+      try {
+        for (const row of this.db.prepare('SELECT status, count(*) n FROM developer_memory_items GROUP BY status').all()) {
+          if (Object.prototype.hasOwnProperty.call(items, row.status)) items[row.status] = row.n;
+        }
+        suppressions = this.db.prepare('SELECT count(*) n FROM developer_memory_suppressions').get().n;
+      } catch { /* schema may be absent on old installs */ }
+    }
+    const active = items.active;
+    const capacity = 500;
+    return {
+      enabled: cfg.enabled === true,
+      allow_ingest: cfg.allow_ingest === true,
+      allow_retrieval: cfg.allow_retrieval === true,
+      allow_external: cfg.allow_external === true,
+      provider: cfg.provider,
+      authority: false,
+      transport: transport ? {
+        circuit_open: transport.circuit_open === true,
+        failures: transport.failures || 0,
+        allow_external: transport.allow_external === true,
+        api_prefix: transport.api_prefix || null
+      } : null,
+      items,
+      suppressions,
+      prefetch_cache_entries: this._contextCache.size,
+      limits: { ...cfg.limits },
+      capacity,
+      used: active,
+      percent: Math.min(100, Math.round((active / capacity) * 100)),
+      state: !cfg.enabled ? 'Disabled' : (transport?.circuit_open ? 'Degraded' : 'Ready')
+    };
   }
 }
 
@@ -481,5 +675,6 @@ module.exports = {
   repositoryIdentity,
   prepareSchema,
   TRUST,
-  DEFAULT_CONFIG_PATH
+  DEFAULT_CONFIG_PATH,
+  scopesFromTask
 };

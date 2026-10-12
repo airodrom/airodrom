@@ -121,6 +121,41 @@ function runtimeView(ready) {
  const reason=enumValue(ready?.reason,['opencode_runtime_pins_changed','opencode_unavailable','opencode_version_unqualified','opencode_local_provider_unavailable','opencode_local_provider_not_configured'],ready?.ready===true?null:'opencode_unavailable');
  return {state:ready?.ready===true?'Ready':reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable',ready:ready?.ready===true,role:'Primary',version:ready?.version==='2.0.25'?'2.0.25':null,reason,requalification:reason==='opencode_runtime_pins_changed'?'Required':'Not running'};
 }
+function layer(id,label,state,{used=null,capacity=null,percent=null,detail=null,authority=false}={}){
+ const pct=percent==null&&used!=null&&capacity?Math.min(100,Math.round((used/Math.max(1,capacity))*100)):percent;
+ return {id,label,state,used,capacity,percent:pct,detail,authority:authority===true};
+}
+function memoryLayers(bridge,personal){
+ const db=bridge.controlStore.db;
+ let projectUsed=0,projectCapacity=128;try{
+  if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_memory_v2_missions'").get())
+   projectUsed=db.prepare('SELECT count(*) n FROM project_memory_v2_missions').get().n;
+ }catch{}
+ let archUsed=0,archCapacity=200;try{
+  if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='architecture_memory_versions'").get())
+   archUsed=db.prepare('SELECT count(*) n FROM architecture_memory_versions').get().n;
+ }catch{}
+ let packUsed=0,packCapacity=20;try{
+  packUsed=db.prepare("SELECT count(*) n FROM cp_context_packs WHERE created_at>? ").get(Date.now()-3_600_000).n;
+ }catch{}
+ const personalUsed=count(personal?.active_records)||0,personalCapacity=500;
+ const personalPct=Math.min(100,Math.round((personalUsed/personalCapacity)*100));
+ let developer=null;try{developer=bridge.developerMemory?.stats?.()||null;}catch{developer=null;}
+ const developerState=developer?developer.state:(bridge.developerMemory?'Unavailable':'Not installed');
+ return [
+  layer('personal','Personal Memory V2',personal?.state||'Unavailable',{used:personalUsed,capacity:personalCapacity,percent:personalPct,detail:(personal?.backend||'Personal canonical')+' · ordinary sensitivity'}),
+  layer('project','Project Memory V2',projectUsed>=0?'Ready':'Unavailable',{used:projectUsed,capacity:projectCapacity,detail:'Mission checkpoints · host SQLite'}),
+  layer('architecture','Architecture / canonical',archUsed>=0?'Ready':'Unavailable',{used:archUsed,capacity:archCapacity,detail:'Pinned public source facts'}),
+  layer('context_pack','ContextPack (1h)',packUsed>=0?'Ready':'Unavailable',{used:packUsed,capacity:packCapacity,detail:'Recent authorized packs · 8 KB selection budget'}),
+  layer('developer','Developer Memory V1',developerState,{
+   used:developer?.used??0,capacity:developer?.capacity??500,percent:developer?.percent??0,
+   detail:developer
+    ?(developer.enabled?((developer.allow_retrieval?'retrieval on':'retrieval off')+' · '+(developer.allow_ingest?'ingest on':'ingest off')+' · cache '+developer.prefetch_cache_entries):( 'disabled by default · provider '+(developer.provider||'none')) )
+    :'Feature module unavailable',
+   authority:false
+  })
+ ];
+}
 function memoryStatus(bridge){
  const db=bridge.controlStore.db;
  let memoryReady=false,memoryStats=null,memoryGeneration=null;try{
@@ -131,7 +166,9 @@ function memoryStatus(bridge){
   }else{memoryStats=bridge.personalMemory.stats();const rows=db.prepare("SELECT status,count(*) count,max(updated_at) updated FROM personal_memories WHERE domain='personal' AND sensitivity='normal' GROUP BY status ORDER BY status").all();memoryGeneration=JSON.stringify(rows.map(r=>[r.status,r.count,r.updated]));memoryStats={byStatus:Object.fromEntries(rows.map(r=>[r.status,r.count]))};}
   memoryGeneration+=':'+db.prepare('SELECT coalesce(max(generation),0) n FROM memory_erasure_markers').get().n;memoryReady=true;
  }catch{}
- return {state:memoryReady?'Ready':'Unavailable',local:true,backend:bridge.authorityRuntime?.active?'Governed canonical':'Personal canonical',generation:memoryGeneration,active_records:memoryReady?(count(memoryStats?.byStatus?.active)||0):null,expired_records:memoryReady?(count(memoryStats?.byStatus?.expired)||0):null,superseded_records:memoryReady?(count(memoryStats?.byStatus?.superseded)||0):null};
+ const base={state:memoryReady?'Ready':'Unavailable',local:true,backend:bridge.authorityRuntime?.active?'Governed canonical':'Personal canonical',generation:memoryGeneration,active_records:memoryReady?(count(memoryStats?.byStatus?.active)||0):null,expired_records:memoryReady?(count(memoryStats?.byStatus?.expired)||0):null,superseded_records:memoryReady?(count(memoryStats?.byStatus?.superseded)||0):null};
+ try{base.layers=memoryLayers(bridge,base);}catch{base.layers=[];}
+ return base;
 }
 // Operator-only title projection. Aggregate/native surfaces never receive objectives.
 function operatorTitle(bridge, mission) {

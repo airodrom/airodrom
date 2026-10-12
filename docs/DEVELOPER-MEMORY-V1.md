@@ -65,16 +65,16 @@ Stable host API (`src/developer-memory.js`):
 
 Vendor transport: `src/developer-memory-hindsight.js` (loopback HTTP). No agent plugins, no auto-retain, no cloud fallback.
 
-Pinned client reference version: **0.10.3** (`@vectorize-io/hindsight-client` API shape). The npm package is **not** a hard runtime dependency; the host uses a native HTTP transport.
+Pinned API shape: Hindsight **0.10.x** (`/v1/default/banks/{bank_id}/…`). Retain body is `{ items: [{ content, document_id, … }], async: false }`. The npm package is **not** a hard runtime dependency; the host uses a native HTTP transport.
 
 ## Repository identity and isolation
 
-Host-derived identity from realpath + `git rev-parse --show-toplevel` + optional `remote.origin.url` hash:
+Host-derived identity from realpath + `git rev-parse --git-common-dir` + optional `remote.origin.url` hash:
 
-- `repositoryId` = SHA-256 of `{ toplevel, remote }`
+- `repositoryId` = SHA-256 of `{ git_common_dir, remote }`
 - `bankId` = `airo-dev-{first 32 hex of repositoryId}`
 
-Subdirectories and linked worktrees resolve to the same toplevel. Model-supplied bank IDs (`modelBankId`) are denied. `bankId` must equal host `expectedBankId` on every sensitive call. Cross-repository retrieval fails closed.
+Subdirectories and linked Git worktrees share the same bank via `git-common-dir`. Model-supplied bank IDs are denied. When a host task resolver is bound, caller-supplied `repositoryId`/`bankId` cannot override host identity. Capability scopes must be present (`repo` or `developer_environment`). Destructive suppress/delete require `operatorApproved: true`. Cross-repository retrieval fails closed.
 
 ## Authorization
 
@@ -84,13 +84,14 @@ Allowed ingest source kinds (explicit only): architecture decision records, appr
 
 ## ContextPack integration
 
-`ControlContext` appends developer-memory refs only when:
+`MissionService` calls `prefetchForMission` before OpenCode/Claude ContextPack assembly. `ControlContext` then appends developer-memory refs only when:
 
 1. Feature + retrieval are enabled
 2. A fresh host prefetch exists for the task
-3. Contribution status is `ok`
+3. Contribution revalidates policy, scopes, and suppressions
+4. Contribution status is `ok`
 
-Refs are labeled `UNVERIFIED_RETRIEVED_CONTENT` (or host retain trust labels), `authority: false`, and cannot grant execution. Prefetch is async; pack assembly remains synchronous.
+Refs are labeled `UNVERIFIED_RETRIEVED_CONTENT` (or host retain trust labels), `authority: false`, and cannot grant execution. Prefetch is async; pack assembly remains synchronous. Suppress/delete invalidate affected caches immediately.
 
 Trust vocabulary: `CANONICAL_PROJECT_FACT`, `VERIFIED_ENGINEERING_EVIDENCE`, `HISTORICAL_DECISION`, `SUPERSEDED_DECISION`, `UNVERIFIED_RETRIEVED_CONTENT`, `MODEL_INTERPRETATION`, `UNKNOWN`.
 
@@ -137,8 +138,13 @@ OpenCode / Claude Code / Codex adapters do not import Hindsight. They receive Co
 
 Set `enabled`, `allow_ingest`, and `allow_retrieval` to `false` (defaults). Remove optional transport config. Host tables are additive metadata; Personal Memory V2 is untouched. No live cutover in this PR.
 
+## Control Center observability
+
+Overview and Memory views render live **memory layers** (Personal V2, Project V2, Architecture/canonical, ContextPack 1h, Developer Memory V1) with usage percent bars and retained counts. `product-observability.memoryStatus` exposes `layers[]` (no memory content). Developer Memory stays **Disabled** until operator flags allow it.
+
 ## Test evidence class
 
-`tests/developer-memory-v1.test.js` is **MOCKED CONTRACT PASS** only. Not isolated-backend pass, not real local Hindsight pass, not owner-installation verified.
+- `tests/developer-memory-v1.test.js` — **MOCKED CONTRACT PASS** (HTTP shapes, worktree identity, host-bound auth, Mission prefetch, Control Center layer metrics).
+- Disposable **REAL LOCAL HINDSIGHT PASS** (2026-10-12): `ghcr.io/vectorize-io/hindsight:0.10.2` on loopback `:8888` with host Ollama (`qwen2.5-coder:14b`); transport health + ensureBank + retain + recall succeeded. Container removed after the smoke. No cloud fallback. **Not owner-installation verified**; feature flags remain off.
 
 See [ADR 0046](adr/0046-developer-memory-hindsight.md) and [KNOWN-LIMITATIONS](KNOWN-LIMITATIONS.md).

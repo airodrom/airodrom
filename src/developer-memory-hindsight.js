@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Loopback HTTP transport for Hindsight API.
+ * Loopback HTTP transport for Hindsight API 0.10.x.
+ * Paths use /v1/default/banks/{bank_id}/… Retain uses { items: [...] }.
  * Does not launch daemons, install agent plugins, or fall back to cloud hosts.
  */
 const http = require('node:http');
@@ -9,6 +10,7 @@ const https = require('node:https');
 const { URL } = require('node:url');
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
+const API_PREFIX = '/v1/default';
 
 function classifyError(error) {
   const message = String(error?.message || error || '');
@@ -18,6 +20,13 @@ function classifyError(error) {
   if (/circuit/i.test(message)) return 'circuit_open';
   if (/external|loopback|allow_external/i.test(message)) return 'policy';
   return 'transport';
+}
+
+function bankPath(bankId, suffix = '') {
+  if (typeof bankId !== 'string' || !/^airo-dev-[a-f0-9]{32}$/.test(bankId)) {
+    throw new Error('Invalid Hindsight bank id');
+  }
+  return `${API_PREFIX}/banks/${encodeURIComponent(bankId)}${suffix}`;
 }
 
 class HindsightHttpTransport {
@@ -108,9 +117,7 @@ class HindsightHttpTransport {
   }
 
   _once(method, url, body, signal) {
-    if (this.fetchImpl) {
-      return this._fetchOnce(method, url, body, signal);
-    }
+    if (this.fetchImpl) return this._fetchOnce(method, url, body, signal);
     return new Promise((resolve, reject) => {
       const payload = body === undefined ? null : Buffer.from(JSON.stringify(body), 'utf8');
       const lib = url.protocol === 'https:' ? https : http;
@@ -222,36 +229,53 @@ class HindsightHttpTransport {
   }
 
   async recall(bankId, query, options = {}) {
-    const result = await this.request('POST', `/v1/banks/${encodeURIComponent(bankId)}/memories/recall`, {
+    const result = await this.request('POST', bankPath(bankId, '/memories/recall'), {
       query,
       budget: options.budget || 'low',
       max_tokens: options.maxTokens || 1024,
       ...(options.types ? { types: options.types } : {})
     }, { signal: options.signal });
-    return result.body || { results: [] };
+    const body = result.body || {};
+    return {
+      results: Array.isArray(body.results) ? body.results : [],
+      ...body
+    };
   }
 
   async retain(bankId, content, options = {}) {
-    const result = await this.request('POST', `/v1/banks/${encodeURIComponent(bankId)}/memories`, {
+    const item = {
       content,
       context: options.context || undefined,
       document_id: options.documentId || undefined,
       metadata: options.metadata || undefined,
       timestamp: options.timestamp || undefined,
-      retain_async: false
+      tags: options.tags || undefined
+    };
+    const result = await this.request('POST', bankPath(bankId, '/memories'), {
+      items: [item],
+      async: false
     }, { signal: options.signal });
     return result.body || {};
   }
 
   async deleteDocument(bankId, documentId, options = {}) {
-    return this.request('DELETE', `/v1/banks/${encodeURIComponent(bankId)}/documents/${encodeURIComponent(documentId)}`, undefined, { signal: options.signal });
+    if (typeof documentId !== 'string' || !documentId || documentId.includes('/') || documentId.includes('..')) {
+      throw new Error('Invalid document id');
+    }
+    return this.request(
+      'DELETE',
+      bankPath(bankId, `/documents/${encodeURIComponent(documentId)}`),
+      undefined,
+      { signal: options.signal }
+    );
   }
 
   async ensureBank(bankId, options = {}) {
     try {
-      await this.request('PUT', `/v1/banks/${encodeURIComponent(bankId)}`, {
+      await this.request('PUT', bankPath(bankId), {
         name: options.name || bankId,
-        mission: options.mission || 'Airodrom governed repository knowledge bank. Untrusted evidence only.'
+        reflect_mission: options.mission || options.reflectMission
+          || 'Airodrom governed repository knowledge bank. Untrusted evidence only.'
       }, { signal: options.signal });
     } catch (error) {
       if (!/HTTP 409|already/i.test(String(error.message || ''))) throw error;
@@ -261,6 +285,7 @@ class HindsightHttpTransport {
   status() {
     return {
       provider: 'hindsight',
+      api_prefix: API_PREFIX,
       base_host: (() => { try { return new URL(this.baseUrl).hostname; } catch { return null; } })(),
       circuit_open: Boolean(this._openUntil && this.now() < this._openUntil),
       failures: this._failures,
@@ -270,4 +295,4 @@ class HindsightHttpTransport {
   }
 }
 
-module.exports = { HindsightHttpTransport, classifyError, LOOPBACK };
+module.exports = { HindsightHttpTransport, classifyError, LOOPBACK, bankPath, API_PREFIX };

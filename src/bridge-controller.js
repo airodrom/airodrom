@@ -303,6 +303,7 @@ class BridgeController extends EventEmitter {
       this.developerMemory = new (require('./developer-memory').DeveloperMemory)({
         db: this.memory.db,
         configPath: path.join(__dirname, '../config/developer-memory-v1.json'),
+        resolveTask: id => { try { return this.tasks.get(id); } catch { return null; } },
         ...(this.options.developerMemory || {})
       });
       this.projectMemoryV2 = new ProjectMemoryV2Adapter({ db: this.memory.db });
