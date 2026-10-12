@@ -49,19 +49,27 @@ async function poll(home, requestId, { signal, request = local.request, sleep = 
 function resultText(view) {
   const mission = view.outcome?.mission_state;
   const verification = view.outcome?.verification;
-  const repaired = !!(view.technical?.repair_of || view.repair_of || /Repairing/i.test(view.presentation?.status || ''));
+  const repairOf = view.technical?.repair_of || view.repair_of || null;
+  const repaired = !!(repairOf || /Repairing|repair completed/i.test(view.presentation?.status || ''));
   const passed = verification?.result === 'passed' || ['awaiting_acceptance', 'completed'].includes(mission);
   if (passed) {
     const files = (view.presentation?.files || []).join(', ') || 'the requested file';
-    return [
-      repaired ? 'Automatic repair completed. Verification passed.' : 'Verification passed.',
-      'Updated ' + files + '.',
-      'Acceptance remains a separate owner decision. Nothing was settled automatically.',
-    ].join('\n');
+    const lines = [];
+    if (repaired) {
+      lines.push('First verification failed on the original Mission.');
+      lines.push('Diagnosed the failed host check and created one corrective Mission' + (repairOf ? ' (repair_of ' + String(repairOf).slice(0, 8) + '…)' : '') + '.');
+      lines.push('Automatic repair completed. Independent verification passed.');
+    } else {
+      lines.push('Verification passed.');
+    }
+    lines.push('Updated ' + files + '.');
+    lines.push('Original Goal resumed within the approved scope. No second authorization was required.');
+    lines.push('Acceptance remains a separate owner decision. Nothing was settled automatically.');
+    return lines.join('\n');
   }
   if (String(view.state || '').toUpperCase() === 'REJECTED' || mission === 'cancelled') return view.message || 'Cancelled. Nothing was written.';
   if (/Repairing/i.test(view.presentation?.status || '') || String(view.state || '').toUpperCase() === 'RUNNING') {
-    return view.message || 'Working… diagnosing and repairing the failed verification within the original approved scope.';
+    return view.message || 'Working… first verification failed; diagnosing and repairing within the original approved scope.';
   }
   return view.message || ('Work did not finish cleanly (' + (mission || view.state || 'unknown') + '). No Acceptance was recorded.');
 }
