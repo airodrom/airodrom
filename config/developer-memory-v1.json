@@ -30,5 +30,6 @@
     "confirmed_bug_fix",
     "approved_engineering_note"
   ],
-  "notes": "Disabled by default. Hindsight is a subordinate repository-knowledge provider; Airodrom remains authoritative. No agent plugins, no auto-retain, no cloud fallback."
+  "allowed_repositories": [],
+  "notes": "Disabled by default. Empty allowed_repositories fails closed while enabled. Hindsight is a subordinate repository-knowledge provider; Airodrom remains authoritative. No agent plugins, no auto-retain, no cloud fallback."
 }
