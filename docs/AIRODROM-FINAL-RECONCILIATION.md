@@ -33,7 +33,7 @@ None closed in this pass. No PR was closed merely for age or title.
 
 | PR | Branch | Class | Evidence |
 | --- | --- | --- | --- |
-| **#70** | `feat/master-personal-ai-completion` | **HOLD (merge)** / MERGEABLE draft | Head `eaafe01`. Clean mergeability. Hosted `candidate.yml` is **`disabled_manually`**. Local gates green on exact head (below). Draft retained until hosted CI can be verified or owner re-authorizes merge without it. |
+| **#70** | `feat/master-personal-ai-completion` | **HOLD (merge)** / MERGEABLE draft | Head `19d88ff` (deadline fix `eaafe01` + this report). Clean mergeability. Hosted `candidate.yml` is **`disabled_manually`**. Local gates green on `eaafe01` (below). Draft retained until hosted CI can be verified or owner re-authorizes merge without it. |
 | **#36** | `feat/automatic-startup-reconnection-v1` | **BLOCKED / PROTECTED** | Tip `81ddb3e` not in main (1 unique commit). `CONFLICTING`. Unique managed-login supervisor surface. |
 | **#37** | `feat/deepseek-reserve-provider-v1` | **BLOCKED / PROTECTED** | Tip `c5902f3` not in main (2 unique commits). `CONFLICTING`. Unique DeepSeek reserve provider. |
 | **#38** | `feat/v1.8-operations-recovery` | **BLOCKED / PROTECTED** | Tip `5ae2250` not in main (2 unique commits). `CONFLICTING`. Unique idle-run settlement / CLI / menu recovery. |
