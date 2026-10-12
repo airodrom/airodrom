@@ -40,7 +40,7 @@ Local daily-use Airodrom is **finished** against the consolidation stop line. Se
 - **Installed:** `airodrom-menu-v3-1cff95d` (`1.0.1-rc.1`) — Control / OpenCode 2.0.25 / Memory / Provider Ready · Menu V3
 - **Menu helper:** Premium Menu V3 with Conversation + Development Session + System Health deep links
 - **Automatic Acceptance:** OFF · **WhatsApp production:** HOLD · **Public activation:** OFF
-- **Operator checkout** `/Users/andrew/code/airodrom`: protected dirty; not the release source
+- **Operator checkout** `~/code/airodrom`: protected dirty; not the release source
 - **Essential blockers for local use:** none · optional future: draft PRs #36–#38 (do not merge #38 wholesale), Claude WAIT, packaging roadmap
 
 No new feature milestone was invented for this consolidation. Live status observation only; unchanged focused suites were not re-executed.
@@ -71,7 +71,7 @@ No new feature milestone was invented for this consolidation. Live status observ
 - Deleted **49** remote branches whose tips were fully ancestral to `origin/main` with no open PR.
 - Removed **34** clean, merged, unused Git worktrees.
 - **Retained open drafts:** [#36](https://github.com/airodrom/airodrom/pull/36), [#37](https://github.com/airodrom/airodrom/pull/37), [#38](https://github.com/airodrom/airodrom/pull/38).
-- **Protected:** operator checkout `/Users/andrew/code/airodrom`; active DS `feat/ds-continue-session-v1`; install `airodrom-grounded-accuracy-fe918cc` (unchanged, Healthy).
+- **Protected:** operator checkout `~/code/airodrom`; active DS `feat/ds-continue-session-v1`; install `airodrom-grounded-accuracy-fe918cc` (unchanged, Healthy).
 - **Review required (preserved):** `fix/opencode-pin-replacement-requalify`, WhatsApp local tip `581a30f`, and other unique/dirty worktrees listed in [GIT-REPOSITORY-CLEANUP-V1.md](GIT-REPOSITORY-CLEANUP-V1.md).
 - No PRs closed this Mission; no force-push; no CI dispatch; no service restart.
 
@@ -112,7 +112,7 @@ No new feature milestone was invented for this consolidation. Live status observ
 
 ## Installed release (running)
 
-- **Root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-menu-v3/install/airodrom-menu-v3-1cff95d`
+- **Root:** `~/Documents/Codex/2026-10-10/airodrom-menu-v3/install/airodrom-menu-v3-1cff95d`
 - **Health:** Ready — managed local service healthy; admission open
 - **Includes:** Premium Menu V3 + desktop-login startup on `1cff95d` (ancestry includes WhatsApp verify-token `879daa3`)
 - **Prior WhatsApp verify install:** `…/airodrom-whatsapp-verify-token-safe-rotation/install/airodrom-whatsapp-verify-safe-879daa3` (retained; backup `macos-desktop-activation-v1-20261010T225226Z`)
@@ -129,7 +129,7 @@ No new feature milestone was invented for this consolidation. Live status observ
 
 ## Operator checkout
 
-`/Users/andrew/code/airodrom` remains protected and dirty; it was not the install source.
+`~/code/airodrom` remains protected and dirty; it was not the install source.
 
 ## Lifecycle & Package Closeout V1 (2026-10-10)
 

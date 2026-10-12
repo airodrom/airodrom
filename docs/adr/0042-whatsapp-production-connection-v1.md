@@ -6,7 +6,7 @@
 - Owner: Operator request
 - Review: Pending
 - Affected contracts and components: WhatsApp inbound environment slots, webhook ingress prep, Conversations/outbound activation gates, operator documentation
-- Related decisions: [0038 inbound](0038-whatsapp-inbound-v1.md), [0039 conversations](0039-whatsapp-conversations-v1.md)
+- Related decisions: [0038 inbound](0038-whatsapp-inbound-v1.md), [0041 conversations](0041-whatsapp-conversations-v1.md)
 
 ## Context and problem
 

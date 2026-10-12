@@ -7,7 +7,7 @@ Safe consolidation of obsolete Airodrom Git refs and disposable worktrees after 
 - **`origin/main`:** `c2482bb517c0f08c386523227f5179615282caee`
 - **Installed runtime:** `…/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc` (Healthy; not modified)
 - **Active Development Session:** `2eb98c6a-…` · branch `feat/ds-continue-session-v1` · worktree `…/airodrom-ds-continue/work/airodrom-ds-continue` (**PROTECTED**)
-- **Operator checkout:** `/Users/andrew/code/airodrom` dirty / behind main (**PROTECTED**; not reset, cleaned, stashed, or overwritten)
+- **Operator checkout:** `~/code/airodrom` dirty / behind main (**PROTECTED**; not reset, cleaned, stashed, or overwritten)
 
 ## PR review classification
 

@@ -47,13 +47,13 @@ Deep links use allowlisted `local.open({ view })` targets: Conversation, Mission
 - **Feature tip:** `0142ab9066eed974ece96eeb0eb228d21395a6d1`
 - **Merge on `origin/main`:** `5e23731121d95822255dbef0c257b34d77afb24f`
 - **Package:** `1.0.1-rc.1` · 367 files · archive SHA-256 `82df832e9d09365d871db9e899a6bb45cd6f53cf0a9c2d28c45a1fd1f3a145bd`
-- **Install root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731`
+- **Install root:** `~/Documents/Codex/2026-10-10/airodrom-everyday-ux/install/airodrom-everyday-ux-5e23731`
 - **Prior source:** `…/airodrom-ds-continue/install/airodrom-ds-continue-c701289`
 - **Backup/rollback:** `~/.airodrom/backups/everyday-ux-v1-20261010T181626Z`
 - **Live:** Control/OpenCode/Memory/Provider Ready · hub/css/panel/atmosphere HTTP 200 with Everyday UX markers · menu helper rebuilt · Automatic Acceptance OFF · WhatsApp HOLD
 - **Qwen:** `ollama/qwen3-coder:30b` completed marker `everyday-ux-ship-ok`
 - **Focused tests:** `everyday-personal-ai-ux-v1` + continue panel **7/7**
-- Operator checkout `/Users/andrew/code/airodrom` preserved.
+- Operator checkout `~/code/airodrom` preserved.
 
 ## Limits
 

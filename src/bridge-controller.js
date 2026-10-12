@@ -419,6 +419,9 @@ class BridgeController extends EventEmitter {
         this.emit('change');
       }, 5000); this.monitor.unref();
       this.lifecycle.finishRecovery();
+      // recover() may have scheduled ticks that exited early while booting; kick
+      // the Mission loop once admission is actually open.
+      if(this.lifecycle.state()==='open')this.missions?.schedule();
       return this;
     } catch (e) { await this.shutdown(); throw e; }
   }

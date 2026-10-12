@@ -19,7 +19,7 @@
 1. Explicit cutover authorization for this machine.
 2. Confirm no Active Mission writers / quarantined leases (`aiprodrom` / Control Center System Health).
 3. Preserve MCP token / tunnel (ADR 0022); do not regenerate tunnel keys unless separately authorized.
-4. Dirty operator checkout `/Users/andrew/code/airodrom` remains untouched; use a prepared install tree from PR #70 tip.
+4. Dirty operator checkout `~/code/airodrom` remains untouched; use a prepared install tree from PR #70 tip.
 
 ## Forward cutover (reversible)
 

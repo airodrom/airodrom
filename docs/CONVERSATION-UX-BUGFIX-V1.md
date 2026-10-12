@@ -36,12 +36,12 @@ Fixes two Control Center usability defects observed on the installed Grounded Ac
 - **PR:** [#60](https://github.com/airodrom/airodrom/pull/60) **MERGED**
 - **`origin/main`:** `52e1003caa64b6f7f2660b7650006c324ce1ccbc`
 - **Package:** `1.0.1-rc.1` · 372 files · tarball SHA-256 `8d0d3a9e932ba1866edda9ca5679f49e4e9bc135d58adba04a77f74bd7255743`
-- **Install root:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003`
+- **Install root:** `~/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/install/airodrom-conversation-ux-bugfix-52e1003`
 - **Prior source:** `…/airodrom-grounded-accuracy/install/airodrom-grounded-accuracy-fe918cc`
-- **Backup/rollback:** `/Users/andrew/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/backup/pre-conversation-ux-bugfix-20261010T193433Z`
+- **Backup/rollback:** `~/Documents/Codex/2026-10-10/airodrom-conversation-ux-bugfix/backup/pre-conversation-ux-bugfix-20261010T193433Z`
 - **Live:** Control/OpenCode/Memory/Provider Ready · Qwen `ollama/qwen3-coder:30b` · Start new clears continuing line · pending-new survives refresh · first send creates distinct session · Continue previous restores history · Claude unavailable notice keeps Qwen · missions **71** · personal_memories **6** · Automatic Acceptance OFF · WhatsApp HOLD
 - **Focused tests:** `conversation-ux-bugfix-v1` + browser + Everyday UX **11/11**
-- Operator checkout `/Users/andrew/code/airodrom` preserved.
+- Operator checkout `~/code/airodrom` preserved.
 
 ## Limits
 

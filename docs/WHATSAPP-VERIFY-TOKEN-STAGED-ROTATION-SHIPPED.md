@@ -45,4 +45,4 @@ Webhook GET never finalizes. A correct verify-token challenge does not cryptogra
 | PUBLIC ACTIVATION | OFF |
 | PRODUCTION HOLD | WhatsApp / Meta AI |
 
-Operator checkout `/Users/andrew/code/airodrom` preserved. No AI/editor attribution.
+Operator checkout `~/code/airodrom` preserved. No AI/editor attribution.
