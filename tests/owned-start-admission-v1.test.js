@@ -142,6 +142,17 @@ test('ownedStartResume opens idle booting admission and leaves closed_startup cl
   assert.equal(calls.resume, 0);
 });
 
+test('serviceLaunchEnv forwards closed startup and rejects malformed flags', t => {
+  const local = require('../src/local-bootstrap');
+  const home = '/Users/fixture/.airodrom';
+  assert.equal(local.serviceLaunchEnv(home, {}).AIRODROM_START_CLOSED, undefined);
+  assert.equal(local.serviceLaunchEnv(home, { AIRODROM_START_CLOSED: '1' }).AIRODROM_START_CLOSED, '1');
+  assert.equal(local.serviceLaunchEnv(home, { AIRODROM_START_CLOSED: '1' }).AIRODROM_HOME, home);
+  for (const flag of ['', '0', 'true', 'yes']) {
+    assert.throws(() => local.serviceLaunchEnv(home, { AIRODROM_START_CLOSED: flag }), /exactly 1/);
+  }
+});
+
 test('ownedStartResume does not reopen an active drain', async t => {
   const local = require('../src/local-bootstrap');
   const original = { status: local.status, request: local.request, admission: local.admission };

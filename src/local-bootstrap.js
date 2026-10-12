@@ -268,6 +268,20 @@ function isStopped(home) {
 // Owned local.start is host evidence to reopen after a planned/unclean stop once
 // reconciliation is idle. attach()/status alone never resume. Closed startup stays closed.
 const START_READY_MS = 60000;
+function serviceLaunchEnv(home, env = {}) {
+  if (env.AIRODROM_START_CLOSED !== undefined && env.AIRODROM_START_CLOSED !== '1') {
+    throw Error('AIRODROM_START_CLOSED must be exactly 1 when present');
+  }
+  return {
+    HOME: os.homedir(),
+    PATH: path.dirname(process.execPath) + ':/usr/bin:/bin',
+    LANG: 'en_US.UTF-8',
+    AIRODROM_HOME: home,
+    AIRODROM_DEFAULT_RUNTIME: require('./default-runtime').defaultRuntime(env.AIRODROM_DEFAULT_RUNTIME),
+    NODE_NO_WARNINGS: '1',
+    ...(env.AIRODROM_START_CLOSED === '1' ? { AIRODROM_START_CLOSED: '1' } : {})
+  };
+}
 async function ownedStartResume(home, { signal, timeoutMs = 15000 } = {}) {
   // Route through exports so disposable tests can stub status/request/admission.
   const api = module.exports;
@@ -312,6 +326,8 @@ async function ownedStartResume(home, { signal, timeoutMs = 15000 } = {}) {
 }
 async function start(home, env = process.env) {
   privateDirectory(home, true);
+  // Validate before attach/spawn so closed-startup intent cannot be silently dropped.
+  serviceLaunchEnv(home, env);
   // Prefer attaching to a healthy managed service before taking the launch lock.
   // Client packages from another install must not start a second supervisor.
   if (!isStopped(home)) {
@@ -365,7 +381,7 @@ async function start(home, env = process.env) {
     }
     const config = await prepare(home, env, {signal:controller.signal});
     if (controller.signal.aborted) throw Error('Local startup was interrupted; existing data preserved.');
-    const child = spawn(process.execPath, ['--experimental-sqlite', path.join(ROOT, 'scripts/local-service.cjs')], { cwd: ROOT, detached: true, stdio: 'ignore', env: { HOME: os.homedir(), PATH: path.dirname(process.execPath) + ':/usr/bin:/bin', LANG: 'en_US.UTF-8', AIRODROM_HOME: home, AIRODROM_DEFAULT_RUNTIME: require('./default-runtime').defaultRuntime(env.AIRODROM_DEFAULT_RUNTIME), NODE_NO_WARNINGS: '1' } });
+    const child = spawn(process.execPath, ['--experimental-sqlite', path.join(ROOT, 'scripts/local-service.cjs')], { cwd: ROOT, detached: true, stdio: 'ignore', env: serviceLaunchEnv(home, env) });
     let spawnError = false; child.on('error', () => { spawnError = true; }); child.unref();
     const deadline = Date.now() + START_READY_MS;
     while (Date.now() < deadline) {
@@ -421,4 +437,4 @@ function open(home, {missionId, view} = {}) {
   const r = spawnSync('/usr/bin/osascript', ['-'], { input: 'open location ' + JSON.stringify(target) + '\n', encoding: 'utf8', timeout: 5000 });
   if (r.status !== 0) throw Error('Control Center could not open. Check the default browser.');
 }
-module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, attach, ensureService, isStopped, ownedStartResume, start, stop, admission, open, START_READY_MS };
+module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, attach, ensureService, isStopped, serviceLaunchEnv, ownedStartResume, start, stop, admission, open, START_READY_MS };
