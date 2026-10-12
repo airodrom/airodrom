@@ -265,12 +265,61 @@ function isStopped(home) {
   try { const d = discovery(home); process.kill(d.pid, 0); return false; }
   catch (error) { return error.code === 'ESRCH'; }
 }
+// Owned local.start is host evidence to reopen after a planned/unclean stop once
+// reconciliation is idle. attach()/status alone never resume. Closed startup stays closed.
+const START_READY_MS = 60000;
+async function ownedStartResume(home, { signal, timeoutMs = 15000 } = {}) {
+  // Route through exports so disposable tests can stub status/request/admission.
+  const api = module.exports;
+  const deadline = Date.now() + Math.max(1000, timeoutMs);
+  let lastError = null;
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw Error('Local startup was interrupted; existing data preserved.');
+    let health;
+    try { health = await api.status(home, { timeoutMs: Math.min(1000, Math.max(1, deadline - Date.now())), signal }); }
+    catch (error) { lastError = error; await pause(100); continue; }
+    if (!health.healthy) { await pause(100); continue; }
+    if (!health.admission || health.admission === 'open') return health;
+    // Never fight an in-progress operator drain/stop; only reopen post-restart booting.
+    if (health.admission === 'draining' || health.admission === 'stopping') return health;
+    let gate;
+    try { gate = await api.request(home, '/api/interactive/lifecycle', undefined, { timeoutMs: Math.min(1000, Math.max(1, deadline - Date.now())), signal }); }
+    catch (error) { lastError = error; await pause(100); continue; }
+    if (gate.closed_startup === true) return health;
+    if (gate.state === 'draining' || gate.state === 'stopping') return health;
+    if (!gate.reconciled) { await pause(100); continue; }
+    if (gate.idle !== true) return health; // durable blockers: fail-closed, do not force open
+    if (gate.state !== 'booting') return health;
+    try {
+      await api.admission(home, 'resume');
+      return await api.status(home, { timeoutMs: 1000, signal });
+    } catch (error) {
+      lastError = error;
+      await pause(100);
+    }
+  }
+  let final = null, gate = null;
+  try { final = await api.status(home, { timeoutMs: 1000, signal }); } catch (error) { lastError = error; }
+  try { if (final?.healthy) gate = await api.request(home, '/api/interactive/lifecycle', undefined, { timeoutMs: 1000, signal }); } catch (error) { lastError = error; }
+  if (final?.healthy && final.admission === 'open') return final;
+  if (final?.healthy && gate?.closed_startup === true) return final;
+  if (final?.healthy && gate?.reconciled === true && gate?.idle === true && final.admission !== 'open') {
+    const reason = gate.hold_reason || 'awaiting_owned_start_resume';
+    throw Error('Owned local start could not reopen admission (' + reason + '). Inspect private lifecycle; data was preserved.');
+  }
+  if (final?.healthy) return final;
+  throw Error('Local service did not become ready. Inspect private service state; data was preserved.' + (lastError ? ' Last error: ' + lastError.message : ''));
+}
 async function start(home, env = process.env) {
   privateDirectory(home, true);
   // Prefer attaching to a healthy managed service before taking the launch lock.
   // Client packages from another install must not start a second supervisor.
   if (!isStopped(home)) {
-    try { return await attach(home, { timeoutMs: 2000 }); }
+    try {
+      await attach(home, { timeoutMs: 2000 });
+      // Recover orphaned healthy+booting supervisors left after a timed-out prior start.
+      return await ownedStartResume(home, { timeoutMs: 30000 });
+    }
     catch (error) {
       const lock = require('../scripts/macos/control.cjs').lock({ dataDir: path.join(home, 'data') });
       if (lock.blocked) throw Error('Existing service did not respond for attach. No replacement was started. Existing service and data were preserved.');
@@ -284,7 +333,10 @@ async function start(home, env = process.env) {
     if (error.code !== 'EEXIST') throw error;
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline) {
-      try { return await attach(home, { timeoutMs: Math.min(1000, deadline - Date.now()) }); } catch {}
+      try {
+        await attach(home, { timeoutMs: Math.min(1000, deadline - Date.now()) });
+        return await ownedStartResume(home, { timeoutMs: Math.max(1000, deadline - Date.now() + 20000) });
+      } catch {}
       await pause(100);
     }
     throw Error('Another bootstrap owns startup. Inspect its private launch.lock before retrying.');
@@ -297,7 +349,9 @@ async function start(home, env = process.env) {
       try {
         const attached = await attach(home, { timeoutMs: 2000, signal: controller.signal });
         const sameSource = attached.source_sha256 === require('./runtime-fingerprint').sourceFingerprint().source_sha256;
-        if (!sameSource || attached.opencode?.reason !== 'opencode_runtime_pins_changed') return attached;
+        if (!sameSource || attached.opencode?.reason !== 'opencode_runtime_pins_changed') {
+          return await ownedStartResume(home, { signal: controller.signal, timeoutMs: 30000 });
+        }
         repairablePins(ownedJSON(path.join(home, 'runtime-pins.json')));
         if (attached.active_runs || attached.quarantined_leases || !attached.managed) throw Error('Runtime pin repair is waiting for owned work to settle.');
         await stop(home);
@@ -313,19 +367,12 @@ async function start(home, env = process.env) {
     if (controller.signal.aborted) throw Error('Local startup was interrupted; existing data preserved.');
     const child = spawn(process.execPath, ['--experimental-sqlite', path.join(ROOT, 'scripts/local-service.cjs')], { cwd: ROOT, detached: true, stdio: 'ignore', env: { HOME: os.homedir(), PATH: path.dirname(process.execPath) + ':/usr/bin:/bin', LANG: 'en_US.UTF-8', AIRODROM_HOME: home, AIRODROM_DEFAULT_RUNTIME: require('./default-runtime').defaultRuntime(env.AIRODROM_DEFAULT_RUNTIME), NODE_NO_WARNINGS: '1' } });
     let spawnError = false; child.on('error', () => { spawnError = true; }); child.unref();
-    const deadline = Date.now() + 15000;
+    const deadline = Date.now() + START_READY_MS;
     while (Date.now() < deadline) {
       if (controller.signal.aborted) throw Error('Local startup was interrupted; existing data preserved.');
       try {
         const s = await status(home, {timeoutMs:Math.min(1000,deadline-Date.now()),signal:controller.signal});
-        if (s.healthy) {
-          // Owned local start is host evidence to reopen a prior planned stop once blockers are idle.
-          if (s.admission && s.admission !== 'open') {
-            try { await admission(home, 'resume'); return await status(home, {timeoutMs:1000,signal:controller.signal}); }
-            catch { /* Remain closed when durable work is unresolved. */ }
-          }
-          return s;
-        }
+        if (s.healthy) return await ownedStartResume(home, { signal: controller.signal, timeoutMs: Math.max(1000, deadline - Date.now()) });
       } catch {}
       if (spawnError) break; await pause(100);
     }
@@ -374,4 +421,4 @@ function open(home, {missionId, view} = {}) {
   const r = spawnSync('/usr/bin/osascript', ['-'], { input: 'open location ' + JSON.stringify(target) + '\n', encoding: 'utf8', timeout: 5000 });
   if (r.status !== 0) throw Error('Control Center could not open. Check the default browser.');
 }
-module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, attach, ensureService, isStopped, start, stop, admission, open };
+module.exports = { ROOT, localHome, privateDirectory, writePrivate, ownedJSON, pin, openCodePinMissing, resolveOpenCodeExecutable, qualify, validatePins, repairablePins, requalify, assertDurableIdle, prepare, discovery, request, status, attach, ensureService, isStopped, ownedStartResume, start, stop, admission, open, START_READY_MS };

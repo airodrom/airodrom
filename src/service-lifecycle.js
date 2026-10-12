@@ -45,7 +45,22 @@ class ServiceLifecycle {
    external_jobs:b.capabilityHost?.jobs?.jobs? [...b.capabilityHost.jobs.jobs.values()].filter(j=>!['completed','failed','cancelled'].includes(j.status)).length:0
   };
  }
- status(){const blockers=this.blockers();return {version:1,closed_startup:this.bridge.startClosed===true,state:this.state(),epoch:this.epoch,prior_state:this.priorState,prior_epoch:this.priorEpoch,reconciled:this.reconciled,blockers,idle:Object.values(blockers).every(n=>n===0)};}
+ holdReason(){
+  const state=this.state();
+  if(state==='open')return null;
+  if(!this.reconciled)return 'awaiting_reconciliation';
+  if(this.bridge.startClosed===true&&state==='booting')return 'closed_startup';
+  if(state==='draining')return 'draining';
+  if(state==='stopping')return 'stopping';
+  const idle=Object.values(this.blockers()).every(n=>n===0);
+  if(!idle)return 'unresolved_blockers';
+  // Mac shutdown persists stopping; the next writer boots closed until owned local.start resumes.
+  if(state==='booting'&&this.priorState==='stopping')return 'awaiting_owned_start_resume';
+  if(state==='booting'&&this.priorState==='open'&&this.autoOpen!==true)return 'auto_open_suppressed';
+  if(state==='booting')return 'awaiting_operator_resume';
+  return 'admission_closed';
+ }
+ status(){const blockers=this.blockers();return {version:1,closed_startup:this.bridge.startClosed===true,state:this.state(),epoch:this.epoch,prior_state:this.priorState,prior_epoch:this.priorEpoch,reconciled:this.reconciled,blockers,idle:Object.values(blockers).every(n=>n===0),hold_reason:this.holdReason()};}
  drain(){return transaction(this.db,()=>{if(this.state()==='stopping')throw Error('Service is stopping');this.db.prepare("UPDATE cp_service_lifecycle SET state='draining' WHERE id=1").run();return this.status();});}
  finishRecovery(){this.reconciled=true;const status=this.status();if(this.autoOpen&&status.idle)return this.resume(this.epoch);return status;}
  resume(epoch){return transaction(this.db,()=>{
