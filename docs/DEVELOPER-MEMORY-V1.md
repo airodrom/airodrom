@@ -49,6 +49,7 @@ Config file: [`config/developer-memory-v1.json`](../config/developer-memory-v1.j
 | `allow_ingest` | `false` | Explicit retain of approved source kinds. |
 | `allow_retrieval` | `false` | Prefetch / ContextPack contribution. |
 | `allow_external` | `false` | Non-loopback Hindsight hosts. Never auto-enabled. |
+| `require_operator_approval_for_destructive` | `true` | Suppress/delete require host-minted single-use approval. |
 
 Live owner installation must stay disabled until explicit activation authorization.
 
@@ -74,7 +75,7 @@ Host-derived identity from realpath + `git rev-parse --git-common-dir` + optiona
 - `repositoryId` = SHA-256 of `{ git_common_dir, remote }`
 - `bankId` = `airo-dev-{first 32 hex of repositoryId}`
 
-Subdirectories and linked Git worktrees share the same bank via `git-common-dir`. Model-supplied bank IDs are denied. When a host task resolver is bound, caller-supplied `repositoryId`/`bankId` cannot override host identity. Capability scopes must be present (`repo` or `developer_environment`). Destructive suppress/delete require `operatorApproved: true`. Cross-repository retrieval fails closed.
+Subdirectories and linked Git worktrees share the same bank via `git-common-dir`. Model-supplied bank IDs are denied. When a host task resolver is bound, caller-supplied `repositoryId`/`bankId` cannot override host identity. Capability scopes must be present (`repo` or `developer_environment`). Destructive suppress/delete require a **host-minted single-use** `operatorApprovalId` (`mintOperatorApproval` / `host.verifyOperatorApproval`). A caller-supplied `operatorApproved: true` boolean is rejected and never independently grants approval. Cross-repository retrieval fails closed.
 
 ## Authorization
 
@@ -140,11 +141,11 @@ Set `enabled`, `allow_ingest`, and `allow_retrieval` to `false` (defaults). Remo
 
 ## Control Center observability
 
-Overview and Memory views render live **memory layers** (Personal V2, Project V2, Architecture/canonical, ContextPack 1h, Developer Memory V1) with usage percent bars and retained counts. `product-observability.memoryStatus` exposes `layers[]` (no memory content). Developer Memory stays **Disabled** until operator flags allow it.
+Overview and Memory views render live **memory layers** (Personal V2, Project V2, Architecture/canonical, ContextPack 1h, Developer Memory V1) with usage percent bars and retained counts. Capacities are **reference soft** observability ceilings (not hard enforcement quotas), labeled in UI/API as `capacity_kind: "reference_soft"`. Layer states use evidence: `Disabled`, `Configured`, `Ready`, `Degraded`, `Unavailable`. `product-observability.memoryStatus` exposes `layers[]` and never includes memory content. Developer Memory stays **Disabled** until operator flags allow it.
 
 ## Test evidence class
 
-- `tests/developer-memory-v1.test.js` — **MOCKED CONTRACT PASS** (HTTP shapes, worktree identity, host-bound auth, Mission prefetch, Control Center layer metrics).
-- Disposable **REAL LOCAL HINDSIGHT PASS** (2026-10-12): `ghcr.io/vectorize-io/hindsight:0.10.2` on loopback `:8888` with host Ollama (`qwen2.5-coder:14b`); transport health + ensureBank + retain + recall succeeded. Container removed after the smoke. No cloud fallback. **Not owner-installation verified**; feature flags remain off.
+- `tests/developer-memory-v1.test.js` — **MOCKED CONTRACT PASS** (HTTP shapes, worktree identity, host-bound auth, Mission prefetch, host-verified destructive approval negatives, Control Center layer metrics).
+- Disposable **REAL LOCAL HINDSIGHT PASS** (2026-10-12): `ghcr.io/vectorize-io/hindsight:0.10.2` on loopback `:8888` with host Ollama (`qwen2.5-coder:14b`); transport health + ensureBank + retain + recall succeeded. Container removed after the smoke. Image retained locally for reuse. No cloud fallback. **Not owner-installation verified**; feature flags remain off.
 
 See [ADR 0046](adr/0046-developer-memory-hindsight.md) and [KNOWN-LIMITATIONS](KNOWN-LIMITATIONS.md).

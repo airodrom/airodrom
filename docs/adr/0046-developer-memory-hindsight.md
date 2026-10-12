@@ -42,7 +42,7 @@ Benefits: shared governed repo knowledge across Airodrom-managed workers. Costs:
 
 ## Validation and evidence
 
-`node scripts/run.cjs --test tests/developer-memory-v1.test.js` — **MOCKED CONTRACT PASS**. Disposable **REAL LOCAL HINDSIGHT PASS** recorded 2026-10-12 against loopback `hindsight:0.10.2` + Ollama; owner-install activation remains unauthorized.
+`node scripts/run.cjs --test tests/developer-memory-v1.test.js` — **MOCKED CONTRACT PASS** (includes host-verified destructive-approval negatives). Disposable **REAL LOCAL HINDSIGHT PASS** recorded 2026-10-12 against loopback `hindsight:0.10.2` + Ollama; owner-install activation remains unauthorized.
 
 ## Rollback
 

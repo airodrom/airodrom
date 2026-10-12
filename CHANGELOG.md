@@ -2,8 +2,9 @@
 
 - Add governed Developer Memory adapter with loopback Hindsight HTTP transport (`/v1/default/banks/…`, retain `{ items }`), repository bank isolation via `git-common-dir`+remote, host-bound authorize-before retain/retrieve, operator approval for suppress/delete, cache invalidation, Mission-lifecycle prefetch, and sync ContextPack contribution.
 - Feature defaults all-off (`config/developer-memory-v1.json`). No agent plugins, no auto-ingest, no cloud fallback, no live install mutation.
-- Control Center Overview and Memory views show animated live stats for all memory layers (Personal, Project, Architecture, ContextPack, Developer) with usage percent and retained counts; `memoryStatus.layers` never includes private content.
-- Document architecture and limits in [DEVELOPER-MEMORY-V1.md](docs/DEVELOPER-MEMORY-V1.md) / [ADR 0046](docs/adr/0046-developer-memory-hindsight.md). Contract suite: `tests/developer-memory-v1.test.js` (16/16). Disposable REAL LOCAL HINDSIGHT PASS against `hindsight:0.10.2` + Ollama; not owner-install verified.
+- Control Center Overview and Memory views show animated live stats for all memory layers (Personal, Project, Architecture, ContextPack, Developer) with usage percent against labeled reference soft capacities; `memoryStatus.layers` never includes private content.
+- Destructive suppress/delete require host-minted single-use operator approval; caller-supplied `operatorApproved` booleans are rejected.
+- Document architecture and limits in [DEVELOPER-MEMORY-V1.md](docs/DEVELOPER-MEMORY-V1.md) / [ADR 0046](docs/adr/0046-developer-memory-hindsight.md). Contract suite: `tests/developer-memory-v1.test.js` (17/17). Disposable REAL LOCAL HINDSIGHT PASS against `hindsight:0.10.2` + Ollama; not owner-install verified.
 
 ## Unreleased — Context & Personal Memory V2 end-to-end
 

@@ -3,11 +3,11 @@
 ## Developer Memory V1 / Hindsight (2026-10-12)
 
 - Feature flags default **off**. Source implementation does not activate on the owner live install, LaunchAgents, or personal-memory stores.
-- Evidence class for `tests/developer-memory-v1.test.js` is **MOCKED CONTRACT PASS** (HTTP shapes, worktree identity, host-bound auth, Mission prefetch, Control Center layer metrics).
+- Evidence class for `tests/developer-memory-v1.test.js` is **MOCKED CONTRACT PASS** (HTTP shapes, worktree identity, host-bound auth, Mission prefetch, host-verified destructive approval, Control Center layer metrics).
 - Disposable **REAL LOCAL HINDSIGHT PASS** completed against `ghcr.io/vectorize-io/hindsight:0.10.2` + local Ollama (`qwen2.5-coder:14b`) on loopback only; container torn down after smoke. **Not OWNER INSTALLATION VERIFIED**. No cloud fallback.
-- Control Center Overview/Memory show animated layer usage bars; private memory text is never rendered in those meters.
+- Control Center Overview/Memory show animated layer usage bars against **reference soft** capacities; private memory text is never rendered in those meters.
 - No Hindsight daemon is launched by Airodrom. Agent plugins remain disabled.
-- Destructive suppress/delete require explicit `operatorApproved: true`. Host task resolver binds repository identity; caller-supplied bank IDs cannot impersonate.
+- Destructive suppress/delete require host-minted single-use `operatorApprovalId`. Caller `operatorApproved: true` is rejected. Host task resolver binds repository identity; caller-supplied bank IDs cannot impersonate.
 - Provider delete is best-effort; suppression remains authoritative until confirmed. Forensic erasure is never claimed.
 - Retrieved developer-memory text is untrusted evidence (`authority: false`) and cannot grant tools or rewrite Personal Memory.
 

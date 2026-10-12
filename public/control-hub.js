@@ -303,7 +303,7 @@
    const foot=node('p',(obs?.limitations||['Observatory shows sanitized host observations only.']).join(' '),'privacy');root.append(foot);
    return root;
  }
- function memoryLayerChip(state){const s=String(state||'Unavailable');if(s==='Disabled'||s==='Not installed')return node('span',s,'chip degraded');return chip(s);}
+ function memoryLayerChip(state){const s=String(state||'Unavailable');if(s==='Disabled'||s==='Not installed')return node('span',s,'chip degraded');if(s==='Configured')return node('span',s,'chip waiting');return chip(s);}
  function memoryLayersPanel(layers,{compact=false}={}){
    const panel=node('section',null,'glass memory-layers'+(compact?' compact':''));
    panel.append(node('h3',compact?'Memory layers · live':'All memory layers · live'));
@@ -336,7 +336,7 @@
      const counts=node('p',null,'memory-layer-counts muted');
      const used=layer.used==null?'—':String(layer.used);
      const capacity=layer.capacity==null?'—':String(layer.capacity);
-     counts.textContent=used+' / '+capacity+(compact?'':' retained capacity');
+     counts.textContent=used+' / '+capacity+(compact?'':' · '+(layer.capacity_kind==='reference_soft'?'reference soft capacity':'capacity'));
      row.append(head,track,counts);
      list.append(row);
    }

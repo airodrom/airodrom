@@ -301,6 +301,7 @@ test('K–N suppress/delete require operator approval; cache invalidates', async
   await dm.prefetchContext({ taskId: 'cache-1', workspaceRoot: repo, query: 'OpenCode', capabilityScopes: ['repo'] });
   assert.equal(dm.contextContribution({ taskId: 'cache-1' }).status, 'ok');
 
+  const approval = dm.mintOperatorApproval({ operation: 'delete', taskId: 't1', repositoryId: id.repositoryId });
   const forgotten = await dm.delete({
     taskId: 't1',
     repositoryId: id.repositoryId,
@@ -310,7 +311,7 @@ test('K–N suppress/delete require operator approval; cache invalidates', async
     documentId: retained.documentId,
     contentHash: retained.contentHash,
     capabilityScopes: ['repo'],
-    operatorApproved: true
+    operatorApprovalId: approval.approvalId
   });
   assert.equal(forgotten.status, 'deleted_logical');
   assert.equal(forgotten.forensic_erasure_claimed, false);
@@ -403,6 +404,11 @@ test('V–Y authorization gates', () => {
     operation: 'suppress', taskId: 't', repositoryId: 'r', bankId: 'airo-dev-' + 'c'.repeat(32),
     expectedBankId: 'airo-dev-' + 'c'.repeat(32), capabilityScopes: ['repo']
   }, enabledConfig()).reason, 'operator_approval_required');
+  assert.equal(authorize({
+    operation: 'delete', taskId: 't', repositoryId: 'r', bankId: 'airo-dev-' + 'c'.repeat(32),
+    expectedBankId: 'airo-dev-' + 'c'.repeat(32), capabilityScopes: ['repo'],
+    operatorApproved: true
+  }, enabledConfig()).reason, 'operator_approval_boolean_rejected');
 });
 
 test('Z deterministic repeated retrieval', async t => {
@@ -489,11 +495,50 @@ test('overview memoryStatus includes animated layer metrics', async t => {
     assert.ok(!('content' in layer));
   }
   const developer = status.layers.find(l => l.id === 'developer');
-  assert.ok(['Disabled', 'Ready', 'Degraded', 'Unavailable', 'Not installed'].includes(developer.state));
+  assert.ok(['Disabled', 'Configured', 'Ready', 'Degraded', 'Unavailable'].includes(developer.state));
+  for (const layer of status.layers) {
+    assert.equal(layer.capacity_kind, 'reference_soft');
+    assert.equal(typeof layer.capacity, 'number');
+    assert.match(layer.detail || '', /reference soft capacity|Feature module/);
+    assert.doesNotMatch(JSON.stringify(layer), /password|secret|Bearer /i);
+  }
   const hub = fs.readFileSync(path.join(__dirname, '../public/control-hub.js'), 'utf8');
   assert.match(hub, /memoryLayersPanel/);
   assert.match(hub, /All memory layers · live/);
+  assert.match(hub, /reference soft capacity/);
   const css = fs.readFileSync(path.join(__dirname, '../public/control-hub.css'), 'utf8');
   assert.match(css, /\.memory-layers/);
   assert.match(css, /memory-layer-in/);
+});
+
+test('negative: caller boolean cannot authorize suppress/delete; approval is single-use host-minted', async t => {
+  const { authorize: auth } = require('../src/developer-memory');
+  const repo = tempRepo(t);
+  const id = repositoryIdentity(repo);
+  const dm = new DeveloperMemory({ db: memoryDb(t), config: enabledConfig(), transport: mockTransport() });
+  const bank = { repositoryId: id.repositoryId, bankId: id.bankId, expectedBankId: id.bankId, capabilityScopes: ['repo'] };
+
+  assert.equal((await dm.suppress({ taskId: 't1', ...bank, contentHash: 'abc', operatorApproved: true })).status, 'operator_approval_boolean_rejected');
+  assert.equal((await dm.delete({ taskId: 't1', ...bank, contentHash: 'abc', operatorApproved: true })).status, 'operator_approval_boolean_rejected');
+  assert.equal((await dm.delete({ taskId: 't1', ...bank, contentHash: 'abc', operatorApproved: true, operatorApprovalId: 'forged' })).status, 'operator_approval_unknown');
+
+  const forgedHost = {
+    resolveTask: () => ({ id: 't1', workspace: repo, mission: { envelope: { workspace: repo, capability_scopes: ['repo'] } } }),
+    verifyOperatorApproval: () => ({ verified: false, reason: 'denied_by_host' })
+  };
+  assert.equal(auth({
+    operation: 'delete', taskId: 't1', ...bank, operatorApproved: true, operatorApprovalId: 'x'
+  }, enabledConfig(), forgedHost).reason, 'denied_by_host');
+
+  const mint = dm.mintOperatorApproval({ operation: 'suppress', taskId: 't1' });
+  assert.equal((await dm.suppress({
+    taskId: 't2', ...bank, contentHash: 'abc', operatorApprovalId: mint.approvalId
+  })).status, 'operator_approval_task_mismatch');
+  const mint2 = dm.mintOperatorApproval({ operation: 'suppress', taskId: 't1' });
+  assert.equal((await dm.suppress({
+    taskId: 't1', ...bank, contentHash: 'abc', operatorApprovalId: mint2.approvalId
+  })).status, 'suppressed');
+  assert.equal((await dm.suppress({
+    taskId: 't1', ...bank, contentHash: 'abc', operatorApprovalId: mint2.approvalId
+  })).status, 'operator_approval_unknown');
 });

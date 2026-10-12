@@ -164,6 +164,36 @@ function scopesFromTask(task) {
 }
 
 /**
+ * Host-verified destructive approval. A caller-supplied `operatorApproved`
+ * boolean never independently grants approval — only host.verifyOperatorApproval
+ * (or an equivalent host-minted single-use approval id verified by the host).
+ */
+function verifyDestructiveApproval(request, host, config) {
+  if (!DESTRUCTIVE.has(request?.operation)) return { ok: true };
+  if (!config.require_operator_approval_for_destructive) return { ok: true };
+  if (!host || typeof host.verifyOperatorApproval !== 'function') {
+    return { ok: false, reason: 'operator_approval_required' };
+  }
+  let verified;
+  try {
+    verified = host.verifyOperatorApproval({
+      operation: request.operation,
+      taskId: request.taskId,
+      approvalId: typeof request.operatorApprovalId === 'string' ? request.operatorApprovalId : null
+    });
+  } catch {
+    return { ok: false, reason: 'operator_approval_verification_failed' };
+  }
+  if (verified === true || verified?.verified === true || verified?.allow === true) {
+    return { ok: true, reason: 'host_verified' };
+  }
+  return {
+    ok: false,
+    reason: (typeof verified?.reason === 'string' && verified.reason) || 'operator_approval_required'
+  };
+}
+
+/**
  * Authorize a developer-memory operation from trusted host state.
  * Caller-supplied repositoryId/bankId are never trusted — host identity wins.
  */
@@ -180,7 +210,12 @@ function authorize(request, config, host = null) {
     return { allow: false, reason: 'retrieval_disabled' };
   }
   if (DESTRUCTIVE.has(request.operation) && config.require_operator_approval_for_destructive) {
-    if (request.operatorApproved !== true) return { allow: false, reason: 'operator_approval_required' };
+    // Boolean flags from callers/models are explicitly non-authorizing.
+    if (request.operatorApproved === true && !request.operatorApprovalId) {
+      return { allow: false, reason: 'operator_approval_boolean_rejected' };
+    }
+    const approval = verifyDestructiveApproval(request, host, config);
+    if (!approval.ok) return { allow: false, reason: approval.reason };
   }
 
   let identity = null;
@@ -267,10 +302,55 @@ class DeveloperMemory {
     if (this.db) prepareSchema(this.db);
     this.transport = transport || this._buildTransport();
     this._contextCache = new Map();
+    /** @type {Map<string, {operation:string,taskId:string,repositoryId:string|null,expiresAt:number}>} */
+    this._operatorApprovals = new Map();
+  }
+
+  /**
+   * Host-only mint of a single-use destructive approval. Not exposed through
+   * worker/broker tools. Callers cannot forge approval with a boolean.
+   */
+  mintOperatorApproval({ operation, taskId, repositoryId = null, ttlMs = 120_000 } = {}) {
+    if (!DESTRUCTIVE.has(operation)) throw new Error('Not a destructive developer-memory operation');
+    if (typeof taskId !== 'string' || !taskId) throw new Error('taskId required for operator approval');
+    const approvalId = randomUUID();
+    const expiresAt = this.now() + Math.min(Math.max(Number(ttlMs) || 120_000, 1_000), 600_000);
+    this._operatorApprovals.set(approvalId, {
+      operation,
+      taskId,
+      repositoryId: typeof repositoryId === 'string' ? repositoryId : null,
+      expiresAt
+    });
+    return { approvalId, expiresAt, operation, taskId, single_use: true, authority: false };
+  }
+
+  _verifyApproval({ operation, taskId, approvalId } = {}) {
+    if (typeof approvalId !== 'string' || !approvalId) {
+      return { verified: false, reason: 'operator_approval_required' };
+    }
+    const row = this._operatorApprovals.get(approvalId);
+    if (!row) return { verified: false, reason: 'operator_approval_unknown' };
+    if (row.expiresAt <= this.now()) {
+      this._operatorApprovals.delete(approvalId);
+      return { verified: false, reason: 'operator_approval_expired' };
+    }
+    if (row.operation !== operation) {
+      return { verified: false, reason: 'operator_approval_operation_mismatch' };
+    }
+    if (row.taskId !== taskId) {
+      return { verified: false, reason: 'operator_approval_task_mismatch' };
+    }
+    // Single-use: consume before returning success.
+    this._operatorApprovals.delete(approvalId);
+    return { verified: true, reason: 'host_verified' };
   }
 
   _host() {
-    return this.resolveTask ? { resolveTask: this.resolveTask } : null;
+    const host = {
+      verifyOperatorApproval: (req) => this._verifyApproval(req)
+    };
+    if (this.resolveTask) host.resolveTask = (id) => this.resolveTask(id);
+    return host;
   }
 
   _buildTransport() {
@@ -425,9 +505,7 @@ class DeveloperMemory {
     return { status: 'retained', memoryId, documentId, contentHash, authority: false, trustLabel: TRUST.VERIFIED_ENGINEERING_EVIDENCE, repositoryId, bankId };
   }
 
-  suppress(input) {
-    const auth = authorize({ ...input, operation: 'suppress' }, this.config, this._host());
-    if (!auth.allow) return { status: auth.reason, authority: false };
+  _suppressAuthorized(auth, input) {
     if (!this.db) return { status: 'store_unavailable', authority: false };
     const { repositoryId } = auth.identity;
     const suppressionId = randomUUID();
@@ -449,10 +527,17 @@ class DeveloperMemory {
     return { status: 'suppressed', suppressionId, authority: false, repositoryId };
   }
 
+  suppress(input) {
+    const auth = authorize({ ...input, operation: 'suppress' }, this.config, this._host());
+    if (!auth.allow) return { status: auth.reason, authority: false };
+    return this._suppressAuthorized(auth, input);
+  }
+
   async delete(input) {
     const auth = authorize({ ...input, operation: 'delete' }, this.config, this._host());
     if (!auth.allow) return { status: auth.reason, authority: false };
-    const suppressed = this.suppress({ ...input, reason: input.reason || 'operator_delete' });
+    // Delete approval already host-verified; apply logical suppression without a second mint.
+    const suppressed = this._suppressAuthorized(auth, { ...input, reason: input.reason || 'operator_delete' });
     if (suppressed.status !== 'suppressed') return suppressed;
     let provider = 'not_requested';
     if (this.config.enabled && this.transport && auth.identity.bankId && input.documentId) {
@@ -661,9 +746,18 @@ class DeveloperMemory {
       prefetch_cache_entries: this._contextCache.size,
       limits: { ...cfg.limits },
       capacity,
+      capacity_kind: 'reference_soft',
       used: active,
       percent: Math.min(100, Math.round((active / capacity) * 100)),
-      state: !cfg.enabled ? 'Disabled' : (transport?.circuit_open ? 'Degraded' : 'Ready')
+      state: !cfg.enabled
+        ? 'Disabled'
+        : !transport
+          ? 'Configured'
+          : transport.circuit_open
+            ? 'Degraded'
+            : (cfg.allow_retrieval || cfg.allow_ingest)
+              ? 'Ready'
+              : 'Configured'
     };
   }
 }
@@ -672,6 +766,7 @@ module.exports = {
   DeveloperMemory,
   loadConfig,
   authorize,
+  verifyDestructiveApproval,
   repositoryIdentity,
   prepareSchema,
   TRUST,
