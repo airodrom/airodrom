@@ -21,10 +21,12 @@ async function submit(bridge,packet,principal){
  if(previous.some(r=>r.owner!==principal))throw Error('Resume the original authenticated handoff session; duplicate execution denied');
  if(bridge.controlStore.db.prepare('SELECT 1 FROM cp_requests WHERE owner=? AND request_id=?').get(principal,packet.request_id))return bridge.controlStore.request(principal,packet.request_id,operation,()=>{throw Error('Invalid replay');});
  const external=packet.privacy==='approved_external';
- const template=packet.mission_class==='WORK'?(external?bridge.workers.template(packet.project,packet.workspace):bridge.options.externalMissionTemplates?.[packet.project]?.[packet.workspace]):null;
+ // local_only WORK uses owner-registered WorkTemplates; never fall back to approved_external templates.
+ const template=packet.mission_class==='WORK'?(external?bridge.workers.template(packet.project,packet.workspace):(packet.project&&packet.workspace&&bridge.workTemplates.read(packet.project,packet.workspace)?bridge.workTemplates.template(packet.project,packet.workspace):bridge.options.externalMissionTemplates?.[packet.project]?.[packet.workspace])):null;
  if(packet.mission_class==='WORK'&&!template)return {state:'WAIT',reason:'Host-approved WORK template required',authority:false};
+ if(packet.mission_class==='WORK'&&template.data_class&&packet.data_class!==template.data_class)throw Error('Template data classification mismatch');
  const catalog=await router.inspect(bridge);
- if(external){catalog.workers=catalog.workers.filter(w=>template.workers.includes(w.id));catalog.models=catalog.models.filter(m=>m.workers.some(w=>template.workers.includes(w)));}
+ if(packet.mission_class==='WORK'&&template.workers){catalog.workers=catalog.workers.filter(w=>template.workers.includes(w.id));catalog.models=catalog.models.filter(m=>m.workers.some(w=>template.workers.includes(w)));}
  const route=router.select(catalog,{mission_class:packet.mission_class,data_class:packet.data_class,privacy:packet.privacy,model:packet.model,worker:packet.worker});
  if(route.state!=='READY')return {state:'WAIT',reason:route.reason,authority:false};
  return bridge.controlStore.request(principal,packet.request_id,operation,()=>{
@@ -40,8 +42,10 @@ async function submit(bridge,packet,principal){
  if(task.source?.handoff_principal&&task.source.handoff_principal!==principal)throw Error('Handoff identity mismatch');
  task.source={...task.source,handoff_principal:principal};bridge.tasks.save(task);
  const m=bridge.missions.require(created.mission_id);
- if(m.state==='ready')bridge.missions.dispatch(m.id,{request_id:'handoff-dispatch:'+request_id});
- return {version:packet.version,mission_id:m.id,state:m.state,route,authority:false};
+ // local_only owner WorkTemplates defer dispatch: Goal Plan + Control Center authorize-autonomous-goal own scheduling.
+ const deferLocalWork=packet.mission_class==='WORK'&&packet.privacy==='local_only'&&!!template?.work_template;
+ if(m.state==='ready'&&!deferLocalWork)bridge.missions.dispatch(m.id,{request_id:'handoff-dispatch:'+request_id});
+ return {version:packet.version,mission_id:m.id,state:m.state,route,authority:false,deferred_dispatch:deferLocalWork,next_action:deferLocalWork?'propose_goal_plan_then_owner_authorize':'inspect'};
  });
 }
 function bound(bridge,id,principal){const m=bridge.missions.require(id),task=bridge.tasks.get(m.task_id);if(task.source?.handoff_principal!==principal)throw Error('Handoff belongs to another authenticated client');return m;}

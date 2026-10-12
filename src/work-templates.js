@@ -1,0 +1,51 @@
+'use strict';
+// Local operator consent is separate from MCP requests and worker results.
+const fs=require('node:fs'),path=require('node:path');
+const {object,identifier,text,fingerprint}=require('./control-plane-store');
+const POLICY=require('./default-runtime').LOCAL_POLICY;
+const alias=v=>{if(typeof v!=='string'||!/^[a-z][a-z0-9_-]{0,79}$/.test(v))throw Error('Exact template alias required');return v;};
+function file(root,name){
+ if(typeof name!=='string'||name.length>240||name.includes('\\')||/[\x00-\x1f*?\[\]{}]/.test(name)||name.split('/').some(p=>!p||p==='.'||p==='..'||p.startsWith('.'))||path.isAbsolute(name)||/(^|\/)(tests?|__tests__|credentials|secrets)(\/|$)|(^|\/)(package(?:-lock)?\.json|[^/]+\.(test|spec)\.[^/]+)$/.test(name))throw Error('Exact non-secret, non-verifier file required');
+ const target=path.join(root,name),s=fs.lstatSync(target);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||fs.realpathSync(target)!==target)throw Error('Existing regular file without symlinks required');return target;
+}
+class WorkTemplates{
+ constructor(bridge){this.bridge=bridge;this.db=bridge.controlStore.db;this.db.exec('CREATE TABLE IF NOT EXISTS cp_work_templates(project TEXT NOT NULL,workspace_alias TEXT NOT NULL,record TEXT NOT NULL,state TEXT NOT NULL,PRIMARY KEY(project,workspace_alias))');}
+ owner(owner){if(owner!=='operator')throw Error('Authenticated local operator required');}
+ boundaries(t){
+  if(!path.isAbsolute(t.workspace)||fs.realpathSync(t.workspace)!==t.workspace||require('./control-execution').repositoryRoot(t.workspace)!==t.workspace)throw Error('Exact canonical repository root required');
+  const s=fs.statSync(t.workspace);if(s.dev!==t.identity.dev||s.ino!==t.identity.ino)throw Error('Workspace identity changed');
+  const p=this.bridge.projects.getProject(t.project_id),g=this.bridge.projects.getGoal(t.goal_id);if(p.status==='archived'||g.projectId!==p.projectId||!p.repositories.includes(t.workspace))throw Error('Project, goal and workspace boundary mismatch');
+  for(const f of t.allowed_files)file(t.workspace,f);
+  const taskFile=path.join(t.workspace,'.vscode/tasks.json');if(fs.realpathSync(taskFile)!==taskFile||fingerprint(fs.readFileSync(taskFile,'utf8'))!==t.verifier_hash)throw Error('Registered verification definitions changed');
+ }
+ register(input,owner){
+  this.owner(owner);object(input,['project','workspace_alias','project_id','goal_id','workspace','allowed_files','diff_check','tests','duration_minutes','confirmed']);
+  alias(input.project);alias(input.workspace_alias);if(input.confirmed!==true)throw Error('Explicit owner registration consent required');
+  identifier(input.project_id);identifier(input.goal_id);text(input.workspace,'workspace',1000);
+  if(!Number.isInteger(input.duration_minutes)||input.duration_minutes<1||input.duration_minutes>1440)throw Error('Expiry must be one to 1440 minutes');
+  if(!Array.isArray(input.allowed_files)||!input.allowed_files.length||input.allowed_files.length>8||new Set(input.allowed_files).size!==input.allowed_files.length)throw Error('One to eight exact existing files required');
+  if(!Array.isArray(input.tests)||!input.tests.length||input.tests.length>4)throw Error('One to four focused registered tests required');
+  for(const label of [input.diff_check,...input.tests])text(label,'registered task label',100);
+  const workspace=input.workspace,s=fs.statSync(workspace),raw=fs.readFileSync(path.join(workspace,'.vscode/tasks.json'),'utf8');if(Buffer.byteLength(raw)>65536)throw Error('Verifier definitions too large');
+  const tasks=JSON.parse(raw).tasks;if(!Array.isArray(tasks))throw Error('Registered tasks required');
+  for(const label of [input.diff_check,...input.tests]){const matches=tasks.filter(t=>t.label===label);if(matches.length!==1||matches[0].type!=='process')throw Error('Unique registered process task required');}
+  const diff=tasks.find(t=>t.label===input.diff_check);if(diff.command!=='git'||JSON.stringify(diff.args)!=='["diff","--check"]')throw Error('Diff check must be exactly git diff --check');
+  const record={version:1,project:input.project,workspace_alias:input.workspace_alias,project_id:input.project_id,goal_id:input.goal_id,workspace,allowed_files:[...input.allowed_files].sort(),identity:{dev:s.dev,ino:s.ino},verifier_hash:fingerprint(raw),verification:{diff_check:input.diff_check,tests:[...input.tests],syntax:[]},registered_at:Date.now(),expires_at:Date.now()+input.duration_minutes*60000,capability_scopes:['repo','developer_environment'],privacy:'local_only',data_class:'public',workers:['opencode'],permissions:{repository:['read','write'],runtime:['diagnostic','test'],network:['localhost'],secrets:[],data:['read','workspace_write']}};
+  this.boundaries(record);
+  const baseline=require('./control-context').workspaceSnapshot(workspace);if(baseline.dirty.some(f=>record.allowed_files.includes(f)||f==='.vscode/tasks.json'))throw Error('Template overlaps dirty work');
+  record.manifest={mission:{id:'work-template-'+input.project+'-'+input.workspace_alias,version:1,title:'Owner registered local WORK',repository:{root:workspace,branch:baseline.branch},authority:{level:'Development'},duration:{expires_after:input.duration_minutes+'m'},scope:{repositories:[workspace],include:record.allowed_files,exclude:[]},permissions:{filesystem:{read:true,write:true,delete:false},repository:{branch:false,commit:false,push:false,merge:false},runtime:{test:true,lint:false,typecheck:false,restart_local:false},network:{localhost:true,internet:false},providers:{local_reasoning:true,approved_external:false},memory:{read:true,search:true,write:false,delete:false}},evidence:{required:['tests','diff_check'],optional:[]},settlement:{review_required:true,merge_allowed:false,deploy_allowed:false},budget:{max_files_changed:record.allowed_files.length,max_commits:0,max_runtime_hours:input.duration_minutes/60,max_external_reasoning_calls:0,max_memory_injections:20}}};
+  require('./mission-manifest').normalizeManifest(record.manifest,{workspace,allowedFiles:record.allowed_files,verification:record.verification});
+  const hash=fingerprint(record),seal=this.bridge.missionAuthority.sealManifest({mission_id:'work-template:'+input.project+':'+input.workspace_alias,manifest_hash:hash});if(!seal)throw Error('Existing operator signing authority required');
+  // Never replace or renew a consent record: a new alias requires new review.
+  this.db.prepare('INSERT INTO cp_work_templates VALUES(?,?,?,?)').run(input.project,input.workspace_alias,JSON.stringify({record,hash,seal}),'active');
+  this.bridge.controlStore.event('work_template.registered',null,{project:input.project,workspace_alias:input.workspace_alias,hash});return this.inspect(input.project,input.workspace_alias);
+ }
+ read(project,workspace){alias(project);alias(workspace);const row=this.db.prepare('SELECT * FROM cp_work_templates WHERE project=? AND workspace_alias=?').get(project,workspace);if(!row)return null;const r=JSON.parse(row.record);if(r.record.project!==project||r.record.workspace_alias!==workspace||r.record.version!==1||fingerprint(r.record)!==r.hash||!this.bridge.missionAuthority.verifyManifestSeal(r.seal,{mission_id:'work-template:'+project+':'+workspace,manifest_hash:r.hash}))throw Error('Template integrity mismatch');return {...r,state:row.state};}
+ inspect(project,workspace){const r=this.read(project,workspace);if(!r)return null;let state=r.state;if(state==='active'&&r.record.expires_at<=Date.now())state='expired';if(state==='active')try{this.boundaries(r.record);}catch{state='invalid';}return {...r.record,template_hash:r.hash,state,authority:false};}
+ list(owner){this.owner(owner);return this.db.prepare('SELECT project,workspace_alias FROM cp_work_templates ORDER BY project,workspace_alias').all().map(r=>{try{return this.inspect(r.project,r.workspace_alias);}catch{return {...r,state:'invalid',authority:false};}});}
+ template(project,workspace){const r=this.read(project,workspace);if(!r||r.state!=='active'||r.record.expires_at<=Date.now())return null;this.boundaries(r.record);const t=r.record;return {project_id:t.project_id,goal_id:t.goal_id,workspace:t.workspace,allowed_files:t.allowed_files,verification:t.verification,capability_scopes:t.capability_scopes,criteria:[{id:'owner-review',type:'operator_review',description:'Independent focused verification and explicit operator Acceptance required.'}],authority:{level:'development',permissions:t.permissions,filesystem:{read:[t.workspace],write:[t.workspace]},expiresAt:t.expires_at},manifest:t.manifest,dispatch_policy:POLICY,fallback_agents:[],work_template:{project,workspace,hash:r.hash},privacy:t.privacy,data_class:t.data_class,workers:t.workers};}
+ assertInput(input){const ref=input.work_template;object(ref,['project','workspace','hash']);const t=this.template(ref.project,ref.workspace);if(!t||ref.hash!==t.work_template.hash)throw Error('Template expired, revoked or changed');for(const key of ['project_id','goal_id','workspace','allowed_files','verification','capability_scopes','authority','dispatch_policy','fallback_agents','manifest'])if(fingerprint(input[key])!==fingerprint(t[key]))throw Error('Immutable template ceiling mismatch');if(input.preferred_agent!=='opencode'||input.automatic_acceptance||input.fixture_auto_acceptance)throw Error('Template requires OpenCode and explicit Acceptance');}
+ assertMission(m){const ref=m.envelope.work_template;if(!ref)return;const t=this.template(ref.project,ref.workspace);if(!t||t.work_template.hash!==ref.hash)throw Error('Template expired, revoked or changed');}
+ revoke(input,owner){this.owner(owner);object(input,['project','workspace_alias','template_hash','confirmed']);if(input.confirmed!==true)throw Error('Explicit revocation consent required');const r=this.read(input.project,input.workspace_alias);if(!r||r.hash!==input.template_hash)throw Error('Exact current template required');this.db.prepare("UPDATE cp_work_templates SET state='revoked' WHERE project=? AND workspace_alias=?").run(input.project,input.workspace_alias);this.bridge.controlStore.event('work_template.revoked',null,{project:input.project,workspace_alias:input.workspace_alias,hash:r.hash});return this.inspect(input.project,input.workspace_alias);}
+}
+module.exports={WorkTemplates};

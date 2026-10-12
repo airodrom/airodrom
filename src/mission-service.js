@@ -23,6 +23,7 @@ class MissionService {
     for(const key of ['target_domains','required_memory_keys'])if(input[key]!==undefined&&(!Array.isArray(input[key])||input[key].length>20||input[key].some(v=>typeof v!=='string'||!v||v.length>120)))throw Error('Invalid typed memory requirement');
     if(input.required_assurance!==undefined&&(!Number.isInteger(input.required_assurance)||input.required_assurance<0||input.required_assurance>3))throw Error('Invalid required assurance');
     if(input.maxCostUsdBoundary!==undefined&&(!Number.isFinite(input.maxCostUsdBoundary)||input.maxCostUsdBoundary<0))throw Error('Invalid cost boundary');
+    if(input.work_template){if(owner!=='operator')throw Error('Operator template binding required');this.bridge.workTemplates.assertInput(input);}
     text(input.objective,'Mission objective',4000);identifier(input.request_id);
     const goal=this.bridge.projects.getGoal(input.goal_id);if(goal.projectId!==input.project_id)throw Error('Goal and Project do not match');
     const workspace=repositoryRoot(text(input.workspace,'workspace',1000));if(workspace!==fs.realpathSync(input.workspace))throw Error('Mission workspace must be repository root');
@@ -109,6 +110,7 @@ class MissionService {
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
   assertAuthority(mission, requirements={}){
+    this.bridge.workTemplates.assertMission(mission);
     if(mission.envelope.kind==='work_request')throw Error('Work request draft requires registered scope and verification before execution');
     require('./removed-runtime').assertExecutable(mission);
     if(mission.envelope.worker_contract)this.bridge.workers.assertMission(mission);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
@@ -253,8 +255,9 @@ class MissionService {
         this.store.state(m.id,'running');started=true;return pack;
       });
       await this.web.preflight(m,task);
-      let output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt:m.envelope.objective+'\n'+m.envelope.constraints,context:{id:pack.id},requestId:`mission:${dispatch.id}`});
-      for(let round=0;output.result?.web_requests?.length;round++){if(round>=2||output.changes.length)throw Error('opencode_web_request_bound');for(const action of output.result.web_requests)await this.web.call(m,task,action);output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt:m.envelope.objective+'\n'+m.envelope.constraints,context:{id:pack.id},requestId:`mission:${dispatch.id}:web:${round}`});}
+      const prompt=require('./exact-file-prompt').opencodePrompt(m);
+      let output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt,context:{id:pack.id},requestId:`mission:${dispatch.id}`});
+      for(let round=0;output.result?.web_requests?.length;round++){if(round>=2||output.changes.length)throw Error('opencode_web_request_bound');for(const action of output.result.web_requests)await this.web.call(m,task,action);output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt,context:{id:pack.id},requestId:`mission:${dispatch.id}:web:${round}`});}
       if(vendor)this.bridge.workers.assertOutput(this.store.requireMission(m.id),output);
       this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
       if(task.cancelRequested||task.safetyStop?.latched)throw Error('opencode_cancelled');
@@ -395,6 +398,7 @@ class MissionService {
     const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
     return this.store.request(owner,input.request_id,{op:'accept',id,...input},()=>{
       if(m.state!=='awaiting_acceptance')throw Error('Mission is not awaiting acceptance');
+      if(input.decision==='accept')this.bridge.workTemplates.assertMission(m);
       if(input.decision==='accept')this.program.assertAcceptance(m,input.verification_id);
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
       if(!v||v.revision!==m.revision||(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');

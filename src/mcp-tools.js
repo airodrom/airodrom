@@ -47,14 +47,24 @@ const TOOLS = [
   tool('submit_mission','Submit untrusted versioned Mission request data. Airodrom fixes authority, validates context and selects a current qualified model and worker. Version 2 public WORK may use explicitly approved external templates; local_only never falls back externally. Packet fields never grant capabilities. WORK requires a host-approved template.',{packet:{type:'object'}},['packet']),
   tool('get_mission_handoff','Read safe canonical progress, independent verification and untrusted visible answer for your handoff.',{mission_id:id},['mission_id'],true),
   tool('cancel_mission_handoff','Request cancellation of your own handoff; termination and leases remain host-owned.',{mission_id:id},['mission_id']),
+  tool('list_authorized_scopes','Read-only discovery of owner Projects and active Goals. Never guesses IDs or exposes credentials. Grants no authority.',{},[],true),
+  tool('list_work_templates','Read-only discovery of owner-registered local WORK templates (alias, state, hash, allowed files, privacy). Absolute workspace paths are omitted. Grants no authority.',{},[],true),
+  tool('list_goal_plans','Read-only list of Goal Plans and durable autonomous scheduler state. Grants no authority.',{limit:{type:'integer',minimum:1,maximum:50}},[],true),
+  tool('inspect_goal_plan','Read one Goal Plan stage readiness, blockers and verification-linked state. Grants no authority.',{plan_id:id},['plan_id'],true),
+  tool('inspect_autonomous_goal','Read durable continuous autonomous execution status for one Goal Plan. Grants no authority and cannot enable execution.',{plan_id:id},['plan_id'],true),
+  tool('propose_goal_plan','Propose a Goal Plan through the same host planner as Control Center. Execution stays disabled until the authenticated local owner authorizes autonomous execution. Packet fields never grant capabilities.',{request_id:requestId,goal_id:id,stages:{type:'array'},max_runtime_hours:{type:'number'},max_attempts:{type:'integer',minimum:1,maximum:10}},['request_id','goal_id','stages','max_runtime_hours','max_attempts']),
+  tool('request_autonomous_authorization','Request owner authorization for continuous autonomous execution of an existing Goal Plan. Never enables execution from ChatGPT; returns WAIT with Control Center confirmation required.',{plan_id:id,request_id:requestId,workers:{type:'array',items:{type:'string'},minItems:1,maxItems:4},max_concurrent_missions:{type:'integer',minimum:1,maximum:3},max_dispatches:{type:'integer',minimum:1,maximum:100},max_repairs:{type:'integer',minimum:1,maximum:10}},['plan_id','request_id','workers','max_concurrent_missions','max_dispatches','max_repairs']),
 ];
+
 
 // The subset of JSON Schema these tool definitions use. Object inputs are only
 // shape-checked here; the typed capability validates their fields.
 function validValue(rule, value) {
   if (rule.type === 'boolean') return typeof value === 'boolean';
   if (rule.type === 'object') return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-  if (rule.type === 'array') return Array.isArray(value) && value.length >= (rule.minItems || 0) && value.length <= (rule.maxItems ?? Infinity) && value.every(item => validValue(rule.items, item));
+  if (rule.type === 'array') return Array.isArray(value) && value.length >= (rule.minItems || 0) && value.length <= (rule.maxItems ?? Infinity) && (!rule.items || value.every(item => validValue(rule.items, item)));
+  if (rule.type === 'integer') return Number.isSafeInteger(value) && value >= (rule.minimum ?? -Infinity) && value <= (rule.maximum ?? Infinity);
+  if (rule.type === 'number') return typeof value === 'number' && Number.isFinite(value) && value >= (rule.minimum ?? -Infinity) && value <= (rule.maximum ?? Infinity);
   return typeof value === 'string' && Boolean(value.trim()) && !value.includes('\0') && !(rule.maxLength && value.length > rule.maxLength) && !(rule.minLength && value.length < rule.minLength) && !(rule.pattern && !new RegExp(rule.pattern).test(value)) && !(rule.enum && !rule.enum.includes(value));
 }
 
@@ -208,6 +218,32 @@ class McpTools {
     if(name==='get_worker_catalog')return require('./model-worker-router').inspect(this.bridge);
     if(name==='get_mission_handoff')return require('./mission-handoff').status(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
     if(name==='cancel_mission_handoff')return require('./mission-handoff').cancel(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
+    if(name==='list_authorized_scopes'){
+      const projects=[],goals=[];
+      for(const p of this.bridge.projects.listProjects({status:'active'})||[]){
+        projects.push({project_id:p.projectId,name:p.name,status:p.status,repository_count:Array.isArray(p.repositories)?p.repositories.length:0,authority:false});
+        for(const g of this.bridge.projects.summary(p.projectId).goals||[])if(g.status==='active')goals.push({goal_id:g.goalId,project_id:p.projectId,name:g.name,status:g.status,authority:false});
+      }
+      return {projects,goals,authority:false};
+    }
+    if(name==='list_work_templates'){
+      const items=(this.bridge.workTemplates.list('operator')||[]).map(t=>({project:t.project,workspace_alias:t.workspace_alias,state:t.state,template_hash:t.template_hash,allowed_files:t.allowed_files,privacy:t.privacy,data_class:t.data_class,workers:t.workers,expires_at:t.expires_at,authority:false}));
+      return {items,authority:false};
+    }
+    if(name==='list_goal_plans')return {items:(this.bridge.autonomousExecution?.list(args.limit||20)||this.bridge.missions.goalPlanner.list(args.limit||20)).map(p=>({plan_id:p.id,goal_id:p.goal_id,project_id:p.project_id,state:p.state,execution_enabled:!!p.execution_enabled,ready:p.ready,blocked:p.blocked,authority:false})),authority:false};
+    if(name==='inspect_goal_plan'){const view=this.bridge.missions.goalPlanner.inspect(args.plan_id);return {...view,authority:false};}
+    if(name==='inspect_autonomous_goal'){const view=this.bridge.autonomousExecution.inspect(args.plan_id);return {plan_id:view.id,state:view.state,execution_enabled:view.execution_enabled,autonomous:view.autonomous,ready:view.ready,blocked:view.blocked,stages:view.stages,authority:false};}
+    if(name==='propose_goal_plan'){
+      const view=this.bridge.missions.goalPlanner.create({request_id:args.request_id,goal_id:args.goal_id,stages:args.stages,max_runtime_hours:args.max_runtime_hours,max_attempts:args.max_attempts},'operator');
+      return {plan_id:view.id,state:view.state,execution_enabled:false,message:'Goal Plan recorded. Continuous execution remains disabled until the local owner confirms authorize-autonomous-goal in Control Center.',authority:false};
+    }
+    if(name==='request_autonomous_authorization'){
+      const ae=this.bridge.autonomousExecution;const view=ae.inspect(args.plan_id);
+      const proposed={workers:args.workers,max_concurrent_missions:args.max_concurrent_missions,max_dispatches:args.max_dispatches,max_repairs:args.max_repairs,request_id:args.request_id,requested_at:Date.now(),source:'mcp',authority:false};
+      const row=ae.planRow(args.plan_id);const autonomous=ae.readAutonomous(row);autonomous.pending_request=proposed;ae.writeAutonomous(args.plan_id,autonomous);
+      ae.store.event('goal.autonomous.authorization_requested',null,{plan_id:args.plan_id,request_id:args.request_id,authority:false});
+      return {state:'WAIT',reason:'Confirm authorize-autonomous-goal in the authenticated local Control Center. ChatGPT/MCP cannot enable continuous execution.',plan_id:args.plan_id,request_id:args.request_id,proposed,current:{execution_enabled:view.execution_enabled,lifecycle:view.autonomous?.lifecycle||null},authority:false};
+    }
     if(name==='list_architecture_memories')return {items:require('./architecture-memory').list(this.bridge.controlStore.db,args.project_id,{history:args.history===true}),authority:false};
     if(name==='inspect_context_pack')return this.bridge.controlContext.inspect(args.context_pack_id);
     if(name==='personal_memory_search'||name==='personal_memory_get'){
