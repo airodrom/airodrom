@@ -55,8 +55,33 @@ function loadConfig(file = DEFAULT_CONFIG_PATH) {
       max_pack_chars: Math.min(16_000, Math.max(400, Number(raw.limits?.max_pack_chars) || 2400)),
       max_retain_chars: Math.min(16_000, Math.max(200, Number(raw.limits?.max_retain_chars) || 4000))
     },
-    allowed_source_kinds: Array.isArray(raw.allowed_source_kinds) ? raw.allowed_source_kinds.slice(0, 32) : []
+    allowed_source_kinds: Array.isArray(raw.allowed_source_kinds) ? raw.allowed_source_kinds.slice(0, 32) : [],
+    // Empty allowlist fails closed while enabled. Entries are host-derived repositoryId + bankId only.
+    allowed_repositories: normalizeAllowedRepositories(raw.allowed_repositories)
   };
+}
+
+function normalizeAllowedRepositories(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const row of value.slice(0, 64)) {
+    if (!row || typeof row !== 'object') continue;
+    const repositoryId = typeof row.repository_id === 'string' ? row.repository_id : null;
+    const bankId = typeof row.bank_id === 'string' ? row.bank_id : null;
+    if (!repositoryId || !/^[a-f0-9]{64}$/.test(repositoryId)) continue;
+    if (!bankId || !/^airo-dev-[a-f0-9]{32}$/.test(bankId)) continue;
+    if (bankId !== `airo-dev-${repositoryId.slice(0, 32)}`) continue;
+    out.push({ repository_id: repositoryId, bank_id: bankId });
+  }
+  return out;
+}
+
+/** Host-derived identity must match an explicit operator allowlist entry. */
+function repositoryAllowlisted(identity, config) {
+  if (!identity?.repositoryId || !identity?.bankId) return false;
+  const allowed = Array.isArray(config?.allowed_repositories) ? config.allowed_repositories : [];
+  if (!allowed.length) return false;
+  return allowed.some(row => row.repository_id === identity.repositoryId && row.bank_id === identity.bankId);
 }
 
 function gitBin() {
@@ -260,6 +285,11 @@ function authorize(request, config, host = null) {
     }
     identity = { repositoryId: request.repositoryId, bankId: request.bankId };
     scopes = request.capabilityScopes;
+  }
+
+  // Global enable/retrieval flags never grant cross-repository access.
+  if (!repositoryAllowlisted(identity, config)) {
+    return { allow: false, reason: 'repository_not_allowlisted', identity };
   }
 
   if (request.operation === 'retain') {
@@ -657,6 +687,9 @@ class DeveloperMemory {
     } else {
       try { identity = repositoryIdentity(workspaceRoot); }
       catch { return { status: 'repository_unresolved', items: [], authority: false }; }
+      if (!repositoryAllowlisted(identity, this.config)) {
+        return { status: 'repository_not_allowlisted', items: [], authority: false, repositoryId: identity.repositoryId, bankId: identity.bankId };
+      }
     }
     const result = await this.search({
       taskId,
@@ -754,6 +787,7 @@ class DeveloperMemory {
       allow_ingest: cfg.allow_ingest === true,
       allow_retrieval: cfg.allow_retrieval === true,
       allow_external: cfg.allow_external === true,
+      allowed_repository_count: Array.isArray(cfg.allowed_repositories) ? cfg.allowed_repositories.length : 0,
       provider: cfg.provider,
       authority: false,
       transport: transport ? {
@@ -789,6 +823,8 @@ module.exports = {
   authorize,
   verifyDestructiveApproval,
   repositoryIdentity,
+  repositoryAllowlisted,
+  normalizeAllowedRepositories,
   prepareSchema,
   TRUST,
   DEFAULT_CONFIG_PATH,
