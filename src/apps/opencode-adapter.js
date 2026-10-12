@@ -73,7 +73,17 @@ function webTextSafety(value){
 }
 function webSafetyView(web){return web.map(e=>{
  if(e.authority!==false||e.untrusted!==true)fail('opencode_sensitive_context');
- const view=value=>{if(Array.isArray(value))return value.map(view);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,['id','evidence_id'].includes(k)&&require('../mission-web-policy').UUID.test(v||'')?'[evidence UUID]':view(v)]));return typeof value==='string'?webTextSafety(value):value;};return view(e);
+ // Host receipts use numeric epoch milliseconds. Some satisfy the card-number
+ // checksum by chance. Scan only this typed source timestamp as an ISO date;
+ // preserve the immutable receipt and the delivered value. Prose, unknown fields
+ // and malformed/future timestamps must not gain a secret-scanning exemption.
+ let scan=e;
+ if(e.source&&Object.hasOwn(e.source,'fetched_at')){
+  const time=e.source.fetched_at;
+  if(!Number.isSafeInteger(time)||time<0||time>Date.now()+60000)fail('opencode_sensitive_context');
+  scan={...e,source:{...e.source,fetched_at:new Date(time).toISOString()}};
+ }
+ const view=value=>{if(Array.isArray(value))return value.map(view);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,['id','evidence_id'].includes(k)&&require('../mission-web-policy').UUID.test(v||'')?'[evidence UUID]':view(v)]));return typeof value==='string'?webTextSafety(value):value;};return view(scan);
 });}
 function relative(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_.\/-]{1,300}$/.test(value) || path.isAbsolute(value) || value.split('/').some(p => !p || p === '.' || p === '..') || /(^|\/)(?:\.git|\.opencode|\.agents|\.claude|node_modules|\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|auth\.json|[^/]+\.(?:sqlite|db|pem|key))($|\/)/i.test(value)) fail('opencode_file_scope');

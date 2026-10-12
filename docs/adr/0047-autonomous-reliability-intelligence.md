@@ -14,6 +14,8 @@ Evaluations run allowlisted synthetic fixtures through `scripts/run.cjs` in boun
 
 Flight Recorder projects allowlisted metadata from the existing ledger, omitting all payloads and arbitrary text. Coding-worker context delivery now records the successful stdin-write boundary with Mission/Run/ContextPack correlation. Delivery does not prove a model used the context; the separate live fixture establishes that with an exact-file result. OpenInference span-kind vocabulary is a portability hint, not an OpenTelemetry exporter.
 
+Final stabilization found a pre-existing public-context false denial on main: numeric `source.fetched_at` metadata can accidentally satisfy the payment-card checksum. At both authorization and launch-envelope gates, scan a validated nonnegative integer timestamp no later than host time plus one minute as an ISO date. Preserve the original receipt and numeric delivery value. This exemption is confined to that exact metadata field; prose, unknown fields, malformed timestamps and authority flags retain their existing denial boundaries. Fixed-millisecond tests cover the false-positive class, adversarial metadata and actual fixture stdin delivery. No global secret detector or memory policy changes.
+
 MCP remains a fixed process-snapshot catalog. It advertises `listChanged:false` truthfully. There is no dynamic registration path needing notifications. Source, installed, advertised and client snapshots remain distinct; missing observations are unknown. Native broker and protected operations do not become public tools.
 
 ## Current reference audit
