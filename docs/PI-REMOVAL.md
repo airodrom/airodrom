@@ -12,7 +12,7 @@ The following retained names have zero Pi runtime dependency:
 
 - `PiSDK`: a deprecated TypeScript alias of `AirodromSDK`, preserving source compatibility for SDK consumers.
 - `pi-chatgpt-bridge` MCP/server/former-package identity and provider-decision audience/protocol strings: stable client/signature contracts.
-- `pi-task-*`, `pi_bridge`, and existing service/keychain identifiers: destination idempotency, allowlisted host-service capability and private credential lookup contracts.
+- `pi-task-*`, `pi_bridge`, and existing service/keychain identifiers: destination idempotency, allowlisted host-service capability and private credential lookup contracts. Canonical service id is `airodrom_control_plane`; `pi_bridge` remains an exact compatibility alias for the same Airodrom control-plane handlers and never launches a Pi worker.
 - `local.pi-chatgpt-bridge*`, managed tunnel profile and `Library/Application Support/Pi Bridge` paths: stable macOS integration/storage identities. They name Airodrom services and preserve existing private installations; they never launch a Pi worker.
 - `.pi` path filters and `pi` in historical provenance/erasure allowlists: deny access to old credential directories and retain safe audit identity. New execution using that identity is rejected.
 - Earlier ADRs, copyright and validation evidence: explicitly historical.

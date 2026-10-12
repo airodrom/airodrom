@@ -310,12 +310,26 @@ test('apps and processes: registry-only lifecycle, classified stop, self and sys
 test('services: fixed registry only; bridge supports status and restart through the existing restart path', async t => {
   const { host, task, restarts } = environment(t);
   const status = await call(host, task, 'service_status');
-  assert.deepEqual(status.result.services.map(item => item.service).sort(), ['ollama', 'pi_bridge']);
+  assert.deepEqual(status.result.services.map(item => item.service).sort(), ['airodrom_control_plane', 'desktop_login', 'mcp_tunnel', 'ollama', 'reboot_acceptance']);
+  assert.equal(status.result.services.some(item => item.service === 'pi_bridge'), false, 'legacy alias omitted from default inventory');
+  const plane = status.result.services.find(item => item.service === 'airodrom_control_plane');
+  assert.equal(plane.label, 'Airodrom Control Service');
+  assert.equal(plane.identity, 'airodrom_control_plane');
+  assert.equal(plane.legacy_service_id, 'pi_bridge');
+  assert.equal(plane.running, true);
+  assert.equal(plane.pid, process.pid);
+  assert.equal(plane.verification, 'signal_probe');
+  const alias = await call(host, task, 'service_status', { service: 'pi_bridge' });
+  assert.equal(alias.result.services[0].identity, 'airodrom_control_plane');
   assert.equal((await call(host, task, 'service_restart', { service: 'postgres' })).decision, 'deny');
   assert.equal((await call(host, task, 'service_stop', { service: 'pi_bridge' })).decision, 'deny');
+  assert.equal((await call(host, task, 'service_stop', { service: 'airodrom_control_plane' })).decision, 'deny');
+  assert.equal((await call(host, task, 'service_restart', { service: 'desktop_login' })).decision, 'deny');
   const restarted = await call(host, task, 'service_restart', { service: 'pi_bridge' });
   assert.equal(restarted.result.outcome, 'handed_off');
   assert.equal(restarts.length, 1, 'restart delegated to the injected fixture, never the live daemon');
+  assert.equal((await call(host, task, 'service_restart', { service: 'airodrom_control_plane' })).result.outcome, 'handed_off');
+  assert.equal(restarts.length, 2);
   assert.equal((await call(host, task, 'service_restart', { service: 'ollama' })).decision, 'auto_allow');
 });
 

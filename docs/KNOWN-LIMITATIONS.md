@@ -1,5 +1,15 @@
 # Known limitations
 
+## Runtime identity / MCP package skew (2026-10-11)
+
+- MCP `service_status` historically used the service id `pi_bridge` for the Airodrom control plane. That name is retained as a compatibility alias; the canonical id is `airodrom_control_plane` (label **Airodrom Control Service**). Default `service_health` inventory omits the duplicate alias. Seeing `pi_bridge` in ChatGPT does **not** mean a standalone Pi Bridge is running.
+- `service_status` previously rejected LaunchAgent labels (`local.airodrom.*`) as invalid arguments. Current source accepts only the allowlisted Airodrom agents (status-only; no start/stop/restart).
+- `process_list(filter="airodrom")` previously returned zero because the executable basename is `node`. Current source matches safe `product` tags.
+- `process_status` may previously report `running: false` when a full `ps` table miss/truncation omitted a live PID. Current source uses targeted `ps -p` and a signal probe before claiming stopped.
+- ChatGPT `capability_invoke` idempotent replay previously could return a settled `service_status` PID after restart. Current source re-probes `service_status` / `process_status` / `service_health` on replay.
+- Local npm `airodrom` may still resolve to a prior install tree while LaunchAgent/desktop-login runs a newer install. Relink/cutover of the npm package is an owner-gated live activation step; it is not implied by a source merge.
+- Post-reboot verifier can race owned-start admission resume (first receipt FAIL while `awaiting_owned_start_resume`, later PASS). Prefer timestamped receipts over an older canonical `post-reboot-receipt.json` when both exist.
+
 ## Local usable release (2026-10-10)
 
 The installed local application on macOS arm64 meets [Final Product Consolidation V1](FINAL-PRODUCT-CONSOLIDATION-V1.md) daily-use criteria. That does **not** authorize public binary distribution, WhatsApp production messaging, Automatic Acceptance, or Claude external conversation.

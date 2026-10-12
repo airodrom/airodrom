@@ -302,6 +302,35 @@ test('capability_invoke: auto-allow, idempotent replay, conflicts, pending recov
   assert.equal(f.spies.prompt + f.spies.ensureRuntime + f.spies.inference, 0);
 });
 
+test('capability_invoke: settled service_status and process_status re-probe instead of replaying a stale PID snapshot', async t => {
+  const f = await fixture(t);
+  const { task } = await f.orchestratorTask(['mac_local', 'system_readonly', 'developer_environment'], 'live-status');
+  const request = rid('service-status');
+  const first = await f.invoke(task, 'service_status', { service: 'pi_bridge' }, request);
+  assert.equal(first.status, 'completed');
+  assert.equal(first.duplicate, false);
+  assert.equal(first.result.services[0].running, true);
+  assert.equal(first.result.services[0].pid, process.pid);
+  const stalePid = first.result.services[0].pid;
+  // Durable replay after a fresh orchestrator must not keep claiming an old PID snapshot.
+  const recovered = new (require('../src/orchestrator').Orchestrator)(f.bridge);
+  const refreshed = await recovered.invoke(task.id, { name: 'service_status', input: { service: 'pi_bridge' }, requestId: request });
+  assert.equal(refreshed.duplicate, true);
+  assert.equal(refreshed.refreshed, true);
+  assert.equal(refreshed.result.services[0].pid, process.pid);
+  assert.equal(refreshed.result.services[0].verification, 'signal_probe');
+  assert.equal(f.bridge.controlStore.invocation(request).result.refreshed, true);
+  assert.equal(stalePid, process.pid);
+  const processRequest = rid('process-status');
+  const listed = await f.invoke(task, 'process_status', { pid: process.pid }, processRequest);
+  assert.equal(listed.result.running, true);
+  assert.equal(listed.refreshed, undefined);
+  const again = await f.invoke(task, 'process_status', { pid: process.pid }, processRequest);
+  assert.equal(again.refreshed, true);
+  assert.equal(again.result.running, true);
+  assert.equal(again.result.pid, process.pid);
+});
+
 test('orchestrator denies legacy requests and incomplete identity state before allocation or broker execution', async t => {
   const f = await fixture(t), { task } = await f.orchestratorTask(undefined, 'identity-denied');
   const request = createHash('sha256').update('fixture erased orchestrator request').digest('hex');

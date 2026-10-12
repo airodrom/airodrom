@@ -15,6 +15,9 @@ const MAX_RESULT_CHARS = 256 * 1024;
 const MAX_LAST_RESULT_CHARS = 24_000;
 const SYNC_BUDGET_MS = 10_000;
 const REPLAY_CACHE_ENTRIES = 128;
+// Live OS/service observations must not be served from a settled idempotent
+// snapshot after restart or PID churn. Mutations keep strict once-only replay.
+const EPHEMERAL_LIVE_STATUS = new Set(['service_status', 'process_status', 'service_health']);
 
 function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
 
@@ -89,6 +92,9 @@ class Orchestrator {
       const live = this.inflight.get(requestId);
       if (live) return this._within(task, requestId, live, true);
       if (durable.state === 'settled') {
+        if (EPHEMERAL_LIVE_STATUS.has(name)) {
+          return this._refreshLiveStatus(task, requestId, name, payload, brokerTool, durable.result);
+        }
         const response = { ...durable.result, duplicate: true, result_recoverable: true };
         // An old receipt is evidence, never a transferable approval.
         if (response.approval) {
@@ -108,6 +114,9 @@ class Orchestrator {
         const error = new Error('Idempotency conflict: request_id was already used with a different invocation; nothing was executed');
         error.code = 'IDEMPOTENCY_CONFLICT';
         throw error;
+      }
+      if (existing.record.state === 'settled' && EPHEMERAL_LIVE_STATUS.has(name)) {
+        return this._refreshLiveStatus(task, requestId, name, payload, brokerTool, this.results.get(requestId) || null);
       }
       return this._replay(task, requestId, existing.record);
     }
@@ -149,6 +158,46 @@ class Orchestrator {
   _release(task, lease) {
     this.bridge.leases.releaseIfOwner(lease, { verified: true });
     if (task.activeRunId === lease.runId) delete task.activeRunId;
+  }
+
+  // Re-probe live status for the same request_id. Side-effecting capabilities
+  // never enter this path; their settled receipts remain once-only.
+  async _refreshLiveStatus(task, requestId, name, input, brokerTool, prior) {
+    const bridge = this.bridge;
+    let lease;
+    try { lease = bridge.leases.acquire(task.id, { agentId: 'bridge' }); }
+    catch { throw new Error('Task is running; wait for it to settle before invoking capabilities directly'); }
+    const record = task.capabilityInvocations?.[requestId] || {
+      fingerprint: sha256(canonical(brokerTool ? [task.id, name, input, brokerTool] : [task.id, name, input])),
+      capability: name, brokerTool, toolCallId: `${TOOL_CALL_PREFIX}${randomUUID()}`, state: 'settled'
+    };
+    task.capabilityInvocations = { ...(task.capabilityInvocations || {}), [requestId]: { ...record, state: 'running' } };
+    task.activeRunId = lease.runId; task.status = 'running'; task.lastActivityAt = this.now();
+    bridge.tasks.save(task); bridge.emit('change');
+    try {
+      const request = { toolName: brokerTool || 'capability', input: brokerTool ? input : { name, input }, toolCallId: record.toolCallId };
+      const result = await (bridge.nativeExecution ? bridge.nativeExecution.capability(task.id, request, { signal: lease.controller.signal }) : bridge.capabilityBroker.execute(task.id, request, { signal: lease.controller.signal }));
+      const response = this._response(task, requestId, name, result, brokerTool);
+      const refreshed = {
+        ...response,
+        duplicate: true,
+        refreshed: true,
+        result_recoverable: true,
+        prior_snapshot_at: Number.isSafeInteger(record.outcome?.settledAt) ? record.outcome.settledAt : (Number.isSafeInteger(prior?.prior_snapshot_at) ? prior.prior_snapshot_at : null),
+        note: 'Live status was re-probed; a prior idempotent snapshot is not reused for process or service liveness.'
+      };
+      task.status = response.status === 'completed' ? 'completed' : task.status;
+      task.lastSettledAt = this.now(); task.lastActivityAt = task.lastSettledAt;
+      task.lastResult = JSON.stringify({ capability: name, request_id: requestId, status: refreshed.status, refreshed: true }).slice(0, MAX_LAST_RESULT_CHARS);
+      record.state = 'settled';
+      record.outcome = { status: refreshed.status, allow: result.allow === true, kind: refreshed.decision?.kind || null, approval_id: null, output_sha256: refreshed.output_sha256, settledAt: task.lastSettledAt };
+      bridge.controlStore?.finishInvocation(requestId, refreshed);
+      this._remember(requestId, refreshed);
+      return refreshed;
+    } finally {
+      this._release(task, lease);
+      bridge.tasks.save(task); bridge.emit('change');
+    }
   }
 
   // Answer inside the MCP client's timeout. A slower capability keeps running;
@@ -265,4 +314,4 @@ class Orchestrator {
   }
 }
 
-module.exports = { Orchestrator, TOOL_CALL_PREFIX, canonical };
+module.exports = { Orchestrator, TOOL_CALL_PREFIX, canonical, EPHEMERAL_LIVE_STATUS };
