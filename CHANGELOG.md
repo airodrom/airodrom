@@ -1,4 +1,4 @@
-## Unreleased — Zero-setup scope filter for No Production limitations
+## Unreleased — ZeroSetup unique Mission names\n\n- Append a short request-id suffix to ZeroSetup Mission objectives so repeated asks under one Goal do not hit project_missions uniqueness.\n\n## Unreleased — Zero-setup scope filter for No Production limitations
 
 - Do not treat Project limitations that explicitly deny Production as production Projects when resolving disposable WORK scope.
 - Prefer instruction-named Projects and exact-byte self-repair disposables over bare human-acceptance name matches.
