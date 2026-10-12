@@ -194,8 +194,13 @@ test('signed near-expiry conversation terminates inference at its absolute autho
   assert.equal(f.b.opencodeAdapter.active.has(m.task_id),true);
   while(Date.now()<expiry+700)await new Promise(r=>setTimeout(r,25));
   assert.equal(f.b.opencodeAdapter.active.has(m.task_id),false);
+  for(let i=0;i<80&&f.b.controlStore.db.prepare("SELECT count(*) n FROM cp_dispatches WHERE mission_id=? AND state='running'").get(m.mission_id).n;i++){
+    await f.b.missions.tick();await new Promise(r=>setTimeout(r,25));
+  }
   const done=f.b.missions.detail(m.mission_id),run=done.runs.find(r=>r.agent_id==='opencode');
   assert.equal(run.termination_verified,1);assert.equal(run.process_state,'exited');assert.equal(done.acceptance.length,0);assert.notEqual(done.state,'awaiting_acceptance');
+  assert.equal(f.b.controlStore.db.prepare("SELECT count(*) n FROM cp_dispatches WHERE mission_id=? AND state='running'").get(m.mission_id).n,0);
+  assert.equal(f.b.lifecycle.status().blockers.dispatches,0);
 });
 test('local installer preserves an unrelated dangling command', t => {
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'airo-install-')));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

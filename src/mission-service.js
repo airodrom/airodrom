@@ -335,7 +335,9 @@ class MissionService {
     transaction(this.db,()=>{
       this.db.prepare('UPDATE cp_run_results SET processed_at=? WHERE run_id=? AND processed_at=0').run(Date.now(),run.id);
       this.db.prepare("UPDATE cp_dispatches SET state='settled' WHERE run_id=?").run(run.id);
-      if(m.state==='cancelled')return;
+      // Authority expiry/supervisor may already have blocked the Mission. Settling
+      // the durable dispatch must still complete; blocked→needs_rework is illegal.
+      if(['cancelled','blocked','completed'].includes(m.state))return;
       const task=this.bridge.tasks.get(run.task_id);
       result.continuity=this.bridge.controlContext.continuity(m,run,result);
       this.db.prepare('INSERT OR IGNORE INTO cp_continuity_checks VALUES(?,?,?,?,?)').run(run.id,m.id,result.continuity.status,JSON.stringify(result.continuity),Date.now());

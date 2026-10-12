@@ -31,6 +31,8 @@ class MissionSupervisor {
             for (const job of b.capabilityHost?.jobs?.jobs.values() || []) if (job.taskId === task.id && job.status === 'running') b.capabilityHost.jobs.cancel(job);
             const mission = task.controlPlaneMissionId ? b.controlStore.getMission(task.controlPlaneMissionId) : null;
             if (mission && !['cancelled','completed','blocked'].includes(mission.state)) b.controlStore.state(mission.id,'blocked',authority.reason);
+            // Conversations use the OpenCode active map, not in-memory execution leases.
+            b.opencodeAdapter?.active.get(task.id)?.abort();
             if (b.leases.has(task.id)) await b.requestStop(task.id, 'blocked');
             continue;
           }
