@@ -161,6 +161,7 @@
      glass('Control plane',snapshot.control.state,snapshot.control.reason||'Admission and leases'),
      glass('Provider',snapshot.provider.state,snapshot.provider.reason||'Local inference readiness')
    );f.append(ready);
+   f.append(memoryLayersPanel(snapshot.memory?.layers||[],{compact:true}));
    const cols=node('div',null,'columns'),left=node('div'),right=node('div');
    left.append(node('h2','Live Missions'));for(const m of working)left.append(lifecycle(m),missionCard(m));
    if(!working.length)left.append(empty(reviewTotal?`${reviewTotal} Mission${reviewTotal===1?'':'s'} need review — open Missions → Awaiting Review.`:snapshot.counts.current?'No live execution right now. Current (non-terminal) records remain under Missions.':'Ready for your next Mission. Each request registers fresh bounded authority.'));
@@ -302,7 +303,47 @@
    const foot=node('p',(obs?.limitations||['Observatory shows sanitized host observations only.']).join(' '),'privacy');root.append(foot);
    return root;
  }
- function memoryView(){const result=node('div');result.append(glass('Memory V2',snapshot.memory.state,snapshot.memory.backend+' · Local'),glass('Active personal records',snapshot.memory.active_records??'Unavailable','Normal sensitivity · current operator scope'),node('p','Retrieve personal references explicitly. Corrections supersede the selected record; forgetting invalidates prior context. Private text is cleared on navigation, hiding, authorization loss or canonical changes.'));const form=node('form'),query=node('input');query.type='search';query.placeholder='Search current personal Memory';query.setAttribute('aria-label','Memory query');query.dataset.focusKey='memory-query';query.value=memoryQuery;query.oninput=()=>memoryQuery=query.value;form.append(query,button('Retrieve current Memory',()=>retrieveMemory(),true));form.onsubmit=e=>{e.preventDefault();retrieveMemory();};result.append(form);for(const m of memoryResults){const card=node('article',null,'glass');card.append(node('h3',m.subject),node('p',m.content),node('small',m.source));const correct=button('Correct selected record',()=>{selectedMemory=m.id;memoryDraft=m.content;render();});correct.dataset.focusKey='memory:'+m.id+':correct';const forget=button('Forget selected record',()=>mutateMemory('forget-memory',{id:m.id}));forget.dataset.focusKey='memory:'+m.id+':forget';card.append(correct,forget);result.append(card);}const edit=node('textarea');edit.rows=3;edit.maxLength=2000;edit.setAttribute('aria-label',selectedMemory?'Corrected Memory content':'Memory to remember');edit.dataset.focusKey='memory-draft';edit.value=memoryDraft;edit.oninput=()=>memoryDraft=edit.value;result.append(node('h2',selectedMemory?'Correct selected Memory':'Remember an explicit fact'),edit,button(selectedMemory?'Save correction':'Remember',()=>mutateMemory(selectedMemory?'correct-memory':'remember-memory',{...(selectedMemory?{id:selectedMemory}:{}),content:memoryDraft}),true));if(selectedMemory)result.append(button('Cancel correction',()=>{selectedMemory=null;memoryDraft='';render();}));return result;}
+ function memoryLayerChip(state){const s=String(state||'Unavailable');if(s==='Disabled'||s==='Not installed')return node('span',s,'chip degraded');if(s==='Configured')return node('span',s,'chip waiting');return chip(s);}
+ function memoryLayersPanel(layers,{compact=false}={}){
+   const panel=node('section',null,'glass memory-layers'+(compact?' compact':''));
+   panel.append(node('h3',compact?'Memory layers · live':'All memory layers · live'));
+   const list=node('div',null,'memory-layer-list');
+   const items=Array.isArray(layers)&&layers.length?layers:[
+     {id:'personal',label:'Personal Memory V2',state:'Unavailable',percent:0,used:null,capacity:null,detail:'Waiting for observation'},
+     {id:'project',label:'Project Memory V2',state:'Unavailable',percent:0,used:null,capacity:null,detail:'Waiting for observation'},
+     {id:'architecture',label:'Architecture / canonical',state:'Unavailable',percent:0,used:null,capacity:null,detail:'Waiting for observation'},
+     {id:'context_pack',label:'ContextPack (1h)',state:'Unavailable',percent:0,used:null,capacity:null,detail:'Waiting for observation'},
+     {id:'developer',label:'Developer Memory V1',state:'Unavailable',percent:0,used:null,capacity:null,detail:'Waiting for observation'}
+   ];
+   for(const [index,layer] of items.entries()){
+     const row=node('article',null,'memory-layer'+(layer.state==='Ready'?' live':''));
+     row.style.setProperty('--layer-delay',(index*90)+'ms');
+     row.dataset.layer=layer.id||'';
+     const head=node('div',null,'memory-layer-head');
+     const title=node('div',null,'memory-layer-title');
+     title.append(node('strong',layer.label||layer.id||'Layer'),node('small',layer.detail||(layer.authority===false?'Reference only · no authority':'Live observation')));
+     const pct=typeof layer.percent==='number'?Math.max(0,Math.min(100,layer.percent)):null;
+     const meta=node('div',null,'memory-layer-meta');
+     meta.append(memoryLayerChip(layer.state),node('span',pct==null?'—':pct+'%','memory-layer-pct'));
+     head.append(title,meta);
+     const track=node('div',null,'track memory-layer-track'+(layer.state==='Ready'&&pct!=null&&pct>0?' determinate active':layer.state==='Ready'?' active':''));
+     if(pct!=null)track.style.setProperty('--progress',pct+'%');
+     track.setAttribute('role','progressbar');
+     track.setAttribute('aria-valuemin','0');
+     track.setAttribute('aria-valuemax','100');
+     if(pct!=null)track.setAttribute('aria-valuenow',String(pct));
+     track.setAttribute('aria-label',(layer.label||'Memory layer')+' usage');
+     const counts=node('p',null,'memory-layer-counts muted');
+     const used=layer.used==null?'—':String(layer.used);
+     const capacity=layer.capacity==null?'—':String(layer.capacity);
+     counts.textContent=used+' / '+capacity+(compact?'':' · '+(layer.capacity_kind==='reference_soft'?'reference soft capacity':'capacity'));
+     row.append(head,track,counts);
+     list.append(row);
+   }
+   panel.append(list,node('p',compact?'Polled with Control Center overview · private contents never shown.':'Usage bars reflect host-retained counts against soft capacity. Private memory text is never rendered here. Developer Memory stays off unless operator-enabled.','muted'));
+   return panel;
+ }
+ function memoryView(){const result=node('div');result.append(glass('Memory V2',snapshot.memory.state,snapshot.memory.backend+' · Local'),glass('Active personal records',snapshot.memory.active_records??'Unavailable','Normal sensitivity · current operator scope'));result.append(memoryLayersPanel(snapshot.memory?.layers||[]));const facts=node('div',null,'live-facts memory-live-facts');for(const [label,value]of[['Observed',stamp(snapshot.observed_at)],['Generation',snapshot.memory.generation?String(snapshot.memory.generation).slice(0,48)+'…':'Unavailable'],['Expired',snapshot.memory.expired_records??'Unavailable'],['Superseded',snapshot.memory.superseded_records??'Unavailable'],['Backend',snapshot.memory.backend||'Unavailable'],['Local only',snapshot.memory.local===false?'No':'Yes']]){const fact=node('div');fact.append(node('small',label),node('span',String(value)));facts.append(fact);}result.append(facts,node('p','Retrieve personal references explicitly. Corrections supersede the selected record; forgetting invalidates prior context. Private text is cleared on navigation, hiding, authorization loss or canonical changes.'));const form=node('form'),query=node('input');query.type='search';query.placeholder='Search current personal Memory';query.setAttribute('aria-label','Memory query');query.dataset.focusKey='memory-query';query.value=memoryQuery;query.oninput=()=>memoryQuery=query.value;form.append(query,button('Retrieve current Memory',()=>retrieveMemory(),true));form.onsubmit=e=>{e.preventDefault();retrieveMemory();};result.append(form);for(const m of memoryResults){const card=node('article',null,'glass');card.append(node('h3',m.subject),node('p',m.content),node('small',m.source));const correct=button('Correct selected record',()=>{selectedMemory=m.id;memoryDraft=m.content;render();});correct.dataset.focusKey='memory:'+m.id+':correct';const forget=button('Forget selected record',()=>mutateMemory('forget-memory',{id:m.id}));forget.dataset.focusKey='memory:'+m.id+':forget';card.append(correct,forget);result.append(card);}const edit=node('textarea');edit.rows=3;edit.maxLength=2000;edit.setAttribute('aria-label',selectedMemory?'Corrected Memory content':'Memory to remember');edit.dataset.focusKey='memory-draft';edit.value=memoryDraft;edit.oninput=()=>memoryDraft=edit.value;result.append(node('h2',selectedMemory?'Correct selected Memory':'Remember an explicit fact'),edit,button(selectedMemory?'Save correction':'Remember',()=>mutateMemory(selectedMemory?'correct-memory':'remember-memory',{...(selectedMemory?{id:selectedMemory}:{}),content:memoryDraft}),true));if(selectedMemory)result.append(button('Cancel correction',()=>{selectedMemory=null;memoryDraft='';render();}));return result;}
  function clearMemory(){for(const url of researchImages.values())URL.revokeObjectURL(url);researchImages.clear();researchReports.clear();const turn=activeDirectTurn;activeDirectTurn=null;if(turn&&authorized)api('/api/assistant/conversation/cancel',turn).catch(()=>{});conversationHistory=[];conversationNotice='';activeConversationId=null;conversationStreaming=null;memoryEpoch++;memoryController?.abort();memoryController=null;memoryResults=[];memoryDraft='';memoryQuery='';selectedMemory=null;}
  async function conversationSession({forceNew=false}={}){
   if(forceNew||pendingNewConversation||!conversationSessionId){

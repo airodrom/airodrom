@@ -121,6 +121,51 @@ function runtimeView(ready) {
  const reason=enumValue(ready?.reason,['opencode_runtime_pins_changed','opencode_unavailable','opencode_version_unqualified','opencode_local_provider_unavailable','opencode_local_provider_not_configured'],ready?.ready===true?null:'opencode_unavailable');
  return {state:ready?.ready===true?'Ready':reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable',ready:ready?.ready===true,role:'Primary',version:ready?.version==='2.0.25'?'2.0.25':null,reason,requalification:reason==='opencode_runtime_pins_changed'?'Required':'Not running'};
 }
+// Soft reference capacities for Control Center meters only — not hard enforcement quotas.
+const LAYER_REF={personal:500,project:128,architecture:200,context_pack:20,developer:500};
+function layer(id,label,state,{used=null,capacity=null,percent=null,detail=null,authority=false,capacity_kind='reference_soft'}={}){
+ let pct=percent;
+ if(pct==null){
+  if(used!=null&&capacity)pct=Math.min(100,Math.round((used/Math.max(1,capacity))*100));
+  else pct=0;
+ }
+ return {id,label,state,used,capacity,capacity_kind,percent:pct,detail,authority:authority===true};
+}
+function memoryLayers(bridge,personal){
+ const db=bridge.controlStore.db;
+ let projectUsed=null,projectState='Unavailable';try{
+  if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_memory_v2_missions'").get()){
+   projectUsed=db.prepare('SELECT count(*) n FROM project_memory_v2_missions').get().n;projectState='Ready';
+  }else projectState='Configured';
+ }catch{projectState='Unavailable';}
+ let archUsed=null,archState='Unavailable';try{
+  if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='architecture_memory_versions'").get()){
+   archUsed=db.prepare('SELECT count(*) n FROM architecture_memory_versions').get().n;archState='Ready';
+  }else archState='Configured';
+ }catch{archState='Unavailable';}
+ let packUsed=null,packState='Unavailable';try{
+  packUsed=db.prepare("SELECT count(*) n FROM cp_context_packs WHERE created_at>? ").get(Date.now()-3_600_000).n;packState='Ready';
+ }catch{packState='Unavailable';}
+ const personalUsed=count(personal?.active_records)||0;
+ const personalState=personal?.state==='Ready'?'Ready':personal?.state==='Unavailable'?'Unavailable':'Configured';
+ let developer=null;try{developer=bridge.developerMemory?.stats?.()||null;}catch{developer=null;}
+ const developerState=developer?developer.state:(bridge.developerMemory?'Unavailable':'Unavailable');
+ const refDetail=kind=>kind==='reference_soft'?' · reference soft capacity (observability)':'';
+ return [
+  layer('personal','Personal Memory V2',personalState,{used:personalUsed,capacity:LAYER_REF.personal,detail:(personal?.backend||'Personal canonical')+' · ordinary sensitivity'+refDetail('reference_soft')}),
+  layer('project','Project Memory V2',projectState,{used:projectUsed,capacity:LAYER_REF.project,detail:'Mission checkpoints · host SQLite'+refDetail('reference_soft')}),
+  layer('architecture','Architecture / canonical',archState,{used:archUsed,capacity:LAYER_REF.architecture,detail:'Pinned public source facts'+refDetail('reference_soft')}),
+  layer('context_pack','ContextPack (1h)',packState,{used:packUsed,capacity:LAYER_REF.context_pack,detail:'Recent authorized packs · 8 KB selection budget'+refDetail('reference_soft')}),
+  layer('developer','Developer Memory V1',developerState,{
+   used:developer?.used??0,capacity:developer?.capacity??LAYER_REF.developer,percent:developer?.percent??0,
+   capacity_kind:developer?.capacity_kind||'reference_soft',
+   detail:developer
+    ?(developer.enabled?((developer.allow_retrieval?'retrieval on':'retrieval off')+' · '+(developer.allow_ingest?'ingest on':'ingest off')+' · cache '+developer.prefetch_cache_entries+refDetail('reference_soft')):('disabled by default · provider '+(developer.provider||'none')+refDetail('reference_soft')))
+    :'Feature module unavailable',
+   authority:false
+  })
+ ];
+}
 function memoryStatus(bridge){
  const db=bridge.controlStore.db;
  let memoryReady=false,memoryStats=null,memoryGeneration=null;try{
@@ -131,7 +176,9 @@ function memoryStatus(bridge){
   }else{memoryStats=bridge.personalMemory.stats();const rows=db.prepare("SELECT status,count(*) count,max(updated_at) updated FROM personal_memories WHERE domain='personal' AND sensitivity='normal' GROUP BY status ORDER BY status").all();memoryGeneration=JSON.stringify(rows.map(r=>[r.status,r.count,r.updated]));memoryStats={byStatus:Object.fromEntries(rows.map(r=>[r.status,r.count]))};}
   memoryGeneration+=':'+db.prepare('SELECT coalesce(max(generation),0) n FROM memory_erasure_markers').get().n;memoryReady=true;
  }catch{}
- return {state:memoryReady?'Ready':'Unavailable',local:true,backend:bridge.authorityRuntime?.active?'Governed canonical':'Personal canonical',generation:memoryGeneration,active_records:memoryReady?(count(memoryStats?.byStatus?.active)||0):null,expired_records:memoryReady?(count(memoryStats?.byStatus?.expired)||0):null,superseded_records:memoryReady?(count(memoryStats?.byStatus?.superseded)||0):null};
+ const base={state:memoryReady?'Ready':'Unavailable',local:true,backend:bridge.authorityRuntime?.active?'Governed canonical':'Personal canonical',generation:memoryGeneration,active_records:memoryReady?(count(memoryStats?.byStatus?.active)||0):null,expired_records:memoryReady?(count(memoryStats?.byStatus?.expired)||0):null,superseded_records:memoryReady?(count(memoryStats?.byStatus?.superseded)||0):null};
+ try{base.layers=memoryLayers(bridge,base);}catch{base.layers=[];}
+ return base;
 }
 // Operator-only title projection. Aggregate/native surfaces never receive objectives.
 function operatorTitle(bridge, mission) {

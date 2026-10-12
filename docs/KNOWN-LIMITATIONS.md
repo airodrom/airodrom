@@ -1,5 +1,17 @@
 # Known limitations
 
+## Developer Memory V1 / Hindsight (2026-10-12)
+
+- Hosted `candidate.yml` remains `disabled_manually` (owner fast-track / local-first policy). Not a PR #74 change; enablement requires owner approval. Remote `main` currently has no required status checks/rulesets.
+- Feature flags default **off**. Source implementation does not activate on the owner live install, LaunchAgents, or personal-memory stores.
+- Evidence class for `tests/developer-memory-v1.test.js` is **MOCKED CONTRACT PASS** (HTTP shapes, worktree identity, host-bound auth, Mission prefetch, host-verified destructive approval, Control Center layer metrics).
+- Disposable **REAL LOCAL HINDSIGHT PASS** completed against `ghcr.io/vectorize-io/hindsight:0.10.2` + local Ollama (`qwen2.5-coder:14b`) on loopback only; container torn down after smoke. **Not OWNER INSTALLATION VERIFIED**. No cloud fallback.
+- Control Center Overview/Memory show animated layer usage bars against **reference soft** capacities; private memory text is never rendered in those meters.
+- No Hindsight daemon is launched by Airodrom. Agent plugins remain disabled.
+- Destructive suppress/delete require control-plane-authenticated minting of single-use `operatorApprovalId`. Caller `operatorApproved: true` is rejected. Stale prefetch cache cannot survive task repository identity change. Host task resolver binds repository identity; caller-supplied bank IDs cannot impersonate.
+- Provider delete is best-effort; suppression remains authoritative until confirmed. Forensic erasure is never claimed.
+- Retrieved developer-memory text is untrusted evidence (`authority: false`) and cannot grant tools or rewrite Personal Memory.
+
 ## Context & Personal Memory V2 contracts (2026-10-11)
 
 - ChatGPT calls such as `personal_memory_search({query, limit})`, `personal_memory_recent({limit})`, and `memory_search({query, limit})` previously failed closed with `invalid_tool_arguments` because broker `validKeys` rejected optional `limit` and required `domain` for recent. Current source accepts those shapes with bounded `limit` (1–20) and default `domain=personal` for recent/search execution. Extra keys remain denied.
