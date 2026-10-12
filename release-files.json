@@ -211,6 +211,8 @@
   "scripts/package-check.cjs",
   "scripts/publish-agent-result.cjs",
   "scripts/qualify-local-ollama-tools.cjs",
+  "scripts/qualify-contextpack-opencode-e2e.cjs",
+  "scripts/qualify-memory-layers-browser.cjs",
   "scripts/reconcile-memory-corrections.cjs",
   "scripts/run.cjs",
   "scripts/secret-scan.py",

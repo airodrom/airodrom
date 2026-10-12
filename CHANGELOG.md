@@ -1,3 +1,10 @@
+## Unreleased — Memory final acceptance reliability V1
+
+- Reboot-acceptance `verify` treats missing `pending.json` as an idle RunAtLoad no-op (`ok: true`, `skipped: true`, `acceptance_ok: null`) so `launchctl last_exit=1` is not mistaken for live control-service failure.
+- Status exposes `idle_verify_expected` when no pending stamp exists.
+- Add disposable ContextPack→OpenCode and live Control Center memory-layer qualification scripts (fixtures / read-only owner UI).
+- Document MCP public vs broker tool boundary and reboot-acceptance LaunchAgent path skew in Known Limitations.
+
 ## Unreleased — Developer Memory V1 (Hindsight subordinate provider)
 
 - Add governed Developer Memory adapter with loopback Hindsight HTTP transport (`/v1/default/banks/…`, retain `{ items }`), repository bank isolation via `git-common-dir`+remote, host-bound authorize-before retain/retrieve, operator approval for suppress/delete, cache invalidation, Mission-lifecycle prefetch, and sync ContextPack contribution.

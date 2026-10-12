@@ -261,7 +261,22 @@ async function prepare(home, local = require('./local-bootstrap'), options = {})
 }
 
 async function verify(home, local = require('./local-bootstrap'), { timeoutMs = 120000 } = {}) {
-  if (!fs.existsSync(pendingPath(home))) throw Error('No pending reboot acceptance state.');
+  // RunAtLoad fires on every login. With no pending stamp the verifier is an
+  // idle no-op: exit success must not be read as reboot acceptance success.
+  if (!fs.existsSync(pendingPath(home))) {
+    return {
+      version: 1,
+      verified_at: Date.now(),
+      pending: false,
+      skipped: true,
+      reason: 'no_pending_reboot_acceptance_state',
+      ok: true,
+      acceptance_ok: null,
+      authority: false,
+      identity: { supervisor_count: supervisorRows().length, home },
+      status_summary: { pending: false, ollama_ready: ollamaReady() }
+    };
+  }
   const pending = readJson(pendingPath(home));
   const deadline = Date.now() + timeoutMs;
   let status = null;
@@ -389,13 +404,17 @@ async function forgetTestMemory(home, local = require('./local-bootstrap')) {
 }
 
 function status(home) {
+  const pending = fs.existsSync(pendingPath(home));
   return {
-    pending: fs.existsSync(pendingPath(home)),
+    pending,
     receipt: fs.existsSync(receiptPath(home)),
     pending_path: pendingPath(home),
     receipt_path: receiptPath(home),
     supervisors: supervisorRows().length,
     ollama_ready: ollamaReady(),
+    // Idle RunAtLoad verify is expected when pending is absent; launchctl
+    // last_exit alone is not current service health.
+    idle_verify_expected: !pending,
     authority: false
   };
 }

@@ -1,5 +1,13 @@
 # Known limitations
 
+## Reboot-acceptance LaunchAgent idle verify (2026-10-12)
+
+- `local.airodrom.reboot-acceptance` is `RunAtLoad` and invokes `reboot-acceptance.cjs verify`.
+- When no `pending.json` exists (normal steady state after a completed acceptance), verify is an **idle no-op**. Historical tip threw `No pending reboot acceptance state` and exited **1**, so `launchctl` `last_exit=1` looked like a live failure even while the control service was healthy.
+- Current source returns `ok: true`, `skipped: true`, `acceptance_ok: null` for that idle path (exit 0). Process exit 0 still does **not** mean reboot acceptance succeeded; only `acceptance_ok: true` on a pending verify receipt does.
+- Owner install may still have the LaunchAgent WorkingDirectory on a prior cutover tree (`airodrom-reboot-acceptance-ce67dc2`) while the live control source is `airodrom-developer-memory-bc927eb`. Retargeting that agent requires operator approval; it is not performed by this documentation/source fix alone.
+- Status now exposes `idle_verify_expected: true` when pending is absent.
+
 ## Developer Memory V1 / Hindsight (2026-10-12)
 
 - Hosted `candidate.yml` remains `disabled_manually` (owner fast-track / local-first policy). Not a PR #74 change; enablement requires owner approval. Remote `main` currently has no required status checks/rulesets.
@@ -14,6 +22,8 @@
 
 ## Context & Personal Memory V2 contracts (2026-10-11)
 
+- Public MCP catalog (source TOOLS length **27** on `bc927eb`) exposes read helpers `personal_memory_search` / `personal_memory_get` plus architecture/ContextPack inspectors. `personal_memory_recent` and `memory_search` remain **native broker / capability** tools (ChatGPT → capability_invoke), not duplicate named public MCP tools. That split is intentional: public MCP stays ChatGPT-task oriented; worker/broker tools keep broader memory shapes without expanding the connector surface.
+- ChatGPT connector UIs may still show **25** tools until the client refreshes discovery against the installed tip.
 - ChatGPT calls such as `personal_memory_search({query, limit})`, `personal_memory_recent({limit})`, and `memory_search({query, limit})` previously failed closed with `invalid_tool_arguments` because broker `validKeys` rejected optional `limit` and required `domain` for recent. Current source accepts those shapes with bounded `limit` (1–20) and default `domain=personal` for recent/search execution. Extra keys remain denied.
 - `project_list({})` returning `items: []` on a task without `projectId` is expected scope behavior, not a Personal Memory outage.
 - Synthetic fixture acceptance (`tests/context-memory-v2-acceptance.test.js`, `tests/memory-tool-contracts-v2.test.js`) is not live owner-store verification. Installed runtime may still predate this tip until authorized cutover.
