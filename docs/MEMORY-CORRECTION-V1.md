@@ -34,14 +34,18 @@ from a package that includes this change.
 
 ## Activation readiness (PR #70 / adc7f1e)
 
-Pre-activation kit (service still on tip `525458c` until operator approval):
+Pre-activation kit pattern: `~/.airodrom/backups/memory-correction-adc7f1e-*`
+(online `memory.sqlite` backup, `local.json`, LaunchAgent snapshot, candidate
+pointers, `APPROVAL-REQUEST.md`). Prepared install:
+`…/airodrom-master-completion/install/airodrom-memory-correction-adc7f1e`.
 
-- Backup root pattern: `~/.airodrom/backups/memory-correction-adc7f1e-*`
-- Contains: online `memory.sqlite` backup, `local.json`, LaunchAgent snapshot,
-  `candidate-local.json`, candidate LaunchAgent, `APPROVAL-REQUEST.md`
-- Prepared install: `…/airodrom-master-completion/install/airodrom-memory-correction-adc7f1e`
-- Copy verification: `presentCurrentItems` returns Proxima-77 as current without
-  mutating the live database; optional reconcile apply is separate and opt-in
+## Live activation (operator-approved)
 
-Do not change `local.json`, LaunchAgent, or stop the managed service without the
-single explicit activation approval recorded in the backup kit.
+On explicit approval, managed service was switched from tip `525458c` to the
+prepared candidate install built from `adc7f1e`:
+
+- Single `local-service` supervisor; Control / Memory V2 / OpenCode Ready
+- Fresh Terminal conversation answered **Proxima-77** with memory included
+- Kepler-42 was not presented as current
+- Live Kepler/Proxima row statuses were **not** auto-reconciled (presentation-only)
+- Rollback kit retained under the backup root; unused when acceptance passed
