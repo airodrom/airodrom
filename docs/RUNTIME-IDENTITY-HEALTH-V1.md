@@ -19,9 +19,18 @@ There is no separate active Pi Bridge LaunchAgent or worker. Historical storage/
 
 ## Service naming
 
-- Canonical MCP/service id: `airodrom_control_plane`
-- Compatibility alias: `pi_bridge` (same handlers; label remains “Airodrom control plane”)
-- Status fields include `identity`, `legacy_service_id`, `pid_source`, and `verification`
+- Canonical MCP/service id: `airodrom_control_plane` (label: **Airodrom Control Service**)
+- Compatibility alias: `pi_bridge` (same handlers; queryable by name, omitted from default `service_health` / `service_status` inventory)
+- Allowlisted LaunchAgent ids (status-only): `desktop_login`, `reboot_acceptance`, `mcp_tunnel`
+- LaunchAgent labels also accepted: `local.airodrom.desktop-login`, `local.airodrom.reboot-acceptance`, `local.airodrom.mcp-tunnel`
+- Arbitrary launchd labels are rejected (`Invalid service`)
+- Status fields include `identity`, `legacy_service_id`, `pid_source`, `verification`, and LaunchAgent `installed` / `loaded` / `running` / `last_exit`
+
+## Process identity
+
+- `process_list` / `process_status` never return command arguments.
+- Rows may include a safe `product` tag (`airodrom_control_plane`, `airodrom_mcp`, …) derived from path markers or `bridge.lock`.
+- Filter `airodrom` matches those product tags (Node supervisors are not named `airodrom` in `ps`).
 
 ## Health probes
 

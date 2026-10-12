@@ -2,7 +2,9 @@
 
 ## Runtime identity / MCP package skew (2026-10-11)
 
-- MCP `service_status` historically used the service id `pi_bridge` for the Airodrom control plane. That name is retained as a compatibility alias; the canonical id is `airodrom_control_plane`. Seeing `pi_bridge` in ChatGPT does **not** mean a standalone Pi Bridge is running.
+- MCP `service_status` historically used the service id `pi_bridge` for the Airodrom control plane. That name is retained as a compatibility alias; the canonical id is `airodrom_control_plane` (label **Airodrom Control Service**). Default `service_health` inventory omits the duplicate alias. Seeing `pi_bridge` in ChatGPT does **not** mean a standalone Pi Bridge is running.
+- `service_status` previously rejected LaunchAgent labels (`local.airodrom.*`) as invalid arguments. Current source accepts only the allowlisted Airodrom agents (status-only; no start/stop/restart).
+- `process_list(filter="airodrom")` previously returned zero because the executable basename is `node`. Current source matches safe `product` tags.
 - `process_status` may previously report `running: false` when a full `ps` table miss/truncation omitted a live PID. Current source uses targeted `ps -p` and a signal probe before claiming stopped.
 - ChatGPT `capability_invoke` idempotent replay previously could return a settled `service_status` PID after restart. Current source re-probes `service_status` / `process_status` / `service_health` on replay.
 - Local npm `airodrom` may still resolve to a prior install tree while LaunchAgent/desktop-login runs a newer install. Relink/cutover of the npm package is an owner-gated live activation step; it is not implied by a source merge.
