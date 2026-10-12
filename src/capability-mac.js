@@ -57,14 +57,65 @@ function clearNotificationCache() {
 const OSASCRIPT = '/usr/bin/osascript', OPEN = '/usr/bin/open', PS = '/bin/ps', DF = '/bin/df', PMSET = '/usr/bin/pmset', SYSCTL = '/usr/sbin/sysctl', SW_VERS = '/usr/bin/sw_vers', LSOF = '/usr/sbin/lsof', DISKUTIL = '/usr/sbin/diskutil', PLUTIL = '/usr/bin/plutil', PBCOPY = '/usr/bin/pbcopy', PBPASTE = '/usr/bin/pbpaste';
 const EXECUTABLES = [OSASCRIPT, OPEN, PS, DF, PMSET, SYSCTL, SW_VERS, LSOF, DISKUTIL, PLUTIL, PBCOPY, PBPASTE, '/usr/bin/tar'];
 
-async function processTable(ctx) {
-  const result = await ctx.exec.run(PS, ['-axo', 'pid=,ppid=,uid=,pcpu=,pmem=,etime=,lstart=,comm='], { timeoutMs: 15_000 });
+const PS_ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+(\S+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.+)$/;
+const CONTROL_PLANE_SERVICE = 'airodrom_control_plane';
+const CONTROL_PLANE_LEGACY_SERVICE = 'pi_bridge';
+const CONTROL_PLANE_IDS = new Set([CONTROL_PLANE_SERVICE, CONTROL_PLANE_LEGACY_SERVICE]);
+const RESERVED_SERVICE_IDS = new Set([...CONTROL_PLANE_IDS, 'ollama']);
+
+function parseProcessRows(stdout) {
   const rows = [];
-  for (const line of result.stdout.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+(\S+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.+)$/.exec(line);
+  for (const line of String(stdout || '').split('\n')) {
+    const match = PS_ROW.exec(line);
     if (match) rows.push({ pid: Number(match[1]), ppid: Number(match[2]), uid: Number(match[3]), cpu: Number(match[4]), mem: Number(match[5]), elapsed: match[6], started: match[7], command: match[8].trim() });
   }
   return rows;
+}
+
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+async function processTable(ctx) {
+  const result = await ctx.exec.run(PS, ['-axo', 'pid=,ppid=,uid=,pcpu=,pmem=,etime=,lstart=,comm='], { timeoutMs: 15_000 });
+  return parseProcessRows(result.stdout);
+}
+
+async function processLookup(ctx, pid) {
+  const result = await ctx.exec.run(PS, ['-p', String(pid), '-o', 'pid=,ppid=,uid=,pcpu=,pmem=,etime=,lstart=,comm='], { timeoutMs: 10_000 });
+  return parseProcessRows(result.stdout).find(row => row.pid === pid) || null;
+}
+
+function readSupervisorPid(ctx) {
+  const root = ctx.hostOwnedRoot ? path.dirname(ctx.hostOwnedRoot) : null;
+  if (!root) return null;
+  try {
+    const pid = Number(fs.readFileSync(path.join(root, 'bridge.lock'), 'utf8').trim());
+    return Number.isInteger(pid) && pid > 1 ? pid : null;
+  } catch { return null; }
+}
+
+function controlPlaneStatus(ctx) {
+  const hostPid = process.pid;
+  const hostAlive = pidAlive(hostPid);
+  const supervisorPid = readSupervisorPid(ctx);
+  const supervisorAlive = supervisorPid != null && pidAlive(supervisorPid);
+  const pid = supervisorAlive ? supervisorPid : (hostAlive ? hostPid : null);
+  const running = Boolean(pid);
+  return {
+    running,
+    pid,
+    uptime_s: Math.round(process.uptime()),
+    identity: CONTROL_PLANE_SERVICE,
+    product: 'Airodrom',
+    legacy_service_id: CONTROL_PLANE_LEGACY_SERVICE,
+    pid_source: supervisorAlive ? 'bridge_lock' : (hostAlive ? 'capability_host' : 'none'),
+    verification: running ? 'signal_probe' : 'not_running',
+    host_pid: hostAlive ? hostPid : null,
+    supervisor_pid: supervisorAlive ? supervisorPid : null,
+    note: 'Service id pi_bridge is a stable historical alias for the Airodrom control plane. It is not a separate Pi Bridge process.'
+  };
 }
 
 function protectedPids(ctx, table) {
@@ -114,12 +165,17 @@ async function plist(ctx, args) {
 
 // Fixed service registry. Unknown services never resolve.
 function serviceRegistry(ctx) {
+  const controlPlane = {
+    label: 'Airodrom control plane',
+    status: async () => controlPlaneStatus(ctx),
+    restart: async () => { if (typeof ctx.requestBridgeRestart !== 'function') fail('Bridge restart is unavailable'); return ctx.requestBridgeRestart(); },
+    start: () => fail('The control plane is already running'),
+    stop: () => fail('Stopping the control plane from inside a task is denied; use service_restart')
+  };
   const services = {
-    pi_bridge: {
-      label: 'Airodrom control plane', status: async () => ({ running: true, pid: process.pid, uptime_s: Math.round(process.uptime()) }),
-      restart: async () => { if (typeof ctx.requestBridgeRestart !== 'function') fail('Bridge restart is unavailable'); return ctx.requestBridgeRestart(); },
-      start: () => fail('The bridge is already running'), stop: () => fail('Stopping the bridge from inside a task is denied; use service_restart')
-    },
+    [CONTROL_PLANE_SERVICE]: controlPlane,
+    // Stable historical MCP/service id — same Airodrom control plane, not a Pi worker.
+    [CONTROL_PLANE_LEGACY_SERVICE]: controlPlane,
     ollama: {
       label: 'Ollama',
       status: async () => ({ running: await ctx.probeHttp('http://127.0.0.1:11434/api/version'), endpoint: 'http://127.0.0.1:11434' }),
@@ -131,12 +187,11 @@ function serviceRegistry(ctx) {
   for (const item of ctx.localServices || []) {
     const pidFile = path.join(ctx.hostOwnedRoot || os.tmpdir(), 'services', `${item.name}.pid`);
     const readPid = () => { try { return Number(fs.readFileSync(pidFile, 'utf8').trim()) || null; } catch { return null; } };
-    const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
     services[item.name] = {
       label: item.label || item.name, local: true,
-      status: async () => { const pid = readPid(); return { running: Boolean(pid && alive(pid)), pid: pid && alive(pid) ? pid : null, ...(item.readyUrl ? { ready: await ctx.probeHttp(item.readyUrl) } : {}) }; },
+      status: async () => { const pid = readPid(); return { running: Boolean(pid && pidAlive(pid)), pid: pid && pidAlive(pid) ? pid : null, verification: pid && pidAlive(pid) ? 'signal_probe' : 'not_running', ...(item.readyUrl ? { ready: await ctx.probeHttp(item.readyUrl) } : {}) }; },
       start: async () => {
-        const pid = readPid(); if (pid && alive(pid)) return { running: true, pid, already: true };
+        const pid = readPid(); if (pid && pidAlive(pid)) return { running: true, pid, already: true };
         fs.mkdirSync(path.dirname(pidFile), { recursive: true, mode: 0o700 });
         const child = ctx.exec.spawnTracked(item.executable, item.args, { cwd: item.cwd });
         const log = fs.createWriteStream(pidFile.replace(/\.pid$/, '.log'), { flags: 'a', mode: 0o600 });
@@ -144,7 +199,7 @@ function serviceRegistry(ctx) {
         fs.writeFileSync(pidFile, String(child.pid), { mode: 0o600 });
         return { started: true, pid: child.pid };
       },
-      stop: async () => { const pid = readPid(); if (!pid || !alive(pid)) return { running: false }; process.kill(pid, 'SIGTERM'); fs.rmSync(pidFile, { force: true }); return { stopped: true, pid }; },
+      stop: async () => { const pid = readPid(); if (!pid || !pidAlive(pid)) return { running: false }; process.kill(pid, 'SIGTERM'); fs.rmSync(pidFile, { force: true }); return { stopped: true, pid }; },
       restart: async () => { await services[item.name].stop(); await new Promise(resolve => setTimeout(resolve, 500)); return services[item.name].start(); }
     };
   }
@@ -159,7 +214,7 @@ function loadLocalServices(filePath, scopes, exec) {
   const valid = [];
   for (const item of Array.isArray(raw) ? raw : []) {
     try {
-      if (!/^[a-z][a-z0-9_]{1,40}$/.test(item.name) || ['pi_bridge', 'ollama'].includes(item.name) || !Array.isArray(item.argv) || !item.argv.length) continue;
+      if (!/^[a-z][a-z0-9_]{1,40}$/.test(item.name) || RESERVED_SERVICE_IDS.has(item.name) || !Array.isArray(item.argv) || !item.argv.length) continue;
       const cwd = scopes.approvedRepository(item.cwd).canonical;
       const classified = classifyCommand(item.argv.map(arg => /[\s'"]/.test(arg) ? `'${arg.replace(/'/g, `'\\''`)}'` : arg).join(' '), { cwd });
       if (!['read_only', 'safe_dev_execution'].includes(classified.class)) continue;
@@ -185,7 +240,7 @@ function macCapabilities({ notificationState = { sent: [] },now=Date.now } = {})
   const serviceAssess = verb => (ctx, input) => {
     const service = serviceRegistry(ctx)[input.service];
     if (!service) return { scope: 'services', dynamic: { decision: 'deny', kind: 'capability_denied', reason: `Service ${input.service} is not in the fixed registry` } };
-    if (input.service === 'pi_bridge' && verb !== 'restart' && verb !== 'status') return { scope: 'services', dynamic: { decision: 'deny', kind: 'capability_denied', reason: 'Only status and restart are available for the Airodrom control plane' } };
+    if (CONTROL_PLANE_IDS.has(input.service) && verb !== 'restart' && verb !== 'status') return { scope: 'services', dynamic: { decision: 'deny', kind: 'capability_denied', reason: 'Only status and restart are available for the Airodrom control plane' } };
     return { scope: 'services' };
   };
   const serviceVerb = verb => ({ validate: serviceInput, assess: serviceAssess(verb), perform: async (ctx, input) => ({ service: input.service, action: verb, ...(await serviceRegistry(ctx)[input.service][verb]()) }) });
@@ -233,10 +288,20 @@ function macCapabilities({ notificationState = { sent: [] },now=Date.now } = {})
       validate: input => { keys(input, ['pid']); integer(input.pid, 'pid', { min: 1, max: 99_999_999 }); return input; },
       perform: async (ctx, input) => {
         const table = await processTable(ctx);
-        const row = table.find(item => item.pid === input.pid);
-        if (!row) return { pid: input.pid, running: false };
-        const classification = classifyProcess(ctx, row, table);
-        return { pid: row.pid, running: true, name: path.basename(row.command), owner: row.uid === process.getuid() ? 'current_user' : 'other', cpu: row.cpu, mem: row.mem, elapsed: row.elapsed, stop_decision: classification ? classification.decision : 'auto_allow' };
+        let row = table.find(item => item.pid === input.pid);
+        let verification = 'process_table';
+        if (!row) {
+          row = await processLookup(ctx, input.pid);
+          verification = 'process_lookup';
+        }
+        if (!row) {
+          // Full-table parse misses or truncated ps output must not invent "stopped".
+          if (pidAlive(input.pid)) return { pid: input.pid, running: true, verification: 'signal_probe', detail: 'alive_not_listed' };
+          return { pid: input.pid, running: false, verification: 'not_found' };
+        }
+        if (!pidAlive(row.pid)) return { pid: row.pid, running: false, verification: 'stale_table_row' };
+        const classification = classifyProcess(ctx, row, table.length ? table : [row]);
+        return { pid: row.pid, running: true, name: path.basename(row.command), owner: row.uid === process.getuid() ? 'current_user' : 'other', cpu: row.cpu, mem: row.mem, elapsed: row.elapsed, stop_decision: classification ? classification.decision : 'auto_allow', verification };
       }
     },
     process_stop: {
@@ -396,4 +461,8 @@ function macCapabilities({ notificationState = { sent: [] },now=Date.now } = {})
   };
 }
 
-module.exports = { macCapabilities, clearNotificationCache, loadLocalServices, serviceRegistry, classifyProcess, processTable, probeHttp, APPS, EXECUTABLES, DEV_PROCESSES, SECRET_ENV_NAMES };
+module.exports = {
+  macCapabilities, clearNotificationCache, loadLocalServices, serviceRegistry, classifyProcess, processTable, processLookup,
+  parseProcessRows, pidAlive, controlPlaneStatus, probeHttp, APPS, EXECUTABLES, DEV_PROCESSES, SECRET_ENV_NAMES,
+  CONTROL_PLANE_SERVICE, CONTROL_PLANE_LEGACY_SERVICE, CONTROL_PLANE_IDS, RESERVED_SERVICE_IDS
+};
