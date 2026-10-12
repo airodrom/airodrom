@@ -97,21 +97,33 @@ function authCategory(text) {
     return items.some(i=>i.connections.length)?'session_observed':'auth_required';
   } catch { return 'unknown'; }
 }
+const KNOWN_EVENTS = new Set(['step_start', 'step_finish', 'text', 'tool_use', 'reasoning']);
+function extractJsonObject(text) {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  try { return JSON.parse(text); } catch { /* fall through */ }
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try { return JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+}
 function parseOutput(stdout, allowedFiles) {
   if (Buffer.byteLength(stdout) > MAX_OUTPUT) fail('opencode_output_bound');
   let session = null, message = null, text = '', events = 0;
   for (const line of stdout.split('\n').filter(s => s.trim())) {
     let event; try { event = JSON.parse(line); } catch { fail('opencode_malformed_result'); }
-    if (!event || !['step_start', 'step_finish', 'text', 'tool_use', 'reasoning'].includes(event.type) || typeof event.sessionID !== 'string' || !/^ses_[A-Za-z0-9_-]{1,120}$/.test(event.sessionID)) fail('opencode_malformed_result');
+    // Unknown event types from newer OpenCode builds are ignored when session identity is valid.
+    if (!event || typeof event.sessionID !== 'string' || !/^ses_[A-Za-z0-9_-]{1,120}$/.test(event.sessionID)) fail('opencode_malformed_result');
     if (session && session !== event.sessionID) fail('opencode_session_mismatch');
     session = event.sessionID; events++;
+    if (!KNOWN_EVENTS.has(event.type)) continue;
     if (event.type === 'text') {
       if (typeof event.part?.text !== 'string' || typeof event.part.messageID !== 'string') fail('opencode_malformed_result');
       if (message !== event.part.messageID) { text = ''; message = event.part.messageID; }
       text += event.part.text;
     }
   }
-  let result; try { result = JSON.parse(text); } catch { fail('opencode_malformed_result'); }
+  const result = extractJsonObject(text);
+  if (!result || typeof result !== 'object') fail('opencode_malformed_result');
   object(result, ['status', 'summary', 'changed_files', 'tests', 'artifacts', 'limitations','web_requests']);
   // Omitted claims mean no claims. Host-measured file changes are authoritative.
   for(const k of ['changed_files','tests','artifacts','limitations'])if(result[k]===undefined)result[k]=[];
@@ -272,7 +284,9 @@ class OpenCodeAdapter extends AgentAdapter {
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
       if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
       if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
-      const parsed = parseOutput(outcome.stdout, writable), changes = [];
+      // Host-measured staging changes are authoritative. Parse worker JSON after inventory so a
+      // malformed final text object can recover when allowlisted tools already mutated staging.
+      const changes = [];
       const inventory=[];const walk=dir=>{for(const ent of fs.readdirSync(path.join(root,'workspace',dir),{withFileTypes:true})){const f=path.posix.join(dir,ent.name);if(ent.isDirectory())walk(f);else inventory.push(f);}};walk('');
       if(inventory.length!==files.length||inventory.some(f=>!files.includes(f)))fail('opencode_undeclared_write');
       for (const [f, before] of originals) {
@@ -281,6 +295,34 @@ class OpenCodeAdapter extends AgentAdapter {
         const content = safeText(fs.readFileSync(staged, 'utf8'), MAX_FILE);
         if (content !== before) { if (!writable.includes(f)) fail('opencode_undeclared_write'); changes.push({ path: f, content, preimage_sha256: hash(before), sha256: hash(content), size: Buffer.byteLength(content) }); }
         if (fs.realpathSync(path.join(workspace, f)) !== path.join(workspace, f) || fs.readFileSync(path.join(workspace, f), 'utf8') !== before) fail('opencode_preimage_changed');
+      }
+      let parsed;
+      try { parsed = parseOutput(outcome.stdout, writable); }
+      catch (error) {
+        const code = error?.code || error?.message;
+        if (code !== 'opencode_malformed_result' || conversation || !changes.length) throw error;
+        let session = null;
+        for (const line of String(outcome.stdout || '').split('\n')) {
+          try {
+            const event = JSON.parse(line);
+            if (typeof event?.sessionID === 'string' && /^ses_[A-Za-z0-9_-]{1,120}$/.test(event.sessionID)) { session = event.sessionID; break; }
+          } catch { /* ignore non-JSON noise while recovering */ }
+        }
+        parsed = {
+          session_id: session,
+          events: 0,
+          result: {
+            status: 'completed',
+            summary: 'Host observed allowlisted file changes after a verified OpenCode exit; worker JSON was unusable.',
+            changed_files: changes.map(c => c.path),
+            tests: [],
+            artifacts: [],
+            limitations: [
+              'Runtime claims are untrusted; canonical repository verification is required.',
+              'Recovered from host-observed staging changes after malformed worker JSON.',
+            ],
+          },
+        };
       }
       if(parsed.result.status==='needs_web'&&(conversation||changes.length))fail('opencode_web_request_bound');
       if (!['completed','needs_web'].includes(parsed.result.status)) fail('opencode_runtime_failed');

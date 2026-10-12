@@ -1,8 +1,14 @@
 'use strict';
 // Authenticated local Terminal consent for zero-setup WORK.
 // Model/chat text is never consent. Only an explicit TTY y/yes after the host preview.
+const path = require('node:path');
 const terminal = require('./vault-cli');
 const local = require('./local-bootstrap');
+
+const ACTIVE_FILE = 'zero-setup-active.json';
+const STATUS_TIMEOUT_MS = 30000;
+const POLL_BUDGET_MS = 600000;
+const MAX_FETCH_FAILURES = 12;
 
 function preview(presentation = {}) {
   const files = (presentation.files || []).join(', ') || 'none';
@@ -32,15 +38,90 @@ function terminalRequired(input, output) {
   }
 }
 
-async function poll(home, requestId, { signal, request = local.request, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+function activePath(home) {
+  return path.join(home, ACTIVE_FILE);
+}
+
+function rememberActive(home, requestId) {
+  if (!home || !requestId) return;
+  try {
+    local.writePrivate(activePath(home), {
+      version: 1,
+      request_id: requestId,
+      started_at: Date.now(),
+      authority: false,
+    });
+  } catch { /* best effort; durable status still uses request_id */ }
+}
+
+function clearActive(home) {
+  if (!home) return;
+  try {
+    const fs = require('node:fs');
+    fs.rmSync(activePath(home), { force: true });
+  } catch { /* ignore */ }
+}
+
+function readActive(home) {
+  try {
+    const row = local.ownedJSON(activePath(home));
+    if (row?.version === 1 && typeof row.request_id === 'string' && row.request_id.length >= 8) return row;
+  } catch { /* absent */ }
+  return null;
+}
+
+function isTransportError(error) {
+  const name = error?.name || '';
+  const message = String(error?.message || error || '');
+  if (['TimeoutError', 'AbortError', 'TypeError'].includes(name)) return true;
+  return /fetch failed|timed out|ECONNREFUSED|ECONNRESET|socket|network|interrupted|Local discovery|ownership|not healthy|AbortError|TimeoutError/i.test(message);
+}
+
+async function statusOnce(home, requestId, { request = local.request, signal } = {}) {
+  const route = '/api/assistant/zero-setup/status?request_id=' + encodeURIComponent(requestId);
+  if (request.length >= 4 || request === local.request) {
+    return request(home, route, undefined, { timeoutMs: STATUS_TIMEOUT_MS, signal });
+  }
+  return request(home, route);
+}
+
+async function poll(home, requestId, {
+  signal,
+  request = local.request,
+  sleep = ms => new Promise(r => setTimeout(r, ms)),
+  onUpdate = null,
+} = {}) {
   const started = Date.now();
-  while (!signal?.aborted && Date.now() - started < 600000) {
-    const view = await request(home, '/api/assistant/zero-setup/status?request_id=' + encodeURIComponent(requestId));
-    const state = String(view.state || '').toUpperCase();
-    const mission = view.outcome?.mission_state;
-    if (['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED'].includes(state) || ['awaiting_acceptance', 'completed'].includes(mission)) return view;
-    if (['BLOCKED', 'FAILED', 'REJECTED', 'CLARIFY'].includes(state) || ['blocked', 'needs_rework', 'failed', 'cancelled'].includes(mission)) return view;
-    await sleep(500);
+  let failures = 0;
+  let lastSignature = '';
+  while (!signal?.aborted && Date.now() - started < POLL_BUDGET_MS) {
+    try {
+      const view = await statusOnce(home, requestId, { request, signal });
+      failures = 0;
+      const signature = [
+        view.state,
+        view.outcome?.mission_state,
+        view.presentation?.status,
+        view.technical?.repair_of || '',
+      ].join('|');
+      if (onUpdate && signature !== lastSignature) {
+        lastSignature = signature;
+        try { onUpdate(view); } catch { /* UI updates must never abort observation */ }
+      }
+      const state = String(view.state || '').toUpperCase();
+      const mission = view.outcome?.mission_state;
+      if (['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED'].includes(state) || ['awaiting_acceptance', 'completed'].includes(mission)) return view;
+      if (['BLOCKED', 'FAILED', 'REJECTED', 'CLARIFY'].includes(state) || ['blocked', 'needs_rework', 'failed', 'cancelled'].includes(mission)) return view;
+      await sleep(1000);
+    } catch (error) {
+      if (signal?.aborted) throw Error('Interrupted');
+      if (!isTransportError(error)) throw error;
+      failures += 1;
+      if (failures >= MAX_FETCH_FAILURES) {
+        throw Error('Connection to Airodrom was interrupted. The task may still be running. No duplicate task was started. Reopen Airodrom to inspect the same task.');
+      }
+      await sleep(Math.min(8000, 500 * (2 ** Math.min(failures, 4))));
+    }
   }
   if (signal?.aborted) throw Error('Interrupted');
   throw Error('Timed out waiting for independent verification. Inspect Control Center before retrying.');
@@ -51,27 +132,57 @@ function resultText(view) {
   const verification = view.outcome?.verification;
   const repairOf = view.technical?.repair_of || view.repair_of || null;
   const repaired = !!(repairOf || /Repairing|repair completed/i.test(view.presentation?.status || ''));
-  const passed = verification?.result === 'passed' || ['awaiting_acceptance', 'completed'].includes(mission);
-  if (passed) {
+  const passed = verification?.result === 'passed' || verification?.result === 'operator_review' || ['awaiting_acceptance', 'completed'].includes(mission);
+  if (passed && ['awaiting_acceptance', 'completed'].includes(mission)) {
     const files = (view.presentation?.files || []).join(', ') || 'the requested file';
     const lines = [];
     if (repaired) {
-      lines.push('First verification failed on the original Mission.');
-      lines.push('Diagnosed the failed host check and created one corrective Mission' + (repairOf ? ' (repair_of ' + String(repairOf).slice(0, 8) + '…)' : '') + '.');
-      lines.push('Automatic repair completed. Independent verification passed.');
+      lines.push('Initial verification failed.');
+      lines.push('Airodrom repaired the file automatically.');
+      lines.push('Repair completed. Verification passed.');
     } else {
       lines.push('Verification passed.');
     }
+    lines.push('');
     lines.push('Updated ' + files + '.');
-    lines.push('Original Goal resumed within the approved scope. No second authorization was required.');
-    lines.push('Acceptance remains a separate owner decision. Nothing was settled automatically.');
+    lines.push('Original Goal resumed.');
+    lines.push('Awaiting owner Acceptance.');
     return lines.join('\n');
   }
   if (String(view.state || '').toUpperCase() === 'REJECTED' || mission === 'cancelled') return view.message || 'Cancelled. Nothing was written.';
   if (/Repairing/i.test(view.presentation?.status || '') || String(view.state || '').toUpperCase() === 'RUNNING') {
     return view.message || 'Working… first verification failed; diagnosing and repairing within the original approved scope.';
   }
+  if (mission === 'needs_rework') {
+    return view.message || 'Automatic repair stopped safely. Independent verification did not pass. No unsafe retry was performed.';
+  }
   return view.message || ('Work did not finish cleanly (' + (mission || view.state || 'unknown') + '). No Acceptance was recorded.');
+}
+
+async function resumeActive(home, { input, output, signal, request = local.request } = {}) {
+  const active = readActive(home);
+  if (!active) return null;
+  output.write('Airo\nResuming observation of the same authorized task...\n');
+  try {
+    const done = await poll(home, active.request_id, {
+      signal,
+      request,
+      onUpdate(view) {
+        if (/Repairing/i.test(view.presentation?.status || '')) {
+          output.write('Airo\nInitial verification failed. Airodrom is repairing the file automatically.\n');
+        }
+      },
+    });
+    clearActive(home);
+    output.write('Airo\n' + resultText(done) + '\n');
+    return done;
+  } catch (error) {
+    if (/interrupted\. The task may still be running/i.test(String(error.message || ''))) {
+      output.write('Airo\n' + error.message + '\n');
+      return { kind: 'zero_setup', state: 'RUNNING', message: error.message, technical: { request_id: active.request_id }, authority: false };
+    }
+    throw error;
+  }
 }
 
 async function guide({ receipt, input, output, home, signal, request = local.request }) {
@@ -92,18 +203,39 @@ async function guide({ receipt, input, output, home, signal, request = local.req
   if (!requestId) throw Error('Prepared task identity unavailable');
   terminalRequired(input, output);
   output.write('Airo\n' + preview(receipt.presentation));
-  const approved = await terminal.confirm(input, output, { prompt: 'Approve this bounded change? [y/N]', signal });
+  const approved = await terminal.confirm(input, output, { prompt: 'Approve this task? [y/N]', signal });
   if (!approved || signal?.aborted) {
     try { await request(home, '/api/assistant/zero-setup/reject', { request_id: requestId, confirmed: true }); } catch { /* best-effort cancel */ }
+    clearActive(home);
     output.write('Airo\nCancelled. Nothing was written.\n');
     return { kind: 'zero_setup', state: 'REJECTED', message: 'Cancelled. Nothing was written.', authority: false, execution_authorized: false };
   }
   output.write('Airo\nWorking...\n');
   const started = await request(home, '/api/assistant/zero-setup/approve', { request_id: requestId, confirmed: true });
   if (!started.execution_authorized) throw Error('Host authorization did not enable execution');
-  const done = await poll(home, requestId, { signal, request });
-  output.write('Airo\n' + resultText(done) + '\n');
-  return done;
+  rememberActive(home, requestId);
+  let announcedRepair = false;
+  try {
+    const done = await poll(home, requestId, {
+      signal,
+      request,
+      onUpdate(view) {
+        if (!announcedRepair && /Repairing/i.test(view.presentation?.status || '')) {
+          announcedRepair = true;
+          output.write('Airo\nInitial verification failed. Airodrom is repairing the file automatically.\n');
+        }
+      },
+    });
+    clearActive(home);
+    output.write('Airo\n' + resultText(done) + '\n');
+    return done;
+  } catch (error) {
+    if (/interrupted\. The task may still be running/i.test(String(error.message || ''))) {
+      output.write('Airo\n' + error.message + '\n');
+      return { kind: 'zero_setup', state: 'RUNNING', message: error.message, technical: { request_id: requestId }, authority: false };
+    }
+    throw error;
+  }
 }
 
-module.exports = { guide, preview, resultText, poll, terminalRequired };
+module.exports = { guide, preview, resultText, poll, terminalRequired, rememberActive, clearActive, readActive, resumeActive, isTransportError };
