@@ -22,6 +22,22 @@ function workCapabilities(value) {
  if(/\b(?:repository|repo|feature|file|code|script)\b/i.test(value)||/^(?:fix|implement|edit|modify|build|create|write|delete|remove|install|run|execute|commit|push|change)\b/i.test(value)||!classes.size){classes.add('repo');classes.add('developer_environment');}
  return [...classes];
 }
+const WORK_TARGET=/\b(?:fixture(?:\.txt)?|repository|repo|feature|file|files|code|script|website|application|app|test(?:\s+file)?|[\w.-]+\.(?:txt|js|cjs|mjs|ts|tsx|json|md|py|go|rs|swift))\b/i;
+const WORK_VERB='(?:change|edit|modify|fix|implement|update|replace|rewrite|write|delete|remove|create|build|install|run|execute|commit|push|deploy|send|archive|audit)';
+// Ordinary discussion about files stays conversation. Classification never grants execution.
+function isWorkRequest(request) {
+ if(/^(?:implement|edit|delete|remove|install|run|execute|commit|push|send|archive|deploy|change|modify|fix|build|audit)\b/i.test(request))return true;
+ if(/^(?:create|write)\b.*\b(?:repository|repo|feature|file|website|application|app|code|script)\b/i.test(request))return true;
+ if(new RegExp('^(?:can you|could you|would you|please)\\s+'+WORK_VERB+'\\b','i').test(request)&&WORK_TARGET.test(request))return true;
+ // Contextual preamble then imperative: "In the prepared workspace, change fixture.txt…"
+ if(new RegExp('(?:^|[,;]\\s+|\\.\\s+)(?:please\\s+)?'+WORK_VERB+'\\b','i').test(request)&&WORK_TARGET.test(request)){
+  // Pure how-to / explanatory questions remain conversation.
+  if(/^(?:what|why|how|when|where|who|which|explain|discuss|describe|tell me about|is there|are there|do you (?:know|think)|can we talk|let'?s (?:talk|discuss|brainstorm))\b/i.test(request)
+    &&!/(?:^|[,;]\s+|\.\s+)(?:please\s+)?(?:change|edit|modify|fix|implement|update|replace)\b/i.test(request))return false;
+  return true;
+ }
+ return false;
+}
 function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} = {}) {
  if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');value=value.trim();
  // A pasted control command cannot be silently embedded in a model prompt.
@@ -66,9 +82,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
  if(/^(?:show|check|read)\s+(?:my\s+)?whatsapp(?: messages(?: needing attention)?)?$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'whatsapp',action:'attention'});
- if(/^(?:implement|edit|delete|remove|install|run|execute|commit|push|send|archive|deploy|change|modify|fix|build|audit)\b/i.test(request)||/^(?:create|write)\b.*\b(?:repository|repo|feature|file|website|application|app|code|script)\b/i.test(request))return route('WORK',{kind:'work',objective:request,capability_classes:workCapabilities(request)});
+ if(isWorkRequest(request))return route('WORK',{kind:'work',objective:request,capability_classes:workCapabilities(request)});
  if(/^(?:do|handle|take care of)\s+(?:it|this|that)$/i.test(request))return {kind:'clarify',message:'Do you want to talk it through or create a Work Mission?'};
  if(/^(?:check|read|show|open)\s+(?:my\s+)?(?:inbox|messages|email|emails|mail)$/i.test(request))return route('CONNECTOR',{kind:'clarify',message:'Should I check Gmail or the official WhatsApp connector?'});
  return route('CONVERSATION',{kind:'conversation',message:value});
 }
-module.exports={parse,secret,sensitive,ordinary,workCapabilities};
+module.exports={parse,secret,sensitive,ordinary,workCapabilities,isWorkRequest};

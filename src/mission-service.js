@@ -379,7 +379,12 @@ class MissionService {
     if(this.store.getMission(m.id).state==='verifying'){
       // Exclude another writer while independent checks run and evidence is captured.
       const verifyId=randomUUID();this.store.startRun({id:verifyId,taskId:run.task_id,missionId:m.id,agentId:'host',role:'verifier'});
-      try {this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id,mode:m.envelope.kind==='browser_research'?'read':'write'});const verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);}
+      try {
+        this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id,mode:m.envelope.kind==='browser_research'?'read':'write'});
+        // Disposable self-repair marker: at most one intentional exact-file mismatch before host verify.
+        try{const injected=require('./self-repair-fixture').applyControlledFailure(this.store.getMission(m.id));if(injected.applied)this.store.event('self_repair.controlled_failure',m.id,{file:injected.file,authority:false},{runId:run.id});}catch{/* marker absent or invalid */}
+        const verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);
+      }
       catch(error){if(this.store.getMission(m.id).state==='verifying')this.store.state(m.id,'blocked','Independent verification unavailable');}
       finally{this.store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
       if(m.envelope.kind!=='browser_research'&&m.envelope.automatic_acceptance)this.acceptanceEngine.attempt(m.id);

@@ -69,14 +69,19 @@ class ZeroSetupWork {
           } catch { /* not a match */ }
         }
         if (/human acceptance exact file/i.test(project.name || '')) score.reasons.push('named_human_acceptance');
+        if (/self[- ]?repair/i.test(project.name || '') || /self-repair/i.test(root)) score.reasons.push('named_self_repair');
         if (score.reasons.length) matches.push(score);
       }
     }
     if (matches.length === 1) return { ok: true, project: matches[0].project, workspace: matches[0].workspace };
     if (matches.length > 1) {
-      // Prefer an explicitly named human-acceptance disposable over generic fixture projects sharing the same root.
-      const preferred = matches.filter(m => m.reasons.includes('named_human_acceptance'));
+      // Prefer an explicitly named disposable over generic fixture projects sharing the same root.
+      const preferred = matches.filter(m => m.reasons.includes('named_human_acceptance') || m.reasons.includes('named_self_repair'));
       if (preferred.length === 1) return { ok: true, project: preferred[0].project, workspace: preferred[0].workspace };
+      if (/self[- ]?repair/i.test(instruction || '')) {
+        const selfRepair = matches.filter(m => m.reasons.includes('named_self_repair'));
+        if (selfRepair.length === 1) return { ok: true, project: selfRepair[0].project, workspace: selfRepair[0].workspace };
+      }
       const exact = matches.filter(m => m.reasons.includes('exact_initial_bytes'));
       if (exact.length === 1) return { ok: true, project: exact[0].project, workspace: exact[0].workspace };
       return {

@@ -50,7 +50,7 @@
     "build:atmosphere": "node scripts/build-atmosphere.cjs",
     "macos:reboot-acceptance": "node scripts/run.cjs scripts/macos/reboot-acceptance.cjs",
     "test:reliability": "node scripts/run.cjs --test tests/autonomous-reliability.test.js",
-    "test:cae": "node scripts/run.cjs --test tests/continuous-autonomous-execution.test.js tests/autonomous-self-repair.test.js",
+    "test:cae": "node scripts/run.cjs --test tests/continuous-autonomous-execution.test.js tests/autonomous-self-repair.test.js tests/self-repair-fixture.test.js",
     "evaluate:reliability": "node scripts/run.cjs scripts/evaluate-reliability.cjs --extended",
     "benchmark:memory": "node scripts/run.cjs scripts/benchmark-memory-quality.cjs",
     "benchmark:reliability": "NODE_ENV=test node scripts/run.cjs scripts/benchmark-reliability.cjs",
@@ -497,6 +497,7 @@
     "tests/reliability-browser.cjs",
     "tests/reliability-opencode-live.cjs",
     "src/zero-setup-work.js",
-    "docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md"
+    "docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md",
+    "src/self-repair-fixture.js"
   ]
 }

@@ -1,3 +1,11 @@
+## Unreleased — Terminal intent routing & live self-repair proof
+
+- Classify natural-language WORK when file/repository actions follow contextual preambles (not only leading verbs); ordinary discussion about files stays conversation.
+- Route recognized Terminal WORK through ZeroSetupWork (no chatbot refusal, no draft-only UUID forms).
+- Add test-only host marker `.airodrom/controlled-verify-fail-once.json` for one deterministic verification failure before independent verify; repair Missions ignore the marker.
+- Terminal result text reports original failure, single corrective Mission, Goal resume, and owner-only Acceptance.
+- Focused suites: `tests/terminal-intent-routing.test.js`, `tests/self-repair-fixture.test.js`.
+
 ## Unreleased — Autonomous Self-Repair & Mission Resume V1
 
 - After a safe host verification failure, CAE may spawn one in-scope corrective Mission (`repair_of`), rebind the Goal Plan stage, and dispatch once without a second owner Continue.

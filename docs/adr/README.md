@@ -52,3 +52,4 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0047 Autonomous reliability and intelligence](0047-autonomous-reliability-intelligence.md): Proposed; local measurement and observing goal plans over existing authority primitives.
 - [0048 Continuous Autonomous Execution](0048-continuous-autonomous-execution.md): Proposed; durable authorized goal scheduling over Goal Planner and Mission dispatch; clients are not execution owners.
 - [0049 — Outcome-first autonomous experience](0049-outcome-first-autonomous-experience.md)
+- [0050 Terminal intent routing and controlled self-repair](0050-terminal-intent-routing-self-repair.md): Proposed; contextual WORK classification and one-shot host verification-failure marker for disposable self-repair proof.
