@@ -1,5 +1,12 @@
 # Known limitations
 
+## Continuous Autonomous Execution V1 (2026-10-12)
+
+- Source-only on `feat/continuous-autonomous-execution-v1`. Not live-installed; authorizing a goal in fixtures does not cut over the owner Mac service.
+- Scheduler never grants Acceptance or Production mutation. Uncertain dispatch/lease states block retry and worker switch by design.
+- ChatGPT MCP tool-count mismatches (client vs source catalog) remain client-side and must not be reported as solved without evidence; MCP disconnect does not stop durable authorized goals.
+- Synthetic fixture disposal must never be treated as real worker termination proof.
+
 ## Reboot-acceptance LaunchAgent idle verify (2026-10-12)
 
 - `local.airodrom.reboot-acceptance` is `RunAtLoad` and invokes `reboot-acceptance.cjs verify`.

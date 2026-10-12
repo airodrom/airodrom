@@ -7,6 +7,16 @@ const EXTRA = {
  'mission.resumed': ['Recovery', 'Mission resumed'], 'mission.resumed_after_decision': ['Recovery', 'Operator continuation'],
  'goal.plan.created': ['Goal', 'Goal plan proposed'], 'goal.plan.continued': ['Goal', 'Goal continuation inspected'],
  'goal.checkpoint.confirmed': ['Approval', 'Planning checkpoint confirmed'],
+ 'goal.autonomous.authorized': ['Goal', 'Autonomous execution authorized'],
+ 'goal.autonomous.paused': ['Goal', 'Autonomous scheduling paused'],
+ 'goal.autonomous.resumed': ['Goal', 'Autonomous scheduling resumed'],
+ 'goal.autonomous.stopped': ['Goal', 'Autonomous scheduling stopped'],
+ 'goal.autonomous.dispatched': ['Goal', 'Autonomous Mission dispatched'],
+ 'goal.autonomous.blocked': ['Goal', 'Autonomous stage blocked'],
+ 'goal.autonomous.dispatch_failed': ['Goal', 'Autonomous dispatch failed'],
+ 'goal.autonomous.repair': ['Recovery', 'Bounded repair recorded'],
+ 'goal.autonomous.recovered': ['Recovery', 'Autonomous goal recovered after restart'],
+ 'goal.autonomous.worker_switched': ['Runtime', 'Authorized worker switch recorded'],
  'provider.request.failed': ['Provider', 'Provider request failed'], 'provider.request.completed': ['Provider', 'Model invocation completed'],
  'provider.request.started': ['Provider', 'Model invocation started'], 'policy.denied': ['Policy', 'Policy denied operation']
 };

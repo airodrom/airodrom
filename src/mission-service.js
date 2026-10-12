@@ -12,6 +12,7 @@ function relative(value){text(value,'file path',300);if(path.isAbsolute(value)||
 class MissionService {
   constructor(bridge){this.bridge=bridge;this.store=bridge.controlStore;this.db=this.store.db;this.db.exec('CREATE TABLE IF NOT EXISTS cp_continuity_checks(run_id TEXT PRIMARY KEY,mission_id TEXT NOT NULL,status TEXT NOT NULL,evidence TEXT NOT NULL,checked_at INTEGER NOT NULL)');this.program=new (require('./mission-program').MissionProgram)(this);this.codingAdapter=new (require('./qualified-coding-adapter').QualifiedCodingAdapter)(this);this.acceptanceEngine=new (require('./deterministic-acceptance').DeterministicAcceptance)(this);this.riskAcceptance=new (require('./risk-acceptance').RiskAcceptance)(this);this.agents=new MissionAgents(bridge,this.store);this.verifier=new MissionVerifier(bridge,this.store);this.busy=false;this.stopped=false;}
   get goalPlanner(){return this._goalPlanner||(this._goalPlanner=new(require('./goal-planner').AirodromGoalPlanner)(this));}
+  get autonomous(){return this.bridge.autonomousExecution;}
   createConversation(input,owner='operator'){return require('./conversation-mission').create(this,input,owner);}
   get web(){return this._web||(this._web=new (require('./mission-web').MissionWeb)(this));}
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
@@ -176,6 +177,8 @@ class MissionService {
       }
       for(const row of this.db.prepare("SELECT * FROM cp_dispatches WHERE state='queued' ORDER BY created_at LIMIT 1").all())await this.launch(row);
       for(const row of this.db.prepare('SELECT * FROM cp_run_results WHERE processed_at=0').all()) {try{await this.processResult(row);}catch(error){const m=this.store.getMission(row.mission_id);if(!['cancelled','completed','blocked'].includes(m.state))this.store.state(m.id,'blocked','Structured result could not be processed safely');}}
+      // Durable CAE scheduler: client disconnect must not stop authorized goals.
+      try{await this.bridge.autonomousExecution?.tick();}catch{/* Scheduler faults must not crash Mission tick. */}
     }finally{this.busy=false;}
   }
   async launch(dispatch){

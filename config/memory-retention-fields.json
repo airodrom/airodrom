@@ -85,6 +85,25 @@
       "state": "A"
     }
   },
+  "cp_autonomous_claims": {
+    "fields": [
+      "plan_id",
+      "stage_id",
+      "mission_id",
+      "request_id",
+      "state",
+      "created_at"
+    ],
+    "source": "src/autonomous-execution.js",
+    "classification": {
+      "plan_id": "A",
+      "stage_id": "A",
+      "mission_id": "A",
+      "request_id": "A",
+      "state": "A",
+      "created_at": "A"
+    }
+  },
   "cp_result_inbox": {
     "fields": [
       "run_id",

@@ -50,10 +50,13 @@
     "build:atmosphere": "node scripts/build-atmosphere.cjs",
     "macos:reboot-acceptance": "node scripts/run.cjs scripts/macos/reboot-acceptance.cjs",
     "test:reliability": "node scripts/run.cjs --test tests/autonomous-reliability.test.js",
+    "test:cae": "node scripts/run.cjs --test tests/continuous-autonomous-execution.test.js",
     "evaluate:reliability": "node scripts/run.cjs scripts/evaluate-reliability.cjs --extended",
     "benchmark:memory": "node scripts/run.cjs scripts/benchmark-memory-quality.cjs",
     "benchmark:reliability": "NODE_ENV=test node scripts/run.cjs scripts/benchmark-reliability.cjs",
-    "test:reliability:browser": "node scripts/run.cjs --test tests/reliability-browser.cjs"
+    "test:reliability:browser": "node scripts/run.cjs --test tests/reliability-browser.cjs",
+    "test:cae:restart": "node scripts/run.cjs --test tests/cae-restart-recovery.test.js",
+    "test:cae:opencode:live": "AIRODROM_OPENCODE_LIVE=1 NODE_ENV=test node scripts/run.cjs --test tests/cae-opencode-live.cjs"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",

@@ -35,6 +35,13 @@ class TestBridge extends Bridge {
    self.lifecycle.resume(self.lifecycle.epoch);
    self.missions?.schedule();
   }
+  // Settle the first autonomous/Mission tick so fixture resume sees durable idle.
+  if(self.lifecycle?.state()==='open'){
+   try{await self.missions?.tick();}catch{/* fixture settle */}
+   try{await self.autonomousExecution?.tick();}catch{/* fixture settle */}
+   if(self.autonomousExecution)self.autonomousExecution.busy=false;
+   if(self.missions)self.missions.busy=false;
+  }
   return self;
  }
 
@@ -92,6 +99,7 @@ class TestBridge extends Bridge {
   if(this.chatgptEvents)this.chatgptEvents.running=false;
   if(this.supervisor)this.supervisor.busy=false;
   if(this.missions)this.missions.busy=false;
+  if(this.autonomousExecution)this.autonomousExecution.busy=false;
   if(this.agentDispatch)this.agentDispatch.busy=false;
   if(this.boundedNextActions){this.boundedNextActions.busy=false;this.boundedNextActions.reconciling=false;}
   if(this.controlStore?.outbox)this.controlStore.outbox.busy=false;

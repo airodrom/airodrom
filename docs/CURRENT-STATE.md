@@ -1,11 +1,17 @@
 # Current state (2026-10-10)
 
-## Autonomous Reliability & Intelligence V1 — MERGE-READY SOURCE (2026-10-12)
+## Continuous Autonomous Execution V1 — SOURCE IMPLEMENTATION (2026-10-12)
 
-- **PR:** [#78](https://github.com/airodrom/airodrom/pull/78) reconciled onto `origin/main` after Repository Health Qualification V1 ([#79](https://github.com/airodrom/airodrom/pull/79) merged @ `0a5d079`)
+- **Branch:** `feat/continuous-autonomous-execution-v1` (isolated worktree from post-#78 `origin/main` `d0f3ee6`)
+- **Extends:** Goal Planner (ADR 0047) with durable authorize/pause/resume/stop, claims, and Mission-path scheduler (ADR 0048)
+- **Not merged / not installed / not activated:** live service, LaunchAgents, credentials and Production mutation unchanged
+- Evidence: [CONTINUOUS-AUTONOMOUS-EXECUTION-V1.md](CONTINUOUS-AUTONOMOUS-EXECUTION-V1.md), [ADR 0048](adr/0048-continuous-autonomous-execution.md)
+
+## Autonomous Reliability & Intelligence V1 — MERGED SOURCE (2026-10-12)
+
+- **PR:** [#78](https://github.com/airodrom/airodrom/pull/78) **MERGED** @ `d0f3ee660e88639f282b3aea14c9f59239dda8f6` after Repository Health Qualification V1 ([#79](https://github.com/airodrom/airodrom/pull/79))
 - **Preserved health invariants:** Mission tick busy-gate while admission closed; durable-wait settlement; synthetic fixture disposal ≠ real termination; fail-closed production shutdown
-- **Not installed / not activated:** no automatic goal dispatcher; Developer Memory off; Hindsight unactivated by this PR; live installation unchanged
-- **Next product milestone (separate):** Continuous Autonomous Execution V1 — see [AUTONOMOUS-RELIABILITY-V1.md](AUTONOMOUS-RELIABILITY-V1.md)
+- **Not installed / not activated:** Developer Memory off; Hindsight unactivated by that PR; live installation unchanged until separate cutover
 - Evidence: [AUTONOMOUS-RELIABILITY-V1.md](AUTONOMOUS-RELIABILITY-V1.md), [ADR 0047](adr/0047-autonomous-reliability-intelligence.md)
 
 ## Menu Status & WhatsApp Connection Closeout V1 — LOCAL IMPLEMENTATION (2026-10-10)

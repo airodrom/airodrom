@@ -50,3 +50,4 @@ See the [Kernel contract](../governance/KERNEL-CONTRACT.md) and [project governa
 - [0019 Codex live qualification](0019-codex-live-qualification.md): Signed bundle snapshot, supported no-child host setting, pinned public TLS roots and truthful local MCP qualification.
 
 - [0047 Autonomous reliability and intelligence](0047-autonomous-reliability-intelligence.md): Proposed; local measurement and observing goal plans over existing authority primitives.
+- [0048 Continuous Autonomous Execution](0048-continuous-autonomous-execution.md): Proposed; durable authorized goal scheduling over Goal Planner and Mission dispatch; clients are not execution owners.

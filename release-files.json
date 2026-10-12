@@ -725,5 +725,11 @@
   "src/reliability-observations.js",
   "tests/autonomous-reliability.test.js",
   "tests/reliability-browser.cjs",
-  "tests/reliability-opencode-live.cjs"
+  "tests/reliability-opencode-live.cjs",
+  "docs/CONTINUOUS-AUTONOMOUS-EXECUTION-V1.md",
+  "docs/adr/0048-continuous-autonomous-execution.md",
+  "src/autonomous-execution.js",
+  "tests/continuous-autonomous-execution.test.js",
+  "tests/cae-restart-recovery.test.js",
+  "tests/cae-opencode-live.cjs"
 ]

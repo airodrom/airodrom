@@ -1,3 +1,9 @@
+## Unreleased — Continuous Autonomous Execution V1
+
+- Extend Goal Planner with versioned `autonomous` authorization, durable `cp_autonomous_claims`, and a Mission-path scheduler that continues authorized goals without ChatGPT/Cursor ownership ([ADR 0048](docs/adr/0048-continuous-autonomous-execution.md)).
+- Authenticated control-plane authorize/pause/resume/stop/switch-worker actions; Control Center Autonomous Goals surface; Flight Recorder events for autonomous lifecycle.
+- Fixture suite `tests/continuous-autonomous-execution.test.js`. Source-only; live install and Production mutation remain separately gated.
+
 ## Unreleased — Developer Memory repository allowlist
 
 - Add authoritative `allowed_repositories` (`repository_id` + `bank_id`) to Developer Memory V1. Empty allowlist fails closed while the feature is enabled.
