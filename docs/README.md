@@ -4,6 +4,8 @@
 **Final Acceptance V2** (live tip vs offline evidence): [AIRODROM-FINAL-ACCEPTANCE-V2.md](AIRODROM-FINAL-ACCEPTANCE-V2.md). Cutover plan (not applied): [INSTALLED-TIP-CUTOVER-V2.md](INSTALLED-TIP-CUTOVER-V2.md).
 **Cutover approval gate V3** (**HOLD** until explicit auth): [AIRODROM-CUTOVER-APPROVAL-V3.md](AIRODROM-CUTOVER-APPROVAL-V3.md).
 **Recovery and live acceptance** (service healthy; cutover still HOLD): [AIRODROM-RECOVERY-AND-LIVE-ACCEPTANCE.md](AIRODROM-RECOVERY-AND-LIVE-ACCEPTANCE.md).
+
+**Final reconciliation V4** (PR inventory, merge HOLD, Memory/CLI/Mission/MCP evidence, Arecibo handoff): [AIRODROM-FINAL-RECONCILIATION.md](AIRODROM-FINAL-RECONCILIATION.md).
 **CLI client reliability** (attach-first Terminal; PATH install alignment): [CLI-CLIENT-RELIABILITY-V1.md](CLI-CLIENT-RELIABILITY-V1.md).
 
 **Menu Status & WhatsApp Connection Closeout V1** (LOCAL IMPLEMENTATION): [MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md](MENU-STATUS-WHATSAPP-CLOSEOUT-V1.md).
