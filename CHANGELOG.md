@@ -1,3 +1,10 @@
+## Unreleased — Developer Memory repository allowlist
+
+- Add authoritative `allowed_repositories` (`repository_id` + `bank_id`) to Developer Memory V1. Empty allowlist fails closed while the feature is enabled.
+- Host-derived repository identity must match the allowlist before search, retain, prefetch, and ContextPack contribution. Global enable/retrieval flags alone never authorize a repository.
+- Allowlist revocation immediately blocks retrieval/retention/ContextPack and clears caches, while preserving a separate owner-authenticated suppress/delete cleanup path that never restores retrieval. Cleanup binds to canonical retained-row metadata and single-use host-minted approval.
+- Contract tests cover approved repo success, linked worktree bank sharing, unapproved denial, forged bank denial, allowlist revocation cache clear, post-revocation cleanup, unauthorized deletion, cross-repo isolation, approval replay, and Personal Memory isolation.
+
 ## Unreleased — Memory final acceptance reliability V1
 
 - Reboot-acceptance `verify` treats missing `pending.json` as an idle RunAtLoad no-op (`ok: true`, `skipped: true`, `acceptance_ok: null`) so `launchctl last_exit=1` is not mistaken for live control-service failure.

@@ -55,8 +55,33 @@ function loadConfig(file = DEFAULT_CONFIG_PATH) {
       max_pack_chars: Math.min(16_000, Math.max(400, Number(raw.limits?.max_pack_chars) || 2400)),
       max_retain_chars: Math.min(16_000, Math.max(200, Number(raw.limits?.max_retain_chars) || 4000))
     },
-    allowed_source_kinds: Array.isArray(raw.allowed_source_kinds) ? raw.allowed_source_kinds.slice(0, 32) : []
+    allowed_source_kinds: Array.isArray(raw.allowed_source_kinds) ? raw.allowed_source_kinds.slice(0, 32) : [],
+    // Empty allowlist fails closed while enabled. Entries are host-derived repositoryId + bankId only.
+    allowed_repositories: normalizeAllowedRepositories(raw.allowed_repositories)
   };
+}
+
+function normalizeAllowedRepositories(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const row of value.slice(0, 64)) {
+    if (!row || typeof row !== 'object') continue;
+    const repositoryId = typeof row.repository_id === 'string' ? row.repository_id : null;
+    const bankId = typeof row.bank_id === 'string' ? row.bank_id : null;
+    if (!repositoryId || !/^[a-f0-9]{64}$/.test(repositoryId)) continue;
+    if (!bankId || !/^airo-dev-[a-f0-9]{32}$/.test(bankId)) continue;
+    if (bankId !== `airo-dev-${repositoryId.slice(0, 32)}`) continue;
+    out.push({ repository_id: repositoryId, bank_id: bankId });
+  }
+  return out;
+}
+
+/** Host-derived identity must match an explicit operator allowlist entry. */
+function repositoryAllowlisted(identity, config) {
+  if (!identity?.repositoryId || !identity?.bankId) return false;
+  const allowed = Array.isArray(config?.allowed_repositories) ? config.allowed_repositories : [];
+  if (!allowed.length) return false;
+  return allowed.some(row => row.repository_id === identity.repositoryId && row.bank_id === identity.bankId);
 }
 
 function gitBin() {
@@ -181,7 +206,8 @@ function verifyDestructiveApproval(request, host, config) {
     verified = host.verifyOperatorApproval({
       operation: request.operation,
       taskId: request.taskId,
-      approvalId: typeof request.operatorApprovalId === 'string' ? request.operatorApprovalId : null
+      approvalId: typeof request.operatorApprovalId === 'string' ? request.operatorApprovalId : null,
+      repositoryId: typeof request.repositoryId === 'string' ? request.repositoryId : null
     });
   } catch {
     return { ok: false, reason: 'operator_approval_verification_failed' };
@@ -198,6 +224,8 @@ function verifyDestructiveApproval(request, host, config) {
 /**
  * Authorize a developer-memory operation from trusted host state.
  * Caller-supplied repositoryId/bankId are never trusted — host identity wins.
+ * Allowlist gates search/retrieve/retain/ContextPack. Owner-authenticated
+ * suppress/delete may proceed after revocation without restoring retrieval.
  */
 function authorize(request, config, host = null) {
   if (!request || typeof request !== 'object') return { allow: false, reason: 'missing_request' };
@@ -211,13 +239,13 @@ function authorize(request, config, host = null) {
   if ((request.operation === 'search' || request.operation === 'retrieve') && !config.allow_retrieval) {
     return { allow: false, reason: 'retrieval_disabled' };
   }
-  if (DESTRUCTIVE.has(request.operation) && config.require_operator_approval_for_destructive) {
+
+  const destructive = DESTRUCTIVE.has(request.operation);
+  if (destructive && config.require_operator_approval_for_destructive) {
     // Boolean flags from callers/models are explicitly non-authorizing.
     if (request.operatorApproved === true && !request.operatorApprovalId) {
       return { allow: false, reason: 'operator_approval_boolean_rejected' };
     }
-    const approval = verifyDestructiveApproval(request, host, config);
-    if (!approval.ok) return { allow: false, reason: approval.reason };
   }
 
   let identity = null;
@@ -262,13 +290,31 @@ function authorize(request, config, host = null) {
     scopes = request.capabilityScopes;
   }
 
+  // Owner cleanup after allowlist revocation: verify single-use approval against
+  // host-derived repository identity. Never treat cleanup as retrieval authority.
+  if (destructive && config.require_operator_approval_for_destructive) {
+    const approval = verifyDestructiveApproval({
+      ...request,
+      repositoryId: identity.repositoryId
+    }, host, config);
+    if (!approval.ok) return { allow: false, reason: approval.reason, identity };
+  }
+
+  const allowlisted = repositoryAllowlisted(identity, config);
+  // Global enable/retrieval flags never grant cross-repository access.
+  // Destructive cleanup is the sole exception and does not restore retrieval.
+  if (!destructive && !allowlisted) {
+    return { allow: false, reason: 'repository_not_allowlisted', identity };
+  }
+
   if (request.operation === 'retain') {
     if (!config.allowed_source_kinds.includes(request.sourceKind)) return { allow: false, reason: 'source_kind_denied' };
   }
 
   return {
     allow: true,
-    reason: 'authorized',
+    reason: allowlisted ? 'authorized' : 'authorized_cleanup_revoked',
+    cleanup_only: destructive && !allowlisted,
     policy_version: `developer-memory-v${config.version}`,
     identity,
     scopes
@@ -317,18 +363,32 @@ class DeveloperMemory {
     if (input?.[OPERATOR_CONTROL_SURFACE] !== true) {
       throw new Error('operator_control_surface_required');
     }
-    const { operation, taskId, repositoryId = null, ttlMs = 120_000 } = input;
+    const { operation, taskId, ttlMs = 120_000 } = input;
     if (!DESTRUCTIVE.has(operation)) throw new Error('Not a destructive developer-memory operation');
     if (typeof taskId !== 'string' || !taskId) throw new Error('taskId required for operator approval');
+    // Bind approval to host-derived repository identity when a task resolver exists.
+    // Never accept model-supplied repository permissions as the binding source.
+    let repositoryId = null;
+    if (this.resolveTask) {
+      let task;
+      try { task = this.resolveTask(taskId); }
+      catch { throw new Error('task_lookup_failed'); }
+      if (!task || task.id !== taskId) throw new Error('task_not_authenticated');
+      const workspace = task.mission?.envelope?.workspace || task.workspace;
+      if (!workspace) throw new Error('missing_host_workspace');
+      repositoryId = repositoryIdentity(workspace).repositoryId;
+    } else if (typeof input.repositoryId === 'string' && /^[a-f0-9]{64}$/.test(input.repositoryId)) {
+      repositoryId = input.repositoryId;
+    }
     const approvalId = randomUUID();
     const expiresAt = this.now() + Math.min(Math.max(Number(ttlMs) || 120_000, 1_000), 600_000);
     this._operatorApprovals.set(approvalId, {
       operation,
       taskId,
-      repositoryId: typeof repositoryId === 'string' ? repositoryId : null,
+      repositoryId,
       expiresAt
     });
-    return { approvalId, expiresAt, operation, taskId, single_use: true, authority: false };
+    return { approvalId, expiresAt, operation, taskId, repositoryId, single_use: true, authority: false };
   }
 
   /** Test/host helper: mark an options object as coming from the operator control plane. */
@@ -336,7 +396,7 @@ class DeveloperMemory {
     return { ...input, [OPERATOR_CONTROL_SURFACE]: true };
   }
 
-  _verifyApproval({ operation, taskId, approvalId } = {}) {
+  _verifyApproval({ operation, taskId, approvalId, repositoryId = null } = {}) {
     if (typeof approvalId !== 'string' || !approvalId) {
       return { verified: false, reason: 'operator_approval_required' };
     }
@@ -351,6 +411,9 @@ class DeveloperMemory {
     }
     if (row.taskId !== taskId) {
       return { verified: false, reason: 'operator_approval_task_mismatch' };
+    }
+    if (row.repositoryId && repositoryId && row.repositoryId !== repositoryId) {
+      return { verified: false, reason: 'operator_approval_repository_mismatch' };
     }
     // Single-use: consume before returning success.
     this._operatorApprovals.delete(approvalId);
@@ -517,9 +580,36 @@ class DeveloperMemory {
     return { status: 'retained', memoryId, documentId, contentHash, authority: false, trustLabel: TRUST.VERIFIED_ENGINEERING_EVIDENCE, repositoryId, bankId };
   }
 
+  /**
+   * Canonical retained-row metadata is authoritative for cleanup targeting.
+   * Model-supplied bank/document fields cannot redirect erasure across repos.
+   */
+  _canonicalRetainTarget(input, identity) {
+    if (!this.db || typeof input?.memoryId !== 'string' || !input.memoryId) {
+      return { ok: true, documentId: input?.documentId || null, contentHash: input?.contentHash || null };
+    }
+    const row = this.db.prepare(
+      'SELECT repository_id, bank_id, document_id, content_hash, status FROM developer_memory_items WHERE memory_id=?'
+    ).get(input.memoryId);
+    if (!row) return { ok: false, reason: 'memory_not_found' };
+    if (row.repository_id !== identity.repositoryId) return { ok: false, reason: 'repository_mismatch' };
+    if (row.bank_id !== identity.bankId) return { ok: false, reason: 'bank_mismatch' };
+    if (input.documentId && row.document_id && input.documentId !== row.document_id) {
+      return { ok: false, reason: 'document_identity_mismatch' };
+    }
+    return {
+      ok: true,
+      documentId: row.document_id || input.documentId || null,
+      contentHash: row.content_hash || input.contentHash || null,
+      status: row.status
+    };
+  }
+
   _suppressAuthorized(auth, input) {
     if (!this.db) return { status: 'store_unavailable', authority: false };
     const { repositoryId } = auth.identity;
+    const canonical = this._canonicalRetainTarget(input, auth.identity);
+    if (!canonical.ok) return { status: canonical.reason, authority: false };
     const suppressionId = randomUUID();
     const now = this.now();
     this.db.prepare(`
@@ -528,7 +618,7 @@ class DeveloperMemory {
       ) VALUES (?,?,?,?,?,?,?,?,?)
     `).run(
       suppressionId, repositoryId, input.memoryId || null, input.providerRef || null,
-      input.documentId || null, input.contentHash || null, String(input.reason || 'operator_suppress').slice(0, 200),
+      canonical.documentId, canonical.contentHash, String(input.reason || 'operator_suppress').slice(0, 200),
       auth.policy_version, now
     );
     if (input.memoryId) {
@@ -536,25 +626,38 @@ class DeveloperMemory {
         .run(now, input.memoryId, repositoryId);
     }
     this._invalidateCache({ taskId: input.taskId, repositoryId });
-    return { status: 'suppressed', suppressionId, authority: false, repositoryId };
+    return {
+      status: 'suppressed',
+      suppressionId,
+      authority: false,
+      repositoryId,
+      cleanup_only: auth.cleanup_only === true
+    };
   }
 
   suppress(input) {
     const auth = authorize({ ...input, operation: 'suppress' }, this.config, this._host());
-    if (!auth.allow) return { status: auth.reason, authority: false };
+    if (!auth.allow) return { status: auth.reason, authority: false, cleanup_only: false };
     return this._suppressAuthorized(auth, input);
   }
 
   async delete(input) {
     const auth = authorize({ ...input, operation: 'delete' }, this.config, this._host());
-    if (!auth.allow) return { status: auth.reason, authority: false };
+    if (!auth.allow) return { status: auth.reason, authority: false, cleanup_only: false };
+    const canonical = this._canonicalRetainTarget(input, auth.identity);
+    if (!canonical.ok) return { status: canonical.reason, authority: false, cleanup_only: auth.cleanup_only === true };
     // Delete approval already host-verified; apply logical suppression without a second mint.
-    const suppressed = this._suppressAuthorized(auth, { ...input, reason: input.reason || 'operator_delete' });
+    const suppressed = this._suppressAuthorized(auth, {
+      ...input,
+      documentId: canonical.documentId,
+      contentHash: canonical.contentHash,
+      reason: input.reason || 'operator_delete'
+    });
     if (suppressed.status !== 'suppressed') return suppressed;
     let provider = 'not_requested';
-    if (this.config.enabled && this.transport && auth.identity.bankId && input.documentId) {
+    if (this.config.enabled && this.transport && auth.identity.bankId && canonical.documentId) {
       try {
-        await this.transport.deleteDocument(auth.identity.bankId, input.documentId, { signal: input.signal });
+        await this.transport.deleteDocument(auth.identity.bankId, canonical.documentId, { signal: input.signal });
         provider = 'requested';
       } catch {
         provider = 'request_failed_suppression_held';
@@ -570,7 +673,8 @@ class DeveloperMemory {
       suppressionId: suppressed.suppressionId,
       provider_deletion: provider,
       forensic_erasure_claimed: false,
-      authority: false
+      authority: false,
+      cleanup_only: auth.cleanup_only === true
     };
   }
 
@@ -657,6 +761,9 @@ class DeveloperMemory {
     } else {
       try { identity = repositoryIdentity(workspaceRoot); }
       catch { return { status: 'repository_unresolved', items: [], authority: false }; }
+      if (!repositoryAllowlisted(identity, this.config)) {
+        return { status: 'repository_not_allowlisted', items: [], authority: false, repositoryId: identity.repositoryId, bankId: identity.bankId };
+      }
     }
     const result = await this.search({
       taskId,
@@ -754,6 +861,7 @@ class DeveloperMemory {
       allow_ingest: cfg.allow_ingest === true,
       allow_retrieval: cfg.allow_retrieval === true,
       allow_external: cfg.allow_external === true,
+      allowed_repository_count: Array.isArray(cfg.allowed_repositories) ? cfg.allowed_repositories.length : 0,
       provider: cfg.provider,
       authority: false,
       transport: transport ? {
@@ -789,6 +897,8 @@ module.exports = {
   authorize,
   verifyDestructiveApproval,
   repositoryIdentity,
+  repositoryAllowlisted,
+  normalizeAllowedRepositories,
   prepareSchema,
   TRUST,
   DEFAULT_CONFIG_PATH,

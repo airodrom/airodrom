@@ -50,8 +50,9 @@ Config file: [`config/developer-memory-v1.json`](../config/developer-memory-v1.j
 | `allow_retrieval` | `false` | Prefetch / ContextPack contribution. |
 | `allow_external` | `false` | Non-loopback Hindsight hosts. Never auto-enabled. |
 | `require_operator_approval_for_destructive` | `true` | Suppress/delete require host-minted single-use approval. |
+| `allowed_repositories` | `[]` | Explicit `{repository_id,bank_id}` allowlist. Empty fails closed while enabled. |
 
-Live owner installation must stay disabled until explicit activation authorization.
+Live owner installation must stay disabled until explicit activation authorization. Global enable/retrieval flags never grant access to repositories absent from `allowed_repositories`.
 
 ## Adapter interface
 
@@ -75,7 +76,9 @@ Host-derived identity from realpath + `git rev-parse --git-common-dir` + optiona
 - `repositoryId` = SHA-256 of `{ git_common_dir, remote }`
 - `bankId` = `airo-dev-{first 32 hex of repositoryId}`
 
-Subdirectories and linked Git worktrees share the same bank via `git-common-dir`. Model-supplied bank IDs are denied. When a host task resolver is bound, caller-supplied `repositoryId`/`bankId` cannot override host identity. Capability scopes must be present (`repo` or `developer_environment`). Destructive suppress/delete require a **host-minted single-use** `operatorApprovalId`. Minting is only allowed through the authenticated operator control-plane action `developer-memory-mint-approval` (Symbol-gated `mintOperatorApproval`). Models, workers, MCP, and bare in-process callers cannot manufacture consent. A caller-supplied `operatorApproved: true` boolean is rejected. ContextPack contributions revalidate host repository identity and drop stale cache on identity change/revocation. Cross-repository retrieval fails closed.
+Subdirectories and linked Git worktrees share the same bank via `git-common-dir`. Model-supplied bank IDs are denied. When a host task resolver is bound, caller-supplied `repositoryId`/`bankId` cannot override host identity. After host identity is derived, it must match an entry in `allowed_repositories` (`repository_id` + `bank_id`); otherwise search/retain/prefetch/ContextPack contribution fail closed with `repository_not_allowlisted`. Removing a repository from the allowlist immediately revokes retrieval, retention, and ContextPack contribution and invalidates cached packs; it does **not** grant any new read authority. Capability scopes must be present (`repo` or `developer_environment`).
+
+Destructive suppress/delete require a **host-minted single-use** `operatorApprovalId` bound to host-derived repository identity. That cleanup path remains available after allowlist revocation so previously retained records can be erased without restoring search/retain/ContextPack rights (`cleanup_only`). Cleanup targets bind to canonical `developer_memory_items` metadata (repository/bank/document) rather than arbitrary model input. Minting is only allowed through the authenticated operator control-plane action `developer-memory-mint-approval` (Symbol-gated `mintOperatorApproval`). Models, workers, MCP, and bare in-process callers cannot manufacture consent. A caller-supplied `operatorApproved: true` boolean is rejected. Approval replay fails closed. Cross-repository retrieval and cleanup fail closed.
 
 ## Authorization
 
