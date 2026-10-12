@@ -166,6 +166,30 @@ class AirodromGoalPlanner {
       this.db.prepare('UPDATE cp_mission_program_nodes SET mission_id=? WHERE program_id=? AND node_id=?').run(missionId, id, stageId); return this.inspect(id, owner);
     });
   }
+  // CAE-only: replace a failed stage Mission with one in-scope corrective Mission.
+  rebindRepair(id, stageId, missionId, requestId, { parent_mission_id }, owner = 'operator') {
+    if (owner !== 'operator') throw Error('Authenticated operator required');
+    identifier(requestId); identifier(parent_mission_id); identifier(missionId); identifier(stageId);
+    return this.store.request(owner, requestId, { op: 'goal_rebind_repair', id, stageId, missionId, parent_mission_id }, () => {
+      const row = this.row(id, owner);
+      if (row.state !== 'goal_observing' || this.store.now() >= row.expires_at) throw Error('Goal plan inactive');
+      const parent = this.store.requireMission(parent_mission_id);
+      const repair = this.store.requireMission(missionId);
+      if (parent.state !== 'needs_rework') throw Error('Repair rebind requires a failed parent Mission');
+      if (repair.envelope?.repair_of !== parent_mission_id) throw Error('Repair Mission must declare its parent');
+      if (repair.goal_id !== row.plan.goal_id || repair.project_id !== row.plan.project_id) throw Error('Goal scope mismatch');
+      if (parent.goal_id !== row.plan.goal_id || parent.project_id !== row.plan.project_id) throw Error('Parent Goal scope mismatch');
+      if (parent.envelope.workspace !== repair.envelope.workspace) throw Error('Repair workspace mismatch');
+      this.checkBinding(missionId, this.bridge.projects.getGoal(row.plan.goal_id), owner);
+      const node = this.db.prepare('SELECT mission_id FROM cp_mission_program_nodes WHERE program_id=? AND node_id=?').get(id, stageId);
+      if (!node || node.mission_id !== parent_mission_id) throw Error('Stage is not bound to the failed parent Mission');
+      this.db.prepare('UPDATE cp_mission_program_nodes SET mission_id=? WHERE program_id=? AND node_id=?').run(missionId, id, stageId);
+      this.store.event('goal.plan.repair_rebound', missionId, {
+        plan_id: id, stage_id: stageId, parent_mission_id, authority: false,
+      });
+      return this.inspect(id, owner);
+    });
+  }
   cancel(id, requestId, owner = 'operator') {
     if (owner !== 'operator') throw Error('Authenticated operator required'); identifier(requestId);
     return this.store.request(owner, requestId, { op: 'goal_cancel', id }, () => {

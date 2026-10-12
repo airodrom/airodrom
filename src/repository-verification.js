@@ -137,17 +137,21 @@ function manifest(snapshot, allowed, { inspectNow = true } = {}) {
     allowed_files: [...allowed].sort(), before: Object.fromEntries(allowed.map(n => [n, snapshot.inventory[n] || { exists: false }])),
     pre_existing_dirty: snapshot.dirty, pre_existing_untracked: snapshot.untracked, policy: POLICY };
 }
-function compare(before, after, scope, tests = [], { creation = null } = {}) {
+function compare(before, after, scope, tests = [], { creation = null, allowPreDirtyScope = false } = {}) {
   const m = manifest(before, scope, { inspectNow: false });
   if (after.version !== 2 || fingerprint(before.repository) !== fingerprint(after.repository)) throw Error('Verification repository/HEAD/worktree identity mismatch');
   const names = [...new Set([...Object.keys(before.inventory), ...Object.keys(after.inventory)])].sort();
   const changed = names.filter(n => fingerprint(before.inventory[n] || { exists: false }) !== fingerprint(after.inventory[n] || { exists: false }));
   const retouches = changed.filter(n=>scope.includes(n)&&before.dirty.includes(n)&&creation?.version===2&&!creation.dirty.includes(n)&&fingerprint(creation.repository)===fingerprint(before.repository)&&['digest','type','size','mode','dev','ino','exists'].every(k=>before.inventory[n]?.[k]===after.inventory[n]?.[k]));
-  const outside = changed.filter(n => !scope.includes(n) || (before.dirty.includes(n)&&!retouches.includes(n)));
+  // Corrective Missions may start with dirty allowed files left by a failed parent attempt.
+  const outside = changed.filter(n => !scope.includes(n) || (before.dirty.includes(n)&&!retouches.includes(n)&&!(allowPreDirtyScope&&scope.includes(n))));
   // Index/status changes count even when working-tree bytes are identical.
   const statusChanged = [...new Set([...before.status_entries, ...after.status_entries].map(e => e.path))]
     .filter(n => fingerprint(before.status_entries.filter(e => e.path === n)) !== fingerprint(after.status_entries.filter(e => e.path === n)));
-  for (const n of statusChanged) if ((!scope.includes(n) || before.dirty.includes(n)) && !outside.includes(n)) outside.push(n);
+  for (const n of statusChanged) {
+    const dirtyOwned = before.dirty.includes(n) && !(allowPreDirtyScope && scope.includes(n));
+    if ((!scope.includes(n) || dirtyOwned) && !outside.includes(n)) outside.push(n);
+  }
   const indexRows = s => Object.fromEntries(s.index.split('\0').filter(Boolean).map(r=>[r.slice(r.indexOf('\t')+1),r.slice(0,r.indexOf('\t'))]));
   const bi=indexRows(before),ai=indexRows(after);
   for(const name of new Set([...Object.keys(bi),...Object.keys(ai)]))if(bi[name]!==ai[name]&&!scope.includes(name)&&!outside.includes(name))outside.push(name);

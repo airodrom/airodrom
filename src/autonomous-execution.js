@@ -23,6 +23,8 @@ function defaultAutonomous() {
     max_repairs: 3,
     dispatch_count: 0,
     repair_counts: {},
+    repair_lineage: {},
+    repair_blocked: {},
     worker_history: [],
     progress_at: null,
     last_action: null,
@@ -264,15 +266,18 @@ class AutonomousExecution {
           if (!m) continue;
           if (['completed', 'cancelled'].includes(m.state) || this.planner().verified(m.id)) {
             this.db.prepare("UPDATE cp_autonomous_claims SET state='settled' WHERE plan_id=? AND mission_id=? AND state IN ('claimed','dispatched')").run(id, m.id);
-          } else if (['needs_rework', 'blocked'].includes(m.state)) {
+          } else if (m.state === 'needs_rework') {
+            // One in-scope corrective Mission when termination is verified and budgets allow.
+            const repair = this.repair || (this.repair = new (require('./autonomous-repair').AutonomousRepair)(this));
+            const outcome = repair.handleFailure(id, view, autonomous, claim, m);
+            if (outcome?.action === 'repaired') dispatched += 1;
+          } else if (m.state === 'blocked') {
             const row = this.planRow(id);
             const a = this.readAutonomous(row);
-            const stage = view.stages.find(s => s.mission_id === m.id);
-            if (stage) a.repair_counts[stage.id] = (a.repair_counts[stage.id] || 0) + 1;
-            a.last_action = 'repair_recorded';
+            a.last_action = 'blocked_hold';
             this.writeAutonomous(id, a);
             this.db.prepare("UPDATE cp_autonomous_claims SET state='abandoned' WHERE plan_id=? AND mission_id=? AND state IN ('claimed','dispatched')").run(id, m.id);
-            this.store.event('goal.autonomous.repair', m.id, { plan_id: id, reason: m.state, authority: false });
+            this.store.event('goal.autonomous.blocked', m.id, { plan_id: id, reason: m.reason || 'blocked', authority: false });
           }
         }
         view = this.inspect(id);

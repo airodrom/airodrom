@@ -49,16 +49,20 @@ async function poll(home, requestId, { signal, request = local.request, sleep = 
 function resultText(view) {
   const mission = view.outcome?.mission_state;
   const verification = view.outcome?.verification;
+  const repaired = !!(view.technical?.repair_of || view.repair_of || /Repairing/i.test(view.presentation?.status || ''));
   const passed = verification?.result === 'passed' || ['awaiting_acceptance', 'completed'].includes(mission);
   if (passed) {
     const files = (view.presentation?.files || []).join(', ') || 'the requested file';
     return [
-      'Verification passed.',
+      repaired ? 'Automatic repair completed. Verification passed.' : 'Verification passed.',
       'Updated ' + files + '.',
       'Acceptance remains a separate owner decision. Nothing was settled automatically.',
     ].join('\n');
   }
   if (String(view.state || '').toUpperCase() === 'REJECTED' || mission === 'cancelled') return view.message || 'Cancelled. Nothing was written.';
+  if (/Repairing/i.test(view.presentation?.status || '') || String(view.state || '').toUpperCase() === 'RUNNING') {
+    return view.message || 'Working… diagnosing and repairing the failed verification within the original approved scope.';
+  }
   return view.message || ('Work did not finish cleanly (' + (mission || view.state || 'unknown') + '). No Acceptance was recorded.');
 }
 

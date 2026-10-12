@@ -17,9 +17,21 @@ Airodrom accepts an authorized goal and continues permitted work without an open
 OWNER GOAL → validate → authority & budget → durable plan → authorize CAE
   → dependency-aware Missions → MissionService.dispatch → monitor
   → independent verification → Acceptance (when required)
-  → next eligible Mission | bounded repair | safe hold
+  → next eligible Mission | one bounded corrective Mission | safe hold
   → goal completed | failed | cancelled | quarantined
 ```
+
+### Autonomous self-repair (V1)
+
+When an authorized Mission reaches `needs_rework` after independent host verification:
+
+1. Confirm the process terminated safely, effects are known, and no uncertain dispatch/lease remains.
+2. Confirm the original CAE authorization still permits a repair (`max_repairs`, worker allowlist, local-only privacy, budgets).
+3. Create **one** corrective Mission in the same Project/Goal/workspace/`allowed_files` scope (`repair_of` parent).
+4. Rebind the Goal Plan stage to that Mission and dispatch once through `MissionService.dispatch`.
+5. Independently verify. Acceptance and Settlement remain owner decisions.
+
+If diagnosis, permissions, budget or safety checks fail, CAE stops (`repair_blocked`) and does not retry uncertain execution.
 
 Supported autonomous lifecycle labels: `created`, `validating`, `ready`, `running`, `waiting_dependency`, `waiting_approval`, `recovering`, `verifying`, `completed`, `failed`, `cancelled`, `quarantined`. Goal Planner stage states remain authoritative for dependency verification.
 

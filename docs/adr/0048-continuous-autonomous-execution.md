@@ -10,6 +10,8 @@ Extend Goal Planner records with a versioned `autonomous` block and a durable `c
 
 Worker switches require operator confirmation, an authorized replacement, and absence of active/quarantined leases and uncertain dispatches. Restart recovery reloads enabled goals, settles verified claims and never invents termination or idle clearance.
 
+When host verification fails with verified termination and known effects, the scheduler may spawn **at most one** corrective Mission per stage within the original authorized scope (`repair_of`, same workspace and allowed files). It rebinds the Goal Plan stage and dispatches through `MissionService.dispatch`. It never expands permissions, never retries uncertain execution, and never grants Acceptance or Settlement.
+
 ## Alternatives rejected
 
 A second orchestration platform, infinite model loop, browser timer, Cursor-specific background agent or ChatGPT “continue” relay would relocate ownership outside Airodrom and weaken durability. Rejected.
