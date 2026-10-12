@@ -474,7 +474,7 @@
     "src/whatsapp-production-connection.js",
     "src/work-execution-adapter.js",
     "src/worker-registry.js",
-      "src/work-templates.js",
+    "src/work-templates.js",
     "src/exact-file-prompt.js",
     "tests/conversation-grounding-v1.test.js",
     "tests/install-hotfix-v101.test.js",
@@ -495,6 +495,8 @@
     "src/reliability-observations.js",
     "tests/autonomous-reliability.test.js",
     "tests/reliability-browser.cjs",
-    "tests/reliability-opencode-live.cjs"
+    "tests/reliability-opencode-live.cjs",
+    "src/zero-setup-work.js",
+    "docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md"
   ]
 }

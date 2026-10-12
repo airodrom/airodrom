@@ -363,6 +363,7 @@ class BridgeController extends EventEmitter {
       this.opencodeAdapter=new (require('./apps/opencode-adapter').OpenCodeAdapter)(this,this.options.opencode||require('./default-runtime').OPENCODE_DEFAULTS);this.agentRouter.register(this.opencodeAdapter);this.capabilityHost.opencodeStatus=()=>this.opencodeAdapter.readiness();
       this.workers=new (require('./worker-registry').WorkerRegistry)(this);
       this.workTemplates=new (require('./work-templates').WorkTemplates)(this);
+      this.zeroSetupWork=new (require('./zero-setup-work').ZeroSetupWork)(this);
       this.codexRelay=new (require('./codex-completion-relay').CodexCompletionRelay)(this);
       this.agentDispatch=new (require('./agent-dispatch').AgentDispatch)(this,this.options.agentDispatch||{});
       this.lifecycle = new (require('./service-lifecycle').ServiceLifecycle)(this);

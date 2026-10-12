@@ -131,6 +131,7 @@ class AutonomousExecution {
       autonomous.last_action = 'authorized';
       autonomous.production_mutation = false;
       autonomous.client_independent = true;
+      delete autonomous.pending_request;
       this.writeAutonomous(id, autonomous);
       this.store.event('goal.autonomous.authorized', null, {
         plan_id: id, workers: autonomous.workers, max_concurrent_missions: autonomous.max_concurrent_missions, authority: false

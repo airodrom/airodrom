@@ -744,5 +744,8 @@
   "tests/worker-preflight.test.js",
   "tests/zero-click-routing.test.js",
   "tsconfig.authority.json",
-  "tsconfig.sdk.json"
+  "tsconfig.sdk.json",
+  "src/zero-setup-work.js",
+  "tests/zero-setup-work.test.js",
+  "docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md"
 ]
