@@ -139,6 +139,35 @@ test('parent-baseline pre-existing dirty outside allowed_files does not block re
   assert.equal(fs.existsSync(path.join(f.repo, 'README-OWNER-ACCEPTANCE.txt')), true);
 });
 
+test('repairInput omits work_template so live template ceiling cannot block same-scope repair', () => {
+  const parent = {
+    id: randomUUID(),
+    project_id: randomUUID(),
+    goal_id: randomUUID(),
+    envelope: {
+      objective: 'Change fixture.txt from alpha to beta.',
+      workspace: '/tmp/fixture-workspace',
+      allowed_files: ['fixture.txt'],
+      criteria: [{ id: 'owner-review', type: 'operator_review', description: 'Review' }],
+      verification: { tests: ['fixture-test'], syntax: [] },
+      preferred_agent: 'opencode',
+      fallback_agents: [],
+      capability_scopes: ['repo', 'developer_environment'],
+      task_type: 'focused_refactor',
+      work_template: { project: 'self-repair', workspace: 'self-repair', hash: 'abc' },
+      authority: { level: 'development' },
+    },
+  };
+  const input = repairInput(parent, {
+    ok: true,
+    summary: 'task:fixture-test',
+    objective: 'Repair failed verification (task:fixture-test). Restore the original approved outcome.',
+  });
+  assert.equal(input.repair_of, parent.id);
+  assert.equal(input.work_template, undefined);
+  assert.deepEqual(input.allowed_files, ['fixture.txt']);
+});
+
 test('new dirty outside allowed_files still blocks repair create', async t => {
   const f = await fixture(t), parent = failingNative(f);
   f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });

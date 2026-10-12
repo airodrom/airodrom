@@ -115,7 +115,9 @@ function repairInput(parent, diagnosis) {
     ...(dispatch ? { dispatch_policy: dispatch } : {}),
     ...(env.authority ? { authority: env.authority } : {}),
     ...(manifest ? { manifest } : {}),
-    ...(env.work_template ? { work_template: env.work_template } : {}),
+    // Do not rebind work_template: assertInput fingerprints the live template ceiling,
+    // which diverges from a failed parent (expiresAt, normalized manifest, dispatch).
+    // Same-scope repair_of already locks workspace and allowed_files.
     ...(env.model ? { model: env.model } : {}),
     repair_of: parent.id,
   };
