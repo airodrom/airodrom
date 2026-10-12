@@ -204,6 +204,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   const handleReceipt = async (receipt, json = false, message = null) => {
     if (receipt.kind === 'preference') assistantNickname=receipt.nickname;
     if(receipt.kind==='public_web_offer'){stopAnswer();await detachReader();let next;try{next=await require('./mission-web-guide').guide({offer:receipt,input,output,home,signal:active?.signal});}finally{await attachReader();}await handleReceipt(next,json,message);return;}
+    if(receipt.kind==='zero_setup'){stopAnswer();await detachReader();try{const done=await require('./zero-setup-terminal').guide({receipt,input,output,home,signal:active?.signal});if(done?.technical?.mission_id)lastMission=done.technical.mission_id;if(json)show(output,done,()=>'',true);}finally{await attachReader();}return;}
     if(receipt.kind==='research_session'){stopAnswer();await handleReceipt(await sessionGuide(receipt.entry_url),json,message);return;}
     if (receipt.kind === 'chat') {
       if (!indicator) startAnswer();
