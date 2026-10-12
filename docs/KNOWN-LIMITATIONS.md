@@ -1,5 +1,13 @@
 # Known limitations
 
+## Context & Personal Memory V2 contracts (2026-10-11)
+
+- ChatGPT calls such as `personal_memory_search({query, limit})`, `personal_memory_recent({limit})`, and `memory_search({query, limit})` previously failed closed with `invalid_tool_arguments` because broker `validKeys` rejected optional `limit` and required `domain` for recent. Current source accepts those shapes with bounded `limit` (1–20) and default `domain=personal` for recent/search execution. Extra keys remain denied.
+- `project_list({})` returning `items: []` on a task without `projectId` is expected scope behavior, not a Personal Memory outage.
+- Synthetic fixture acceptance (`tests/context-memory-v2-acceptance.test.js`, `tests/memory-tool-contracts-v2.test.js`) is not live owner-store verification. Installed runtime may still predate this tip until authorized cutover.
+- Worker ContextPacks remain host-assembled and bounded; OpenCode never receives unrestricted Personal Memory database access.
+- Forgotten/superseded rows are logically suppressed from active retrieval and FTS; physical/forensic erasure is not claimed.
+
 ## Runtime identity / MCP package skew (2026-10-11)
 
 - MCP `service_status` historically used the service id `pi_bridge` for the Airodrom control plane. That name is retained as a compatibility alias; the canonical id is `airodrom_control_plane` (label **Airodrom Control Service**). Default `service_health` inventory omits the duplicate alias. Seeing `pi_bridge` in ChatGPT does **not** mean a standalone Pi Bridge is running.
