@@ -82,9 +82,13 @@ function evidencePackage(bridge, missionId) {
   const security = (latestVerification?.evidence || []).filter(c => /^security:|^(verifier_inputs_unchanged|protected_tests_unchanged|contract_integrity)$/.test(c.id)).map(c => ({ id: c.id, status: c.status, classification: c.evidence?.classification || null, new_findings: c.evidence?.new_findings ?? null, tampering: c.evidence?.tampering?.length ?? null }));
   const repairs = lineage.filter(l => l.repair_of).length;
   const stageId = phase?.stage_id || null;
+  const budgetSources = { contract: contract?.budget?.max_repair_attempts ?? null, plan: autonomous?.max_repairs ?? null, approval: approval?.repair_budget ?? null };
+  const effectiveRepairs = [budgetSources.contract, budgetSources.plan, budgetSources.approval].filter(v => Number.isSafeInteger(v));
   const budgetConsumed = {
     repair_attempts: repairs,
-    max_repair_attempts: contract?.budget?.max_repair_attempts ?? autonomous?.max_repairs ?? null,
+    // The effective ceiling is the strictest of contract, Goal Plan authorization and approval.
+    max_repair_attempts: effectiveRepairs.length ? Math.min(...effectiveRepairs) : null,
+    budget_sources: budgetSources,
     dispatches: autonomous?.dispatch_count ?? null,
     max_dispatches: autonomous?.max_dispatches ?? null,
     worker_runs: workerRuns.length,
