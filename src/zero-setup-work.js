@@ -80,6 +80,23 @@ class ZeroSetupWork {
         if (score.reasons.length) matches.push(score);
       }
     }
+    // A named active Project wins over unrelated self-repair fixture heuristics.
+    const named = projects.filter(p => (instruction || '').toLowerCase().includes(String(p.name || '').toLowerCase()) && p.repositories.length === 1);
+    if (named.length === 1) {
+      const root = fs.realpathSync(named[0].repositories[0]);
+      if (require('./control-execution').repositoryRoot(root) === root) return { ok: true, project: named[0], workspace: root };
+    }
+    // For general instructions, reuse only a UNIQUE already signed and active
+    // host-registered WORK scope. An MCP message cannot register new authority.
+    if (intent?.kind === 'general') {
+      const active = this.bridge.workTemplates.list('operator')
+        .filter(t => t.state === 'active' && projects.some(p => p.projectId === t.project_id &&
+          p.repositories.some(w => { try { return fs.realpathSync(w) === t.workspace; } catch { return false; } })));
+      if (active.length === 1) {
+        const project = projects.find(p => p.projectId === active[0].project_id);
+        return { ok: true, project, workspace: active[0].workspace };
+      }
+    }
     if (matches.length === 1) return { ok: true, project: matches[0].project, workspace: matches[0].workspace };
     if (matches.length > 1) {
       // Prefer a Project whose exact name appears in the instruction.
@@ -110,9 +127,6 @@ class ZeroSetupWork {
         choices: matches.map(m => ({ project_name: m.project.name, workspace_label: readablePath(m.workspace) })),
       };
     }
-    // Unique project whose name is mentioned and has a single repository.
-    const named = projects.filter(p => (instruction || '').toLowerCase().includes(String(p.name || '').toLowerCase()) && p.repositories.length === 1);
-    if (named.length === 1) return { ok: true, project: named[0], workspace: fs.realpathSync(named[0].repositories[0]) };
     return {
       ok: false, clarify: true,
       message: 'I could not uniquely resolve a disposable local workspace. Name the Project or prepare one disposable test repository.',
