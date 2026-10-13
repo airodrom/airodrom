@@ -9,7 +9,13 @@ class MissionAgents {
       codex:this.bridge.codexAdapter?.health()||{kind:'agent',implemented:false,available:false,reason:'adapter_unavailable'},
       host:{kind:'control_plane_capability',implemented:true,available:!this.bridge.closed,capabilities:['verification','local_tools'],boundary:'bridge typed capabilities',reason:this.bridge.closed?'stopped':null},
       claude_code:{kind:'agent',version:claude.version||null,authenticated:claude.authenticated===true,running_jobs:claude.running_jobs||0,jobs:claude.jobs||[],implemented:true,installed:claude.installed===true,available:claude.availability==='available'&&claude.auth_mode==='subscription'&&!claude.api_key_overrides_subscription&&!(claude.running_jobs>0),auth_mode:claude.auth_mode,subscription:claude.subscription||'unknown',capabilities:['coding'],boundary:'local Claude CLI; not an OS sandbox',reason:claude.running_jobs>0?'busy':claude.availability==='available'?(claude.auth_mode==='subscription'?null:'subscription_required'):claude.availability,concurrency:1},
-      cursor:{kind:'agent',installed:cursor.installed===true,implemented:true,available:false,capabilities:[],editor_available:cursor.installed===true,runtime:cursor.runtime||null,reason:cursor.runtime?.reason||'cursor_execution_unqualified'},
+      cursor:await (async()=>{
+        const base={kind:'agent',installed:cursor.installed===true,implemented:true,available:false,capabilities:[],editor_available:cursor.installed===true,runtime:cursor.runtime||null,reason:cursor.runtime?.reason||'cursor_execution_unqualified'};
+        // ADR 0051: the governed sandboxed worker is the only Cursor execution path.
+        const worker=this.bridge.cursorWorker;if(!worker)return base;
+        let r;try{r=await worker.readiness();worker.lastReadiness=r;}catch{return base;}
+        return {...base,installed:r.installed,version:r.version,governed_worker:true,available:r.ready===true,availability:r.availability,auth_state:r.auth_state,credential_source:r.credential_source,tiers:r.tiers,isolation:r.isolation,capabilities:r.ready?['coding','bounded_file_work']:[],boundary:'sandbox-exec staging; host CONNECT proxy to Cursor API hosts only; Keychain and shells denied; host applies changes',reason:r.ready?null:r.reason,owner_step:r.owner_step||null,spend:r.spend};
+      })(),
       chatgpt:{kind:'orchestrator',implemented:true,available:null,reason:'remote client connection not probed'}
     };
     for(const id of ['codex','claude_code']){const o=this.bridge.workers?.current(id);if(o?.qualified)observations[id]={...o,kind:'agent',implemented:true,bounded_worker:true,auth_mode:'subscription',availability:o.busy?'busy':o.available?'available':'unavailable',capabilities:['coding','bounded_file_work'],boundary:'no-tools vendor CLI; host broker applies bounded proposals'};}
@@ -20,7 +26,7 @@ class MissionAgents {
         const lastFailure=this.store.db.prepare("SELECT state FROM cp_runs WHERE agent_id=? AND state IN ('failed','interrupted','cancelled') ORDER BY updated_at DESC LIMIT 1").get(id);
         observation.last_safe_error_class=observation.operational?.last_safe_error_class||(id==='cursor'?['quota_limited','auth_required'].includes(cursor.runtime?.availability)?cursor.runtime.availability:null:lastFailure?.state==='failed'?'agent_run_failed':lastFailure?.state==='interrupted'?'termination_unverified':lastFailure?.state==='cancelled'?'cancelled':null);
         observation.active_run=active||observation.active_run||null;observation.last_success=last||null;
-        observation.availability=observation.bounded_worker?observation.availability:id==='claude_code'?(observation.available?'available':observation.reason==='busy'?'busy':!claude.installed?'unavailable':claude.availability==='needs_login'?'auth_required':'unavailable'):id==='host'?(observation.available?'available':'unavailable'):undefined;
+        observation.availability=observation.bounded_worker||observation.governed_worker?observation.availability:id==='claude_code'?(observation.available?'available':observation.reason==='busy'?'busy':!claude.installed?'unavailable':claude.availability==='needs_login'?'auth_required':'unavailable'):id==='host'?(observation.available?'available':'unavailable'):undefined;
         observation.runtime_profile=require('./agent-runtime-profile').agentRuntimeProfile(id,observation);
       }
       this.store.observeAgent(id,observation.kind,observation);
@@ -33,7 +39,8 @@ class MissionAgents {
     if(envelope.kind!=='coding')throw Error('Unsupported Mission task kind');
     if(!envelope.capability_scopes.includes('repo')||(envelope.task_type!=='local_files'&&!envelope.capability_scopes.includes('developer_environment')))throw Error('Mission scopes do not permit Claude coding');
     const fixture=process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true;
-    if(!fixture&&!envelope.worker_contract&&[envelope.preferred_agent,...envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
+    const governedCursor=envelope.preferred_agent==='cursor'&&!!envelope.contract&&!envelope.fallback_agents.length;
+    if(!fixture&&!envelope.worker_contract&&!governedCursor&&[envelope.preferred_agent,...envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     const observations=await this.refresh({boundedOnly:!!envelope.worker_contract}),p=envelope.dispatch_policy;
     if(this.bridge.authorityRuntime?.routing){const row=this.store.db.prepare('SELECT id FROM cp_missions WHERE envelope=?').get(JSON.stringify(envelope));if(!row)throw Error('Routing requires a persisted Mission');return this.bridge.authorityRuntime.route(this.store.getMission(row.id),observations);}
     const automatic=envelope.route_mode==='automatic';

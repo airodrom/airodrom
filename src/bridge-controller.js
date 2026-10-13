@@ -359,7 +359,8 @@ class BridgeController extends EventEmitter {
       this.codexAdapter=new (require('./apps/codex-adapter').CodexAdapter)(this);
       this.agentRouter.register(this.codexAdapter);
       this.agentRouter.register(new (require('./apps/claude-code-adapter').ClaudeCodeAdapter)(this));
-      this.cursorAdapter=new (require('./apps/cursor-adapter').CursorAdapter)();this.agentRouter.register(this.cursorAdapter);
+      this.cursorWorker=new (require('./cursor-worker').CursorWorker)(this,this.options.cursor||{});
+      this.cursorAdapter=new (require('./apps/cursor-adapter').CursorAdapter)(this);this.agentRouter.register(this.cursorAdapter);
       this.opencodeAdapter=new (require('./apps/opencode-adapter').OpenCodeAdapter)(this,this.options.opencode||require('./default-runtime').OPENCODE_DEFAULTS);this.agentRouter.register(this.opencodeAdapter);this.capabilityHost.opencodeStatus=()=>this.opencodeAdapter.readiness();
       this.workers=new (require('./worker-registry').WorkerRegistry)(this);
       this.workTemplates=new (require('./work-templates').WorkTemplates)(this);

@@ -260,12 +260,15 @@ class MissionService {
       this.assertAuthority(m);
       if(require('./mission-web-policy').proposal(m.envelope.objective).needed){this.web.qualify(m);this.web.grant(m);}
       if(m.envelope.coding_plan)this.codingAdapter.assert(m);
-      if(m.envelope.manifest&&!m.envelope.worker_contract&&!['host','opencode'].includes(route.selected))throw Error('Mission Manifest requires a qualified bounded native adapter');
+      // ADR 0051: the governed sandboxed Cursor worker stages declared files exactly like OpenCode;
+      // the host broker applies changes, so authority/manifest ceilings are enforced by the host.
+      const governedCursor=route.selected==='cursor'&&!!m.envelope.contract&&this.bridge.cursorWorker?.qualifiedFor?.(m);
+      if(m.envelope.manifest&&!m.envelope.worker_contract&&!['host','opencode'].includes(route.selected)&&!governedCursor)throw Error('Mission Manifest requires a qualified bounded native adapter');
       // Existing external adapters do not enforce all six permission dimensions.
-      if(m.envelope.authority && !m.envelope.worker_contract&&!['host','opencode'].includes(route.selected))throw Error('Mission authority requires a qualified bounded native adapter');
+      if(m.envelope.authority && !m.envelope.worker_contract&&!['host','opencode'].includes(route.selected)&&!governedCursor)throw Error('Mission authority requires a qualified bounded native adapter');
       if(m.envelope.authority && m.envelope.dispatch_policy?.native_actions.length)this.assertAuthority(m,{repository:['write'],data:['workspace_write'],filesystem:{write:m.envelope.dispatch_policy.native_actions.map(a=>path.resolve(m.envelope.workspace,a.path))}});
       this.bridge.authorityRuntime?.assertDispatch(m,route);
-      if(route.selected==='opencode'||m.envelope.worker_contract)return await this.launchOpenCode(dispatch,m,route);
+      if(route.selected==='opencode'||route.selected==='cursor'||m.envelope.worker_contract)return await this.launchOpenCode(dispatch,m,route);
       if(route.selected==='host'&&(fallback||m.envelope.task_type==='local_files'))return await this.launchNative(dispatch,m,fallback||{fallback_policy:m.envelope.dispatch_policy});
       if(route.selected==='codex'&&route.transport==='handoff'){
         this.bridge.codexAdapter.startTask(m.id,`automatic-handoff:${dispatch.id}`,dispatch.decision_id,dispatch.id,route);this.bridge.agentDispatch.schedule();return;
@@ -291,10 +294,16 @@ class MissionService {
     }
   }
   async launchOpenCode(dispatch,m,route){
-    const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),vendor=!!m.envelope.worker_contract,agentId=vendor?m.envelope.preferred_agent:'opencode',adapter=vendor?this.bridge.workers.get(agentId):this.bridge.opencodeAdapter;
+    // Shared staged-worker launch path: OpenCode (local), bounded vendor workers and the
+    // governed sandboxed Cursor worker (ADR 0051) all stage declared files, run inside
+    // sandbox-exec, and return host-measured changes the canonical broker applies.
+    const cursor=route.selected==='cursor'&&!m.envelope.worker_contract;
+    const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),vendor=!!m.envelope.worker_contract,agentId=vendor?m.envelope.preferred_agent:cursor?'cursor':'opencode',adapter=vendor?this.bridge.workers.get(agentId):cursor?this.bridge.cursorWorker:this.bridge.opencodeAdapter;
+    if(cursor&&!adapter)throw Error('worker_execution_unqualified');
     if(workspaceSnapshot(m.envelope.workspace).hash!==m.envelope.baseline.hash)throw Error('opencode_workspace_changed');
-    this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
-    if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
+    this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor||cursor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
+    if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor||cursor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
+    if(cursor&&!m.envelope.contract?.permissions?.external_disclosure?.authorized)throw Error('external_disclosure_unauthorized');
     let started=false;
     try{
       if(this.bridge.developerMemory){try{await this.bridge.developerMemory.prefetchForMission(m,task);}catch{/* Developer memory must never block OpenCode dispatch. */}}
@@ -323,15 +332,15 @@ class MissionService {
         if(applied.status!=='completed')throw Error('opencode_apply_not_completed');
       }
       transaction(this.db,()=>{
-        this.store.updateRun(runId,{state:'completed',processState:'exited',verified:true,result:{[vendor?'worker_provenance':'opencode_provenance']:output.provenance,artifacts:output.changes.map(({content,...metadata})=>metadata)}});
+        this.store.updateRun(runId,{state:'completed',processState:'exited',verified:true,result:{[vendor?'worker_provenance':cursor?'cursor_provenance':'opencode_provenance']:output.provenance,artifacts:output.changes.map(({content,...metadata})=>metadata),...(cursor?{worker_tool_events:output.tools?.length||0,trace_events:output.trace?.length||0}:{})}});
         this.captureResult(runId,{status:'completed',result:{text:JSON.stringify(output.result)}});
       });
     }catch(error){
       if(!started)throw error;
       if(vendor&&!task.cancelRequested)this.bridge.workers.recordFailure(agentId,error);
       // Uncertain process/invocation termination retains a quarantined writer.
-      const uncertain=['opencode_termination_unverified','opencode_spawn_failed','opencode_apply_not_completed','web_termination_unverified','worker_termination_unverified','worker_spawn_failed'].includes(error.code||error.message);
-      const errorClass=/^(?:opencode|worker)_[a-z_]{1,80}$/.test(error.code||error.message)?(error.code||error.message):'opencode_execution_stopped';
+      const uncertain=['opencode_termination_unverified','opencode_spawn_failed','opencode_apply_not_completed','web_termination_unverified','worker_termination_unverified','worker_spawn_failed','cursor_termination_unverified','cursor_spawn_failed'].includes(error.code||error.message);
+      const errorClass=/^(?:opencode|worker|cursor)_[a-z_]{1,80}$/.test(error.code||error.message)?(error.code||error.message):cursor?'cursor_execution_stopped':'opencode_execution_stopped';
       this.store.updateRun(runId,{state:uncertain?'termination_unverified':task.cancelRequested?'cancelled':'failed',processState:uncertain?'unknown':'exited',verified:!uncertain,resolution:errorClass,result:{runtime_id:agentId,error_class:errorClass}});
       if(uncertain){this.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(runId);this.db.prepare("UPDATE cp_dispatches SET state='unknown' WHERE id=?").run(dispatch.id);if(this.store.getMission(m.id).state!=='cancelled')this.store.state(m.id,'blocked','opencode_termination_unverified');}
       else this.captureResult(runId,{status:task.cancelRequested?'cancelled':'failed',result:{text:JSON.stringify({summary:agentId+' execution stopped safely',changed_files:[],tests:[],artifacts:[],limitations:[]})}});
@@ -461,7 +470,7 @@ class MissionService {
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
       if(!v||v.revision!==m.revision||(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
-      if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this.bridge.workers?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
+      if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this.bridge.workers?.assertEvidence(this.store.run(v.run_id));this.bridge.cursorWorker?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');
       if(input.decision==='accept'&&!require('./execution-evidence').runSatisfied(this.store.run(v.run_id)))throw Error('Required native execution evidence is missing');
       if(input.decision==='accept'&&v.result==='operator_review'){if(owner!=='operator')throw Error('Unsupported criterion requires operator review');text(input.evidence,'operator evidence',4000);}

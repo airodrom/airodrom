@@ -17,7 +17,9 @@ function routeTask(input,agents){
   const state=profile?.availability||a?.availability||a?.state;
   const handoff=id==='codex'&&input.allow_handoff===true&&a?.implemented===true&&(!profile||profile.handoff_only===true)&&!['busy','auth_required','quota_limited','unknown','degraded'].includes(state);
   const available=a?.available===true&&(!profile||profile.direct_dispatch===true&&profile.available===true)&&(!state||state==='available');
-  if(id==='cursor')reason='cursor_execution_unqualified';
+  // ADR 0051: Cursor routes only through the governed sandboxed worker observation.
+  if(id==='cursor'&&a?.governed_worker!==true)reason='cursor_execution_unqualified';
+  else if(id==='cursor'&&input.privacy==='local_only')reason='local_reasoning_transport_required';
   else if(input.allowed_agents&&!input.allowed_agents.includes(id))reason='agent_policy';
   else if(input.allowed_providers&&!input.allowed_providers.includes(provider||'local'))reason='provider_policy';
   else if(input.allowed_cost_classes&&!input.allowed_cost_classes.includes(profile?.cost_class|| (id==='host'?'local':'subscription')))reason='cost_policy';

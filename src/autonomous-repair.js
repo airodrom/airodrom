@@ -70,8 +70,11 @@ function sameScope(parent, candidate) {
   if (JSON.stringify([...(a.allowed_files || [])].sort()) !== JSON.stringify([...(b.allowed_files || [])].sort())) return false;
   if ((a.preferred_agent || 'host') !== (b.preferred_agent || 'host')) return false;
   if (JSON.stringify(a.capability_scopes || []) !== JSON.stringify(b.capability_scopes || [])) return false;
-  if ((a.dispatch_policy?.privacy || 'local_only') !== 'local_only') return false;
-  if ((b.dispatch_policy?.privacy || a.dispatch_policy?.privacy || 'local_only') !== 'local_only') return false;
+  const privacy = a.dispatch_policy?.privacy || 'local_only';
+  if ((b.dispatch_policy?.privacy || privacy) !== privacy) return false;
+  // Non-local privacy is only ever in scope when the parent contract explicitly authorizes
+  // external disclosure to that worker (ADR 0051); otherwise repairs stay local-only.
+  if (privacy !== 'local_only' && !(a.contract?.permissions?.external_disclosure?.authorized && a.contract.permissions.external_disclosure.providers.includes(a.preferred_agent))) return false;
   return true;
 }
 
