@@ -40,13 +40,23 @@ test('timeout and cancellation kill the owned process group; nonzero/malformed r
 });
 test('redaction drops raw runtime tools, credentials and self-attested tests; sessions must correlate',async()=>{
  const parsed=parseOutput(event({...result,summary:'Bearer syntheticResultSecret',tests:[{claimed:'passed'}]}),[]);assert.doesNotMatch(JSON.stringify(parsed),/syntheticResultSecret/);assert.deepEqual(parsed.result.tests,[]);
- assert.throws(()=>parseOutput(event(result)+'{"type":"error"}\n',[]),/malformed/);
- assert.throws(()=>parseOutput(event(result)+event(result,'ses_wrong'),[]),/session_mismatch/);
- assert.throws(()=>parseOutput(event({...result,changed_files:['other.txt']}),[]),/malformed/);
+  // Unknown event types with a valid session are ignored; session mismatch still fails closed.
+  assert.deepEqual(parseOutput(event(result)+'{"type":"error","sessionID":"ses_fixture"}\n',[]).result.changed_files,[]);
+  assert.throws(()=>parseOutput(event(result)+event(result,'ses_wrong'),[]),/session_mismatch/);
+  assert.throws(()=>parseOutput(event({...result,changed_files:['other.txt']}),[]),/malformed/);
   assert.deepEqual(parseOutput(event({summary:'unavailable'}),[]).result.changed_files,[]);
   assert.equal(parseOutput(event({summary:'azure',status:'success'}),[]).result.status,'completed');
   assert.throws(()=>parseOutput(event({summary:'azure',status:'ok'}),[]),/malformed/);
   assert.throws(()=>parseOutput(event({...result,limitations:'untrusted'}),[]),/malformed/);
+  assert.equal(parseOutput(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'m',text:'Here is the result:\n'+JSON.stringify(result)+'\n'}})+'\n',[]).result.status,'completed');
+});
+test('host-observed allowlisted edits recover when worker JSON is malformed', async t => {
+  const f = runtime(t);
+  const recovered = await f.adapter.execute({ ...f.request, objective: 'edit-without-json', writable: ['fixture.txt'] });
+  assert.equal(recovered.changes[0].content, 'beta\n');
+  assert.match(recovered.result.summary, /Host observed allowlisted file changes/);
+  assert.equal(fs.readFileSync(path.join(f.workspace, 'fixture.txt'), 'utf8'), 'alpha\n');
+  await assert.rejects(f.adapter.execute({ ...f.request, objective: 'malformed' }), /opencode_malformed_result/);
 });
 test('child environment is isolated and tools deny memory, shell, network, subagents and MCP by default',async t=>{
  const f=runtime(t),e=disposableEnv('/tmp/fixture','/tmp/fixture/workspace',{});assert.equal(e.OPENAI_API_KEY,undefined);assert.equal(e.HOME,undefined);assert.equal(e.NODE_OPTIONS,undefined);

@@ -9,7 +9,7 @@ const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { runtime, qualifyCanonical } = require('./fixtures/opencode-fixture.cjs');
 const { parse } = require('../src/assistant-intent');
 const { submit } = require('../src/assistant-service');
-const { guide, preview } = require('../src/zero-setup-terminal');
+const { guide, preview, poll, rememberActive, readActive, clearActive, resumeActive, isTransportError, resultText } = require('../src/zero-setup-terminal');
 
 function terminal(lines) {
   const input = new PassThrough();
@@ -128,4 +128,80 @@ test('non-TTY cannot authorize bounded work', async t => {
     request: async () => { throw Error('must not approve'); },
   }), /interactive owner terminal/i);
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
+});
+
+test('leading workspace phrasing still routes to WORK; ordinary questions stay conversational', () => {
+  assert.equal(parse('In the prepared self-repair test workspace, change fixture.txt from alpha to beta.').kind, 'work');
+  assert.equal(parse('Change fixture.txt from alpha to beta.').kind, 'work');
+  assert.equal(parse('What is a Git repository?').kind, 'conversation');
+  assert.equal(parse('How does automatic repair work?').kind, 'conversation');
+  assert.equal(parse('Explain why verification can fail.').kind, 'conversation');
+});
+
+test('status transport failures reconnect to the same request_id without approving again', async t => {
+  const requestId = randomUUID();
+  let statusCalls = 0;
+  let approveCalls = 0;
+  const views = [
+    Object.assign(new Error('fetch failed'), { name: 'TypeError' }),
+    Object.assign(new Error('Local discovery ownership not healthy'), { name: 'Error' }),
+    {
+      kind: 'zero_setup',
+      state: 'AWAITING_ACCEPTANCE',
+      outcome: { mission_state: 'awaiting_acceptance', verification: { result: 'passed' } },
+      presentation: { files: ['fixture.txt'], status: 'Repair completed' },
+      technical: { request_id: requestId, mission_id: 'mission-repair', repair_of: 'mission-parent' },
+      authority: false,
+    },
+  ];
+  const done = await poll('/tmp/unused-home', requestId, {
+    sleep: async () => {},
+    request: async (_home, route) => {
+      assert.match(route, new RegExp(encodeURIComponent(requestId)));
+      statusCalls += 1;
+      const next = views.shift();
+      if (next instanceof Error) throw next;
+      return next;
+    },
+  });
+  assert.equal(statusCalls, 3);
+  assert.equal(approveCalls, 0);
+  assert.equal(done.technical.request_id, requestId);
+  assert.equal(done.technical.repair_of, 'mission-parent');
+  assert.match(resultText(done), /Repair completed/);
+  assert.equal(isTransportError(Object.assign(new Error('fetch failed'), { name: 'TypeError' })), true);
+});
+
+test('remembered request identity resumes observation without creating a duplicate Mission', async t => {
+  const f = await setup(t);
+  const requestId = randomUUID();
+  rememberActive(f.root, requestId);
+  assert.equal(readActive(f.root).request_id, requestId);
+  const output = new PassThrough();
+  output.isTTY = true;
+  let text = '';
+  output.on('data', chunk => { text += chunk.toString('utf8'); });
+  let statusCalls = 0;
+  const resumed = await resumeActive(f.root, {
+    input: new PassThrough(),
+    output,
+    request: async (_home, route) => {
+      statusCalls += 1;
+      assert.match(route, new RegExp(encodeURIComponent(requestId)));
+      return {
+        kind: 'zero_setup',
+        state: 'AWAITING_ACCEPTANCE',
+        outcome: { mission_state: 'awaiting_acceptance', verification: { result: 'passed' } },
+        presentation: { files: ['fixture.txt'], status: 'Verified' },
+        technical: { request_id: requestId, mission_id: 'mission-1' },
+        authority: false,
+      };
+    },
+  });
+  assert.equal(statusCalls, 1);
+  assert.equal(resumed.technical.request_id, requestId);
+  assert.equal(readActive(f.root), null);
+  assert.match(text, /Resuming observation of the same authorized task/);
+  assert.match(text, /Verification passed/);
+  clearActive(f.root);
 });

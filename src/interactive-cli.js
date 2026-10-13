@@ -245,6 +245,18 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   };
   attachReader(); process.on('SIGINT', interrupt);
   try {
+    // Reconnect observes the same durable zero-setup request; never creates a duplicate Mission.
+    if (require('./zero-setup-terminal').readActive(home) && input.isTTY && output.isTTY) {
+      active = new AbortController();
+      await detachReader();
+      try {
+        const resumed = await require('./zero-setup-terminal').resumeActive(home, { input, output, signal: active.signal });
+        if (resumed?.technical?.mission_id) lastMission = resumed.technical.mission_id;
+      } finally {
+        active = null;
+        if (!quitting && !input.readableEnded) { while (input.read() !== null) {} attachReader(); }
+      }
+    }
     showPrompt();
     while (lines) {
       const next = await lines.next();
