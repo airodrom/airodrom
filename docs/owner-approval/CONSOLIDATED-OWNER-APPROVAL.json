@@ -73,7 +73,6 @@
   ],
   "docs": "docs/WEB-BOOT-EPOCH-RECOVERY-V1.md",
   "ts": "2026-10-13T23:19:54Z",
-  "head_sha": "4be45a872ac5e00165113432df17638f41e97d80",
-  "note": "Merge/squash the exact GitHub PR headRefOid at approval time.",
-  "closeout_code_head": "4be45a872ac5e00165113432df17638f41e97d80"
+  "head_sha": "50b5ec93aea3437313c662f16b3a89b71860ff80",
+  "note": "Merge/squash the exact GitHub PR headRefOid at approval time."
 }
