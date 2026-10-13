@@ -13,7 +13,11 @@ test('Codex transport disables the actual host feature and avoids deprecated sta
  const r=root(t),args=worker.args('codex',r,'public-model');assert.ok(args.includes('features.code_mode_host=false'));assert.ok(args.includes('features.shell_tool=false'));assert.ok(args.includes('web_search="disabled"'));assert.ok(args.includes('--ignore-user-config'));assert.ok(args.includes('--ignore-rules'));assert.ok(args.includes('--ephemeral'));assert.ok(args.includes('--output-schema'));assert.ok(!args.some(s=>/web_search_cached|web_search_request|bypass/.test(s)));
 });
 test('signed bundle snapshot runs under unchanged no-fork sandbox; altered metadata cannot be snapshotted', {skip:process.platform!=='darwin'||!fs.existsSync(worker.SPECS.codex.candidates()[0])},t=>{
- const r=root(t),o=worker.inspect('codex'),exe=worker.snapshotExecutable(o,r,'codex');assert.equal(worker.HASH(fs.readFileSync(exe)),o.sha256);fs.mkdirSync(path.join(r,'state'));const version=cp.spawnSync('/usr/bin/sandbox-exec',['-p',worker.sandbox(r,exe,'codex',9),exe,'--version'],{env:{HOME:path.join(r,'state'),CODEX_HOME:path.join(r,'state'),TMPDIR:path.join(r,'state'),PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:5000});assert.equal(version.status,0);assert.match(version.stdout,/codex-cli 0\.160\.1/);
+ const r=root(t),o=worker.inspect('codex'),exe=worker.snapshotExecutable(o,r,'codex');assert.equal(worker.HASH(fs.readFileSync(exe)),o.sha256);fs.mkdirSync(path.join(r,'state'));const version=cp.spawnSync('/usr/bin/sandbox-exec',['-p',worker.sandbox(r,exe,'codex',9),exe,'--version'],{env:{HOME:path.join(r,'state'),CODEX_HOME:path.join(r,'state'),TMPDIR:path.join(r,'state'),PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:5000});assert.equal(version.status,0);
+ // Bound the observed CLI to the reviewed pin version recorded on the snapshot.
+ const pinned=String(o.version||o.cli_version||'').replace(/^v/,'');
+ if(pinned)assert.match(version.stdout,new RegExp('codex-cli '+pinned.replace(/\./g,'\\.')));
+ else assert.match(version.stdout,/codex-cli \d+\.\d+/);
  const metadata=path.resolve(exe,'../../Info.plist');fs.chmodSync(metadata,0o600);fs.appendFileSync(metadata,'\ninvalid');assert.throws(()=>worker.snapshotExecutable({...o,executable:exe},root(t),'codex'),/worker_snapshot_signature_invalid/);
  const roots=worker.publicTLSRoots();assert.ok(roots.content.length>1000);assert.doesNotMatch(roots.content.toString(),/PRIVATE KEY|Certificate:|Data:/);assert.equal(roots.sha256,o.tls_roots_sha256);
 });

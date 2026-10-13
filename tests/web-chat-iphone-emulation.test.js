@@ -26,7 +26,7 @@ test('product browser suite documents narrow and Conversation privacy paths', ()
   assert.match(browser, /width:\s*320/);
   assert.match(browser, /Conversation/);
   assert.match(browser, /Authorization required/);
-  assert.match(browser, /Remembered in Personal Memory V2/);
+  assert.match(browser, /Remembered\./);
   // iPhone logical size used by companion browser fixtures when present
   assert.ok(IPHONE.width === 390 && IPHONE.height === 844);
 });

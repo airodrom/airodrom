@@ -37,7 +37,8 @@ test('cancelled and expired Decisions never create continuations',async t=>{
 test('shutdown waits for external child settlement and is idempotent',async t=>{
  const f=await fixture(t);let settled=false;const done=new Promise(resolve=>setTimeout(()=>{settled=true;resolve();},50));
  f.host.jobs.jobs.set('settlement-fixture',{done});
- await f.bridge.shutdown();assert.equal(settled,true);await f.bridge.shutdown();
+ // Exercise production BridgeController.shutdownOnce (fixture default skips job settlement).
+ await f.bridge.productionShutdown();assert.equal(settled,true);await f.bridge.productionShutdown();
 });
 
 test('uncertain root delivery does not starve a different Mission thread',async t=>{

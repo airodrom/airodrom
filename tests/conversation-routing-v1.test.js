@@ -72,7 +72,8 @@ test('registered Work template retains exact files, checks and governed verifica
  assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');
  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);
  const approved=await b.zeroSetupWork.approve({request_id:created.technical.request_id,confirmed:true,channel:'fixture'},'operator');
- const verified=await f.settle(approved.technical.mission_id);assert.equal(verified.state,'awaiting_acceptance');assert.ok(['passed','operator_review'].includes(verified.verifications[0].result));assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n,0);
+ // Exact-file alpha→beta pilot: owner approve includes bounded completion; Mission settles without a second Acceptance.
+ const verified=await f.settle(approved.technical.mission_id,'completed');assert.equal(verified.state,'completed');assert.ok(['passed','operator_review'].includes(verified.verifications[0].result));assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n,1);
  // A website capability cannot piggyback on a repository's write template.
  const website=await service.submit(server,{message:'Audit this website',request_id:id(),workspace:f.repo});assert.equal(website.kind,'clarify');assert.match(website.message,/one URL.*domain scope/);
  const combined=await service.submit(server,{message:'Fix the repository and email the report',request_id:id(),workspace:f.repo});

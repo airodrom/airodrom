@@ -102,7 +102,7 @@ async function launch(service, dispatch, m) {
       task.contextPackId = pack.id; task.activeRunId = runId; task.status = 'running'; task.mission.started = true; task.mission.status = 'active'; task.startedAt = startedAt; task.lastActivityAt = startedAt; b.tasks.save(task);
       service.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id, task.id);
       service.store.updateRun(runId, { state: 'running', processState: 'alive' });
-      service.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,route=?,updated_at=? WHERE id=? AND state='queued'").run(runId, JSON.stringify({ selected: 'opencode', reason: PROFILE, transport: 'local_standalone_cli' }), startedAt, dispatch.id);
+      service.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,route=?,updated_at=? WHERE id=? AND state IN ('queued','dispatching')").run(runId, JSON.stringify({ selected: 'opencode', reason: PROFILE, transport: 'local_standalone_cli' }), startedAt, dispatch.id);
       service.store.state(m.id, 'running'); started = true; return pack;
     });
     b.emit('change');

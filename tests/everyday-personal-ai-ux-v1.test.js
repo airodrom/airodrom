@@ -31,11 +31,11 @@ test('Conversation surface exposes model, history, Memory consent and reconnect 
 
 test('Mission cards surface verified activity, approval, Settlement and Observatory', () => {
   const hub = read('public/control-hub.js');
-  assert.match(hub, /Active work:/);
-  assert.match(hub, /Assigned worker:/);
-  assert.match(hub, /Pending approval:/);
-  assert.match(hub, /Settlement:/);
-  assert.match(hub, /Open Observatory/);
+  assert.match(hub, /outcome\.headline/);
+  assert.match(hub, /View Mission/);
+  assert.match(hub, /Settlement/);
+  assert.match(hub, /\/api\/product\/observatory/);
+  assert.match(hub, /mission-detail/);
 });
 
 test('Control Center deep links cover Conversation, Missions, Development Sessions and System Health', () => {

@@ -36,8 +36,8 @@ test('Control Center and macOS personal-channel surfaces stay wired without What
  const control=fs.readFileSync(path.join(__dirname,'../scripts/macos/product-control.cjs'),'utf8');
  assert.match(control,/open-conversation/);
  assert.match(control,/view:'Conversation'/);
- const bootstrap=fs.readFileSync(path.join(__dirname,'../src/local-bootstrap.js'),'utf8');
- assert.match(bootstrap,/view!=='Conversation'/);
+ const hubJs=fs.readFileSync(path.join(__dirname,'../public/control-hub.js'),'utf8');
+ assert.match(hubJs,/view!=='Conversation'/);
  const server=fs.readFileSync(path.join(__dirname,'../src/control-server.js'),'utf8');
  assert.match(server,/\/api\/assistant\/provider/);
  assert.ok(fs.existsSync(path.join(__dirname,'../src/conversation-provider.js')));

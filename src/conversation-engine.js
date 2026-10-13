@@ -226,6 +226,15 @@ class ConversationEngine {
   return {conversation_id:row.conversation_id,turn_id:row.id,state:row.state,summary:row.response,reason:row.state==='failed'?failedReason:row.state==='cancelled'?'Conversation cancelled.':null,model:row.model||null,worker:'local-ollama',activity:row.state==='running'?'Thinking…':null};
  }
  cancel(input){const row=this.result(input);this.active.get(input.turn_id)?.controller.abort();if(row.state==='running')this.finish(row.turn_id,row.conversation_id,null,'cancelled',null,'cancelled');return this.result(input);}
+ activeTurn(input={}){
+  object(input,['conversation_id']);erasure.assertReadable(this.db);
+  const conversation_id=input.conversation_id?this.requireSession(input.conversation_id).id:null;
+  const row=conversation_id
+   ?this.db.prepare("SELECT * FROM cp_conversation_turns WHERE conversation_id=? AND operator_id=? AND state='running' ORDER BY created_at DESC LIMIT 1").get(conversation_id,this.owner)
+   :this.db.prepare("SELECT * FROM cp_conversation_turns WHERE operator_id=? AND state='running' ORDER BY created_at DESC LIMIT 1").get(this.owner);
+  if(!row||!this.current(row)||!this.active.has(row.id))return {kind:'chat',state:'idle',conversation_id:conversation_id||null,turn_id:null,activity:null,model:null,worker:'local-ollama'};
+  return {kind:'chat',conversation_id:row.conversation_id,turn_id:row.id,state:'running',model:row.model||null,worker:'local-ollama',activity:'Thinking…'};
+ }
  async close(){for(const entry of this.active.values())entry.controller.abort();await Promise.allSettled([...this.active.values()].map(e=>e.promise));}
 }
 module.exports={ConversationEngine};

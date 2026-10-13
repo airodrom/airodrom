@@ -299,7 +299,10 @@ class ControlServer {
         const rows=selected?this.bridge.controlStore.db.prepare("SELECT id FROM cp_missions WHERE id=? AND json_extract(envelope,'$.kind')='conversation'").all(selected):this.bridge.controlStore.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.kind')='conversation' ORDER BY created_at DESC LIMIT 20").all();
         const items=rows.map(r=>{const m=this.bridge.missions.require(r.id),t=this.bridge.tasks.get(m.task_id);const prompt=require('./conversation-mission').projectRead(this.bridge,t.id,m.envelope.objective,m.id),response=require('./conversation-mission').projectRead(this.bridge,t.id,t.lastResult||null,m.id);return {mission_id:m.id,state:m.state,prompt:typeof prompt==='string'?prompt:null,response:typeof response==='string'?response:null};});return this.json(res,200,{items,generation:require('./product-observability').memoryStatus(this.bridge).generation,streaming:'Unavailable: adapter returns one bounded visible response'});
       }
-      if(req.method==='GET'&&url.pathname==='/api/assistant/conversation')return this.json(res,200,this.conversationEngine.result({conversation_id:url.searchParams.get('conversation_id'),turn_id:url.searchParams.get('turn_id')}));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/conversation'){
+        if(url.searchParams.get('active')==='1')return this.json(res,200,this.conversationEngine.activeTurn({conversation_id:url.searchParams.get('conversation_id')}));
+        return this.json(res,200,this.conversationEngine.result({conversation_id:url.searchParams.get('conversation_id'),turn_id:url.searchParams.get('turn_id')}));
+      }
       if(req.method==='GET'&&url.pathname==='/api/assistant/provider')return this.json(res,200,await require('./assistant-service').providerStatus(this));
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/work-templates')return this.json(res,200,{items:this.bridge.workTemplates.list('operator'),authority:false});
@@ -503,11 +506,13 @@ class ControlServer {
         throw Error('Use Mission new, list, status or cancel.');
       }
       if(url.pathname==='/api/assistant/input'){
+        // Admission may outlive the HTTP socket when the client hits its admission
+        // budget. Chat turns must keep generating; the CLI reconnects by request_id
+        // or active-turn lookup. Only explicit cancel aborts healthy inference.
         let receipt,disconnected=false;
-        const cancel=()=>{if(receipt?.kind==='chat')this.conversationEngine.cancel({conversation_id:receipt.conversation_id,turn_id:receipt.turn_id});};
-        res.once('close',()=>{if(!res.writableEnded){disconnected=true;try{cancel();}catch{}}});
+        res.once('close',()=>{if(!res.writableEnded)disconnected=true;});
         receipt=await require('./assistant-service').submit(this,body);
-        if(disconnected){cancel();return;}
+        if(disconnected)return;
         return this.json(res,202,receipt);
       }
       if(url.pathname==='/api/assistant/handoff')return this.json(res,202,await require('./mission-handoff').submit(this.bridge,body,'operator'));

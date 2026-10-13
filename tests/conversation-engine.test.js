@@ -85,13 +85,17 @@ test('model discovery reports direct conversation separately from unavailable ex
  assert.equal(catalog.models[0].available,true);assert.equal(catalog.models[0].conversation.worker_required,false);assert.equal(catalog.workers[0].available,false);assert.equal(router.select(catalog,{mission_class:'WORK'}).state,'WAIT');
 });
 
-test('disconnected operator request cancels a late-admitted direct turn',async t=>{
+test('admission socket loss does not cancel a late-admitted direct turn',async t=>{
  const f=await setup(t),ControlServer=require('../src/control-server');f.bridge.conversationEngine=f.engine;let release,started;const gate=new Promise(r=>release=r),begin=new Promise(r=>started=r);
  f.engine.qualify=async()=>{started();await gate;return {state:'READY',model:router.MODEL};};
- const server=new ControlServer(f.bridge,{port:0});await server.start();t.after(()=>server.close());const session=f.engine.session(),controller=new AbortController();
- const request=fetch(server.origin+'/api/assistant/input',{method:'POST',headers:{Authorization:'Bearer '+server.token,'Content-Type':'application/json'},body:JSON.stringify({message:'Hi',request_id:randomUUID(),...session}),signal:controller.signal});
- await begin;controller.abort();await assert.rejects(request);await new Promise(r=>setTimeout(r,30));release();await new Promise(r=>setTimeout(r,50));
- const rows=f.bridge.controlStore.db.prepare('SELECT state,response FROM cp_conversation_turns WHERE conversation_id=?').all(session.conversation_id);assert.equal(rows.length,1);assert.equal(rows[0].state,'cancelled');assert.equal(rows[0].response,null);
+ const server=new ControlServer(f.bridge,{port:0});await server.start();t.after(()=>server.close());const session=f.engine.session(),controller=new AbortController(),request_id=randomUUID();
+ const request=fetch(server.origin+'/api/assistant/input',{method:'POST',headers:{Authorization:'Bearer '+server.token,'Content-Type':'application/json'},body:JSON.stringify({message:'Hi',request_id,...session}),signal:controller.signal});
+ await begin;controller.abort();await assert.rejects(request);await new Promise(r=>setTimeout(r,30));release();
+ await f.engine.active.values().next().value?.promise;await new Promise(r=>setTimeout(r,20));
+ const rows=f.bridge.controlStore.db.prepare('SELECT id,state,response FROM cp_conversation_turns WHERE conversation_id=?').all(session.conversation_id);
+ assert.equal(rows.length,1);assert.notEqual(rows[0].state,'cancelled');assert.equal(rows[0].state,'completed');assert.match(String(rows[0].response),/Hello/);
+ const replay=await fetch(server.origin+'/api/assistant/input',{method:'POST',headers:{Authorization:'Bearer '+server.token,'Content-Type':'application/json'},body:JSON.stringify({message:'Hi',request_id,...session})}).then(r=>r.json());
+ assert.equal(replay.turn_id,rows[0].id);assert.equal(replay.state,'completed');
 });
 
 test('selected private identifier context and generated private output are denied',async t=>{

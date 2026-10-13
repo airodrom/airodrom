@@ -63,24 +63,6 @@
       "classification": "stable external protocol/integration identity"
     },
     {
-      "file": "src/capability-mac.js",
-      "sha256": "44bfa95a57ce5f25ac8d8f59e7815acf05326c2d81d44dc1eebbda88e6387233",
-      "count": 1,
-      "classification": "stable external protocol/integration identity"
-    },
-    {
-      "file": "src/capability-mac.js",
-      "sha256": "951cc3b878e0825dcc6372f09b5614c2c57998940bddf3f6a63b48dd0a983368",
-      "count": 1,
-      "classification": "stable external protocol/integration identity"
-    },
-    {
-      "file": "src/capability-mac.js",
-      "sha256": "443a7620895fd47a6b6f1d4944c82e0945ab9bd707288ad499557e07bc724a17",
-      "count": 1,
-      "classification": "stable external protocol/integration identity"
-    },
-    {
       "file": "src/chatgpt-connection.js",
       "sha256": "881cddaa8d36a74a678e5363638f29758743b134c865cb3a149889bfef453fb2",
       "count": 1,
@@ -307,6 +289,30 @@
       "sha256": "e47dfb609319efc92a9c90771be9d96e07173bf8d1bb115bcf6d436b6688db33",
       "count": 1,
       "classification": "stable external protocol/integration identity"
+    },
+    {
+      "file": "src/capability-mac.js",
+      "sha256": "c28a3635812ccb36fe91e7994fef3fcf6bbd160af5d9362a913057740412948a",
+      "count": 1,
+      "classification": "documented pi_bridge capability alias denial"
+    },
+    {
+      "file": "src/capability-mac.js",
+      "sha256": "2bf5fe404cfc2f5ad61fc3b0d967d1a0d3dd88425bd817146d8a70961176d9bc",
+      "count": 1,
+      "classification": "documented pi_bridge capability alias denial"
+    },
+    {
+      "file": "src/capability-mac.js",
+      "sha256": "7ea7e7a73d4c3d8119be4e6fd1d0cb8967024e87c4da5f8c2d7f62bdd0b0ec03",
+      "count": 1,
+      "classification": "documented pi_bridge capability alias denial"
+    },
+    {
+      "file": "src/capability-mac.js",
+      "sha256": "8c191481f02b9cb741161109d11af2175087f5cebcf92efd1fb6b9c954181b8f",
+      "count": 1,
+      "classification": "documented pi_bridge capability alias denial"
     }
   ]
 }

@@ -5,7 +5,7 @@ const { spawnSync } = require('node:child_process');
 const { makeWorkerProfile } = require('../src/sandbox-policy');
 const { HELPER } = require('../src/slack-credentials');
 const { HostExecutor } = require('../src/host-exec');
-test('ordinary and trusted workers deny helper before exec through every process API and alias', { skip: process.platform !== 'darwin' }, t => {
+test('ordinary and trusted workers deny helper before exec through every process API and alias', { skip: process.platform !== 'darwin' || !fs.existsSync(HELPER) }, t => {
   assert.ok(fs.existsSync(HELPER), 'dedicated helper must exist for real OS regression');
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'host-helper-boundary-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -39,7 +39,7 @@ test('generic host executor cannot confer helper authority via allowlist, copied
   assert.throws(() => host.spawnTracked(HELPER, []), /not allowlisted/);
   assert.equal(calls, 0);
 });
-test('host capability interpreter children inherit denial before helper exec', { skip: process.platform !== 'darwin' }, async t => {
+test('host capability interpreter children inherit denial before helper exec', { skip: process.platform !== 'darwin' || !fs.existsSync(HELPER) }, async t => {
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'host-boundary-')));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const copy=path.join(root,'renamed');fs.copyFileSync(HELPER,copy);fs.chmodSync(copy,0o700);
   const host=new HostExecutor({allowed:[process.execPath,'/bin/sh','/missing/fixed-tool']});

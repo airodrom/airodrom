@@ -339,9 +339,15 @@ async function start(home, env = process.env) {
   // Client packages from another install must not start a second supervisor.
   if (!isStopped(home)) {
     try {
-      await attach(home, { timeoutMs: 2000 });
-      // Recover orphaned healthy+booting supervisors left after a timed-out prior start.
-      return await ownedStartResume(home, { timeoutMs: 30000 });
+      const attached = await attach(home, { timeoutMs: 2000 });
+      try {
+        // Recover orphaned healthy+booting supervisors left after a timed-out prior start.
+        return await ownedStartResume(home, { timeoutMs: 30000 });
+      } catch (resumeError) {
+        // Healthy service from another source revision keeps serving; never replace it.
+        if (attached?.healthy && /another source revision/i.test(String(resumeError.message || resumeError))) return attached;
+        throw resumeError;
+      }
     }
     catch (error) {
       const lock = require('../scripts/macos/control.cjs').lock({ dataDir: path.join(home, 'data') });

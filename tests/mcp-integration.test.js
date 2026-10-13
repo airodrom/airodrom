@@ -48,8 +48,9 @@ async function fixture(t) {
   return f;
 }
 
-test('MCP exposes twenty-seven high-level tools and rejects direct path, URL, RPC and SQL controls', () => {
-  assert.deepEqual(TOOLS.map(tool => tool.name).sort(), ['cancel_mission_handoff', 'get_mission_handoff', 'submit_mission', 'acknowledge_task_event', 'agent_status', 'approve_once', 'cancel_task', 'capability_inventory', 'capability_invoke', 'capability_status', 'claim_agent_dispatch', 'continue_task', 'create_task', 'get_agent_dispatches', 'get_agent_results', 'get_provider_status', 'get_reasoning_admissions', 'get_task_events', 'get_task_status', 'get_worker_catalog', 'inspect_context_pack', 'list_architecture_memories', 'native_tool_invoke', 'personal_memory_get', 'personal_memory_search', 'reject', 'report_agent_dispatch'].sort());
+test('MCP exposes the high-level tool catalog and rejects direct path, URL, RPC and SQL controls', () => {
+  assert.equal(TOOLS.length, 43);
+  assert.deepEqual(TOOLS.map(tool => tool.name).sort(), ['acknowledge_task_event', 'agent_status', 'approve_once', 'ask_airodrom', 'cancel_mission', 'cancel_mission_handoff', 'cancel_task', 'capability_inventory', 'capability_invoke', 'capability_status', 'claim_agent_dispatch', 'continue_task', 'create_task', 'get_agent_dispatches', 'get_agent_results', 'get_ask_status', 'get_mission_events', 'get_mission_evidence', 'get_mission_handoff', 'get_mission_status', 'get_provider_status', 'get_reasoning_admissions', 'get_task_events', 'get_task_status', 'get_worker_catalog', 'inspect_autonomous_goal', 'inspect_context_pack', 'inspect_goal_plan', 'inspect_mission_proposal', 'list_architecture_memories', 'list_authorized_scopes', 'list_goal_plans', 'list_work_templates', 'native_tool_invoke', 'personal_memory_get', 'personal_memory_search', 'prepare_mission', 'propose_goal_plan', 'reject', 'report_agent_dispatch', 'request_autonomous_authorization', 'request_mission_correction', 'submit_mission']);
   const task_id = randomUUID(), approval_id = randomUUID();
   const valid = {
     create_task: { description: 'Read the branch', message: 'Report the Git branch', request_id: randomUUID() },
