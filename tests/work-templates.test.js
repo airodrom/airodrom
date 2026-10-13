@@ -9,3 +9,28 @@ test('V2 local handoff independently verifies, remains unaccepted, and replays o
 test('revocation, stale verifier, seal tamper, route and ceiling escalation deny',async t=>{const f=await setup(t),b=f.bridge,r=b.workTemplates,registered=r.register(f.input,'operator');const scope=r.template('fixture','local');const {privacy,data_class,workers,...input}=scope;assert.throws(()=>b.missions.create({...input,request_id:randomUUID(),objective:'Synthetic',preferred_agent:'opencode',capability_scopes:['host']},'operator'),/ceiling/);const denied=await handoff.submit(b,{...packet(),worker:'codex'},'mcp:local-fixture');assert.equal(denied.state,'WAIT');await assert.rejects(handoff.submit(b,{...packet(),capability_classes:['host']},'mcp:local-fixture'),/exceed/);const m=b.missions.create({...input,request_id:randomUUID(),objective:'Synthetic',preferred_agent:'opencode'},'operator');assert.throws(()=>r.revoke({project:'fixture',workspace_alias:'local',template_hash:registered.template_hash,confirmed:true},'mcp:x'),/operator/);r.revoke({project:'fixture',workspace_alias:'local',template_hash:registered.template_hash,confirmed:true},'operator');assert.throws(()=>b.missions.dispatch(m.id,{request_id:randomUUID()}),/revoked/);assert.equal((await handoff.submit(b,packet(),'mcp:local-fixture')).state,'WAIT');b.controlStore.db.prepare("UPDATE cp_work_templates SET record='{}'").run();assert.equal(r.list('operator')[0].state,'invalid');await assert.rejects(handoff.submit(b,packet(),'mcp:local-fixture'));});
 test('verification definition drift invalidates registered templates',async t=>{const f=await setup(t),r=f.bridge.workTemplates;r.register(f.input,'operator');fs.appendFileSync(path.join(f.repo,'.vscode/tasks.json'),' ');assert.equal(r.list('operator')[0].state,'invalid');assert.throws(()=>r.template('fixture','local'),/verification/);});
 test('expired consent and workspace replacement fail closed',async t=>{const f=await setup(t),r=f.bridge.workTemplates,record=r.register(f.input,'operator'),now=Date.now;try{Date.now=()=>record.expires_at+1;assert.equal(r.template('fixture','local'),null);assert.equal(r.list('operator')[0].state,'expired');}finally{Date.now=now;}fs.renameSync(f.repo,f.repo+'-original');fs.mkdirSync(f.repo);assert.throws(()=>r.template('fixture','local'),/identity/);});
+
+
+test('MCP packet cannot authorize template auto Acceptance or alter the approved file ceiling', async t => {
+  const f = await setup(t), b = f.bridge;
+  qualifyCanonical(b);
+  b.workTemplates.register(f.input, 'operator');
+  const auto = { file: 'fixture.txt', before: 'alpha\\n', after: 'beta\\n' };
+  await assert.rejects(() => handoff.submit(b, packet(), 'mcp:fixture-auto', auto), /Preauthorized exact-file Acceptance scope required/);
+  await assert.rejects(() => handoff.submit(b, packet(), 'operator', { ...auto, file: 'other.txt' }), /Preauthorized exact-file Acceptance scope required/);
+  const manual = await handoff.submit(b, packet(), 'operator');
+  assert.ok(manual.mission_id);
+  const mission = b.missions.require(manual.mission_id);
+  assert.equal(mission.envelope.criteria[0].type, 'operator_review');
+  assert.equal(mission.envelope.risk_auto_acceptance, undefined);
+});
+
+test('template auto Acceptance refuses a changed preimage before Mission creation', async t => {
+  const f = await setup(t), b = f.bridge;
+  qualifyCanonical(b);
+  b.workTemplates.register(f.input, 'operator');
+  fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'gamma\\n');
+  await assert.rejects(() => handoff.submit(b, packet(), 'operator', {
+    file: 'fixture.txt', before: 'alpha\\n', after: 'beta\\n'
+  }), /baseline changed/);
+});
