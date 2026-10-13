@@ -219,9 +219,10 @@ function discovery(home) {
   if (!lock.isFile() || lock.isSymbolicLink() || lock.uid !== process.getuid?.() || lock.mode & 0o077 || lock.size > 32 || Number(fs.readFileSync(path.join(dataDir, 'bridge.lock'), 'utf8')) !== ui.pid) throw Error('Local service ownership does not match discovery.');
   return { origin: 'http://127.0.0.1:' + ui.port, token: credential.token, pid: ui.pid, url: ui.url };
 }
-async function request(home, route, body, { timeoutMs = 10000, signal } = {}) {
+async function request(home, route, body, { timeoutMs = 10000, signal, method } = {}) {
   const d = discovery(home);
-  const r = await fetch(d.origin + route, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: 'Bearer ' + d.token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
+  const verb = method || (body === undefined ? 'GET' : 'POST');
+  const r = await fetch(d.origin + route, { method: verb, headers: { Authorization: 'Bearer ' + d.token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
   const value = await r.json(); if (!r.ok) throw Error(value.error || 'Local request was refused.'); return value;
 }
 async function status(home, { allowOlderSource = false, timeoutMs = 10000, signal } = {}) {
