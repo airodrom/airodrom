@@ -155,7 +155,7 @@ function controlPlaneWrite(bridge, action, input) {
   if(action==='codex-handoff'){object(input,['mission_id','request_id']);return bridge.codexAdapter.startTask(input.mission_id,input.request_id);}
   if(action==='codex-cancel'){object(input,['run_id']);return bridge.codexAdapter.cancelTask(input.run_id);}
   if(action==='codex-reconcile'){const result=bridge.codexAdapter.reconcile(input);bridge.missions.schedule();return result;}
-  if(action==='web-reconcile'){object(input,['run_id','termination_verified','request_id','orphan_attestation']);const result=bridge.missions.web.reconcile(input);bridge.missions.schedule();return result;}
+  if(action==='web-reconcile'){object(input,['run_id','termination_verified','request_id']);const result=bridge.missions.web.reconcile(input);bridge.missions.schedule();return result;}
 
   if(action==='supersede-decision'){object(input,['id','request_id','question','options','allow_free_text','expires_at']);identifier(input.id);identifier(input.request_id);const {id,request_id,...question}=input;return bridge.controlStore.request('operator',request_id,{action,...input},()=>bridge.controlStore.supersedeDecision(id,question,'operator'));}
   if(action==='slack-credential-probe')return bridge.slackRuntime.credentialProbe(input);

@@ -61,25 +61,28 @@ class MissionWeb{
  async closeBrowser(m,runId,browser){try{const result=await browser.close();if(!result?.closed||!result.termination_verified||result.owned_process_termination!=='verified')throw error('web_termination_unverified');return result;}catch{this.uncertain(m,runId,browser);throw error('web_termination_unverified');}}
  processGone(pid){if(!Number.isSafeInteger(pid)||pid<=0)return false;try{process.kill(pid,0);return false;}catch(e){return e.code==='ESRCH';}}
  reconcile(input){
-  const {object,identifier}=require('./control-plane-store');object(input,['run_id','termination_verified','request_id','orphan_attestation']);identifier(input.run_id);identifier(input.request_id);
+  const {object,identifier}=require('./control-plane-store');object(input,['run_id','termination_verified','request_id']);identifier(input.run_id);identifier(input.request_id);
   if(input.termination_verified!==true)throw error('explicit_termination_confirmation_required');
-  return this.store.request('operator',input.request_id,{op:'mission_web_reconcile',run_id:input.run_id,termination_verified:true,orphan_attestation:input.orphan_attestation||null},()=>{
+  return this.store.request('operator',input.request_id,{op:'mission_web_reconcile',run_id:input.run_id,termination_verified:true},()=>{
    const run=this.store.run(input.run_id);if(!run)throw error('run_required');
    if(!['interrupted','termination_unverified'].includes(run.state)||run.termination_verified)throw error('web_reconcile_state_denied');
    if(!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(run.id))throw error('quarantined_lease_required');
    if(this.uncertainBrowsers.has(run.mission_id))throw error('uncertain_browser_handle_retained');
-   const pid=run.pid;if(Number.isSafeInteger(pid)&&pid>0){if(!this.processGone(pid))throw error('owned_process_still_alive');}
-   else if(input.orphan_attestation!=='no_owned_browser_process')throw error('orphan_attestation_required');
+   // Absent PID is not evidence. Only ESRCH on the recorded owned process proves exit.
+   const pid=run.pid;if(!Number.isSafeInteger(pid)||pid<=0)throw error('owned_process_pid_required');
+   if(!this.processGone(pid))throw error('owned_process_still_alive');
    // Match Codex: interrupted is terminal, so stage through termination_unverified first.
+   // Only this run_id is settled; sibling Mission runs keep their own termination burden.
    this.db.prepare("UPDATE cp_runs SET state='termination_unverified' WHERE id=? AND state='interrupted'").run(run.id);
    const mission=this.store.getMission(run.mission_id),outcome=mission?.state==='cancelled'||run.resolution==='reconcile_process'?'cancelled':'failed';
    this.store.updateRun(run.id,{state:outcome,processState:'exited',verified:true,resolution:'operator_web_reconcile'});
    this.db.prepare("UPDATE cp_leases SET state='released' WHERE run_id=? AND state='quarantined'").run(run.id);
-   this.db.prepare("UPDATE cp_dispatches SET state='blocked' WHERE mission_id=? AND (run_id=? OR state='unknown')").run(run.mission_id,run.id);
-   for(const inv of this.db.prepare("SELECT request_id FROM cp_invocations WHERE task_id=? AND state IN ('running','unknown')").all(run.task_id))this.store.finishInvocation(inv.request_id,{status:'failed',error:'web_reconciled',capability:'mission_web'});
-   for(const other of this.db.prepare("SELECT id FROM cp_runs WHERE mission_id=? AND id<>? AND state IN ('interrupted','termination_unverified') AND termination_verified=0").all(run.mission_id,run.id)){this.db.prepare("UPDATE cp_runs SET state='termination_unverified' WHERE id=? AND state='interrupted'").run(other.id);this.store.updateRun(other.id,{state:outcome,processState:'exited',verified:true,resolution:'operator_web_reconcile'});}
-   this.active.delete(run.mission_id);this.store.event('mission.web.reconciled',run.mission_id,{run_id:run.id,actor:'operator',owned_process_id:pid||null});
-   return {run_id:run.id,mission_id:run.mission_id,reconciled:true,termination_verified:true,authority:false};
+   this.db.prepare("UPDATE cp_dispatches SET state='blocked' WHERE mission_id=? AND run_id=?").run(run.mission_id,run.id);
+   for(const inv of this.db.prepare("SELECT invocation_id FROM cp_mission_web_evidence WHERE run_id=?").all(run.id)){
+    const row=this.store.invocation(inv.invocation_id);if(row&&['running','unknown'].includes(row.state))this.store.finishInvocation(inv.invocation_id,{status:'failed',error:'web_reconciled',capability:'mission_web'});
+   }
+   this.active.delete(run.mission_id);this.store.event('mission.web.reconciled',run.mission_id,{run_id:run.id,actor:'operator',owned_process_id:pid});
+   return {run_id:run.id,mission_id:run.mission_id,reconciled:true,termination_verified:true,owned_process_id:pid,authority:false};
   });
  }
  assess(task,input,{budget=true}={}){

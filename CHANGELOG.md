@@ -1,8 +1,8 @@
 ## Unreleased — Public web termination reconcile
 
-- Bound owned research browser close so hung Playwright context teardown cannot strand Mission runs without a `browser_closed` receipt.
+- Bound owned research browser close end-to-end: `startPromise` wait is deadline-bound, Playwright teardown steps are timed, and only process-exit evidence verifies termination.
 - Record the owned Chromium PID on mission-web host runs; reserve a document concurrency seat so Mission transport accounting cannot starve navigation.
-- Add governed `control-v2/web-reconcile` (process ESRCH or explicit orphan attestation) to release quarantined website-only read leases without force-delete.
+- Add governed `control-v2/web-reconcile` that releases a quarantined research lease only for the named run after ESRCH on its recorded owned PID. No orphan attestation; sibling Mission runs are not marked verified.
 - Focused regression: `tests/public-web-termination.test.js`.
 
 ## Unreleased — Unified Autonomous Development V1
