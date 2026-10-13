@@ -118,6 +118,30 @@ function secureIngressLine(line) {
   } catch { return true; }
   return false;
 }
+/** Strip pasted CSI/OSC and other C0 controls; keep newlines and tabs for ordinary chat. */
+function sanitizePaste(text) {
+  return String(text || '')
+    .replace(/\r\n|\r/g, '\n')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b./g, '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+}
+function pastePreview(text, { maxLines = 6, maxChars = 480 } = {}) {
+  const lines = String(text || '').split('\n');
+  const shown = [];
+  let used = 0;
+  for (let i = 0; i < lines.length && shown.length < maxLines && used < maxChars; i++) {
+    let line = lines[i];
+    const room = maxChars - used;
+    if (line.length > room) line = line.slice(0, Math.max(0, room - 1)) + '…';
+    shown.push(line);
+    used += line.length + 1;
+  }
+  const omitted = lines.length - shown.length;
+  const head = `Paste · ${lines.length} line${lines.length === 1 ? '' : 's'} · Enter to send · Ctrl+C to cancel\n`;
+  return head + shown.join('\n') + (omitted > 0 ? `\n… ${omitted} more line${omitted === 1 ? '' : 's'}` : '') + '\n';
+}
 function missionReceipt(data) {
   const items = data.missions || (data.kind === 'missions' ? data.items : null);
   if (items) return items.length ? items.map(m => `${m.id || m.mission_id} · ${m.state}\n${m.objective || m.label || 'Work Mission'}`).join('\n\n') + '\n' : 'No active Missions.\n';
@@ -160,11 +184,48 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   let rl, lines, readerDataListeners = [], readerInput = input, readerEndListener = null, readerLocked = false;
   let pendingPaste = null, pasteBuffer = null;
   let assistantNickname=s.nickname,model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, conversationId = null, active = null, indicator = null, quitting = false;
-  const interrupt = () => { if (active) active.abort(); else { quitting = true; rl?.close(); } };
-  const admitMessage = text => {
+  const interrupt = () => {
+    if (active) { active.abort(); return; }
+    // Staged ordinary paste cancels without quitting the conversation.
+    if (pendingPaste !== null) {
+      pendingPaste = null;
+      try { output.write('^C\n'); } catch { /* ignore */ }
+      showPrompt();
+      return;
+    }
+    quitting = true;
+    rl?.close();
+  };
+  // Secure Vault/private first lines still fail closed: admit only the first
+  // line with no echo of trailing paste. Ordinary paste never auto-submits.
+  const admitSecureLine = text => {
     pendingPaste = text;
     readerLocked = true;
     readerInput.write(Buffer.from('\n'));
+  };
+  const stageOrdinaryPaste = pasted => {
+    const clean = sanitizePaste(pasted).replace(/\n+$/, '');
+    if (!clean.trim()) return;
+    const lines = clean.split('\n');
+    if (lines.length === 1) {
+      // Visible + editable in the normal readline buffer; wait for real Enter.
+      pendingPaste = null;
+      readerInput.write(Buffer.from(clean, 'utf8'));
+      return;
+    }
+    // Multiline: readable preview, exact content staged, wait for Enter.
+    pendingPaste = clean;
+    try { output.write(pastePreview(clean)); } catch { /* ignore */ }
+    showPrompt();
+  };
+  const acceptPaste = pasted => {
+    const clean = sanitizePaste(pasted).replace(/\n+$/, '');
+    if (!clean.trim()) return;
+    if (secureIngressLine(clean.split('\n')[0])) {
+      admitSecureLine(clean.split('\n')[0]);
+      return;
+    }
+    stageOrdinaryPaste(clean);
   };
   const attachReader = () => {
     const previous = new Set(input.listeners('data'));
@@ -187,14 +248,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           pasteBuffer += body;
           const end = pasteBuffer.indexOf('\x1b[201~');
           if (end < 0) return;
-          const pasted = pasteBuffer.slice(0, end).replace(/\r\n|\r/g, '\n');
+          const pasted = pasteBuffer.slice(0, end);
           pasteBuffer = null;
-          if (!pasted.trim()) return;
-          if (secureIngressLine(pasted.split('\n')[0])) {
-            admitMessage(pasted.split('\n')[0]);
-            return;
-          }
-          admitMessage(pasted.replace(/\n+$/,''));
+          acceptPaste(pasted);
           return;
         }
         const start = body.indexOf('\x1b[200~');
@@ -208,8 +264,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         if (!/[\r\n]/.test(body)) { readerInput.write(bytes); return; }
         const parts = body.replace(/\r\n|\r/g, '\n').replace(/\n$/,'').split('\n');
         if (parts.length > 1) {
-          if (secureIngressLine(parts[0])) { admitMessage(parts[0]); return; }
-          admitMessage(parts.join('\n'));
+          acceptPaste(parts.join('\n'));
           return;
         }
         readerLocked = true;
@@ -619,4 +674,4 @@ async function main(args = process.argv.slice(2)) {
   throw Error('Unknown command. Use airodrom --help.');
 }
 if (require.main === module) main().catch(error => { console.error('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message))); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
-module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, missionReceipt, interactive, main, showStatus, serviceCommand };
+module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, sanitizePaste, pastePreview, secureIngressLine, missionReceipt, interactive, main, showStatus, serviceCommand };

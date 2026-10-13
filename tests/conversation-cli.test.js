@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PassThrough, Readable } = require('node:stream');
 const local = require('../src/local-bootstrap');
-const { interactive, waitConversation, help } = require('../src/interactive-cli');
+const { interactive, waitConversation, help, sanitizePaste, pastePreview } = require('../src/interactive-cli');
 
 function fixture(t, request, {nickname}={}) {
   const calls = [], output = new PassThrough();
@@ -13,6 +13,27 @@ function fixture(t, request, {nickname}={}) {
   t.mock.method(local, 'request', async (home, route, body) => { if(route==='/api/interactive/memory?query=name')return {items:[]};calls.push({ route, body }); return request(route, body); });
   return { calls, output, text: () => text };
 }
+function ttyInput(output) {
+  const input = new PassThrough();
+  input.isTTY = true; input.isRaw = false; input.setRawMode = v => { input.isRaw = v; };
+  output.isTTY = true; output.columns = 80;
+  return input;
+}
+function waitText(f, needle, ms = 3000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { f.output.off('data', check); reject(Error('Expected synthetic output unavailable: ' + needle)); }, ms);
+    const check = () => { if (f.text().includes(needle)) { clearTimeout(timer); f.output.off('data', check); resolve(); } };
+    f.output.on('data', check); check();
+  });
+}
+function pause() { return new Promise(resolve => setImmediate(resolve)); }
+
+test('sanitizePaste strips control sequences and keeps newlines', () => {
+  assert.equal(sanitizePaste('Hello\x1b[31m\x1b[0m\nWorld\x00\x07'), 'Hello\nWorld');
+  assert.equal(sanitizePaste('a\r\nb\rc'), 'a\nb\nc');
+  assert.match(pastePreview('one\ntwo\nthree'), /Paste · 3 lines · Enter to send/);
+  assert.match(pastePreview('one\ntwo\nthree'), /one\ntwo\nthree/);
+});
 test('ordinary typing echoes before Enter, edits the submitted line and does not duplicate it', async t => {
  const previousTerm=process.env.TERM;process.env.TERM='xterm';t.after(()=>{if(previousTerm===undefined)delete process.env.TERM;else process.env.TERM=previousTerm;});
  const f=fixture(t,(route,body)=>{
@@ -20,17 +41,99 @@ test('ordinary typing echoes before Enter, edits the submitted line and does not
   if(route==='/api/assistant/input'){assert.equal(body.message,'Explain stars');return {kind:'chat',conversation_id:'session',turn_id:'turn'};}
   return {state:'completed',summary:'Synthetic answer.'};
  });
- const input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=v=>input.isRaw=v;f.output.isTTY=true;f.output.columns=32;
+ const input=ttyInput(f.output);f.output.columns=32;
  t.after(()=>input.end());
- const wait=needle=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{f.output.off('data',check);reject(Error('Expected synthetic output unavailable'));},2000);const check=()=>{if(f.text().includes(needle)){clearTimeout(timer);f.output.off('data',check);resolve();}};f.output.on('data',check);check();});
  const running=interactive('synthetic',{input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});
- await wait('You › ');input.write('\r');await new Promise(resolve=>setImmediate(resolve));input.write('Explain starx');
+ await waitText(f,'You › ');input.write('\r');await pause();input.write('Explain starx');
  assert.match(f.text(),/Explain starx/);assert.deepEqual(f.calls,[]);
  input.write('\x7fs');assert.deepEqual(f.calls,[]);input.write('\r');
- await wait('Synthetic answer.');await new Promise(resolve=>setImmediate(resolve));input.write('/quit\r');await running;
+ await waitText(f,'Synthetic answer.');await pause();input.write('/quit\r');await running;
  assert.equal(f.calls.filter(c=>c.route==='/api/assistant/input').length,1);
  assert.doesNotMatch(f.text(),/Input appears after Enter|\u001b\[(?:3\d|9\d)m/);
  assert.equal(input.isRaw,false);assert.equal(input.listenerCount('data'),0);
+});
+
+test('single-line bracketed paste is visible, editable, and waits for Enter before one submit', async t => {
+  const previousTerm = process.env.TERM; process.env.TERM = 'xterm';
+  t.after(() => { if (previousTerm === undefined) delete process.env.TERM; else process.env.TERM = previousTerm; });
+  const messages = [];
+  const f = fixture(t, (route, body) => {
+    if (route === '/api/assistant/conversation/session') return { conversation_id: 'session' };
+    if (route === '/api/assistant/input') { messages.push(body.message); return { kind: 'chat', conversation_id: 'session', turn_id: 'turn-' + messages.length }; }
+    return { state: 'completed', summary: 'Paste answer.' };
+  });
+  const input = ttyInput(f.output);
+  t.after(() => input.end());
+  const running = interactive('synthetic', { input, output: f.output, env: { NO_COLOR: '1', TERM: 'dumb' } });
+  await waitText(f, 'You › ');
+  input.write('\x1b[200~What is gravity?\x1b[201~');
+  await pause(); await pause();
+  assert.match(f.text(), /What is gravity\?/);
+  assert.deepEqual(messages, []);
+  input.write('\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7fmass?'); // backspace "gravity?" -> "mass?"
+  await pause();
+  assert.deepEqual(messages, []);
+  input.write('\r');
+  await waitText(f, 'Paste answer.');
+  await pause();
+  input.write('/quit\r');
+  await running;
+  assert.deepEqual(messages, ['What is mass?']);
+  assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 1);
+});
+
+test('multiline bracketed paste shows preview, preserves exact text, and submits only on Enter', async t => {
+  const previousTerm = process.env.TERM; process.env.TERM = 'xterm';
+  t.after(() => { if (previousTerm === undefined) delete process.env.TERM; else process.env.TERM = previousTerm; });
+  const exact = 'Line one question?\nLine two detail.\nLine three close.';
+  const messages = [];
+  const f = fixture(t, (route, body) => {
+    if (route === '/api/assistant/conversation/session') return { conversation_id: 'session' };
+    if (route === '/api/assistant/input') { messages.push(body.message); return { kind: 'chat', conversation_id: 'session', turn_id: 't1' }; }
+    return { state: 'completed', summary: 'Multiline ok.' };
+  });
+  const input = ttyInput(f.output);
+  t.after(() => input.end());
+  const running = interactive('synthetic', { input, output: f.output, env: { NO_COLOR: '1', TERM: 'dumb' } });
+  await waitText(f, 'You › ');
+  input.write('\x1b[200~' + exact + '\x1b[201~');
+  await waitText(f, 'Paste · 3 lines · Enter to send');
+  assert.match(f.text(), /Line one question\?/);
+  assert.deepEqual(messages, []);
+  input.write('\r');
+  await waitText(f, 'Multiline ok.');
+  await pause();
+  input.write('/quit\r');
+  await running;
+  assert.deepEqual(messages, [exact]);
+  assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 1);
+});
+
+test('Ctrl+C clears staged multiline paste without submitting', async t => {
+  const previousTerm = process.env.TERM; process.env.TERM = 'xterm';
+  t.after(() => { if (previousTerm === undefined) delete process.env.TERM; else process.env.TERM = previousTerm; });
+  const f = fixture(t, (route, body) => {
+    if (route === '/api/assistant/conversation/session') return { conversation_id: 'session' };
+    if (route === '/api/assistant/input') return { kind: 'chat', conversation_id: 'session', turn_id: 't1' };
+    return { state: 'completed', summary: 'Should not run.' };
+  });
+  const input = ttyInput(f.output);
+  t.after(() => input.end());
+  const running = interactive('synthetic', { input, output: f.output, env: { NO_COLOR: '1', TERM: 'dumb' } });
+  await waitText(f, 'You › ');
+  input.write('\x1b[200~alpha\nbeta\x1b[201~');
+  await waitText(f, 'Paste · 2 lines');
+  input.write('\x03');
+  await waitText(f, '^C');
+  await pause();
+  assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 0);
+  input.write('hello after cancel\r');
+  await waitText(f, 'Should not run.');
+  await pause();
+  input.write('/quit\r');
+  await running;
+  assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 1);
+  assert.equal(f.calls.find(c => c.route === '/api/assistant/input').body.message, 'hello after cancel');
 });
 test('natural Vault lists and malformed identifiers remain entirely in local operator ingress', async t => {
  const f=fixture(t,()=>{throw Error('Vault text must not leave ingress');}),input=new PassThrough();input.isTTY=true;input.isRaw=false;input.setRawMode=v=>input.isRaw=v;f.output.isTTY=true;
