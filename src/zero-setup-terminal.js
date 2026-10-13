@@ -110,8 +110,19 @@ async function poll(home, requestId, {
       }
       const state = String(view.state || '').toUpperCase();
       const mission = view.outcome?.mission_state;
+      const presentation = String(view.presentation?.status || '');
+      const repairing = !!(view.technical?.repair_of || /Repairing|preparing automatic repair|Repair verification/i.test(presentation));
       if (['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED'].includes(state) || ['awaiting_acceptance', 'completed'].includes(mission)) return view;
-      if (['BLOCKED', 'FAILED', 'REJECTED', 'CLARIFY'].includes(state) || ['blocked', 'needs_rework', 'failed', 'cancelled'].includes(mission)) return view;
+      // needs_rework is not terminal while authorized repair may still run.
+      if (['FAILED', 'REJECTED', 'CLARIFY'].includes(state) || ['failed', 'cancelled'].includes(mission)) return view;
+      if (state === 'BLOCKED' || mission === 'blocked') {
+        if (repairing && !view.technical?.repair_blocked_reason) {
+          await sleep(1000);
+          continue;
+        }
+        return view;
+      }
+      if (mission === 'needs_rework' && !repairing && view.technical?.repair_blocked_reason) return view;
       await sleep(1000);
     } catch (error) {
       if (signal?.aborted) throw Error('Interrupted');
@@ -150,8 +161,12 @@ function resultText(view) {
     return lines.join('\n');
   }
   if (String(view.state || '').toUpperCase() === 'REJECTED' || mission === 'cancelled') return view.message || 'Cancelled. Nothing was written.';
-  if (/Repairing/i.test(view.presentation?.status || '') || String(view.state || '').toUpperCase() === 'RUNNING') {
+  if (/Repairing|preparing automatic repair|Repair verification/i.test(view.presentation?.status || '') || String(view.state || '').toUpperCase() === 'RUNNING') {
     return view.message || 'Working… first verification failed; diagnosing and repairing within the original approved scope.';
+  }
+  if (String(view.state || '').toUpperCase() === 'BLOCKED' || view.technical?.repair_blocked_reason) {
+    const reason = view.technical?.repair_blocked_reason;
+    return view.message || ('Automatic repair stopped safely' + (reason ? ' (' + reason + ')' : '') + '. Independent verification did not pass. No unsafe retry was performed.');
   }
   if (mission === 'needs_rework') {
     return view.message || 'Automatic repair stopped safely. Independent verification did not pass. No unsafe retry was performed.';
