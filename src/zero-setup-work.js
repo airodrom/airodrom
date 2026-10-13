@@ -445,6 +445,15 @@ class ZeroSetupWork {
         summary: { goal: live.intent?.objective || live.instruction },
       }, 'operator');
       this.bridge.missionApprovals.bind(approval.approval_id, submitted.mission_id, 'operator');
+      // Binding the trusted approval seals a new Mission envelope revision.
+      // Rebind the auto-completion fingerprint only after that host mutation.
+      // A stale hash must never be interpreted as permission.
+      if (acceptance) {
+        const bound = this.bridge.controlStore.requireMission(submitted.mission_id);
+        if (!bound.envelope.risk_auto_acceptance?.authorized)
+          throw Error('Preauthorized completion policy was not recorded');
+        this.bridge.missions.riskAcceptance.register(bound, bound.envelope.risk_auto_acceptance);
+      }
       live.approval_id = approval.approval_id;
       live.approval_expires_at = approval.expires_at;
     }
