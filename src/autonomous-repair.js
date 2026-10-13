@@ -1,8 +1,20 @@
 'use strict';
 // ADR 0048 addendum: one bounded corrective Mission after a safe verified-development failure.
 // Never grants Acceptance/Settlement. Never retries uncertain execution. Never expands scope.
-const { randomUUID } = require('node:crypto');
+// ADR 0051: repair creation is idempotent (deterministic request keys derived from
+// plan/stage/parent) and transactionally safe (create + rebind + lineage + claim +
+// dispatch commit together or not at all). Transient blocks are retried on later
+// ticks; permanent blocks are terminal and explained.
+const { randomUUID, createHash } = require('node:crypto');
 const { transaction } = require('./control-transaction');
+const { classifyReason } = require('./recovery-phase');
+
+// How long a transient block may keep a stage in REPAIR_PENDING before it becomes terminal.
+const PENDING_TIMEOUT_MS = 10 * 60 * 1000;
+
+function repairKey(planId, stageId, parentId) {
+  return createHash('sha256').update([planId, stageId, parentId].join('|')).digest('hex').slice(0, 32);
+}
 
 function failedChecks(mission, store) {
   const row = store.db.prepare('SELECT evidence, result FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC LIMIT 1').get(mission.id);
@@ -32,7 +44,7 @@ function lastRunSafe(mission, store) {
   return { ok: true, run };
 }
 
-function diagnose(mission, store) {
+function diagnose(mission, store, { attempt = 1, maxAttempts = null, previous = [] } = {}) {
   if (!mission || mission.state !== 'needs_rework') return { ok: false, reason: 'not_needs_rework' };
   if (['conversation', 'browser_research', 'work_request'].includes(mission.envelope?.kind)) {
     return { ok: false, reason: 'unsupported_kind' };
@@ -41,14 +53,19 @@ function diagnose(mission, store) {
   if (!checks) return { ok: false, reason: 'no_host_verification_failure' };
   const run = lastRunSafe(mission, store);
   if (!run.ok) return run;
+  // ADR 0051: precise host-built feedback (expected vs observed, failed check ids, remaining
+  // budget) so the corrective worker does not have to guess what went wrong.
+  const context = require('./repair-context').buildRepairContext(mission, { checks: checks.checks, attempt, maxAttempts, remaining: maxAttempts === null ? null : Math.max(0, maxAttempts - attempt), previous });
   // Put the parent id in the first 180 chars so project_missions UNIQUE(goal_id, name)
   // cannot collide when several controlled failures share the same Goal.
+  const original = String(mission.envelope.objective || '').replace(/^Repair \[[0-9a-f]{8}\][\s\S]*?Original objective: /, '').slice(0, 1000);
   return {
     ok: true,
     summary: checks.summary,
     checks: checks.checks,
     run_id: run.run.id,
-    objective: 'Repair [' + String(mission.id).slice(0, 8) + '] failed verification (' + checks.summary + '). Restore the original approved outcome. Original objective: ' + String(mission.envelope.objective || '').slice(0, 1200),
+    context: context.record,
+    objective: 'Repair [' + String(mission.id).slice(0, 8) + '] failed verification (' + checks.summary + '). Restore the original approved outcome.\n' + context.text + '\nOriginal objective: ' + original,
   };
 }
 
@@ -58,8 +75,11 @@ function sameScope(parent, candidate) {
   if (JSON.stringify([...(a.allowed_files || [])].sort()) !== JSON.stringify([...(b.allowed_files || [])].sort())) return false;
   if ((a.preferred_agent || 'host') !== (b.preferred_agent || 'host')) return false;
   if (JSON.stringify(a.capability_scopes || []) !== JSON.stringify(b.capability_scopes || [])) return false;
-  if ((a.dispatch_policy?.privacy || 'local_only') !== 'local_only') return false;
-  if ((b.dispatch_policy?.privacy || a.dispatch_policy?.privacy || 'local_only') !== 'local_only') return false;
+  const privacy = a.dispatch_policy?.privacy || 'local_only';
+  if ((b.dispatch_policy?.privacy || privacy) !== privacy) return false;
+  // Non-local privacy is only ever in scope when the parent contract explicitly authorizes
+  // external disclosure to that worker (ADR 0051); otherwise repairs stay local-only.
+  if (privacy !== 'local_only' && !(a.contract?.permissions?.external_disclosure?.authorized && a.contract.permissions.external_disclosure.providers.includes(a.preferred_agent))) return false;
   return true;
 }
 
@@ -106,7 +126,7 @@ function repairAuthority(env, now = Date.now()) {
   };
 }
 
-function repairInput(parent, diagnosis) {
+function repairInput(parent, diagnosis, { request_id } = {}) {
   const env = parent.envelope;
   const criteria = env.criteria || [];
   const native = criteria.filter(c => c.type === 'exact_file').map(c => ({ name: 'file_write', path: c.path, content: c.content }));
@@ -117,7 +137,7 @@ function repairInput(parent, diagnosis) {
   const manifest = repairManifest(env);
   const authority = repairAuthority(env);
   return {
-    request_id: 'cae-repair:' + randomUUID(),
+    request_id: request_id || ('cae-repair:' + randomUUID()),
     project_id: parent.project_id,
     goal_id: parent.goal_id,
     objective: diagnosis.objective,
@@ -138,6 +158,10 @@ function repairInput(parent, diagnosis) {
     // which diverges from a failed parent (expiresAt, normalized manifest, dispatch).
     // Same-scope repair_of already locks workspace and allowed_files.
     ...(env.model ? { model: env.model } : {}),
+    // ADR 0051: the corrective Mission carries the parent's immutable contract and
+    // approval reference; only the per-Mission identity (request_id, repair_of) differs.
+    ...(env.contract ? { contract: env.contract } : {}),
+    ...(env.approval_id ? { approval_id: env.approval_id } : {}),
     repair_of: parent.id,
   };
 }
@@ -177,21 +201,61 @@ class AutonomousRepair {
     if (autonomous.dispatch_count >= autonomous.max_dispatches) return { ok: false, reason: 'dispatch_budget' };
     const repairs = autonomous.repair_counts[stage.id] || 0;
     if (repairs >= autonomous.max_repairs) return { ok: false, reason: 'repair_budget' };
-    if (autonomous.repair_blocked?.[stage.id]) return { ok: false, reason: autonomous.repair_blocked[stage.id] };
-    if (autonomous.repair_lineage?.[stage.id]?.repair_mission_id) return { ok: false, reason: 'repair_already_spawned' };
+    const blocked = autonomous.repair_blocked?.[stage.id];
+    // Permanent blocks are terminal. Transient blocks (writer lease, unreconciled
+    // dispatch, name collision) are re-evaluated below on every tick until timeout.
+    if (blocked && classifyReason(blocked).kind !== 'transient') return { ok: false, reason: blocked };
+    const lineage = autonomous.repair_lineage?.[stage.id] || null;
+    // Exactly one corrective Mission per failed parent. A corrective Mission that itself
+    // fails may be repaired again only while the per-stage budget allows (chained lineage).
+    if (lineage?.repair_mission_id && lineage.repair_mission_id !== failed.id) return { ok: false, reason: 'repair_already_spawned' };
     const preferred = failed.envelope.preferred_agent || 'host';
     if (!autonomous.workers.includes(preferred)) return { ok: false, reason: 'worker_not_authorized' };
     if (failed.envelope.dispatch_policy?.privacy && failed.envelope.dispatch_policy.privacy !== 'local_only') {
-      return { ok: false, reason: 'privacy_not_local' };
+      // External disclosure is only permitted when the Mission contract records it explicitly.
+      if (!failed.envelope.contract?.permissions?.external_disclosure?.authorized) return { ok: false, reason: 'external_disclosure_unauthorized' };
+      if (!failed.envelope.approval_id) return { ok: false, reason: 'privacy_not_local' };
     }
-    const diagnosis = diagnose(failed, this.store);
+    const pending = autonomous.repair_pending?.[stage.id];
+    if (pending && this.store.now() - pending.since >= PENDING_TIMEOUT_MS) return { ok: false, reason: 'repair_pending_timeout' };
+    const classified = require('./failure-classifier').classifyMission(failed, this.store);
+    if (classified.policy !== 'repair') return { ok: false, reason: classified.reason || 'failure_not_repairable' };
+    const diagnosis = diagnose(failed, this.store, { attempt: repairs + 1, maxAttempts: autonomous.max_repairs, previous: (autonomous.repair_history || []).filter(h => h.stage_id === stage.id) });
     if (!diagnosis.ok) return diagnosis;
+    const approvals = this.bridge.missionApprovals;
+    if (approvals) {
+      const check = approvals.allowRepair(failed, { repairs });
+      if (!check.ok) return { ok: false, reason: check.reason };
+      diagnosis.approval_id = check.approval.approval_id;
+    }
+    const loop = require('./failure-classifier').repeatedSignature(this.store, failed, autonomous, stage.id);
+    if (loop.repeated) return { ok: false, reason: 'repeated_failure_signature' };
+    diagnosis.failure_signature = loop.signature;
+    diagnosis.classification = classified.category;
     return { ok: true, diagnosis };
   }
 
+  // Deterministic identities: the same (plan, stage, parent) can only ever produce one
+  // corrective Mission regardless of how many ticks or restarts observe the failure.
+  keys(planId, stageId, parentId) {
+    const key = repairKey(planId, stageId, parentId);
+    return {
+      key,
+      create: 'cae-repair:' + key,
+      rebind: 'cae-rebind:' + key,
+      dispatch: 'cae-repair-dispatch:' + key,
+    };
+  }
+
   spawn(planId, stage, failed, diagnosis) {
-    const input = repairInput(failed, diagnosis);
+    const keys = this.keys(planId, stage.id, failed.id);
+    const input = repairInput(failed, diagnosis, { request_id: keys.create });
     const created = this.bridge.missions.create(input, 'operator');
+    if (created.duplicate) {
+      // A prior transaction already created this exact corrective Mission (crash after commit).
+      const existing = this.store.getMission(created.id);
+      if (!existing || existing.envelope.repair_of !== failed.id) throw Error('repair_identity_conflict');
+    }
     if (!sameScope(failed, {
       workspace: created.envelope.workspace,
       allowed_files: created.envelope.allowed_files,
@@ -199,14 +263,44 @@ class AutonomousRepair {
       capability_scopes: created.envelope.capability_scopes,
       dispatch_policy: created.envelope.dispatch_policy,
     })) {
-      try { this.bridge.missions.cancel(created.id, { request_id: 'cae-repair-scope:' + created.id }); } catch { /* best effort */ }
+      // Inside the enclosing transaction this throw rolls the creation back entirely.
       throw Error('repair_scope_mismatch');
     }
-    this.bridge.missions.goalPlanner.rebindRepair(planId, stage.id, created.id, 'cae-rebind:' + randomUUID(), {
+    if (failed.envelope.contract && created.envelope.contract?.scope_fingerprint !== failed.envelope.contract.scope_fingerprint) {
+      throw Error('repair_scope_mismatch');
+    }
+    this.bridge.missions.goalPlanner.rebindRepair(planId, stage.id, created.id, keys.rebind, {
       parent_mission_id: failed.id,
     });
     followZeroSetup(this.bridge, failed.id, created.id);
     return created;
+  }
+
+  recordBlocked(planId, stage, failed, reason, extra = {}) {
+    const cls = classifyReason(reason);
+    return transaction(this.db, () => {
+      const row = this.execution.planRow(planId);
+      const a = this.execution.readAutonomous(row);
+      const now = this.store.now();
+      a.repair_blocked = { ...(a.repair_blocked || {}), [stage.id]: reason };
+      if (cls.kind === 'transient') {
+        const since = a.repair_pending?.[stage.id]?.since || now;
+        a.repair_pending = { ...(a.repair_pending || {}), [stage.id]: { since, reason, attempts: (a.repair_pending?.[stage.id]?.attempts || 0) + 1 } };
+        a.last_action = 'repair_pending';
+        a.lifecycle = 'recovering';
+      } else {
+        if (a.repair_pending?.[stage.id]) delete a.repair_pending[stage.id];
+        a.last_action = 'repair_blocked';
+        a.lifecycle = cls.kind === 'quarantine' ? 'quarantined' : 'recovering';
+        // Permanent: the parent claim is abandoned so the scheduler stops re-examining it.
+        this.db.prepare("UPDATE cp_autonomous_claims SET state='abandoned' WHERE plan_id=? AND mission_id=? AND state IN ('claimed','dispatched')").run(planId, failed.id);
+      }
+      this.execution.writeAutonomous(planId, a);
+      this.store.event(cls.kind === 'transient' ? 'goal.autonomous.repair_pending' : 'goal.autonomous.repair_blocked', failed.id, {
+        plan_id: planId, stage_id: stage.id, reason, kind: cls.kind, authority: false, ...extra,
+      });
+      return { action: cls.kind === 'transient' ? 'pending' : 'blocked', reason };
+    });
   }
 
   handleFailure(planId, view, autonomous, claim, failed) {
@@ -216,84 +310,93 @@ class AutonomousRepair {
       return { action: 'abandoned' };
     }
     const gate = this.canSpawn(view, autonomous, stage, failed);
-    if (!gate.ok) {
-      return transaction(this.db, () => {
-        const row = this.execution.planRow(planId);
-        const a = this.execution.readAutonomous(row);
-        a.repair_blocked = { ...(a.repair_blocked || {}), [stage.id]: gate.reason };
-        a.last_action = 'repair_blocked';
-        a.lifecycle = 'recovering';
-        this.execution.writeAutonomous(planId, a);
-        this.db.prepare("UPDATE cp_autonomous_claims SET state='abandoned' WHERE plan_id=? AND mission_id=? AND state IN ('claimed','dispatched')").run(planId, failed.id);
-        this.store.event('goal.autonomous.repair_blocked', failed.id, {
-          plan_id: planId, stage_id: stage.id, reason: gate.reason, authority: false,
-        });
-        return { action: 'blocked', reason: gate.reason };
-      });
-    }
-    let repair;
+    if (!gate.ok) return this.recordBlocked(planId, stage, failed, gate.reason);
+    const keys = this.keys(planId, stage.id, failed.id);
     try {
-      repair = this.spawn(planId, stage, failed, gate.diagnosis);
-    } catch (error) {
+      // One unit of work: create + scope check + rebind + lineage + claim + dispatch.
       return transaction(this.db, () => {
+        if (this.bridge.lifecycle && this.bridge.lifecycle.state() !== 'open') throw Error('admission_closed');
+        // Fresh gates inside the transaction (another tick may have won the race).
+        const freshView = this.execution.inspect(planId);
+        const freshAutonomous = freshView.autonomous;
+        const freshStage = freshView.stages.find(s => s.id === stage.id);
+        if (!freshStage || freshStage.mission_id !== failed.id) throw Error('repair_already_spawned');
+        const again = this.canSpawn(freshView, freshAutonomous, freshStage, this.store.requireMission(failed.id));
+        if (!again.ok) throw Error(again.reason);
         const row = this.execution.planRow(planId);
         const a = this.execution.readAutonomous(row);
-        const message = String(error.message || '');
-        let reason = 'repair_spawn_failed';
-        if (/^[a-z_]+$/.test(message)) reason = message;
-        else if (/UNIQUE constraint failed:\s*project_missions/i.test(message) || /unique.*project_missions\.name/i.test(message)) {
-          reason = 'repair_mission_name_conflict';
-        }
-        a.repair_blocked = { ...(a.repair_blocked || {}), [stage.id]: reason };
-        a.last_action = 'repair_blocked';
+        // Reservation makes a REPAIR_CREATING phase observable if a reader races the commit.
+        a.repair_reservations = { ...(a.repair_reservations || {}), [stage.id]: { parent_mission_id: failed.id, key: keys.key, at: this.store.now(), repair_mission_id: null } };
         this.execution.writeAutonomous(planId, a);
+        const repair = this.spawn(planId, stage, failed, again.diagnosis);
+        const next = this.execution.readAutonomous(this.execution.planRow(planId));
+        next.repair_counts[stage.id] = (next.repair_counts[stage.id] || 0) + 1;
+        next.repair_lineage = {
+          ...(next.repair_lineage || {}),
+          [stage.id]: {
+            parent_mission_id: failed.id,
+            repair_mission_id: repair.id,
+            diagnosis: again.diagnosis.summary,
+            context: again.diagnosis.context || null,
+            failure_signature: again.diagnosis.failure_signature || null,
+            classification: again.diagnosis.classification || null,
+            approval_id: again.diagnosis.approval_id || null,
+            attempt: next.repair_counts[stage.id],
+            at: this.store.now(),
+          },
+        };
+        next.repair_history = [...(next.repair_history || []), { stage_id: stage.id, parent_mission_id: failed.id, repair_mission_id: repair.id, at: this.store.now() }].slice(-20);
+        if (again.diagnosis.failure_signature) {
+          next.repair_signatures = { ...(next.repair_signatures || {}), [stage.id]: [...(next.repair_signatures?.[stage.id] || []), again.diagnosis.failure_signature].slice(-10) };
+        }
+        next.repair_reservations[stage.id] = { ...next.repair_reservations[stage.id], repair_mission_id: repair.id };
+        if (next.repair_pending?.[stage.id]) delete next.repair_pending[stage.id];
+        if (next.repair_blocked?.[stage.id]) delete next.repair_blocked[stage.id];
+        next.last_action = 'repair_dispatched';
+        next.lifecycle = 'recovering';
+        next.progress_at = this.store.now();
+        next.dispatch_count += 1;
+        this.execution.writeAutonomous(planId, next);
         this.db.prepare("UPDATE cp_autonomous_claims SET state='abandoned' WHERE plan_id=? AND mission_id=? AND state IN ('claimed','dispatched')").run(planId, failed.id);
-        this.store.event('goal.autonomous.repair_blocked', failed.id, {
-          plan_id: planId, stage_id: stage.id, reason, error_class: reason, authority: false,
+        this.db.prepare("DELETE FROM cp_autonomous_claims WHERE plan_id=? AND stage_id=? AND mission_id=? AND state IN ('abandoned','settled')")
+          .run(planId, stage.id, repair.id);
+        this.db.prepare('INSERT INTO cp_autonomous_claims VALUES(?,?,?,?,?,?)')
+          .run(planId, stage.id, repair.id, keys.dispatch, 'claimed', this.store.now());
+        const dispatch = this.bridge.missions.dispatch(repair.id, { request_id: keys.dispatch });
+        this.db.prepare("UPDATE cp_autonomous_claims SET state='dispatched' WHERE request_id=?").run(keys.dispatch);
+        this.store.event('goal.autonomous.repair_created', failed.id, {
+          plan_id: planId, stage_id: stage.id, parent_mission_id: failed.id, repair_mission_id: repair.id,
+          diagnosis: again.diagnosis.summary, classification: again.diagnosis.classification || null,
+          attempt: next.repair_counts[stage.id], max_repairs: next.max_repairs, authority: false,
         });
-        return { action: 'blocked', reason };
-      });
-    }
-    const requestId = 'cae-repair-dispatch:' + randomUUID();
-    return transaction(this.db, () => {
-      const row = this.execution.planRow(planId);
-      const a = this.execution.readAutonomous(row);
-      a.repair_counts[stage.id] = (a.repair_counts[stage.id] || 0) + 1;
-      a.repair_lineage = {
-        ...(a.repair_lineage || {}),
-        [stage.id]: {
+        this.store.event('goal.autonomous.repair', failed.id, {
+          plan_id: planId,
+          stage_id: stage.id,
           parent_mission_id: failed.id,
           repair_mission_id: repair.id,
-          diagnosis: gate.diagnosis.summary,
-          at: this.store.now(),
-        },
-      };
-      a.last_action = 'repair_dispatched';
-      a.lifecycle = 'recovering';
-      a.progress_at = this.store.now();
-      a.dispatch_count += 1;
-      this.execution.writeAutonomous(planId, a);
-      this.db.prepare("UPDATE cp_autonomous_claims SET state='abandoned' WHERE plan_id=? AND mission_id=? AND state IN ('claimed','dispatched')").run(planId, failed.id);
-      this.db.prepare("DELETE FROM cp_autonomous_claims WHERE plan_id=? AND stage_id=? AND mission_id=? AND state IN ('abandoned','settled')")
-        .run(planId, stage.id, repair.id);
-      this.db.prepare('INSERT INTO cp_autonomous_claims VALUES(?,?,?,?,?,?)')
-        .run(planId, stage.id, repair.id, requestId, 'claimed', this.store.now());
-      const dispatch = this.bridge.missions.dispatch(repair.id, { request_id: requestId });
-      this.db.prepare("UPDATE cp_autonomous_claims SET state='dispatched' WHERE request_id=?").run(requestId);
-      this.store.event('goal.autonomous.repair', failed.id, {
-        plan_id: planId,
-        stage_id: stage.id,
-        parent_mission_id: failed.id,
-        repair_mission_id: repair.id,
-        diagnosis: gate.diagnosis.summary,
-        authority: false,
+          diagnosis: again.diagnosis.summary,
+          authority: false,
+        });
+        this.store.event('goal.autonomous.dispatched', repair.id, {
+          plan_id: planId, stage_id: stage.id, request_id: keys.dispatch, repair: true, authority: false,
+        });
+        return { action: 'repaired', repair_mission_id: repair.id, dispatch };
       });
-      this.store.event('goal.autonomous.dispatched', repair.id, {
-        plan_id: planId, stage_id: stage.id, request_id: requestId, repair: true, authority: false,
-      });
-      return { action: 'repaired', repair_mission_id: repair.id, dispatch };
-    });
+    } catch (error) {
+      const message = String(error.message || '');
+      let reason = 'repair_spawn_failed';
+      if (/^[a-z_]+$/.test(message)) reason = message;
+      else if (/UNIQUE constraint failed:\s*project_missions/i.test(message) || /unique.*project_missions\.name/i.test(message)) {
+        reason = 'repair_mission_name_conflict';
+      } else if (/Idempotency conflict/i.test(message)) reason = 'repair_identity_conflict';
+      else if (/admission/i.test(message)) reason = 'admission_closed';
+      if (reason === 'repair_already_spawned') {
+        // Lost a benign race with another tick; nothing to record.
+        return { action: 'skipped', reason };
+      }
+      return this.recordBlocked(planId, stage, failed, reason, { error_class: reason });
+    }
   }
 }
 
-module.exports = { AutonomousRepair, diagnose, failedChecks, repairInput, repairAuthority, sameScope };
+module.exports = { AutonomousRepair, diagnose, failedChecks, repairInput, repairAuthority, sameScope, repairKey, PENDING_TIMEOUT_MS };

@@ -27,7 +27,7 @@ test('actual stdio tools/list exposes the canonical tool catalog including zero-
   assert.deepEqual(tools.map(tool => tool.name), TOOLS.map(tool => tool.name));
   assert.ok(tools.some(tool => tool.name === 'ask_airodrom'));
   assert.ok(tools.some(tool => tool.name === 'list_authorized_scopes'));
-  assert.equal(tools.length, 36);
+  assert.equal(tools.length, 43);
   assert.deepEqual(tools, TOOLS);
   const schema = tools[0].inputSchema;
   assert.deepEqual(schema.required, ['description', 'message', 'request_id']);

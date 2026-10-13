@@ -12,7 +12,7 @@ function dispatchPolicy(input={}){
  for(const [k,min,max]of [['max_attempts',1,3],['initial_backoff_ms',30000,300000],['max_backoff_ms',30000,3600000],['cooldown_ms',30000,3600000],['fallback_after_attempts',1,3],['max_changed_files',1,40]])if(!Number.isInteger(p[k])||p[k]<min||p[k]>max)throw Error('Invalid dispatch policy bound');
  if(p.fallback_after_attempts>p.max_attempts)p.fallback_after_attempts=p.max_attempts;
  if(p.max_backoff_ms<p.initial_backoff_ms||!['focused_coding','large_coding','research','deterministic_files'].includes(p.task_category)||!['unspecified','local_only','cloud_allowed'].includes(p.privacy))throw Error('Invalid dispatch policy');
- for(const [key,allowed]of [['billing_classes',['local','subscription']],['providers',['local','anthropic_subscription','codex_openai']]])if(!Array.isArray(p[key])||p[key].length>3||p[key].some(v=>!allowed.includes(v)))throw Error('Invalid fallback policy');
+ for(const [key,allowed]of [['billing_classes',['local','subscription']],['providers',['local','anthropic_subscription','codex_openai','cursor_runtime']]])if(!Array.isArray(p[key])||p[key].length>3||p[key].some(v=>!allowed.includes(v)))throw Error('Invalid fallback policy');
  if(!Array.isArray(p.native_actions)||p.native_actions.length>10)throw Error('Invalid native action plan');
  for(const a of p.native_actions){object(a,['name','path','content']);if(a.name!=='file_write'||typeof a.path!=='string'||!a.path||a.path.split(/[\\/]/).some(s=>!s||s==='.'||s==='..')||typeof a.content!=='string'||Buffer.byteLength(a.content)>12000)throw Error('Invalid deterministic file action');if(a.content)text(a.content,'native action content',12000);}
  return p;

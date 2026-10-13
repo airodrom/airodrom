@@ -3,7 +3,7 @@ const {SlackGateway}=require('../slack-gateway');
 const {fingerprint,redactValue,object,identifier}=require('../control-plane-store');
 const {transaction}=require('../control-transaction');
 const {randomUUID}=require('node:crypto');
-const ROUTES={ 'agent.dispatch.waiting':'important', 'agent.dispatch.fallback_selected':'important','agent.dispatch.circuit_open':'important','agent.dispatch.circuit_closed':'important', 'codex.result.published':'important', 'mission.created':'info','run.started':'progress','verification.completed':'important','decision.requested':'decision_required','mission.completed':'important','mission.blocked':'important','mission.stop_requested':'important','decision.answered':'important','decision.expired':'important','decision.cancelled':'important','decision.superseded':'important' };
+const ROUTES={ 'agent.dispatch.waiting':'important', 'agent.dispatch.fallback_selected':'important','agent.dispatch.circuit_open':'important','agent.dispatch.circuit_closed':'important', 'codex.result.published':'important', 'mission.created':'info','run.started':'progress','verification.completed':'important','decision.requested':'decision_required','mission.completed':'important','mission.blocked':'important','mission.approval.issued':'info','goal.autonomous.repair_created':'important','goal.autonomous.repair_blocked':'important','goal.autonomous.repair_pending':'progress','mission.awaiting_acceptance':'important','mission.needs_rework':'progress','mission.stop_requested':'important','decision.answered':'important','decision.expired':'important','decision.cancelled':'important','decision.superseded':'important' };
 class SlackRuntime{
  constructor(bridge,options={}){
   this.bridge=bridge;this.store=bridge.controlStore;this.db=this.store.db;

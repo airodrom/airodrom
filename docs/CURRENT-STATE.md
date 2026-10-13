@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## Unified Autonomous Development V1 — SOURCE IMPLEMENTATION, PR PENDING (2026-10-12)
+
+- **Branch:** `feat/unified-autonomous-development-v1` (fresh worktree from `origin/main` `079eee9`, which is also the installed service)
+- **Engineering verdict:** PASS WITH KNOWN LIMITATIONS — IMPLEMENTED + TESTED (`npm run test:unified` 42/42, hardening/typecheck/verify/package gates local); OpenCode path LIVE VERIFIED (self-repair proof: parent `3d44a1df` → corrective `3eb871e9`, bytes `626574610a`); Cursor LIVE UNQUALIFIED (`cursor_credential_file_unavailable`, containment PROVEN, zero paid runs)
+- **Not merged / not installed / not restarted:** live service unchanged; merge + controlled cutover remain owner actions; rollback `079eee9`
+- **Owner acceptance:** HOLD until install and the fresh disposable Self-Repair Acceptance run
+- Evidence: [UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md](UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md), [ADR 0051](adr/0051-unified-autonomous-development.md)
+
 ## Continuous Autonomous Execution V1 — SOURCE IMPLEMENTATION (2026-10-12)
 
 - **Branch:** `feat/continuous-autonomous-execution-v1` (isolated worktree from post-#78 `origin/main` `d0f3ee6`)

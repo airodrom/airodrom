@@ -3888,5 +3888,54 @@
       "created_at": "A",
       "updated_at": "A"
     }
+  },
+  "cp_mission_approvals": {
+    "fields": [
+      "approval_id",
+      "principal",
+      "channel",
+      "request_id",
+      "nonce",
+      "scope_fingerprint",
+      "permissions_digest",
+      "workspace",
+      "project_id",
+      "goal_id",
+      "plan_id",
+      "authorized_at",
+      "expires_at",
+      "repair_budget",
+      "external_disclosure",
+      "disclosure_providers",
+      "state",
+      "revoked_at",
+      "revoked_reason",
+      "bound_missions",
+      "summary"
+    ],
+    "source": "src/mission-approval.js",
+    "classification": {
+      "approval_id": "A",
+      "principal": "A",
+      "channel": "A",
+      "request_id": "A",
+      "nonce": "A",
+      "scope_fingerprint": "A",
+      "permissions_digest": "A",
+      "workspace": "B",
+      "project_id": "A",
+      "goal_id": "A",
+      "plan_id": "A",
+      "authorized_at": "A",
+      "expires_at": "A",
+      "repair_budget": "A",
+      "external_disclosure": "A",
+      "disclosure_providers": "A",
+      "state": "A",
+      "revoked_at": "A",
+      "revoked_reason": "B",
+      "bound_missions": "A",
+      "summary": "B"
+    }
   }
 }

@@ -1,3 +1,15 @@
+## Unreleased — Unified Autonomous Development V1
+
+- Derived recovery phases (`src/recovery-phase.js`) keep Terminal, Control Center and MCP observing a Goal through automatic repair; terminal blocks are explained from a fixed vocabulary instead of a bare "Blocked"; `zero-setup-active.json` survives nonterminal repair.
+- Corrective Mission creation is idempotent and transactional (deterministic `cae-repair:*` identities per plan/stage/parent; create + rebind + lineage + claim + dispatch commit together); transient blocks become `REPAIR_PENDING`; repeated failure signatures stop before the budget; failure classifier with explicit recovery policy; host-built repair context package.
+- Canonical Mission contract (`envelope.contract`) with deny-by-default permissions, immutable `scope_fingerprint` separate from per-Mission identity, explicit external-disclosure authorization and a trusted verifier baseline; one owner approval (`cp_mission_approvals`) bound to fingerprint, window, repair budget and disclosure; replay/expiry/revocation fail closed.
+- Governed sandboxed headless Cursor worker (`src/cursor-worker.js`): containment enforced by sandbox-exec independent of `--force`; provenance-tagged tracing; host inventory authoritative; qualification script with honest verdict (currently `CURSOR_UNQUALIFIED`: `cursor_credential_file_unavailable`).
+- Empirical sandbox containment proof (`src/sandbox-containment.js`); OpenCode profile keeps loopback (private server, verified), external network denied; `sandbox_id` in provenance.
+- Verifier test-integrity (tampering, removed assertions, skips, trusted-source reproducibility) and proportional security scans (NEW / PRE_EXISTING / UNAVAILABLE).
+- MCP coordinator tools `prepare_mission`, `inspect_mission_proposal`, `get_mission_status`, `get_mission_events`, `get_mission_evidence`, `request_mission_correction`, `cancel_mission`; final evidence package; discovery schema 2.
+- Component states and worker tiers at `/api/control-v2/components`; Slack routes for approval/repair/acceptance events.
+- Suites: `npm run test:unified` (42), hardening group extended; live OpenCode self-repair proof passed; Cursor qualification recorded as UNQUALIFIED with exact blocker. See [UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md](docs/UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md) and [ADR 0051](docs/adr/0051-unified-autonomous-development.md).
+
 ## Unreleased — Repair spawn with parent-baseline dirt
 
 - Corrective Mission create allows dirty paths already recorded on the parent Mission baseline (for example owner README notes) while still denying newly introduced dirt outside `allowed_files`.

@@ -99,9 +99,23 @@ function displayStatus(state, { started = false, settled = false, archived = fal
     tone: ({ dispatching: 'ready', running: 'ready', verifying: 'ready', awaiting_acceptance: 'waiting', waiting_for_operator: 'waiting', needs_rework: 'degraded', blocked: 'degraded', completed: 'ready', cancelled: 'muted', paused: 'waiting', ready: 'waiting', draft: 'waiting' })[state] || 'muted'
   };
 }
+/** Plan row for a Mission bound to a stage now, or a failed parent whose stage was rebound to a corrective Mission. */
+function autonomousPlanLink(bridge, missionId) {
+  const db = bridge.controlStore.db;
+  const direct = db.prepare('SELECT p.id AS plan_id, p.goal_plan, n.node_id AS stage_id FROM cp_mission_programs p JOIN cp_mission_program_nodes n ON n.program_id=p.id WHERE n.mission_id=?').get(missionId);
+  if (direct) return direct;
+  for (const row of db.prepare("SELECT id AS plan_id, goal_plan FROM cp_mission_programs WHERE goal_plan IS NOT NULL AND goal_plan LIKE ?").all('%' + missionId + '%')) {
+    let plan; try { plan = JSON.parse(row.goal_plan); } catch { continue; }
+    const lineage = plan.autonomous?.repair_lineage || {};
+    const stage = Object.keys(lineage).find(s => lineage[s]?.parent_mission_id === missionId)
+      || (plan.autonomous?.repair_history || []).find(h => h.parent_mission_id === missionId || h.repair_mission_id === missionId)?.stage_id;
+    if (stage) return { plan_id: row.plan_id, goal_plan: row.goal_plan, stage_id: stage };
+  }
+  return null;
+}
 function autonomousManaged(bridge, missionId) {
   try {
-    const row = bridge.controlStore.db.prepare('SELECT p.goal_plan FROM cp_mission_programs p JOIN cp_mission_program_nodes n ON n.program_id=p.id WHERE n.mission_id=?').get(missionId);
+    const row = autonomousPlanLink(bridge, missionId);
     if (!row?.goal_plan) return false;
     const plan = JSON.parse(row.goal_plan);
     return plan.autonomous?.enabled === true && plan.autonomous?.paused !== true;
@@ -127,12 +141,36 @@ function recoveryStatus(bridge, mission, view = {}) {
     return { kind: 'needs_owner', headline: view.display?.label || 'Needs attention', detail: 'Autonomous execution is not authorized for this Mission.', suppress_manual: false };
   }
   try {
-    const link = db.prepare('SELECT p.id AS plan_id, n.id AS stage_id FROM cp_mission_programs p JOIN cp_mission_program_nodes n ON n.program_id=p.id WHERE n.mission_id=?').get(mission.id);
+    const link = autonomousPlanLink(bridge, mission.id);
     if (!link?.plan_id || !bridge.missions?.autonomous) {
       return { kind: 'waiting', headline: 'Waiting', detail: 'Autonomous goal linkage is incomplete; no automatic retry is promised.', suppress_manual: false };
     }
     const inspect = bridge.missions.autonomous.inspect(link.plan_id, 'operator');
     const autonomous = inspect.autonomous || {};
+    // ADR 0051: the derived recovery phase explains needs_rework precisely instead of a bare "Blocked".
+    const phase = Object.values(autonomous.phases || {}).find(p => p.mission_id === mission.id || p.parent_mission_id === mission.id) || null;
+    if (phase) {
+      const explained = phase.message || ('Reason: ' + String(phase.reason || 'unknown').replaceAll('_', ' ') + '.');
+      switch (phase.phase) {
+        case 'QUARANTINED': return { kind: 'uncertain', headline: 'Uncertain execution', detail: explained, suppress_manual: false };
+        case 'REPAIR_BLOCKED':
+        case 'FAILED_TERMINAL': return { kind: 'failed', headline: 'Automatic repair stopped', detail: explained, suppress_manual: false };
+        case 'WAITING_OWNER': return { kind: 'needs_owner', headline: 'Needs owner decision', detail: explained, suppress_manual: false };
+        case 'REPAIR_PENDING': return { kind: 'recovering', headline: 'Repair waiting', detail: explained, suppress_manual: true };
+        case 'REPAIR_ELIGIBILITY_CHECK':
+        case 'VERIFICATION_FAILED':
+        case 'REPAIR_CREATING':
+        case 'REPAIR_DISPATCHED':
+        case 'REPAIR_RUNNING':
+        case 'REPAIR_VERIFYING':
+          return { kind: 'recovering', headline: 'Recovering', detail: 'Verification failed; a bounded corrective attempt (' + (phase.repair_attempt || 0) + '/' + (phase.max_repairs || '?') + ') is ' + (phase.phase === 'REPAIR_VERIFYING' ? 'being verified' : 'in progress') + ' under the original approval.', suppress_manual: true };
+        case 'REPAIR_VERIFIED':
+        case 'AWAITING_ACCEPTANCE':
+          if (mission.state === 'needs_rework' && phase.mission_id !== mission.id) return { kind: 'recovering', headline: 'Repaired', detail: 'The corrective attempt passed independent verification and awaits owner Acceptance.', suppress_manual: true };
+          break;
+        default: break;
+      }
+    }
     if (autonomous.lifecycle === 'quarantined') {
       return { kind: 'uncertain', headline: 'Uncertain execution', detail: 'Goal plan is quarantined until execution ownership is reconciled.', suppress_manual: false };
     }

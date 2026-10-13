@@ -255,7 +255,7 @@ class ControlServer {
         if (Object.keys(body).some(k => !['name', 'args', 'clientInfo'].includes(k)) || typeof body.name !== 'string') throw new Error('Invalid MCP operation');
         if (body.clientInfo !== undefined && (!body.clientInfo || typeof body.clientInfo !== 'object' || Array.isArray(body.clientInfo) || Object.keys(body.clientInfo).some(k => !['name', 'version'].includes(k)) || Object.values(body.clientInfo).some(v => typeof v !== 'string' || v.length > 100))) throw new Error('Invalid MCP client metadata');
         const session=this.mcpSessions.get(req.headers['x-airodrom-session']);
-        if(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status'].includes(body.name)&&(!session||session.expires_at<Date.now()))throw Error('Fresh authenticated handoff session required');
+        if(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status','prepare_mission','inspect_mission_proposal','get_mission_status','get_mission_events','get_mission_evidence','request_mission_correction','cancel_mission'].includes(body.name)&&(!session||session.expires_at<Date.now()))throw Error('Fresh authenticated handoff session required');
         const result = await (session?.mcp||this.mcp).call(body.name, body.args, body.clientInfo);
         this.lastMcpCallAt = Date.now();
         return this.json(res, 200, result);
@@ -325,7 +325,7 @@ class ControlServer {
       if (req.method === 'GET' && url.pathname === '/api/product/compatibility') return this.json(res, 200, {contracts:require('./core-contracts').manifest(),runtime_security:require('./runtime-security-conformance').evaluate(this.bridge),installation:require('./installation-compatibility').evaluate(this.bridge),authority:false});
       if (req.method === 'GET' && url.pathname === '/api/interactive/memory') return this.json(res, 200, this.interactiveMemory(url.searchParams.get('query') || ''));
       if (req.method === 'GET' && url.pathname === '/api/interactive/task') return this.json(res, 200, this.interactiveTask(url.searchParams.get('mission_id')));
-      if (req.method === 'GET' && url.pathname.startsWith('/api/control-v2/')) return this.json(res, 200, controlPlaneRead(this.bridge, url));
+      if (req.method === 'GET' && url.pathname.startsWith('/api/control-v2/')) return this.json(res, 200, await controlPlaneRead(this.bridge, url));
       if (req.method === 'POST' && url.pathname.startsWith('/api/control-v2/')) {
         if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') return this.json(res, 415, { error: 'JSON content type required' });
         return this.json(res, 200, await controlPlaneWrite(this.bridge, url.pathname.slice('/api/control-v2/'.length), await readJSON(req)));

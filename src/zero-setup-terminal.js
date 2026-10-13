@@ -22,9 +22,13 @@ function preview(presentation = {}) {
     'File: ' + files,
     'Worker: ' + (presentation.worker || 'Local OpenCode'),
     'Verification: ' + (presentation.verification || 'Registered focused checks'),
+    'Repair budget: ' + (presentation.repair_budget || 'One automatic correction inside this scope'),
     'Network: ' + (presentation.network || 'No external access'),
     'GitHub: ' + (presentation.github || 'No commits or pushes'),
     'Production: ' + (presentation.production || 'No access'),
+    ...(Array.isArray(presentation.success_criteria) && presentation.success_criteria.length
+      ? ['', 'Done means:', ...presentation.success_criteria.slice(0, 8).map(c => '  - ' + c)]
+      : []),
     '',
   ].join('\n');
 }
@@ -111,6 +115,12 @@ async function poll(home, requestId, {
       const state = String(view.state || '').toUpperCase();
       const mission = view.outcome?.mission_state;
       const presentation = String(view.presentation?.status || '');
+      // The host's derived recovery phase is authoritative when present (ADR 0051).
+      if (typeof view.technical?.phase_terminal === 'boolean' && view.technical.phase) {
+        if (view.technical.phase_terminal) return view;
+        await sleep(1000);
+        continue;
+      }
       const repairing = !!(view.technical?.repair_of || /Repairing|preparing automatic repair|Repair verification/i.test(presentation));
       if (['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED'].includes(state) || ['awaiting_acceptance', 'completed'].includes(mission)) return view;
       // needs_rework is not terminal while authorized repair may still run.
@@ -165,8 +175,15 @@ function resultText(view) {
     return view.message || 'Working… first verification failed; diagnosing and repairing within the original approved scope.';
   }
   if (String(view.state || '').toUpperCase() === 'BLOCKED' || view.technical?.repair_blocked_reason) {
+    // Never answer with a bare "Blocked": explain the safe failure category.
     const reason = view.technical?.repair_blocked_reason;
-    return view.message || ('Automatic repair stopped safely' + (reason ? ' (' + reason + ')' : '') + '. Independent verification did not pass. No unsafe retry was performed.');
+    const explained = view.technical?.blocker_message
+      || (reason ? require('./recovery-phase').blockerMessage(reason, { repaired }) : null);
+    const lines = [];
+    if (repaired) lines.push('Initial verification failed.');
+    lines.push(explained || view.message || 'Automatic repair stopped safely. Independent verification did not pass. No unsafe retry was performed.');
+    if (reason) lines.push('Details for operators: ' + reason + (view.technical?.request_id ? ' · request ' + String(view.technical.request_id).slice(0, 8) : '') + '. Full diagnostics are in Control Center.');
+    return lines.join('\n');
   }
   if (mission === 'needs_rework') {
     return view.message || 'Automatic repair stopped safely. Independent verification did not pass. No unsafe retry was performed.';
@@ -174,21 +191,30 @@ function resultText(view) {
   return view.message || ('Work did not finish cleanly (' + (mission || view.state || 'unknown') + '). No Acceptance was recorded.');
 }
 
+function isTerminalView(view) {
+  if (typeof view?.technical?.phase_terminal === 'boolean' && view.technical.phase) return view.technical.phase_terminal;
+  const state = String(view?.state || '').toUpperCase();
+  return ['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED', 'FAILED', 'REJECTED', 'CLARIFY', 'BLOCKED'].includes(state);
+}
+
 async function resumeActive(home, { input, output, signal, request = local.request } = {}) {
   const active = readActive(home);
   if (!active) return null;
   output.write('Airo\nResuming observation of the same authorized task...\n');
   try {
+    let announcedRepair = false;
     const done = await poll(home, active.request_id, {
       signal,
       request,
       onUpdate(view) {
-        if (/Repairing/i.test(view.presentation?.status || '')) {
+        if (!announcedRepair && /Repairing/i.test(view.presentation?.status || '')) {
+          announcedRepair = true;
           output.write('Airo\nInitial verification failed. Airodrom is repairing the file automatically.\n');
         }
       },
     });
-    clearActive(home);
+    // The remembered identity survives until the host reports a genuinely terminal phase.
+    if (isTerminalView(done)) clearActive(home);
     output.write('Airo\n' + resultText(done) + '\n');
     return done;
   } catch (error) {
@@ -241,7 +267,7 @@ async function guide({ receipt, input, output, home, signal, request = local.req
         }
       },
     });
-    clearActive(home);
+    if (isTerminalView(done)) clearActive(home);
     output.write('Airo\n' + resultText(done) + '\n');
     return done;
   } catch (error) {
@@ -253,4 +279,4 @@ async function guide({ receipt, input, output, home, signal, request = local.req
   }
 }
 
-module.exports = { guide, preview, resultText, poll, terminalRequired, rememberActive, clearActive, readActive, resumeActive, isTransportError };
+module.exports = { guide, preview, resultText, poll, terminalRequired, rememberActive, clearActive, readActive, resumeActive, isTransportError, isTerminalView };
