@@ -26,9 +26,12 @@ function controlPlaneRead(bridge, url) {
     quarantined_leases: store.db.prepare("SELECT count(*) count FROM cp_leases WHERE state='quarantined'").get().count,
     autonomy:{execution_enabled:bridge.boundedNextActions?.enabled===true,default_mode:'observe',acceptance_required:true,fixture_auto_acceptance:!!bridge.fixtureAcceptance},
     slack: bridge.slackRuntime?.status() || { implemented:true, enabled:false, connected:false, state:'disabled' }, next_action_execution: bridge.boundedNextActions?.enabled===true, cursor_agent_execution: false,
-    execution: { default_runtime: bridge.defaultRuntime, opencode: 'bounded_local_adapter', host: 'control_plane_primitives', claude_code: 'existing_capability_runner', cursor_agent: 'acp_status_only_execution_unqualified', codex_agent: bridge.codexAdapter?.health()||'unimplemented' },
-    limitations: ['Ordinary projects default to observe; explicit bounded development chains can execute. Cursor Agent execution is unavailable.']
+    execution: { default_runtime: bridge.defaultRuntime, opencode: 'bounded_local_adapter', host: 'control_plane_primitives', claude_code: 'existing_capability_runner', cursor_agent: bridge.cursorWorker?.lastReadiness?.ready?'governed_sandboxed_headless_cli':'governed_sandboxed_headless_cli_not_ready', codex_agent: bridge.codexAdapter?.health()||'unimplemented' },
+    // ADR 0051: honest Cursor state comes from the governed worker's last host-observed readiness, never from installation alone.
+    cursor_worker: bridge.cursorWorker?.lastReadiness ? { ready: bridge.cursorWorker.lastReadiness.ready===true, reason: bridge.cursorWorker.lastReadiness.reason||null, tiers: bridge.cursorWorker.lastReadiness.tiers||null, owner_step: bridge.cursorWorker.lastReadiness.owner_step||null } : { ready:false, reason:'not_probed_in_this_process', tiers:null },
+    limitations: ['Ordinary projects default to observe; explicit bounded development chains can execute.', bridge.cursorWorker?.lastReadiness?.ready ? 'Cursor executes only through the governed sandboxed worker under an approved contract with external disclosure.' : 'Cursor Agent execution is unavailable until the governed worker reports READY (see cursor_worker.reason).']
   };
+  if (section === 'components') return require('./component-status').componentStatus(bridge);
   if(section==='reliability')return require('./reliability-observations').recent(bridge);
   if(section==='goal-plans'){const items=bridge.missions.goalPlanner.list(limit);return {items,execution_enabled:items.some(g=>g.execution_enabled),authority:false};}
   if(section==='goal-plan')return bridge.missions.goalPlanner.inspect(url.searchParams.get('id'));
