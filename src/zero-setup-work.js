@@ -186,6 +186,31 @@ class ZeroSetupWork {
       if (prior.principal !== principal) throw Error('Resume the original authenticated handoff session; duplicate execution denied');
       return this.statusView(prior);
     }
+    // ask_airodrom / prepare_mission prepare WORK only. Ordinary chat and public-research
+    // consent stay on host conversation / Terminal flows; never auto-prepare from chat text.
+    const routed = require('./assistant-intent').parse(instruction);
+    if (['conversation', 'preference', 'connector', 'remember', 'forget', 'recall', 'sensitive', 'vault', 'secret', 'private_storage'].includes(routed.kind)) {
+      const record = { version: 1, instruction, routed: { kind: routed.kind }, clarify: true, authority: false };
+      this.write(request_id, principal, record, 'clarify');
+      return {
+        state: 'CLARIFY',
+        message: 'That looks like ordinary conversation or a host connector/memory request, not bounded local work. Use the Airodrom Terminal or Control Center conversation for chat. Rephrase with an exact disposable workspace file change to prepare a Mission.',
+        authority: false,
+        execution_authorized: false,
+        next_action: 'use_terminal_or_control_center_chat_or_rephrase_as_work',
+      };
+    }
+    if (['public_web_offer', 'research', 'research_session'].includes(routed.kind)) {
+      const record = { version: 1, instruction, routed: { kind: routed.kind }, clarify: true, authority: false };
+      this.write(request_id, principal, record, 'clarify');
+      return {
+        state: 'CLARIFY',
+        message: 'Public or authenticated research requires explicit Terminal consent and a governed browser Mission. ask_airodrom prepares local WORK only and does not open public research.',
+        authority: false,
+        execution_authorized: false,
+        next_action: 'use_terminal_public_web_or_research_consent',
+      };
+    }
     const intent = parseExactFileIntent(instruction) || { kind: 'general', objective: instruction.trim().slice(0, 1000) };
     const scope = this.resolveScope(instruction, intent);
     if (!scope.ok) {

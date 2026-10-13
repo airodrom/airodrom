@@ -131,7 +131,7 @@ class ConversationEngine {
   // Host connector instructions arrive with selected untrusted context. Those
   // messages are not operator ingress and must not be rerouted through research
   // or private-storage parsers (e.g. "review" + "send" draft wording).
-  if(!context.length&&(require('./personal-storage-intent').containsPrivate(input.message)||require('./private-vault-intent').parse(input.message)||require('./browser-research').parse(input.message)))throw Error('This request requires a deterministic host workflow, outside conversation.');
+  if(!context.length&&(require('./personal-storage-intent').containsPrivate(input.message)||require('./private-vault-intent').parse(input.message)||require('./browser-research').parse(input.message)||require('./mission-web-guide').parse(input.message)))throw Error('This request requires a deterministic host workflow, outside conversation.');
   if(conversationTextSecret(input.message))throw Error('Use /vault for credentials and enter them only in its hidden prompt.');
   if(!Array.isArray(context)||context.length>3||context.some(c=>!c||c.untrusted!==true||Object.keys(c).some(k=>!['id','subject','content','untrusted'].includes(k))||typeof c.content!=='string'||c.content.length>700||typeof c.subject!=='string'||c.subject.length>200||secretLike(c)||[c.id,c.subject,c.content].some(require('./assistant-intent').secret)||require('./private-vault-intent').containsPrivate(c)))throw Error('Only minimum selected untrusted connector context is permitted');
   const providerRevision=require('./conversation-provider').assertLocal(this,{connector:context.length>0});
@@ -199,14 +199,20 @@ class ConversationEngine {
    if(require('./conversation-provider').read(this.bridge.dataDir).revision!==providerRevision){this.finish(id,conversation_id,route.model,'cancelled',null,'provider_changed');return;}
    if(!this.current(row)||generation!==this.generation()){this.finish(id,conversation_id,route.model,'cancelled',null,'context_changed');return;}
    if(controller.signal.aborted){this.finish(id,conversation_id,route.model,'cancelled',null,'cancelled');return;}
-   if(result.status!=='completed'||result.tool_requests?.length||!result.text?.trim()||result.text.length>12000||conversationTextSecret(result.text)||require('./private-vault-intent').containsPrivate(result.text)||/\b(?:i|we)(?:['’]ve| have)?\s+(?:just |already )?(?:saved|stored|remembered)\b|\b(?:i|airodrom)\s+(?:cannot|can['’]t|do(?:n['’]t| not))\s+(?:save|store|remember)\b|\bi\s+(?:do(?:n['’]t| not))\s+have\s+(?:the\s+)?ability\s+to\s+(?:save|store|remember)\b/i.test(result.text)){this.finish(id,conversation_id,route.model,'failed',null,'provider_unavailable');return;}
+   if(result.status!=='completed'||result.tool_requests?.length||!result.text?.trim()||result.text.length>12000||conversationTextSecret(result.text)||require('./private-vault-intent').containsPrivate(result.text)||/\b(?:i|we)(?:['’]ve| have)?\s+(?:just |already )?(?:saved|stored|remembered)\b|\b(?:i|airodrom)\s+(?:cannot|can['’]t|do(?:n['’]t| not))\s+(?:save|store|remember)\b|\bi\s+(?:do(?:n['’]t| not))\s+have\s+(?:the\s+)?ability\s+to\s+(?:save|store|remember)\b/i.test(result.text)){
+    const reason=result.status==='failed'&&(result.error_class==='temporary_failure'||result.code==='timeout')?'provider_timeout':'provider_unavailable';
+    this.finish(id,conversation_id,route.model,'failed',null,reason);return;
+   }
    const facts=missionFacts||grounding.missionFactSnapshot(this.bridge);
    const grounded=grounding.groundMissionClaims(result.text,facts);
    // Only visible text is retained. Hidden reasoning never leaves this frame.
    this.finish(id,conversation_id,route.model,'completed',grounded.text,null);
-  }catch{
+  }catch(error){
    const row=this.db.prepare('SELECT * FROM cp_conversation_turns WHERE id=?').get(id);
-   if(row?.state==='running'&&!this.retired(id))this.finish(id,conversation_id,route.model,controller.signal.aborted?'cancelled':'failed',null,'context_or_provider_unavailable');
+   if(row?.state==='running'&&!this.retired(id)){
+    const reason=controller.signal.aborted?'cancelled':error?.name==='TimeoutError'?'provider_timeout':'context_or_provider_unavailable';
+    this.finish(id,conversation_id,route.model,reason==='cancelled'?'cancelled':'failed',null,reason==='cancelled'?'cancelled':reason);
+   }
   }
  }
  finish(id,conversation_id,model,state,response,reason){this.db.prepare('UPDATE cp_conversation_turns SET state=?,response=?,safe_error_class=?,updated_at=? WHERE id=? AND state=?').run(state,response,reason,this.now(),id,'running');this.audit('conversation.'+state,conversation_id,id,model,state);}
@@ -214,7 +220,10 @@ class ConversationEngine {
   object(input,['conversation_id','turn_id']);erasure.assertReadable(this.db);this.requireSession(input.conversation_id);opaque(input.turn_id);
   const row=this.db.prepare('SELECT * FROM cp_conversation_turns WHERE id=? AND conversation_id=? AND operator_id=?').get(input.turn_id,input.conversation_id,this.owner);if(!row)throw Error('Conversation turn unavailable');
   if(!this.current(row)){this.active.get(row.id)?.controller.abort();return {conversation_id:row.conversation_id,turn_id:row.id,state:'cancelled',summary:null,reason:'Memory context changed; send a fresh message.',model:row.model||null,worker:'local-ollama',activity:null};}
-  return {conversation_id:row.conversation_id,turn_id:row.id,state:row.state,summary:row.response,reason:row.state==='failed'?'The qualified local model could not respond. Check /status and try again.':row.state==='cancelled'?'Conversation cancelled.':null,model:row.model||null,worker:'local-ollama',activity:row.state==='running'?'Thinking…':null};
+  const failedReason=row.safe_error_class==='provider_timeout'
+   ?'The local conversation model timed out. Check /status and try a shorter message.'
+   :'The qualified local model could not respond. Check /status and try again.';
+  return {conversation_id:row.conversation_id,turn_id:row.id,state:row.state,summary:row.response,reason:row.state==='failed'?failedReason:row.state==='cancelled'?'Conversation cancelled.':null,model:row.model||null,worker:'local-ollama',activity:row.state==='running'?'Thinking…':null};
  }
  cancel(input){const row=this.result(input);this.active.get(input.turn_id)?.controller.abort();if(row.state==='running')this.finish(row.turn_id,row.conversation_id,null,'cancelled',null,'cancelled');return this.result(input);}
  async close(){for(const entry of this.active.values())entry.controller.abort();await Promise.allSettled([...this.active.values()].map(e=>e.promise));}

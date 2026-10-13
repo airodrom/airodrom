@@ -57,8 +57,12 @@ test('missing search source fails honestly; fresh grants, revocation, expiry and
 });
 test('natural web routing offers explicit consent and leaves ordinary conversation unchanged',()=>{
  const parse=require('../src/assistant-intent').parse;
+ const {gateOffer}=require('../src/mission-web-guide');
  assert.equal(parse('hello').kind,'conversation');assert.equal(parse('Airo, search the web for Canadian fintech competitors').kind,'public_web_offer');assert.equal(parse('explore monarch.com and example.com').entries.length,2);
  assert.equal(parse('inspect my authenticated Monarch account').kind,'research_session');assert.notEqual(parse('search the web for password=private-value').kind,'public_web_offer');
+ assert.equal(gateOffer(parse('Airo, search the web for Canadian fintech competitors')).status,'approved_search_provider_unavailable');
+ assert.equal(gateOffer(parse('explore monarch.com and example.com')).kind,'public_web_offer');
+ assert.equal(require('../src/mission-web-guide').parse('visit foo'),null);
 });
 test('Monarch consent catalog is exact; static reads and verified root redirects never authorize identity POST, query URLs or inspect-time external pages',()=>{
  const p=require('../src/research-session-policy'),a={origin:'https://app.monarch.com',network_profile:p.MONARCH};const allowed=(url,o={})=>p.allowed(url,{authorization:a,phase:'login',method:'GET',kind:'document',navigation:true,...o},require('../src/research-session').allowedURL);

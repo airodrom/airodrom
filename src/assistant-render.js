@@ -65,7 +65,11 @@ function waitingFish(time,length,{mode,reduced}) {
 function waitingFrame({elapsed=0,columns=80,mode='none',reduced=false,fish=true}={}) {
  const seconds=(Math.max(0,elapsed)/1000).toFixed(1)+'s';
  const width=Math.max(0,Math.floor(columns)-1); // Leave the wrap column unused.
- const label='⠿ Thinking', room=width-label.length-seconds.length-4;
+  // Keep the short label through the fish animation cycle; only promote after a
+  // real local-model wait so existing frame geometry stays stable.
+  const secondsValue=Math.max(0,elapsed)/1000;
+  const label=secondsValue>=45?'⠿ Waiting on local model':secondsValue>=20?'⠿ Still thinking':'⠿ Thinking';
+  const room=width-label.length-seconds.length-4;
  if(room<4)return (width>=seconds.length+2?'⠿ '+seconds:seconds).slice(0,width);
  const length=Math.min(20,room),time=reduced?0:Math.max(0,elapsed)/1000;
  const swimmer=fish?waitingFish(time,length,{mode,reduced}):null;

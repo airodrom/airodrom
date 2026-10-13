@@ -33,7 +33,7 @@ test('MCP initialization negotiates supported revisions, falls back, and gates l
     assert.deepEqual((await server.handle(rpc(0, 'ping'))).result, {});
     const result = (await server.handle(init(version))).result;
     assert.equal(result.protocolVersion, PROTOCOL_VERSIONS.includes(version) ? version : PROTOCOL_VERSIONS[0]);
-    assert.deepEqual(result.capabilities, { tools: { listChanged: false } });
+    assert.deepEqual(result.capabilities, { tools: { listChanged: true } });
     assert.equal((await server.handle(rpc(2, 'tools/list'))).error.code, -32000);
     await server.handle(initialized);
     assert.deepEqual((await server.handle(rpc(3, 'tools/list'))).result.tools, tools);

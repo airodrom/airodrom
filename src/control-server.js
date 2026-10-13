@@ -371,6 +371,11 @@ class ControlServer {
         }
         return this.json(res, 200, this.bridge.projects.getProject(projectId));
       }
+      let projectPatchMatch = /^\/api\/projects\/([0-9a-f-]{36})$/.exec(url.pathname);
+      if (req.method === 'PATCH' && projectPatchMatch) {
+        if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') return this.json(res, 415, { error: 'JSON content type required' });
+        return this.json(res, 200, this.bridge.projects.updateProject(projectPatchMatch[1], await readJSON(req)));
+      }
       if (req.method !== 'POST') return this.json(res, 404, { error: 'Operation not exposed' });
       if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') return this.json(res, 415, { error: 'JSON content type required' });
       const body = await readJSON(req);

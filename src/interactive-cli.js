@@ -39,40 +39,53 @@ function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMM
 async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
   const deadline = Date.now() + timeoutMs; let lastState=null;
   while (Date.now() < deadline) {
-    if (signal?.aborted) { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); throw Error('Task cancelled.'); }
+    if (signal?.aborted) { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); throw Error('Task cancelled. The CLI is still open.'); }
     const r = await local.request(home, '/api/interactive/task?mission_id=' + encodeURIComponent(id));
     if(r.state!==lastState){lastState=r.state;onProgress?.(r);}
     if (['awaiting_acceptance', 'completed'].includes(r.state)) return r;
     if(r.state==='waiting_for_operator')return r;
-    if (['blocked', 'needs_rework', 'cancelled'].includes(r.state)) throw Error(r.reason || 'Mission stopped; inspect its status.');
+    if (['blocked', 'needs_rework', 'cancelled'].includes(r.state)) throw Error(r.reason || 'Mission stopped; inspect its status. The CLI is still open.');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() });
-  throw Error('Bounded task timed out and cancellation was requested.');
+  throw Error('Bounded task timed out and cancellation was requested. Check /mission status; the CLI is still open.');
 }
 async function waitConversation(home, turn, { signal } = {}) {
   const identity = { conversation_id: turn.conversation_id, turn_id: turn.turn_id };
   if (!identity.conversation_id || !identity.turn_id) throw Error('Conversation receipt is unavailable.');
   const cancel = () => local.request(home, '/api/assistant/conversation/cancel', identity);
   const deadline = Date.now() + 130000;
+  const cancelled='Conversation cancelled. The CLI is still open.';
+  const timedOut='Conversation timed out while waiting for the local model. Check /status and retry; the CLI is still open.';
   try {
     while (Date.now() < deadline) {
-      if (signal?.aborted) { await cancel(); throw Error('Conversation cancelled.'); }
+      if (signal?.aborted) { await cancel(); throw Error(cancelled); }
       const result = await local.request(home, '/api/assistant/conversation?conversation_id=' + encodeURIComponent(identity.conversation_id) + '&turn_id=' + encodeURIComponent(identity.turn_id));
-      if (signal?.aborted) { await cancel(); throw Error('Conversation cancelled.'); }
+      if (signal?.aborted) { await cancel(); throw Error(cancelled); }
       if (result.state === 'completed') return result;
-      if (['failed', 'cancelled'].includes(result.state)) throw Error(result.reason || 'Conversation stopped.');
+      if (['failed', 'cancelled'].includes(result.state)) throw Error(result.reason || 'Conversation stopped. The CLI is still open.');
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     await cancel();
-    throw Error('Conversation timed out and cancellation was requested.');
+    throw Error(timedOut);
   } catch (error) {
     // A lost delivery must not leave an inference turn running in the background.
-    if (!['Conversation cancelled.', 'Conversation timed out and cancellation was requested.'].includes(error.message)) {
+    if (![cancelled, timedOut].includes(error.message)) {
       await cancel().catch(() => {});
     }
     throw error;
   }
+}
+function secureIngressLine(line) {
+  const value = String(line || '').trim();
+  if (!value) return false;
+  if (/^\/(?:vault|secret|quit|exit|help|status|mission|connect|remember|forget|provider|workspace|task|google|gmail|calendar|drive)\b/i.test(value)) return true;
+  try {
+    if (require('./assistant-intent').secret(value)) return true;
+    if (require('./private-vault-intent').parse(value) || require('./private-vault-intent').containsPrivate(value)) return true;
+    if (require('./personal-storage-intent').containsPrivate(value) || require('./personal-storage-intent').parse(require('./personal-storage-intent').normalize(value))) return true;
+  } catch { return true; }
+  return false;
 }
 function missionReceipt(data) {
   const items = data.missions || (data.kind === 'missions' ? data.items : null);
@@ -114,24 +127,62 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   const prompt=()=>`\n${userName||'You'} › `;
   const showPrompt=()=>{ if(output.isTTY){rl.setPrompt(prompt());rl.prompt();} };
   let rl, lines, readerDataListeners = [], readerInput = input, readerEndListener = null, readerLocked = false;
+  let pendingPaste = null, pasteBuffer = null;
   let assistantNickname=s.nickname,model='auto',worker='auto',runtime = s.default_runtime, lastMission = null, conversationId = null, active = null, indicator = null, quitting = false;
   const interrupt = () => { if (active) active.abort(); else { quitting = true; rl?.close(); } };
+  const admitMessage = text => {
+    pendingPaste = text;
+    readerLocked = true;
+    readerInput.write(Buffer.from('\n'));
+  };
   const attachReader = () => {
     const previous = new Set(input.listeners('data'));
     readerLocked = false;
+    pendingPaste = null;
+    pasteBuffer = null;
     if (input.isTTY && output.isTTY) {
-      // Admit one terminal line at a time. Pasted follow-up lines cannot enter
-      // readline or echo while a secure workflow is being selected.
+      // Bracketed paste keeps ordinary multiline chat intact. Vault/secret first
+      // lines still fail closed: only the first line is admitted and the rest is dropped.
       readerInput = new PassThrough();
       readerInput.isTTY = true;
       readerInput.setRawMode = enabled => input.setRawMode(enabled);
       Object.defineProperty(readerInput, 'isRaw', { get: () => input.isRaw });
+      try { output.write('\x1b[?2004h'); } catch { /* non-capable terminals ignore */ }
       const forward = chunk => {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         if (readerLocked) { if (bytes.includes(3)) interrupt(); return; }
-        const end = bytes.findIndex(byte => byte === 10 || byte === 13);
-        if (end >= 0) readerLocked = true;
-        readerInput.write(end < 0 ? bytes : bytes.subarray(0, end + 1));
+        const body = bytes.toString('utf8');
+        if (pasteBuffer !== null) {
+          pasteBuffer += body;
+          const end = pasteBuffer.indexOf('\x1b[201~');
+          if (end < 0) return;
+          const pasted = pasteBuffer.slice(0, end).replace(/\r\n|\r/g, '\n');
+          pasteBuffer = null;
+          if (!pasted.trim()) return;
+          if (secureIngressLine(pasted.split('\n')[0])) {
+            admitMessage(pasted.split('\n')[0]);
+            return;
+          }
+          admitMessage(pasted.replace(/\n+$/,''));
+          return;
+        }
+        const start = body.indexOf('\x1b[200~');
+        if (start >= 0) {
+          const before = body.slice(0, start);
+          if (before) forward(Buffer.from(before, 'utf8'));
+          pasteBuffer = body.slice(start + 6);
+          if (pasteBuffer.includes('\x1b[201~')) forward(Buffer.alloc(0));
+          return;
+        }
+        if (!/[\r\n]/.test(body)) { readerInput.write(bytes); return; }
+        const parts = body.replace(/\r\n|\r/g, '\n').replace(/\n$/,'').split('\n');
+        if (parts.length > 1) {
+          if (secureIngressLine(parts[0])) { admitMessage(parts[0]); return; }
+          admitMessage(parts.join('\n'));
+          return;
+        }
+        readerLocked = true;
+        readerInput.write(Buffer.from(parts[0] + '\n', 'utf8'));
       };
       input.on('data', forward);
       readerEndListener = () => readerInput.end();
@@ -149,6 +200,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
   const detachReader = async () => {
     const reader = rl, iterator = lines;
     rl = null; lines = null;
+    pendingPaste = null; pasteBuffer = null;
     reader?.pause();
     if (reader) { reader.line = ''; reader.removeListener('SIGINT', interrupt); reader.close(); }
     for (const listener of readerDataListeners) input.removeListener('data', listener);
@@ -158,6 +210,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     await iterator?.return?.();
     if (readerInput !== input) readerInput.destroy();
     input.pause();
+    try { if (input.isTTY && output.isTTY) output.write('\x1b[?2004l'); } catch { /* ignore */ }
     // Discard pasted/queued ordinary input at the secure-entry boundary.
     if (input.isTTY) while (input.read() !== null) {}
   };
@@ -261,7 +314,8 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     while (lines) {
       const next = await lines.next();
       if (next.done) break;
-      const line = next.value;
+      const line = pendingPaste !== null ? pendingPaste : next.value;
+      pendingPaste = null;
       if (quitting) break;
       const {value,command,arg,json}=parseLine(line); if (!value) { nameOffered=false;await refreshName();readerLocked=false;showPrompt(); continue; }
       try {
@@ -425,10 +479,23 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           if(!output.isTTY)output.write(`\n${userName||'You'} › `+terminalText(value)+'\n');
           active = new AbortController();
           startAnswer();
-          const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker,conversation_id:await session(),workspace:fs.realpathSync(process.cwd()) });
+          // Admission can take longer than the default 10s client budget while the
+          // local model warms; keep the CLI open and surface an honest timeout.
+          const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker,conversation_id:await session(),workspace:fs.realpathSync(process.cwd()) }, {timeoutMs:35000,signal:active.signal});
           await handleReceipt(created,false,value);active=null;
         }
-      } catch (error) { stopAnswer();active = null; output.write('Airo: ' + terminalText(require('./secret-observation').safeValue(error.message)) + '\n'); }
+      } catch (error) {
+        stopAnswer();
+        active = null;
+        const timeout = error.name === 'TimeoutError' || /timed out|TimeoutError/i.test(error.message || '');
+        const cancelled = error.name === 'AbortError' || /cancelled/i.test(error.message || '');
+        const message = timeout
+          ? 'The request timed out waiting for local admission. Check /status and retry; the CLI is still open.'
+          : cancelled
+            ? (error.message || 'Request cancelled. The CLI is still open.')
+            : require('./secret-observation').safeValue(error.message);
+        output.write('Airo: ' + terminalText(message) + '\n');
+      }
       readerLocked=false;
       await refreshName();
       showPrompt();

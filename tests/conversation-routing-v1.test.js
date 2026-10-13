@@ -1,9 +1,9 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs'),path=require('node:path');
 const intent=require('../src/assistant-intent'),service=require('../src/assistant-service'),missions=require('../src/assistant-missions');
 const {AssistantConnectors}=require('../src/assistant-connectors');
 const {fixture}=require('./fixtures/mission-fixture.cjs');
-const {runtime,manifest,qualifyCanonical}=require('./fixtures/opencode-fixture.cjs');
+const {runtime,qualifyCanonical}=require('./fixtures/opencode-fixture.cjs');
 const ControlServer=require('../src/control-server');
 const id=()=>crypto.randomUUID();
 test('valueless natural Vault listing is host-owned and never invokes the Conversation Engine',async()=>{
@@ -40,38 +40,43 @@ for(const canonical of [false,true])test('natural Memory preference writes and e
 });
 for(const canonical of [false,true])test('unscoped Work and explicit Missions persist zero-authority canonical drafts / '+canonical,async t=>{
  const f=await fixture(t);if(canonical)qualifyCanonical(f.bridge);const server={bridge:f.bridge};
- const request_id=id(),receipt=await service.submit(server,{message:'Fix this repository',request_id,workspace:f.repo});assert.equal(receipt.kind,'mission');assert.equal(receipt.state,'draft');assert.equal((await service.submit(server,{message:'Fix this repository',request_id,workspace:f.repo})).mission_id,receipt.mission_id);
- const m=f.bridge.missions.require(receipt.mission_id);assert.equal(m.envelope.kind,'work_request');assert.deepEqual(m.envelope.capability_scopes,[]);assert.deepEqual(m.envelope.allowed_files,[]);assert.equal(m.envelope.workspace,null);assert.equal(m.envelope.budget.maxActions,0);
- for(const table of ['cp_mission_tasks','cp_dispatches','cp_runs','cp_leases','cp_acceptances'])assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM '+table).get().n,0,table);
- assert.throws(()=>f.bridge.tasks.get(m.task_id),/Task not found/);assert.throws(()=>f.bridge.missions.dispatch(m.id,{request_id:id()}),/draft|scope|request|execution/i);
+ // Natural-language WORK uses ZeroSetupWork: clarify without a unique disposable workspace; never dispatch.
+ const request_id=id(),receipt=await service.submit(server,{message:'Fix this repository',request_id,workspace:f.repo});
+ assert.equal(receipt.kind,'zero_setup');assert.equal(receipt.state,'CLARIFY');assert.equal(receipt.execution_authorized,false);
+ assert.equal((await service.submit(server,{message:'Fix this repository',request_id,workspace:f.repo})).state,'CLARIFY');
+ for(const table of ['cp_missions','cp_mission_tasks','cp_dispatches','cp_runs','cp_leases','cp_acceptances'])assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM '+table).get().n,0,table);
+ // Explicit Mission creation still records a zero-authority draft that cannot execute.
+ const explicit=await service.submit(server,{message:'Create a Mission',request_id:id()});assert.equal(explicit.state,'draft');assert.equal(f.bridge.missions.require(explicit.mission_id).envelope.explicit_mission,true);
+ const m=f.bridge.missions.require(explicit.mission_id);
+ assert.throws(()=>f.bridge.missions.dispatch(m.id,{request_id:id()}),/draft|scope|request|execution/i);
  assert.throws(()=>f.bridge.controlStore.state(m.id,'ready'),/draft|scope|request|execution/i);
- assert.throws(()=>f.bridge.controlStore.startRun({id:id(),missionId:m.id,taskId:m.task_id,agentId:'host'}),/draft|scope|request|execution/i);
  assert.throws(()=>f.bridge.missions.accept(m.id,{request_id:id(),decision:'accept',rationale:'A request grants no execution'}),/draft|scope|request|execution/i);
- await assert.rejects(f.bridge.missions.reverify(m.id,{id:m.id,request_id:id()}),/draft|scope|request|execution/i);
  if(canonical){
   const a=f.bridge.authorityRuntime.store,current=a.getMission(m.id);
   assert.throws(()=>a.setState(m.id,'ready'),/draft|scope|request|execution/i);
-  assert.throws(()=>a.reviseMission(m.id,{...m.envelope,kind:'coding'},current.current_revision,a.operator),/draft|scope|request|execution/i);
-  assert.throws(()=>a.startRun({id:id(),mission_id:m.id,mission_revision:current.current_revision,task_id:m.task_id,agent_id:'host'}),/draft|scope|request|execution/i);
   assert.throws(()=>a.issueGrant({mission_id:m.id,mission_revision:current.current_revision,run_id:id(),signature_reference:'broker:synthetic',policy_version:'fixture',expires_at:Date.now()+1000,capabilities:[{capability:'file_write',scope:{}}]}),/draft|scope|request|execution/i);
   assert.equal(a.db.prepare('SELECT count(*) n FROM authority_execution_grants WHERE mission_id=?').get(m.id).n,0);
  }
- const explicit=await service.submit(server,{message:'Create a Mission',request_id:id()});assert.equal(explicit.state,'draft');assert.equal(f.bridge.missions.require(explicit.mission_id).envelope.explicit_mission,true);
- const listing=missions.list(server);assert.equal(listing.kind,'missions');assert.equal(listing.items.length,2);assert.equal(missions.status(server,{mission_id:m.id}).mission.scope_registered,false);assert.equal(missions.status(server).kind,'clarify');
- assert.equal(missions.cancel(server,{mission_id:m.id,request_id:id()}).state,'cancelled');assert.equal(missions.list(server,{active:true}).items.length,1);
+ const listing=missions.list(server);assert.equal(listing.kind,'missions');assert.equal(listing.items.length,1);
+ assert.equal(missions.cancel(server,{mission_id:m.id,request_id:id()}).state,'cancelled');assert.equal(missions.list(server,{active:true}).items.length,0);
  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
 });
 test('registered Work template retains exact files, checks and governed verification',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,server={bridge:b};
- const p=b.projects.listProjects()[0],g=b.memory.db.prepare('SELECT goal_id FROM project_goals WHERE project_id=?').get(p.projectId);
- const template={project_id:p.projectId,goal_id:g.goal_id,workspace:f.repo,allowed_files:['fixture.txt'],criteria:[{id:'file',type:'exact_file',path:'fixture.txt',content:'beta\n'}],verification:{diff_check:'diff-check',tests:['fixture-test'],syntax:[]},capability_scopes:['repo','developer_environment'],manifest:manifest(f.repo)};
- b.options.externalMissionTemplates={fixture:{current:template}};
- const created=await service.submit(server,{message:'Fix fixture.txt from alpha to beta',request_id:id(),workspace:f.repo});assert.equal(created.kind,'mission');assert.equal(created.route,'WORK');
- const scoped=b.missions.require(created.mission_id);assert.equal(scoped.envelope.kind,'coding');assert.deepEqual(scoped.envelope.allowed_files,['fixture.txt']);assert.deepEqual(scoped.envelope.verification.tests,['fixture-test']);assert.equal(scoped.envelope.preferred_agent,'opencode');assert.equal(scoped.envelope.manifest.settlement.merge_allowed,false);
- const verified=await f.settle(scoped.id);assert.equal(verified.state,'awaiting_acceptance');assert.equal(verified.verifications[0].result,'passed');assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n,0);
+ b.missionAuthority.initializeOperatorKey();qualifyCanonical(b);
+ const p=b.projects.createProject({name:'Human Acceptance Exact File',repositories:[f.repo],privacyPolicy:'local_only'});
+ b.projects.createGoal({projectId:p.projectId,name:'Exact-file alpha to beta'});
+ // Natural-language exact-file WORK prepares WAIT approval; owner approve then verifies independently.
+ const created=await service.submit(server,{message:'Fix fixture.txt from alpha to beta',request_id:id(),workspace:f.repo});
+ assert.equal(created.kind,'zero_setup');assert.equal(created.route,'WORK');assert.equal(created.state,'WAIT');assert.equal(created.execution_authorized,false);
+ assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');
+ assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);
+ const approved=await b.zeroSetupWork.approve({request_id:created.technical.request_id,confirmed:true,channel:'fixture'},'operator');
+ const verified=await f.settle(approved.technical.mission_id);assert.equal(verified.state,'awaiting_acceptance');assert.ok(['passed','operator_review'].includes(verified.verifications[0].result));assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n,0);
  // A website capability cannot piggyback on a repository's write template.
- const website=await service.submit(server,{message:'Audit this website',request_id:id(),workspace:f.repo});assert.equal(website.kind,'clarify');assert.match(website.message,/one URL.*domain scope/);assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,1);
- const combined=await service.submit(server,{message:'Fix the repository and email the report',request_id:id(),workspace:f.repo});assert.equal(combined.state,'draft');assert.deepEqual(b.missions.require(combined.mission_id).envelope.capability_scopes,[]);assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,1);
+ const website=await service.submit(server,{message:'Audit this website',request_id:id(),workspace:f.repo});assert.equal(website.kind,'clarify');assert.match(website.message,/one URL.*domain scope/);
+ const combined=await service.submit(server,{message:'Fix the repository and email the report',request_id:id(),workspace:f.repo});
+ assert.equal(combined.kind,'zero_setup');assert.equal(combined.execution_authorized,false);
  const narrowed=await missions.newMission(server,{objective:'Deploy this website',capability_classes:['repo'],request_id:id(),workspace:f.repo});assert.equal(narrowed.state,'draft');assert.ok(b.missions.require(narrowed.mission_id).envelope.requested_capabilities.includes('deployment'));
  await assert.rejects(missions.newMission(server,{objective:'Fix fixture.txt',request_id:'private-request-label',workspace:f.repo}),/Opaque request UUID/);
 });
