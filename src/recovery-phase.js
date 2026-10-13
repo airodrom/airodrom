@@ -29,7 +29,8 @@ const PERMANENT_REASONS = new Set([
   'worker_not_authorized', 'unsupported_kind', 'repair_scope_mismatch', 'dirty_outside_repair_scope',
   'no_host_verification_failure', 'repair_pending_timeout', 'approval_unavailable', 'approval_expired',
   'approval_revoked', 'external_disclosure_unauthorized', 'repeated_failure_signature', 'risk_policy_no_retry',
-  'not_needs_rework', 'repair_already_spawned', 'failure_not_repairable',
+  'not_needs_rework', 'repair_already_spawned', 'failure_not_repairable', 'contract_expired', 'contract_budget',
+  'mission_contract_invalid', 'repair_identity_conflict',
 ]);
 
 const QUARANTINE_REASONS = new Set(['unverified_termination', 'quarantined_lease', 'uncertain_execution']);
@@ -53,6 +54,10 @@ const EXPLANATIONS = Object.freeze({
   repeated_failure_signature: 'the same verification failure repeated without progress',
   risk_policy_no_retry: 'the Mission\'s risk class does not permit automatic retries',
   failure_not_repairable: 'the failure category is not one automatic repair may act on',
+  contract_expired: 'the Mission contract\'s authorized time window has expired',
+  contract_budget: 'the Mission contract\'s repair budget is used up',
+  mission_contract_invalid: 'the corrective Mission contract failed host validation',
+  repair_identity_conflict: 'a corrective Mission identity conflict was detected and nothing was created',
   workspace_writer: 'another writer still holds the approved workspace',
   unreconciled_dispatch: 'a previous dispatch has not been reconciled yet',
   run_not_terminal: 'the previous worker run has not finished',

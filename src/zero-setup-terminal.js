@@ -22,9 +22,13 @@ function preview(presentation = {}) {
     'File: ' + files,
     'Worker: ' + (presentation.worker || 'Local OpenCode'),
     'Verification: ' + (presentation.verification || 'Registered focused checks'),
+    'Repair budget: ' + (presentation.repair_budget || 'One automatic correction inside this scope'),
     'Network: ' + (presentation.network || 'No external access'),
     'GitHub: ' + (presentation.github || 'No commits or pushes'),
     'Production: ' + (presentation.production || 'No access'),
+    ...(Array.isArray(presentation.success_criteria) && presentation.success_criteria.length
+      ? ['', 'Done means:', ...presentation.success_criteria.slice(0, 8).map(c => '  - ' + c)]
+      : []),
     '',
   ].join('\n');
 }

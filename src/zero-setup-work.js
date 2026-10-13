@@ -148,6 +148,12 @@ class ZeroSetupWork {
 
   presentation({ project, workspace, intent, template, proposal }) {
     const files = template?.allowed_files || proposal?.allowed_files || (intent?.file ? [intent.file] : []);
+    const tests = template?.verification?.tests || proposal?.tests || [];
+    const diffCheck = template?.verification?.diff_check || proposal?.diff_check || '';
+    const criteria = intent?.kind === 'exact_file' && intent.file
+      ? [{ id: 'expected_file', type: 'exact_file', path: intent.file, content: intent.to }]
+      : [];
+    const dod = require('./mission-contract').definitionOfDone({ intent, criteria, verification: { tests, diff_check: diffCheck }, allowed_files: files });
     return {
       brand: 'AIRODROM',
       goal: intent?.objective || 'Bounded local work',
@@ -158,6 +164,9 @@ class ZeroSetupWork {
       verification: intent?.kind === 'exact_file'
         ? 'Exact file content + focused test + git diff --check'
         : 'Registered focused verification',
+      success_criteria: dod.items.map(i => i.text),
+      measurable: dod.measurable,
+      repair_budget: 'One automatic correction inside this scope',
       network: 'No external access',
       github: 'No commits or pushes',
       production: 'No access',
@@ -348,7 +357,7 @@ class ZeroSetupWork {
 
   async approve(input, owner = 'operator') {
     if (owner !== 'operator') throw Error('Authenticated local operator required');
-    object(input, ['request_id', 'confirmed']);
+    object(input, ['request_id', 'confirmed', 'channel']);
     identifier(input.request_id);
     if (input.confirmed !== true) throw Error('Explicit owner approval required');
     const request_id = input.request_id;
@@ -380,6 +389,23 @@ class ZeroSetupWork {
     const submitted = await handoff.submit(this.bridge, packet, 'operator');
     if (!submitted.mission_id) throw Error(submitted.reason || 'WORK handoff did not create a Mission');
     live.mission_id = submitted.mission_id;
+    // ADR 0051: one authenticated owner approval bound to the Mission's immutable scope
+    // fingerprint, time window and repair budget. Corrective Missions reuse it in-scope.
+    const created = this.bridge.controlStore.requireMission(submitted.mission_id);
+    if (created.envelope.contract && this.bridge.missionApprovals) {
+      const approval = this.bridge.missionApprovals.issue({
+        request_id: 'zero-setup-approval:' + request_id,
+        channel: input.channel && ['terminal', 'control_center', 'fixture'].includes(input.channel) ? input.channel : 'terminal',
+        contract: created.envelope.contract,
+        goal_id: live.goal_id,
+        confirmed: true,
+        ttl_ms: 2 * 60 * 60 * 1000,
+        summary: { goal: live.intent?.objective || live.instruction },
+      }, 'operator');
+      this.bridge.missionApprovals.bind(approval.approval_id, submitted.mission_id, 'operator');
+      live.approval_id = approval.approval_id;
+      live.approval_expires_at = approval.expires_at;
+    }
     const stages = [{
       id: 'work',
       depends_on: [],

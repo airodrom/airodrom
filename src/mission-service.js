@@ -18,7 +18,9 @@ class MissionService {
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
   createResearch(input,owner='operator'){return this.research.create(input,owner);}
   create(input,owner='operator'){
-    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','data_class','model','worker','development_session_id','repair_of']);
+    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','data_class','model','worker','development_session_id','repair_of','contract','approval_id']);
+    if((input.contract!==undefined||input.approval_id!==undefined)&&owner!=='operator')throw Error('Only operator may register a Mission contract or approval');
+    if(input.approval_id!==undefined)identifier(input.approval_id);
     if(input.continuity!==undefined&&!['prior_context','current_prompt'].includes(input.continuity))throw Error('Invalid continuity mode');
     for(const key of ['target_domains','required_memory_keys'])if(input[key]!==undefined&&(!Array.isArray(input[key])||input[key].length>20||input[key].some(v=>typeof v!=='string'||!v||v.length>120)))throw Error('Invalid typed memory requirement');
     if(input.required_assurance!==undefined&&(!Number.isInteger(input.required_assurance)||input.required_assurance<0||input.required_assurance>3))throw Error('Invalid required assurance');
@@ -97,9 +99,29 @@ class MissionService {
     }else if(baseline.dirty.some(f=>input.allowed_files.includes(f)))throw Error('Requested changes overlap pre-existing dirty work');
     // Repair baselines may already include dirty allowed files; fresh Missions may not.
     const verificationManifest=baseline.version===2?require('./repository-verification').manifest(baseline,input.allowed_files,{inspectNow:!repairOf}):null;
+    // ADR 0051 canonical Mission contract. Mandatory for Cursor and for any governed
+    // (zero-setup / handoff / corrective) Mission; legacy direct creates without a
+    // contract keep their existing authority/manifest/dispatch-policy ceilings.
+    const contractRequired=input.contract!==undefined||!!repairOf&&!!this.store.requireMission(input.repair_of).envelope.contract;
+    let contract=null;
+    if(contractRequired){
+      const parentContract=repairOf?this.store.requireMission(input.repair_of).envelope.contract:null;
+      contract=require('./mission-contract').normalizeContract(input.contract??parentContract??{},{
+        request_id:input.request_id,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,
+        dispatch_policy:dispatchPolicy,objective:input.objective,project_id:input.project_id,goal_id:input.goal_id,base_commit_sha:baseline.head||null,branch:baseline.branch||null,
+        repair_of:repairOf,operator:owner==='operator',approval_id:input.approval_id||(parentContract?.audit?.approval_id)||null,fixture:!!fixturePolicy,
+      });
+      if(parentContract&&parentContract.scope_fingerprint!==contract.scope_fingerprint)throw Error('repair_scope_mismatch');
+      // Verifier-owned inputs are hashed outside worker write authority (test-tampering
+      // baseline). A corrective Mission inherits the parent's trusted baseline so a
+      // worker's tampering can never be re-blessed by re-capturing after the failure.
+      contract.audit.verifier_baseline=parentContract?.audit?.verifier_baseline||require('./verifier-baseline').capture(workspace,{allowedFiles:input.allowed_files,verification,baseline});
+    }
+    const approvalId=input.approval_id||contract?.audit?.approval_id||null;
+    if(approvalId&&this.bridge.missionApprovals)this.bridge.missionApprovals.assertBindable(approvalId,{contract,workspace,repair_of:repairOf});
     return this.store.request(owner,input.request_id,{op:'create_mission',...input},()=>{
       const projectMission=this.bridge.projects.createMission({goalId:goal.goalId,name:input.objective.slice(0,180),description:input.objective,acceptanceCriteria:criteria.map(c=>c.description||`Verify ${c.id}`)});
-      const envelope={control_version:2,...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),...(developmentSessionId?{development_session_id:developmentSessionId}:{}),...(repairOf?{repair_of:repairOf}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
+      const envelope={control_version:2,...(contract?{contract}:{}),...(approvalId?{approval_id:approvalId}:{}),...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),...(developmentSessionId?{development_session_id:developmentSessionId}:{}),...(repairOf?{repair_of:repairOf}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
       const task=this.newTask(projectMission.missionId,goal.projectId,envelope,owner,1);
       const m=this.store.registerMission({id:projectMission.missionId,projectId:goal.projectId,goalId:goal.goalId,taskId:task.id,owner,envelope,ceiling:{...(authority?{mission_authority:authority}:{}),capability_scopes:scopes,authority:'existing SafetyPolicy and signed authority only',policy_version:this.bridge.capabilityHost.policy.policyVersion}});
       this.db.prepare('INSERT INTO cp_mission_tasks VALUES(?,?,1,NULL,NULL,?)').run(task.id,m.id,Date.now());
@@ -134,7 +156,17 @@ class MissionService {
     this.bridge.workTemplates.assertMission(mission);
     if(mission.envelope.kind==='work_request')throw Error('Work request draft requires registered scope and verification before execution');
     require('./removed-runtime').assertExecutable(mission);
-    if(mission.envelope.worker_contract)this.bridge.workers.assertMission(mission);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
+    // ADR 0051: approval-bound Missions dispatch only while the approval is active and the
+    // immutable scope fingerprint still matches; Cursor additionally requires the real adapter.
+    if(mission.envelope.approval_id&&this.bridge.missionApprovals)this.bridge.missionApprovals.assertDispatch(mission);
+    if(mission.envelope.contract)require('./mission-contract').assertIntact(mission.envelope.contract);
+    const fixtureMode=process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true;
+    const cursorRoute=mission.envelope.preferred_agent==='cursor';
+    // A governed Cursor Mission (contract present) dispatches only through the qualified
+    // sandboxed worker. Without a contract Cursor never executes outside test fixtures.
+    if(cursorRoute&&mission.envelope.contract){if(!this.bridge.cursorWorker?.qualifiedFor?.(mission))throw Error('worker_execution_unqualified');}
+    else if(cursorRoute&&!fixtureMode)throw Error('worker_execution_unqualified');
+    if(mission.envelope.worker_contract)this.bridge.workers.assertMission(mission);else if(!fixtureMode&&!(cursorRoute&&mission.envelope.contract)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     this.program.assert(mission);
     if(this.bridge.developmentSessions)this.bridge.developmentSessions.assertExecution(mission);
     const result=require('./mission-permissions').checkAuthority(mission.envelope.authority,requirements);
@@ -147,7 +179,7 @@ class MissionService {
   }
   queue(id,decisionId=null){
     const m=this.store.requireMission(id);this.assertAuthority(m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
-    if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
+    if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&!(m.envelope.preferred_agent==='cursor'&&m.envelope.contract)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     if(['conversation','browser_research'].includes(m.envelope.kind)&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('Bounded Missions admit one run only; create a fresh Mission.');
     if(m.state==='waiting_for_operator'&&!decisionId)throw Error('Mission requires its Decision answer');
     if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','dispatching','running','unknown')").get(id))throw Error('Mission has an active or uncertain dispatch; reconcile it first');

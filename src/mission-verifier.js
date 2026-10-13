@@ -35,6 +35,17 @@ class MissionVerifier {
       add('workspace', 'passed',{exists:true});
       add('protected_files',protectedChanged.length||baseline.head!==snapshot.head?'failed':'passed',{changed:protectedChanged,head_unchanged:baseline.head===snapshot.head});
       add('expected_changes',envelope.allowed_files.some(f=>creation.files[f]!==snapshot.files[f])?'passed':'failed',{task_owned_changes:changed.filter(f=>envelope.allowed_files.includes(f)),baseline_hash:baseline.hash});
+      // ADR 0051: contract integrity and trusted verifier-input baseline. Tampered tests or
+      // verification policy fail before any registered task runs; evidence is preserved.
+      if(envelope.contract){
+        const contracts=require('./mission-contract');
+        try{contracts.assertIntact(envelope.contract);add('contract_integrity','passed',{scope_fingerprint:envelope.contract.scope_fingerprint,schema_version:envelope.contract.schema_version});}
+        catch(error){add('contract_integrity','failed',{reason:error.message});}
+        const vb=require('./verifier-baseline');
+        const auditResult=vb.audit(envelope.workspace,envelope.contract.audit?.verifier_baseline,snapshot,{contract:envelope.contract,allowedFiles:envelope.allowed_files});
+        add('verifier_inputs_unchanged',auditResult.status,{changed:auditResult.changed.length,tampering:auditResult.tampering.map(t=>({file:t.file,kind:t.kind,classification:t.classification,removed_assertions:t.removed_assertions??null,weakened_negative_checks:t.weakened_negative_checks??null,skips_added:t.skips_added??null})),agent_authored:auditResult.agent_authored.map(a=>a.file),authorized:auditResult.authorized.map(a=>a.file),trusted_source:auditResult.trusted_source,reason:auditResult.reason||null});
+        add('protected_tests_unchanged',auditResult.tampering.some(t=>/(^|\/)(tests?|__tests__)(\/|$)|\.(test|spec)\./.test(t.file))?'failed':'passed',{policy:'verifier-owned tests are immutable to workers; agent-authored tests are never proof'});
+      }
       if(checks.some(c=>c.status==='failed'))return{status:'failed',checks,workspace_hash:snapshot.hash};
       add('git_status','passed',await call('git_status',{repo:envelope.workspace}));
       add('task_owned_diff','passed',await call('git_diff',{repo:envelope.workspace,paths:envelope.allowed_files,stat:true}));
@@ -58,6 +69,11 @@ class MissionVerifier {
         if(label===envelope.verification.diff_check&&(registered.command!=='git'||JSON.stringify(registered.args)!==JSON.stringify(['diff','--check'])))throw Error('Diff check must be exactly git diff --check');
         const result=await call('vscode_run_task',{repo:envelope.workspace,label,timeoutSeconds:60});
         add(`task:${label}`,result.exit_code===0&&!result.timed_out?'passed':'failed',{exit_code:result.exit_code,output:result.output});
+      }
+      if(envelope.contract){
+        // Proportional security verification over the files the worker actually changed.
+        const changedAllowed=changed.filter(f=>envelope.allowed_files.includes(f));
+        for(const check of require('./verifier-baseline').securityScan(envelope.workspace,changedAllowed,{contract:envelope.contract,baselineRecord:envelope.contract.audit?.verifier_baseline}))add(check.id,check.status,check.evidence);
       }
       const after=workspaceSnapshot(envelope.workspace);
       add('verification_workspace_stable',after.hash===snapshot.hash?'passed':'failed',{before:snapshot.hash,after:after.hash});snapshot=after;
