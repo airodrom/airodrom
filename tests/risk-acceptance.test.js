@@ -179,6 +179,6 @@ test('template WORK cannot inherit standing auto Acceptance or bypass exact-file
     fallback_agents: [],
     dispatch_policy: { ...LOCAL_POLICY },
     data_class: 'public',
-    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\\n' }],
+    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }],
   }, 'operator'), /OpenCode only/);
 });
