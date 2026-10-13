@@ -45,12 +45,10 @@ class ResearchMission{
  resolveWorkspace(websiteOnly){
   const profile=require('./research-profile');
   if(websiteOnly)return profile.ensureWebsiteOnlyWorkspace(this.bridge.dataDir);
-  if(this.options.workspace){
-   try{
-    const root=repositoryRoot(this.options.workspace);
-    const git=require('node:child_process').spawnSync('/usr/bin/git',['-C',root,'rev-parse','--is-inside-work-tree'],{encoding:'utf8',timeout:5000,maxBuffer:64,env:{PATH:'/usr/bin:/bin',GIT_OPTIONAL_LOCKS:'0'}});
-    if(git.status===0&&String(git.stdout).trim()==='true')return root;
-   }catch{/* fall through to independently verified comparison workspace */}
+  // Production comparison always uses the configured product repository. Synthetic
+  // fixtures may supply an explicit workspace, still symlink/toplevel verified.
+  if(process.env.NODE_ENV==='test'&&this.options.synthetic===true&&this.options.workspace){
+   return profile.verifyComparisonWorkspace(repositoryRoot(this.options.workspace),{configured:false});
   }
   return profile.comparisonWorkspace();
  }
