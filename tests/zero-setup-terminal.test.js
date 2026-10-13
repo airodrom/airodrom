@@ -94,7 +94,7 @@ test('terminal y/N consent authorizes once; n cancels without writes', async t =
       calls.push(route);
       if (route.endsWith('/approve')) {
         const approved = await f.bridge.zeroSetupWork.approve(body, 'operator');
-        await f.settle(approved.technical.mission_id);
+        await f.settle(approved.technical.mission_id, 'completed');
         return approved;
       }
       if (route.includes('/status')) return f.bridge.zeroSetupWork.refreshState(request2);
@@ -108,7 +108,7 @@ test('terminal y/N consent authorizes once; n cancels without writes', async t =
   assert.match(yes.text(), /Working/);
   const missionId = done.technical.mission_id;
   assert.ok(missionId);
-  assert.equal(f.bridge.missions.detail(missionId).acceptance.length, 0);
+  assert.equal(f.bridge.missions.detail(missionId).acceptance.length, 1);
 });
 
 test('non-TTY cannot authorize bounded work', async t => {
