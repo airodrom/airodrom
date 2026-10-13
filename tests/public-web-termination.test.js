@@ -182,3 +182,55 @@ test('boot-epoch recovery: fail closed on tampered, replaced, stale, wrong diges
  d.ctx.b.controlStore.db.prepare('UPDATE cp_dispatches SET updated_at=? WHERE mission_id=? AND run_id=?').run(bootEpochMs(nextD)+10,d.ctx.m.mission_id,d.ctx.run.id);
  assert.throws(()=>d.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(d.ctx,d.prepared)),/post_boot_dispatch_continuation/);
 });
+
+function quarantineSyntheticRun(b,{missionId,taskId,agentId,workspace,baseline,resolution='reconcile_process'}){
+ const id=randomUUID();
+ b.controlStore.startRun({id,taskId,missionId,agentId});
+ b.controlStore.acquireLease({resource:workspace,runId:id,missionId,mode:'read',baseline,ttlMs:60_000});
+ b.controlStore.updateRun(id,{state:'termination_unverified',processState:'unknown',verified:false,resolution});
+ b.controlStore.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(id);
+ b.missions.web.uncertainBrowsers.delete(missionId);
+ const run=b.controlStore.run(id),lease=b.controlStore.db.prepare("SELECT * FROM cp_leases WHERE run_id=? AND state='quarantined'").get(id);
+ return {run,lease};
+}
+function webEvent(b,{runId,missionId,type='mission.web.termination_unverified'}){
+ const eventId=randomUUID();
+ b.controlStore.db.prepare("INSERT INTO event_ledger_events(event_id,idempotency_key,fingerprint,event_type,timestamp,timestamp_ms,run_id,mission_id,agent,direction,metadata,payload_byte_length,payload_stored_byte_length,payload_redacted,payload_truncated,protected) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(eventId,eventId,eventId,type,new Date().toISOString(),Date.now(),runId,missionId,'bridge','internal','{}',0,0,0,0,0);
+}
+
+test('boot-recovery eligibility rejects coding/reasoning/external workers and unproven bridge siblings',async t=>{
+ // Unrelated coding Mission without web capability.
+ const coding=await fixture(t);
+ const codingMission=coding.create({preferred_agent:'host',fallback_agents:[],task_type:'local_files',dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
+ const cm=coding.bridge.controlStore.requireMission(codingMission.id);
+ const cq=quarantineSyntheticRun(coding.bridge,{missionId:cm.id,taskId:cm.task_id,agentId:'host',workspace:cm.envelope.workspace,baseline:cm.envelope.baseline});
+ assert.throws(()=>coding.bridge.missions.web.prepareBootRecovery({run_id:cq.run.id,lease_id:cq.lease.id,request_id:randomUUID()}),/boot_recovery_web_capability_required/);
+
+ // Reasoning / conversation Mission.
+ const reason=await fixture(t);
+ const conv=reason.bridge.missions.createConversation({request_id:randomUUID(),message:'Fixture reasoning probe.'});
+ const rm=reason.bridge.controlStore.requireMission(conv.mission_id);
+ const rq=quarantineSyntheticRun(reason.bridge,{missionId:rm.id,taskId:rm.task_id,agentId:'host',workspace:rm.envelope.workspace||reason.repo,baseline:rm.envelope.baseline||{hash:'fixture',files:{}}});
+ assert.throws(()=>reason.bridge.missions.web.prepareBootRecovery({run_id:rq.run.id,lease_id:rq.lease.id,request_id:randomUUID()}),/boot_recovery_reasoning_denied/);
+
+ // External-worker run identity.
+ const {b,m,run,lease}=await uncertainWebMission(t,{bootEpoch:{sec:Math.floor(Date.now()/1000)-3_600,usec:0,source:'kern.boottime'}});
+ const worker=quarantineSyntheticRun(b,{missionId:m.mission_id,taskId:run.task_id,agentId:'opencode',workspace:b.controlStore.requireMission(m.mission_id).envelope.workspace,baseline:b.controlStore.requireMission(m.mission_id).envelope.baseline});
+ assert.throws(()=>b.missions.web.prepareBootRecovery({run_id:worker.run.id,lease_id:worker.lease.id,request_id:randomUUID()}),/boot_recovery_external_worker_denied/);
+
+ // Bridge sibling without this-run web-execution proof (sharing Mission is insufficient).
+ const unproven=quarantineSyntheticRun(b,{missionId:m.mission_id,taskId:run.task_id,agentId:'bridge',workspace:b.controlStore.requireMission(m.mission_id).envelope.workspace,baseline:b.controlStore.requireMission(m.mission_id).envelope.baseline});
+ assert.throws(()=>b.missions.web.prepareBootRecovery({run_id:unproven.run.id,lease_id:unproven.lease.id,request_id:randomUUID()}),/boot_recovery_bridge_web_unproven/);
+ assert.throws(()=>b.missions.web.reconcileBootRecovery({run_id:unproven.run.id,mission_id:m.mission_id,lease_id:unproven.lease.id,evidence_id:randomUUID(),sha256:'a'.repeat(64),termination_verified:true,request_id:randomUUID(),recovery_kind:'cold_os_reboot'}),/recovery_evidence_unknown|boot_recovery_bridge_web_unproven/);
+
+ // Bridge sibling becomes eligible only after run-scoped web evidence.
+ const proven=quarantineSyntheticRun(b,{missionId:m.mission_id,taskId:run.task_id,agentId:'bridge',workspace:b.controlStore.requireMission(m.mission_id).envelope.workspace,baseline:b.controlStore.requireMission(m.mission_id).envelope.baseline,resolution:'web_termination_unverified'});
+ webEvent(b,{runId:proven.run.id,missionId:m.mission_id});
+ const preparedBridge=b.missions.web.prepareBootRecovery({run_id:proven.run.id,lease_id:proven.lease.id,request_id:randomUUID()});
+ assert.equal(preparedBridge.run_id,proven.run.id);
+ assert.match(preparedBridge.sha256,/^[a-f0-9]{64}$/);
+ // Host path remains independently eligible.
+ const preparedHost=b.missions.web.prepareBootRecovery({run_id:run.id,lease_id:lease.id,request_id:randomUUID()});
+ assert.equal(preparedHost.run_id,run.id);
+});

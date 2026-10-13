@@ -102,6 +102,45 @@ class MissionWeb{
    return this.settleNamedRun(run,{resolution:'operator_web_reconcile',owned_process_id:pid,recovery_kind:'owned_pid_esrch'});
   });
  }
+ assertBootRecoveryEligibility(run){
+  if(!run?.mission_id||!run.task_id)throw error('boot_recovery_run_binding_required');
+  const m=this.store.getMission(run.mission_id);if(!m)throw error('boot_recovery_mission_required');
+  if(m.task_id!==run.task_id)throw error('boot_recovery_task_mismatch');
+  const task=this.bridge.tasks.get(m.task_id);
+  if(!task||task.id!==run.task_id||task.controlPlaneMissionId!==m.id)throw error('boot_recovery_task_mismatch');
+  if(task.reasoningOnly||task.missionMode==='reasoning_only'||m.envelope.kind==='conversation'||m.envelope.task_type==='reasoning')throw error('boot_recovery_reasoning_denied');
+  const external=new Set(['codex','claude_code','cursor','opencode']);
+  if(m.envelope.worker_contract||external.has(run.agent_id)||(m.envelope.preferred_agent&&external.has(m.envelope.preferred_agent))||(m.envelope.fallback_agents||[]).some(a=>external.has(a)))throw error('boot_recovery_external_worker_denied');
+  if(!['browser_research','coding'].includes(m.envelope.kind))throw error('boot_recovery_mission_kind_denied');
+  const webCapability=m.envelope.kind==='browser_research'
+   ||(m.envelope.capability_scopes||[]).includes('web_read')
+   ||!!this.db.prepare('SELECT 1 FROM cp_mission_web_grants WHERE mission_id=?').get(m.id)
+   ||!!this.db.prepare('SELECT 1 FROM cp_mission_web_evidence WHERE mission_id=?').get(m.id);
+  if(!webCapability)throw error('boot_recovery_web_capability_required');
+  if(m.envelope.preferred_agent&&m.envelope.preferred_agent!=='host')throw error('boot_recovery_external_worker_denied');
+  if(run.agent_id==='host'){
+   if(!this.provenHostWebExecution(run,m))throw error('boot_recovery_web_execution_unproven');
+   return {mission:m,task,relationship:'host_web'};
+  }
+  if(run.agent_id==='bridge'){
+   // Sibling bridge runs require proof on this run_id; sharing a Mission with a host web run is not enough.
+   if(!this.provenBridgeWebExecution(run,m))throw error('boot_recovery_bridge_web_unproven');
+   return {mission:m,task,relationship:'bridge_web'};
+  }
+  throw error('boot_recovery_agent_denied');
+ }
+ provenHostWebExecution(run,m){
+  if(this.db.prepare('SELECT 1 FROM cp_mission_web_evidence WHERE run_id=? AND mission_id=?').get(run.id,m.id))return true;
+  if(this.db.prepare("SELECT 1 FROM event_ledger_events WHERE run_id=? AND mission_id=? AND event_type IN ('mission.web.termination_unverified','mission.web.evidence','research.browser_started','research.navigated','research.browser_closed')").get(run.id,m.id))return true;
+  if(run.resolution==='web_termination_unverified'||run.resolution==='navigation_unavailable')return true;
+  if(m.envelope.kind==='browser_research'&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=? AND run_id=? AND task_id=?').get(m.id,run.id,run.task_id))return true;
+  return false;
+ }
+ provenBridgeWebExecution(run,m){
+  if(this.db.prepare('SELECT 1 FROM cp_mission_web_evidence WHERE run_id=? AND mission_id=?').get(run.id,m.id))return true;
+  if(this.db.prepare("SELECT 1 FROM event_ledger_events WHERE run_id=? AND mission_id=? AND event_type IN ('mission.web.termination_unverified','mission.web.evidence','research.browser_started','research.navigated','research.browser_closed')").get(run.id,m.id))return true;
+  return false;
+ }
  assertNoPostBootContinuation(run,lease,currentBootMs){
   if(run.updated_at>=currentBootMs||(run.ended_at!=null&&run.ended_at>=currentBootMs)||['starting','running','verifying'].includes(run.state))throw error('post_boot_run_continuation');
   if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND run_id=? AND (updated_at>=? OR state IN ('dispatching','running'))").get(run.mission_id,run.id,currentBootMs))throw error('post_boot_dispatch_continuation');
@@ -114,7 +153,7 @@ class MissionWeb{
  prepareBootRecovery(input){
   const {object,identifier}=require('./control-plane-store');object(input,['run_id','request_id','lease_id']);identifier(input.run_id);identifier(input.request_id);
   return this.store.request('operator',input.request_id,{op:'mission_web_boot_recovery_prepare',run_id:input.run_id,lease_id:input.lease_id||null},()=>{
-   const run=this.store.run(input.run_id),lease=this.assertRunReconcileGate(run,{requireLease:!!input.lease_id||!!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(input.run_id)});
+   const run=this.store.run(input.run_id);this.assertBootRecoveryEligibility(run);const lease=this.assertRunReconcileGate(run,{requireLease:!!input.lease_id||!!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(input.run_id)});
    if(Number.isSafeInteger(run.pid)&&run.pid>0)throw error('owned_process_pid_present_use_pid_reconcile');
    if(input.lease_id){if(!policy.UUID.test(input.lease_id))throw error('lease_binding_required');if(!lease||lease.id!==input.lease_id)throw error('lease_binding_mismatch');}
    else if(lease)throw error('lease_binding_required');
@@ -147,6 +186,7 @@ class MissionWeb{
    if(record.state!=='prepared')throw error('recovery_evidence_already_consumed');
    if(record.sha256!==input.sha256||record.mission_id!==input.mission_id||record.run_id!==input.run_id||(record.lease_id||null)!==(input.lease_id||null))throw error('recovery_evidence_registry_mismatch');
    const run=this.store.run(input.run_id);if(!run||run.mission_id!==input.mission_id)throw error('mission_run_binding_mismatch');
+   this.assertBootRecoveryEligibility(run);
    const lease=this.assertRunReconcileGate(run,{requireLease:!!input.lease_id||!!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(run.id)});
    if(Number.isSafeInteger(run.pid)&&run.pid>0)throw error('owned_process_pid_present_use_pid_reconcile');
    if(input.lease_id){if(!policy.UUID.test(input.lease_id)||!lease||lease.id!==input.lease_id)throw error('lease_binding_mismatch');}

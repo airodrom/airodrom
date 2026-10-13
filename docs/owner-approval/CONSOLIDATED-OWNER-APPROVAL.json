@@ -2,7 +2,7 @@
   "title": "AIRODROM \u2014 consolidated owner approval for PR #103 boot-recovery security closeout",
   "pr": "https://github.com/airodrom/airodrom/pull/103",
   "base_live_installation": "c383544",
-  "starting_head": "860f7ee2fcf0146ae6bcf52903978c16e044f278",
+  "starting_head": "e9de883d7c6a8fd69b0974516698a1dce809cc0a",
   "live_hold": {
     "mission_id": "127229ca-ab86-43f9-8cd3-0ce86a2e30c6",
     "host_run_id": "b5f79b6b-22cf-43fd-98bc-3295226a1360",
@@ -29,7 +29,7 @@
     },
     {
       "step": "C",
-      "action": "Prepare and preserve pre-reboot evidence: POST web-boot-recovery-prepare for host run b5f79b6b\u2026 with lease_id be1743be\u2026; retain evidence_id+sha256+boot_epoch; independently prepare bridge run 4616ce39\u2026 if it still blocks"
+      "action": "Prepare and preserve pre-reboot evidence: POST web-boot-recovery-prepare for host run b5f79b6b\u2026 with lease_id be1743be\u2026; retain evidence_id+sha256+boot_epoch; independently prepare bridge run 4616ce39\u2026 only if that run_id has proven web-execution relationship (Mission/Task/Run/capability eligible)"
     },
     {
       "step": "D",
@@ -68,11 +68,12 @@
     "Fail closed on tamper, substitution, stale snapshot, replay/consumed evidence, or post-boot run/dispatch/invocation/lease/event continuation",
     "Only the named run/lease/dispatch/linked invocations settle; siblings remain independent",
     "recovery_not_execution distinguishes verified recovery from successful research",
-    "Missing PID and orphan attestation are never termination proof"
+    "Missing PID and orphan attestation are never termination proof",
+    "Bridge sibling boot recovery requires run-scoped web-execution proof; coding/reasoning/external-worker runs are rejected"
   ],
   "docs": "docs/WEB-BOOT-EPOCH-RECOVERY-V1.md",
-  "ts": "2026-10-13T23:10:53Z",
-  "head_sha": "d60647d77f250f686546fb68f9cb1918174f1e77",
-  "note": "Merge/squash the exact GitHub PR headRefOid at approval time. closeout_code_head is the security implementation commit; head_sha at authoring time was the then-current tip including this packet.",
-  "closeout_code_head": "d9826cedae1f18f96f0d880612332f9bd4a15af3"
+  "ts": "2026-10-13T23:19:54Z",
+  "head_sha": "4be45a872ac5e00165113432df17638f41e97d80",
+  "note": "Merge/squash the exact GitHub PR headRefOid at approval time.",
+  "closeout_code_head": "4be45a872ac5e00165113432df17638f41e97d80"
 }
