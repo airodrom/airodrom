@@ -21,7 +21,19 @@
 6. Host registers the WORK template, binds one Mission, authorizes CAE, and dispatches OpenCode.
 7. Host verifies independently; Acceptance remains a separate owner decision.
 
+
 Preparation is never permission. ChatGPT text never grants execution.
+
+## One-interface, approval-bound completion (candidate V1)
+
+The ordinary `airodrom` Terminal is the primary interface, with Control Center retained for advanced administration and diagnostics. When one eligible signed local WORK template is active, its exact Project/workspace can be selected without asking the owner to manipulate UUIDs or worktrees. An explicitly named Project overrides unrelated disposable-fixture heuristics. Ambiguous, missing, expired, revoked, or dirty scopes still stop safely rather than guessing.
+
+For the **exact `fixture.txt` alpha-to-beta acceptance fixture only**, the owner’s initial authenticated `Approve this task` / Terminal `y` authorizes the **expected final bytes and registered focused verification**. After independent Airodrom host verification passes every exact-file, test, security, and workspace check, the Mission can settle automatically. No separate final Acceptance click is required for that preauthorized scope. The user sees this completion policy **before** approval.
+
+General development WORK remains manual-Acceptance gated. The standing low-risk preference never silently opts registered WORK templates into auto Acceptance. MCP text cannot grant execution, choose acceptance policy, or authorize existing historical Missions. A changed preimage, missing template, extra files, changed verifier, external worker, pending approval, unexpected workspace change, or failing checker must fail closed. Git commit/push/merge, installation, credentials, networking, Production, and broader permissions are **not** authorized by this one-click completion policy.
+
+This is a narrowly scoped pilot. It does not establish arbitrary zero-click autonomous development or retroactive Acceptance for earlier completed tests.
+
 
 ## MCP catalog refresh
 
