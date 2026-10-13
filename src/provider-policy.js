@@ -54,7 +54,11 @@ function operatorSecretLike(value) {
   // session values and every other part of a mixed submission remain screened.
   if(containsSecret(loginAddresses))return true;
   // Bare domain syntax must not hide credential/query suffixes or userinfo.
-  for(const token of normalized.match(/[^\s<>"'`]+/g)||[])if(!token.includes('://')&&/(?:[a-z0-9-]+\.)+[a-z]{2,63}\b/i.test(token)&&(/[?#%\\]/.test(token)||/[:/]/.test(token)&&containsSecret('https://'+token)))return true;
+  // Sentence punctuation after a hostname ("arecibo.ca?") is not a query marker.
+  for(const raw of normalized.match(/[^\s<>"'`]+/g)||[]){
+   const token=raw.replace(/[)\].,;:!?'"…]+$/g,'');
+   if(!token.includes('://')&&/(?:[a-z0-9-]+\.)+[a-z]{2,63}$/i.test(token)&&(/[?#%\\]/.test(token)||/[:/]/.test(token)&&containsSecret('https://'+token)))return true;
+  }
   const screened=operatorInstructionText(loginAddresses);
   const baseline=screened.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>{const address=operatorAddress(candidate);return address?require('./transport-outcome').safeTransportUrl(address.value)+address.suffix:candidate;});
   return containsSecret(screened)||redactText(screened)!==baseline;

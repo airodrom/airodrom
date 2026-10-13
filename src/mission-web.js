@@ -130,7 +130,19 @@ class MissionWeb{
   const actions=g.policy.query?[{type:'search'}]:[];actions.push(...g.policy.entries.slice(0,3).map(url=>({type:/\.pdf$/i.test(new URL(url).pathname)?'document':'explore',url})));
   for(const action of actions){if(action.type==='search'&&!this.source())throw error('approved_search_provider_unavailable');await this.call(m,task,action);}
  }
- async call(m,task,action){const requestId=randomUUID();let response=await this.bridge.invokeCapability(task.id,{name:'mission_web',input:{mission_id:m.id,action},requestId});if(response.status==='pending'&&this.bridge.orchestrator.inflight.has(requestId))response=await this.bridge.orchestrator.inflight.get(requestId);if(this.uncertainBrowsers.has(m.id))throw error('web_termination_unverified');if(response.status!=='completed')throw error('mission_web_preflight_stopped');return response;}
+ async call(m,task,action){
+  const requestId=randomUUID();let response=await this.bridge.invokeCapability(task.id,{name:'mission_web',input:{mission_id:m.id,action},requestId});
+  if(response.status==='pending'&&this.bridge.orchestrator.inflight.has(requestId))response=await this.bridge.orchestrator.inflight.get(requestId);
+  if(this.uncertainBrowsers.has(m.id))throw error('web_termination_unverified');
+  if(response.status==='completed')return response;
+  // Preserve the authoritative broker/browser code instead of a generic preflight label.
+  const reason=String(response.decision?.reason||response.error||'');
+  const refused=/Public research network refused: ([a-z_]{1,80})/.exec(reason);
+  if(refused)throw error(refused[1]);
+  if(response.decision?.kind==='approval_required')throw error('capability_authorization_denied');
+  if(response.status==='pending')throw error('capability_execution_unsettled');
+  throw error('mission_web_preflight_stopped');
+ }
  createResearch(input,owner='operator'){
   if(owner!=='operator')throw error('operator_web_consent_required');object(input,['objective','mode','entries','query','confirmed','request_id','duration_ms','permission_mode']);
   const p=policy.normalize(inputPolicy(input));

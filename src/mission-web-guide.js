@@ -21,16 +21,18 @@ async function guide({offer,mission_id,input,output,home,signal,request=local.re
 function parse(message){
  if(typeof message!=='string')return null;const request=message.normalize('NFKC').trim().replace(/^airo(?:drom)?[,:]?\s+/i,'').replace(/^(?:(?:please|can you|could you|help me)\s+)+/i,'');
  // Conversational approval text never authorizes public web access; only the Terminal confirm path does.
- if(/^(?:i(?:['’]ve| have)?\s+approved|approved(?:\s+it)?|yes[,.]?\s*i\s+approve)\b/i.test(request))return {kind:'clarify',route:'WORK',message:'Public web authorization requires the Terminal permission prompt (y/n). Saying “I approved” in chat does not grant browsing.',authority:false};
+ if(/^(?:i(?:['’]ve| have)?\s+(?:already\s+)?approved|i\s+already\s+approved|approved(?:\s+it)?|yes[,.]?\s*i\s+approve)\b/i.test(request))return {kind:'clarify',route:'WORK',message:'Public web authorization requires the Terminal permission prompt (y/n). Saying “I approved” in chat does not grant browsing.',authority:false};
  const match=/^(?:search (?:the )?(?:web|internet)(?: for)?|web search(?: for)?|research (?:public sources|competitors)(?: for)?)\s+(.+)$/i.exec(request);
  // Require https:// or an explicit website keyword so bare "visit foo" does not open public research.
- const explore=/^(?:explore|browse|visit|inspect|review|check|look at|take a look at|open)\s+(?:(?:these|the)\s+)?(?:public\s+)?(?:websites?|sites?|urls?|pages?)?\s*:?\s*(.+)$/i.exec(request);
+ const explore=/^(?:explore|browse|visit|inspect|review|check|look at|take a look at|open|go to|research)\s+(?:(?:these|the)\s+)?(?:public\s+)?(?:websites?|sites?|urls?|pages?)?\s*:?\s*(.+)$/i.exec(request);
  if(!match&&!explore)return null;if(/\b(?:my account|authenticated|log in|sign in|password|credentials|mfa|bypass|ignore|override|deploy|publish|send|delete|purchase|signup|sign-up)\b/i.test(request))return null;
  if(match){const query=match[1];if(require('./research-baseline').unsafeEvidenceText(query))return null;return {kind:'public_web_offer',route:'WORK',objective:message,mode:'all',entries:[],query,authority:false};}
- const tokens=explore[1].split(/\s*(?:,| and )\s*/).filter(Boolean);
- const hasWebsiteCue=/\b(?:https:\/\/|website|site|url|page)\b/i.test(explore[0])||tokens.some(t=>/^https:\/\//i.test(t)||/\.[a-z]{2,}(?:\/|$)/i.test(t));
+ // Keep only the website target; trailing "and tell me…" prose is not part of the URL list.
+ const target=explore[1].replace(/\s+(?:and|,)\s+(?:tell me|summarize|explain|describe|what it does|what they do)\b[\s\S]*$/i,'').trim();
+ const tokens=target.split(/\s*(?:,| and )\s*/).filter(Boolean);
+ const hasWebsiteCue=/\b(?:https:\/\/|website|site|url|page)\b/i.test(explore[0])||tokens.some(t=>/^https:\/\//i.test(t)||/\.[a-z]{2,}(?:\/|$|\?)/i.test(t));
  if(!hasWebsiteCue)return null;
- const urls=tokens.map(token=>/^https:\/\//i.test(token)?token:'https://'+token);
+ const urls=tokens.map(token=>token.replace(/[)\].,;:!?'"…]+$/g,'')).map(token=>/^https:\/\//i.test(token)?token:'https://'+token);
  try{if(!urls.length||urls.length>8)return null;for(const url of urls){const u=new URL(url);new (require('./research-network').ResearchNetwork)({scope:{origins:[u.origin]}}).validate(url);}return {kind:'public_web_offer',route:'WORK',objective:message,mode:'on',entries:urls,authority:false};}catch{return null;}
 }
 module.exports={guide,parse,gateOffer,searchSource};

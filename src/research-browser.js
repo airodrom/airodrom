@@ -100,7 +100,13 @@ class ResearchBrowser{
   if(this.accountAuthorization&&!this.privateMode){if(url!==this.accountAuthorization.login_url)throw error('sealed_login_url_required');this.accountHandle=this.network.openAccount({origin:this.accountAuthorization.origin,loginUrl:url});this.privateMode=true;}
   if(this.privateMode&&this.takeover)throw error('human_takeover_required');
   const safe=this.validateURL(url);if(this.privateMode){this.privateNavigations.clear();this.privateNavigations.add(safe);}await this.start();this.links.clear();this.forms.clear();this.loginForms.clear();
-  try{await this.page.goto(safe,{waitUntil:'domcontentloaded'});await this.page.waitForTimeout(100);}catch{this.ensure();throw error('navigation_unavailable');}
+  // Subresource denials (concurrency, private query, sensitive paths) must not
+  // abort research when the approved document already committed.
+  try{await this.page.goto(safe,{waitUntil:'domcontentloaded'});await this.page.waitForTimeout(100);}catch(e){
+   this.ensure();
+   let committed=null;try{const current=this.page?.url?.();if(current&&current!=='about:blank')committed=this.validateURL(current);}catch{}
+   if(!committed){this.event('research.network_denied',{reason:'navigation_unavailable',detail:/^[a-z_]+$/.test(e?.code||'')?e.code:'goto_failed'});throw error('navigation_unavailable');}
+  }
   const current=this.validateURL(this.page.url());if(current!==safe){this.validateURL(current);}
   const inspection=await this.inspect();if(inspection.state==='blocked')return inspection;
   if(this.privateMode&&!this.authenticated)return inspection;

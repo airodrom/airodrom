@@ -77,8 +77,18 @@ class ResearchNetwork{
    const key=name+'\n'+cookiePath;if(expires<=Date.now()){account.cookies.delete(key);continue;}if(!account.cookies.has(key)&&account.cookies.size>=32)throw error('cookie_bound');account.cookies.set(key,{name,value,path:cookiePath,expires});
   }
  }
+ async acquireSlot(signal){
+  const deadline=Date.now()+this.timeoutMs;
+  while(this.active>=8){
+   if(signal?.aborted)throw error('cancelled');
+   if(Date.now()>=deadline)throw error('concurrency_bound');
+   await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  this.active++;
+ }
  async accountFetch({account,url,method,body,signal,followRedirects}){
-  const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,this.timeoutMs);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();if(this.active>=8){clearTimeout(timer);signal?.removeEventListener('abort',abort);throw error('concurrency_bound');}this.active++;
+  const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,this.timeoutMs);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();
+  try{await this.acquireSlot(controller.signal);}catch(e){clearTimeout(timer);signal?.removeEventListener('abort',abort);throw e;}
   try{let current=url,currentMethod=method,currentBody=body;const seen=new Set();for(;;){if(controller.signal.aborted)throw error('cancelled');current=this.accountURL(current,account.origin);const result=await this.hop(new URL(current),currentMethod,controller.signal,{account,body:currentBody});
     if(REDIRECTS.has(result.status)){if(seen.size>=3||typeof result.location!=='string'||currentMethod==='POST'&&[307,308].includes(result.status))throw error('account_redirect_denied');const next=this.accountURL(new URL(result.location,current).href,account.origin);if(next===current||seen.has(next))throw error('redirect_loop');if(!followRedirects)return {url:current,status:result.status,location:next,contentType:'text/html',body:Buffer.alloc(0)};seen.add(current);current=next;currentMethod='GET';currentBody=undefined;continue;}
     if(result.status<200||result.status>=300)throw error([401,403,407,429].includes(result.status)?'human_takeover_required':'account_response_unavailable');const type=String(result.contentType||'').split(';')[0].trim().toLowerCase();if(!TYPES.has(type)||result.attachment||!Buffer.isBuffer(result.body)||result.body.length>this.maxBytes)throw error('account_response_denied');return {url:current,status:result.status,contentType:type,body:result.body};
@@ -97,7 +107,7 @@ class ResearchNetwork{
  }
  async fetch({url,method='GET',signal=this.signal,download=false,document=false,followRedirects=true}={}){
   const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,this.timeoutMs);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();
-  if(this.active>=8){clearTimeout(timer);signal?.removeEventListener('abort',abort);throw error('concurrency_bound');}this.active++;
+  try{await this.acquireSlot(controller.signal);}catch(e){clearTimeout(timer);signal?.removeEventListener('abort',abort);throw e;}
   try{
    let current=this.validate(url,method);const hops=[];
    for(;;){if(controller.signal.aborted)throw error('cancelled');const result=await this.hop(new URL(current),method,controller.signal,undefined,download?MAX_DOWNLOAD_BYTES:undefined);
