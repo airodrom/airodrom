@@ -149,9 +149,9 @@ class ZeroSetupWork {
     });
   }
 
-  existingTemplate(workspace) {
+  existingTemplate(workspace, projectId) {
     for (const item of this.bridge.workTemplates.list('operator') || []) {
-      if (item.state !== 'active') continue;
+      if (item.state !== 'active' || item.project_id !== projectId) continue;
       try {
         const t = this.bridge.workTemplates.template(item.project, item.workspace_alias);
         if (t && t.workspace === workspace) return { project: item.project, workspace_alias: item.workspace_alias, template: t, inspect: item };
@@ -238,7 +238,7 @@ class ZeroSetupWork {
       return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
     }
     const { project, workspace } = scope;
-    const existing = this.existingTemplate(workspace);
+    const existing = this.existingTemplate(workspace, project.projectId);
     const goal = existing?.template
       ? this.bridge.projects.getGoal(existing.template.goal_id)
       : this.resolveGoal(project, intent);
