@@ -197,3 +197,39 @@ test('needs_rework stays non-terminal until repair is genuinely blocked', async 
   assert.equal(blocked.technical.repair_blocked_reason, 'repair_budget');
   assert.match(blocked.presentation.status, /repair_budget/);
 });
+
+
+test('named release project overrides unrelated self-repair fixture heuristics', async t => {
+  const f = await fixture(t);
+  const release = f.bridge.projects.createProject({ name: 'Airodrom Release Qualification', repositories: [f.repo] });
+  f.bridge.projects.createProject({ name: 'Self-Repair Acceptance', repositories: [f.repo] });
+  const { ZeroSetupWork } = require('../src/zero-setup-work');
+  const scope = new ZeroSetupWork(f.bridge).resolveScope(
+    'In Airodrom Release Qualification, inspect the local development test.',
+    { kind: 'general', objective: 'Inspect development test' }
+  );
+  assert.equal(scope.ok, true);
+  assert.equal(scope.project.projectId, release.projectId);
+});
+
+test('general instructions select only one already-registered active WORK template', async t => {
+  const f = await fixture(t);
+  f.bridge.missionAuthority.initializeOperatorKey();
+  const release = f.bridge.projects.createProject({ name: 'Airodrom Release Qualification', repositories: [f.repo] });
+  const goal = f.bridge.projects.createGoal({ projectId: release.projectId, name: 'Verify test fixture' });
+  f.bridge.projects.createProject({ name: 'Self-Repair Acceptance', repositories: [f.repo] });
+  f.bridge.workTemplates.register({
+    project: 'release-qualification', workspace_alias: 'safe-dev',
+    project_id: release.projectId, goal_id: goal.goalId, workspace: f.repo,
+    allowed_files: ['fixture.txt'], diff_check: 'diff-check',
+    tests: ['fixture-test'], duration_minutes: 60, confirmed: true,
+  }, 'operator');
+  const { ZeroSetupWork } = require('../src/zero-setup-work');
+  const scope = new ZeroSetupWork(f.bridge).resolveScope(
+    'Please repair this bounded development test and verify it.',
+    { kind: 'general', objective: 'Repair bounded test' }
+  );
+  assert.equal(scope.ok, true);
+  assert.equal(scope.project.projectId, release.projectId);
+  assert.equal(scope.workspace, fs.realpathSync(f.repo));
+});
