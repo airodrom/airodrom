@@ -60,29 +60,87 @@ class MissionWeb{
  uncertain(m,runId,browser){this.uncertainBrowsers.set(m.id,browser);const pid=browser?.ownedProcessId?.()||this.store.run(runId)?.pid||null;this.store.updateRun(runId,{state:'termination_unverified',processState:'unknown',verified:false,resolution:'web_termination_unverified',pid});this.db.prepare("UPDATE cp_leases SET state='quarantined' WHERE run_id=? AND state='held'").run(runId);this.db.prepare("UPDATE cp_dispatches SET state='unknown' WHERE mission_id=? AND run_id=?").run(m.id,runId);this.store.event('mission.web.termination_unverified',m.id,{reconciliation_required:true,owned_process_id:pid},{runId});}
  async closeBrowser(m,runId,browser){try{const result=await browser.close();if(!result?.closed||!result.termination_verified||result.owned_process_termination!=='verified')throw error('web_termination_unverified');return result;}catch{this.uncertain(m,runId,browser);throw error('web_termination_unverified');}}
  processGone(pid){if(!Number.isSafeInteger(pid)||pid<=0)return false;try{process.kill(pid,0);return false;}catch(e){return e.code==='ESRCH';}}
+ bootEpoch(){return require('./os-boot-epoch').readBootEpoch({testing:this.options.bootEpoch?{epoch:this.options.bootEpoch}:this.options.testing?.bootEpoch});}
+ recoveryDir(){const root=path.resolve(this.bridge.dataDir,'recovery','web-termination');privateDirectory(path.dirname(root),true);return privateDirectory(root,true);}
+ settleNamedRun(run,{resolution,owned_process_id=null,recovery_kind}){
+  this.db.prepare("UPDATE cp_runs SET state='termination_unverified' WHERE id=? AND state='interrupted'").run(run.id);
+  const mission=this.store.getMission(run.mission_id),outcome=mission?.state==='cancelled'||run.resolution==='reconcile_process'?'cancelled':'failed';
+  this.store.updateRun(run.id,{state:outcome,processState:'exited',verified:true,resolution});
+  this.db.prepare("UPDATE cp_leases SET state='released' WHERE run_id=? AND state='quarantined'").run(run.id);
+  this.db.prepare("UPDATE cp_dispatches SET state='blocked' WHERE mission_id=? AND run_id=?").run(run.mission_id,run.id);
+  for(const inv of this.db.prepare("SELECT invocation_id FROM cp_mission_web_evidence WHERE run_id=?").all(run.id)){
+   const row=this.store.invocation(inv.invocation_id);if(row&&['running','unknown'].includes(row.state))this.store.finishInvocation(inv.invocation_id,{status:'failed',error:'web_reconciled',capability:'mission_web'});
+  }
+  this.active.delete(run.mission_id);
+  this.store.event('mission.web.reconciled',run.mission_id,{run_id:run.id,actor:'operator',owned_process_id,recovery_kind,recovery_not_execution:true},{runId:run.id});
+  return {run_id:run.id,mission_id:run.mission_id,reconciled:true,termination_verified:true,owned_process_id,recovery_kind,recovery_not_execution:true,authority:false};
+ }
+ assertRunReconcileGate(run,{requireLease=true}={}){
+  if(!run)throw error('run_required');
+  if(!['interrupted','termination_unverified'].includes(run.state)||run.termination_verified)throw error('web_reconcile_state_denied');
+  const lease=this.db.prepare("SELECT * FROM cp_leases WHERE run_id=? AND state='quarantined'").get(run.id);
+  if(requireLease&&!lease)throw error('quarantined_lease_required');
+  if(this.uncertainBrowsers.has(run.mission_id))throw error('uncertain_browser_handle_retained');
+  return lease||null;
+ }
  reconcile(input){
   const {object,identifier}=require('./control-plane-store');object(input,['run_id','termination_verified','request_id']);identifier(input.run_id);identifier(input.request_id);
   if(input.termination_verified!==true)throw error('explicit_termination_confirmation_required');
   return this.store.request('operator',input.request_id,{op:'mission_web_reconcile',run_id:input.run_id,termination_verified:true},()=>{
-   const run=this.store.run(input.run_id);if(!run)throw error('run_required');
-   if(!['interrupted','termination_unverified'].includes(run.state)||run.termination_verified)throw error('web_reconcile_state_denied');
-   if(!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(run.id))throw error('quarantined_lease_required');
-   if(this.uncertainBrowsers.has(run.mission_id))throw error('uncertain_browser_handle_retained');
-   // Absent PID is not evidence. Only ESRCH on the recorded owned process proves exit.
+   const run=this.store.run(input.run_id);this.assertRunReconcileGate(run);
    const pid=run.pid;if(!Number.isSafeInteger(pid)||pid<=0)throw error('owned_process_pid_required');
+   // PID ESRCH is only meaningful for processes owned on the current boot.
+   const boot=this.bootEpoch(),bootMs=require('./os-boot-epoch').bootEpochMs(boot),anchor=run.ended_at||run.updated_at;
+   if(!Number.isSafeInteger(anchor)||anchor<bootMs)throw error('owned_process_cross_boot_use_boot_recovery');
    if(!this.processGone(pid))throw error('owned_process_still_alive');
-   // Match Codex: interrupted is terminal, so stage through termination_unverified first.
-   // Only this run_id is settled; sibling Mission runs keep their own termination burden.
-   this.db.prepare("UPDATE cp_runs SET state='termination_unverified' WHERE id=? AND state='interrupted'").run(run.id);
-   const mission=this.store.getMission(run.mission_id),outcome=mission?.state==='cancelled'||run.resolution==='reconcile_process'?'cancelled':'failed';
-   this.store.updateRun(run.id,{state:outcome,processState:'exited',verified:true,resolution:'operator_web_reconcile'});
-   this.db.prepare("UPDATE cp_leases SET state='released' WHERE run_id=? AND state='quarantined'").run(run.id);
-   this.db.prepare("UPDATE cp_dispatches SET state='blocked' WHERE mission_id=? AND run_id=?").run(run.mission_id,run.id);
-   for(const inv of this.db.prepare("SELECT invocation_id FROM cp_mission_web_evidence WHERE run_id=?").all(run.id)){
-    const row=this.store.invocation(inv.invocation_id);if(row&&['running','unknown'].includes(row.state))this.store.finishInvocation(inv.invocation_id,{status:'failed',error:'web_reconciled',capability:'mission_web'});
-   }
-   this.active.delete(run.mission_id);this.store.event('mission.web.reconciled',run.mission_id,{run_id:run.id,actor:'operator',owned_process_id:pid});
-   return {run_id:run.id,mission_id:run.mission_id,reconciled:true,termination_verified:true,owned_process_id:pid,authority:false};
+   return this.settleNamedRun(run,{resolution:'operator_web_reconcile',owned_process_id:pid,recovery_kind:'owned_pid_esrch'});
+  });
+ }
+ prepareBootRecovery(input){
+  const {object,identifier}=require('./control-plane-store');object(input,['run_id','request_id','lease_id']);identifier(input.run_id);identifier(input.request_id);
+  return this.store.request('operator',input.request_id,{op:'mission_web_boot_recovery_prepare',run_id:input.run_id,lease_id:input.lease_id||null},()=>{
+   const run=this.store.run(input.run_id),lease=this.assertRunReconcileGate(run,{requireLease:!!input.lease_id||!!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(input.run_id)});
+   if(Number.isSafeInteger(run.pid)&&run.pid>0)throw error('owned_process_pid_present_use_pid_reconcile');
+   if(input.lease_id){if(!policy.UUID.test(input.lease_id))throw error('lease_binding_required');if(!lease||lease.id!==input.lease_id)throw error('lease_binding_mismatch');}
+   else if(lease)throw error('lease_binding_required');
+   const boot=this.bootEpoch(),id=randomUUID(),capturedAt=typeof this.options.now==='function'?this.options.now():Date.now();
+   const packet={schema_version:'airodrom-web-boot-recovery-v1',evidence_id:id,mission_id:run.mission_id,run_id:run.id,lease_id:lease?.id||null,
+    run:{state:run.state,process_state:run.process_state,termination_verified:!!run.termination_verified,pid:run.pid,updated_at:run.updated_at,ended_at:run.ended_at,resolution:run.resolution,agent_id:run.agent_id},
+    lease:lease?{id:lease.id,state:lease.state,mode:lease.mode,resource:lease.resource}:null,
+    boot_epoch:boot,captured_at:capturedAt,authority:false,browser_closed_receipt:false,
+    purpose:'pre_cold_reboot_quarantine_evidence'};
+   const bytes=Buffer.from(JSON.stringify(packet)+'\n');fs.writeFileSync(path.join(this.recoveryDir(),id+'.json'),bytes,{mode:0o600,flag:'wx'});
+   this.store.event('mission.web.boot_recovery_prepared',run.mission_id,{evidence_id:id,boot_epoch:require('./os-boot-epoch').fingerprint(boot),lease_id:lease?.id||null},{runId:run.id});
+   return {evidence_id:id,mission_id:run.mission_id,run_id:run.id,lease_id:lease?.id||null,boot_epoch:boot,sha256:hash(bytes),authority:false,recovery_not_execution:true,
+    next:'Owner-authorized cold OS reboot required. After the new boot epoch differs, call web-reconcile-boot with this evidence_id. This packet is not a browser_closed receipt.'};
+  });
+ }
+ reconcileBootRecovery(input){
+  const {object,identifier}=require('./control-plane-store');object(input,['run_id','mission_id','lease_id','evidence_id','termination_verified','request_id','recovery_kind']);
+  identifier(input.run_id);identifier(input.request_id);identifier(input.mission_id);if(!policy.UUID.test(input.evidence_id||''))throw error('evidence_binding_required');
+  if(input.termination_verified!==true)throw error('explicit_termination_confirmation_required');
+  if(input.recovery_kind!=='cold_os_reboot')throw error('cold_os_reboot_required');
+  return this.store.request('operator',input.request_id,{op:'mission_web_boot_recovery_reconcile',run_id:input.run_id,evidence_id:input.evidence_id,recovery_kind:'cold_os_reboot'},()=>{
+   const run=this.store.run(input.run_id);if(!run||run.mission_id!==input.mission_id)throw error('mission_run_binding_mismatch');
+   const lease=this.assertRunReconcileGate(run,{requireLease:!!input.lease_id||!!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(run.id)});
+   if(Number.isSafeInteger(run.pid)&&run.pid>0)throw error('owned_process_pid_present_use_pid_reconcile');
+   if(input.lease_id){if(!policy.UUID.test(input.lease_id)||!lease||lease.id!==input.lease_id)throw error('lease_binding_mismatch');}
+   else if(lease)throw error('lease_binding_required');
+   const file=path.join(this.recoveryDir(),input.evidence_id+'.json');
+   const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+   let packet,bytes;try{const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.uid!==process.getuid?.()||stat.mode&0o077||stat.size>65536)throw error('recovery_evidence_integrity_denied');bytes=fs.readFileSync(fd);packet=JSON.parse(bytes);}finally{fs.closeSync(fd);}
+   if(packet.schema_version!=='airodrom-web-boot-recovery-v1'||packet.evidence_id!==input.evidence_id||packet.mission_id!==input.mission_id||packet.run_id!==input.run_id||(packet.lease_id||null)!==(input.lease_id||null)||packet.browser_closed_receipt!==false||packet.authority!==false)throw error('recovery_evidence_binding_denied');
+   if(packet.run.state!==run.state||packet.run.updated_at!==run.updated_at||packet.run.pid!==run.pid||!!packet.run.termination_verified!==!!run.termination_verified||(lease&&packet.lease?.id!==lease.id))throw error('recovery_evidence_stale');
+   const prior=packet.boot_epoch,current=this.bootEpoch(),boot=require('./os-boot-epoch');
+   if(boot.sameBootEpoch(prior,current))throw error('cold_os_reboot_not_observed');
+   const currentBootMs=boot.bootEpochMs(current),priorBootMs=boot.bootEpochMs(prior),anchor=run.ended_at||run.updated_at;
+   if(!Number.isSafeInteger(packet.captured_at)||packet.captured_at<priorBootMs||currentBootMs<=packet.captured_at)throw error('boot_boundary_ordering_denied');
+   if(!Number.isSafeInteger(anchor)||anchor>=currentBootMs)throw error('run_not_confined_to_prior_boot');
+   // No post-boot browser/run execution for this run. Recovery audit events are excluded.
+   const post=this.db.prepare("SELECT count(*) n FROM event_ledger_events WHERE run_id=? AND timestamp_ms>=? AND event_type IN ('research.browser_started','research.navigated','research.network_denied','research.browser_closed','mission.web.evidence','run.started')").get(run.id,currentBootMs).n;
+   if(post)throw error('post_boot_execution_observed');
+   if(this.db.prepare("SELECT 1 FROM cp_runs WHERE id=? AND state IN ('starting','running','verifying')").get(run.id))throw error('run_restarted');
+   return this.settleNamedRun(run,{resolution:'operator_web_boot_recovery',owned_process_id:null,recovery_kind:'cold_os_reboot'});
   });
  }
  assess(task,input,{budget=true}={}){

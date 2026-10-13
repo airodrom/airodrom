@@ -1,0 +1,64 @@
+{
+  "title": "AIRODROM \u2014 consolidated owner approval for PR #103 + legacy PID-less quarantine closeout",
+  "pr": "https://github.com/airodrom/airodrom/pull/103",
+  "base": "c383544",
+  "live_hold": {
+    "mission_id": "127229ca-ab86-43f9-8cd3-0ce86a2e30c6",
+    "host_run_id": "b5f79b6b-22cf-43fd-98bc-3295226a1360",
+    "bridge_run_id": "4616ce39-ea67-4dcc-a85a-826a2497386e",
+    "lease_id": "be1743be-2951-4cdf-945c-0e43a6809965",
+    "why_pid_reconcile_impossible": "host run.pid is null; missing PID / process listing / orphan attestation are insufficient",
+    "checkpoint": "/Users/andrew/.airodrom/backups/p0-controlplane-recovery-20261013T223532Z"
+  },
+  "verdict_today": {
+    "RUNTIME_RECOVERY": "HOLD",
+    "PUBLIC_WEB_RESEARCH": "NOT VERIFIED",
+    "dual_surface_Ready": false
+  },
+  "authorized_sequence_if_approved": [
+    {
+      "step": 1,
+      "action": "APPROVE merge of PR #103 at the exact head SHA after review (no install yet)"
+    },
+    {
+      "step": 2,
+      "action": "APPROVE governed cutover/install of that SHA only (preserve Memory/Vault/Missions/dirty checkout/rollback)"
+    },
+    {
+      "step": 3,
+      "action": "POST /api/control-v2/web-boot-recovery-prepare for host run b5f79b6b\u2026 with lease_id be1743be\u2026; retain evidence_id+sha256+boot_epoch"
+    },
+    {
+      "step": 4,
+      "action": "Independently prepare boot recovery for bridge run 4616ce39\u2026 if it still blocks (exact mission/run binding; lease_id only if quarantined)"
+    },
+    {
+      "step": 5,
+      "action": "APPROVE cold OS reboot of the machine owning the live install; no research relaunch"
+    },
+    {
+      "step": 6,
+      "action": "After new boot epoch differs: POST web-reconcile-boot for each prepared binding with recovery_kind=cold_os_reboot and termination_verified=true"
+    },
+    {
+      "step": 7,
+      "action": "Verify harness healthy/mcp_ready AND product-control Ready before any arecibo retry"
+    }
+  ],
+  "explicitly_not_authorized_until_owner_says_so": [
+    "live DB force-release of quarantined lease",
+    "orphan attestation reconcile",
+    "manufacturing browser_closed receipts",
+    "arecibo.ca research retry",
+    "merge/install/reboot without matching step approval"
+  ],
+  "safety_properties": [
+    "ChildProcess.kill only; never process.kill(pid) for shutdown signaling",
+    "PID ESRCH reconcile only for same-boot recorded PIDs",
+    "Boot recovery requires sealed pre-reboot evidence + changed OS boot epoch + no post-boot execution events",
+    "Only the named run/lease/dispatch/linked invocations settle; siblings remain independent",
+    "recovery_not_execution distinguishes verified recovery from successful research"
+  ],
+  "docs": "docs/WEB-BOOT-EPOCH-RECOVERY-V1.md",
+  "ts": "2026-10-13T23:03:13Z"
+}

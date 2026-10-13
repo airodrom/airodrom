@@ -170,6 +170,7 @@
   "docs/UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md",
   "docs/UNIVERSAL-BROWSER-V2.md",
   "docs/UNIVERSAL-MISSION-WEB-V1.md",
+  "docs/WEB-BOOT-EPOCH-RECOVERY-V1.md",
   "docs/V2-SOURCE-INVENTORY.json",
   "docs/WHATSAPP-CONVERSATIONS-V1.md",
   "docs/WHATSAPP-INBOUND-V1-MISSION.md",
@@ -426,6 +427,7 @@
   "src/mission-web-policy.js",
   "src/mission-web-search.js",
   "src/mission-web.js",
+  "src/os-boot-epoch.js",
   "src/model-worker-router.js",
   "src/native-execution-router.js",
   "src/natural-private-vault.js",
@@ -783,5 +785,6 @@
   "tests/zero-setup-work.test.js",
   "THIRD_PARTY_NOTICES.md",
   "tsconfig.authority.json",
-  "tsconfig.sdk.json"
+  "tsconfig.sdk.json",
+  "docs/owner-approval/CONSOLIDATED-OWNER-APPROVAL.json"
 ]
