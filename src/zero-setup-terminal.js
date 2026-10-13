@@ -168,7 +168,9 @@ function resultText(view) {
     lines.push('');
     lines.push('Updated ' + files + '.');
     lines.push('Original Goal resumed.');
-    lines.push('Awaiting owner Acceptance.');
+    lines.push(mission === 'completed'
+      ? 'Completed under your earlier scoped approval. No further Acceptance is required.'
+      : 'Awaiting owner Acceptance.');
     return lines.join('\n');
   }
   if (String(view.state || '').toUpperCase() === 'REJECTED' || mission === 'cancelled') return view.message || 'Cancelled. Nothing was written.';
