@@ -247,3 +247,72 @@ test('same-boot web-reconcile rejects unrelated quarantined non-web executions',
  // Same-boot PID ESRCH would otherwise look viable; eligibility must refuse non-web quarantine.
  assert.throws(()=>coding.bridge.missions.web.reconcile({run_id:cq.run.id,termination_verified:true,request_id:randomUUID()}),/boot_recovery_web_capability_required/);
 });
+
+test('boot-recovery: pre-boot running dispatch and linked unknown invocation settle after valid reboot',async t=>{
+ const {ctx,prepared,advance}=await preparedBootFixture(t,{priorOffsetSec:12_000,usec:7});
+ const {b,m,run,lease}=ctx;
+ const priorMs=run.ended_at||run.updated_at;
+ // Historical durable running dispatch (updated_at still prior-boot) must not false-fail continuation.
+ b.controlStore.db.prepare("UPDATE cp_dispatches SET state='running',updated_at=? WHERE mission_id=? AND run_id=?").run(priorMs-1_000,m.mission_id,run.id);
+ assert.equal(b.controlStore.db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?').get(m.mission_id,run.id).state,'running');
+ // Linked pre-boot unknown invocation on the exact task; unrelated later invocation on another task stays open.
+ const linkedInv=randomUUID(),unrelatedInv=randomUUID(),otherTask=randomUUID();
+ b.controlStore.db.prepare("INSERT INTO cp_invocations(request_id,task_id,fingerprint,state,result,created_at,updated_at,origin_event_id) VALUES(?,?,?,'unknown',NULL,?,?,?)")
+  .run(linkedInv,run.task_id,'fixture-linked',priorMs-500,priorMs-500,randomUUID());
+ b.controlStore.db.prepare("INSERT INTO cp_invocations(request_id,task_id,fingerprint,state,result,created_at,updated_at,origin_event_id) VALUES(?,?,?,'unknown',NULL,?,?,?)")
+  .run(unrelatedInv,otherTask,'fixture-unrelated',priorMs-500,priorMs-500,randomUUID());
+ const sibling=randomUUID();
+ b.controlStore.startRun({id:sibling,taskId:run.task_id,missionId:m.mission_id,agentId:'bridge'});
+ b.controlStore.updateRun(sibling,{state:'interrupted',processState:'unknown',verified:false,resolution:'reconcile_process'});
+ advance();
+ const ok=b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared));
+ assert.equal(ok.recovery_kind,'cold_os_reboot');
+ assert.equal(ok.recovery_not_execution,true);
+ assert.equal(b.controlStore.run(run.id).termination_verified,1);
+ assert.equal(b.controlStore.db.prepare('SELECT state FROM cp_leases WHERE id=?').get(lease.id).state,'released');
+ assert.equal(b.controlStore.db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?').get(m.mission_id,run.id).state,'blocked');
+ assert.equal(b.controlStore.invocation(linkedInv).state,'settled');
+ assert.equal(b.controlStore.invocation(unrelatedInv).state,'unknown');
+ assert.equal(b.controlStore.run(sibling).state,'interrupted');
+ assert.equal(b.controlStore.run(sibling).termination_verified,0);
+ assert.throws(()=>b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared)),/recovery_evidence_already_consumed/);
+});
+
+test('boot-recovery: post-boot running dispatch, post-boot events, wrong relationship, and tamper still fail closed',async t=>{
+ // Post-boot timestamp advancement on a running dispatch remains denied.
+ const a=await preparedBootFixture(t,{priorOffsetSec:12_600,usec:8});
+ const nextA=a.advance();
+ a.ctx.b.controlStore.db.prepare("UPDATE cp_dispatches SET state='running',updated_at=? WHERE mission_id=? AND run_id=?")
+  .run(bootEpochMs(nextA)+25,a.ctx.m.mission_id,a.ctx.run.id);
+ assert.throws(()=>a.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(a.ctx,a.prepared)),/post_boot_dispatch_continuation/);
+
+ // Post-boot execution event denied.
+ const bfx=await preparedBootFixture(t,{priorOffsetSec:13_200,usec:9});
+ const nextB=bfx.advance();
+ const eventId=randomUUID(),ts=bootEpochMs(nextB)+40;
+ bfx.ctx.b.controlStore.db.prepare("INSERT INTO event_ledger_events(event_id,idempotency_key,fingerprint,event_type,timestamp,timestamp_ms,run_id,mission_id,agent,direction,metadata,payload_byte_length,payload_stored_byte_length,payload_redacted,payload_truncated,protected) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(eventId,eventId,eventId,'research.navigated',new Date(ts).toISOString(),ts,bfx.ctx.run.id,bfx.ctx.m.mission_id,'bridge','internal','{}',0,0,0,0,0);
+ assert.throws(()=>bfx.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(bfx.ctx,bfx.prepared)),/post_boot_execution_observed/);
+
+ // Incorrect Run/dispatch relationship: unbound running dispatch on the task.
+ const c=await preparedBootFixture(t,{priorOffsetSec:13_800,usec:10});
+ c.advance();
+ c.ctx.b.controlStore.db.prepare("UPDATE cp_dispatches SET run_id=NULL,state='running' WHERE mission_id=? AND run_id=?")
+  .run(c.ctx.m.mission_id,c.ctx.run.id);
+ assert.throws(()=>c.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(c.ctx,c.prepared)),/post_boot_dispatch_relationship_denied/);
+
+ // Wrong run identity against sealed evidence.
+ const d=await preparedBootFixture(t,{priorOffsetSec:14_400,usec:11});
+ d.advance();
+ const other=randomUUID();
+ d.ctx.b.controlStore.startRun({id:other,taskId:d.ctx.run.task_id,missionId:d.ctx.m.mission_id,agentId:'host'});
+ assert.throws(()=>d.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(d.ctx,d.prepared,{run_id:other})),/recovery_evidence_registry_mismatch/);
+
+ // Tampered sealed evidence bytes.
+ const e=await preparedBootFixture(t,{priorOffsetSec:15_000,usec:12});
+ e.advance();
+ const file=path.join(e.ctx.b.dataDir,'recovery','web-termination',e.prepared.evidence_id+'.json');
+ const bytes=fs.readFileSync(file);
+ fs.writeFileSync(file,Buffer.concat([bytes,Buffer.from('\n')]));
+ assert.throws(()=>e.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(e.ctx,e.prepared)),/recovery_evidence_digest_mismatch/);
+});

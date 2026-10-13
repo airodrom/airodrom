@@ -1,3 +1,10 @@
+## Unreleased — Boot-recovery pre-boot dispatch continuation
+
+- `assertNoPostBootContinuation` no longer treats a durable `dispatching`/`running` dispatch state alone as post-boot execution. Only `created_at`/`updated_at` at or after the current OS boot epoch (or a post-boot-created row) counts as continuation; historical pre-boot running rows remain eligible after a verified cold reboot.
+- Reject unbound `running`/`dispatching` dispatches on the Mission task (`run_id IS NULL`) as relationship drift.
+- Cold-boot `settleNamedRun` settles the exact run-bound dispatch and historically linked pre-boot `running`/`unknown` invocations on that task (dispatch-bound); unrelated invocations and bridge sibling runs stay untouched. Still marked `recovery_not_execution`.
+- Focused regression extended in `tests/public-web-termination.test.js`.
+
 ## Unreleased — Public web termination reconcile
 
 - Bound owned research browser close end-to-end: `startPromise` wait is deadline-bound, Playwright teardown steps are timed, and termination is verified from the owned ChildProcess exit fields only (no `process.kill(pid)` signaling).
