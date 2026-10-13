@@ -17,7 +17,8 @@ const terminal = require('../src/zero-setup-terminal');
 const { evidencePackage } = require('../src/mission-evidence');
 
 test('unified end-to-end: proposal → approval → failure → one repair → verified → evidence, no duplicates across a disconnect', async t => {
-  const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 60000 });
+  // Generous bounds: the unified group runs test files concurrently and the fixture worker is CPU-sensitive.
+  const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 180000 });
   f.bridge.missionAuthority.initializeOperatorKey();
   qualifyCanonical(f.bridge);
   // Disposable self-repair marker: exactly one controlled wrong write before the first host verification.
@@ -53,7 +54,7 @@ test('unified end-to-end: proposal → approval → failure → one repair → v
 
   // 5-12. Worker edits, controlled failure, scheduler diagnoses, one corrective Mission, rebind, correction.
   let repairId = null, disconnected = false, observations = 0;
-  const deadline = Date.now() + 90000;
+  const deadline = Date.now() + 180000;
   while (Date.now() < deadline) {
     await f.bridge.missions.tick();
     await f.bridge.autonomousExecution.tick();
@@ -65,7 +66,8 @@ test('unified end-to-end: proposal → approval → failure → one repair → v
     if (repairId && f.bridge.controlStore.requireMission(repairId).state === 'awaiting_acceptance') break;
     await new Promise(r => setTimeout(r, 40));
   }
-  assert.ok(repairId, 'exactly one corrective Mission was created');
+  const diag = () => { const a = f.bridge.autonomousExecution.inspect(planId).autonomous; const p = f.bridge.missions.detail(parentId); return JSON.stringify({ parent_state: p.state, parent_reason: p.reason, verifications: p.verifications.map(v => [v.result, v.evidence.filter(c => c.status !== 'passed').map(c => c.id)]), runs: p.runs.map(r => [r.agent_id, r.state, r.result?.resolution || r.result?.error_class || null]), blocked: a.repair_blocked, pending: a.repair_pending, phases: Object.values(a.phases).map(x => [x.phase, x.reason]), last: a.last_action, lifecycle: a.lifecycle, claims: a.claims }); };
+  assert.ok(repairId, 'exactly one corrective Mission was created: ' + diag());
   assert.ok(disconnected, 'the parent reached needs_rework (controlled failure)');
   // 13-19. Independent verification passed, exact bytes, focused test, diff check, no unauthorized files, budget, Goal verified.
   const repaired = f.bridge.missions.detail(repairId);
