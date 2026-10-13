@@ -72,5 +72,6 @@
   ],
   "docs": "docs/WEB-BOOT-EPOCH-RECOVERY-V1.md",
   "ts": "2026-10-13T23:10:53Z",
-  "head_sha": "pending_push"
+  "head_sha": "d9826cedae1f18f96f0d880612332f9bd4a15af3",
+  "note": "PR tip may include a subsequent docs pin commit; merge the exact GitHub PR head after review."
 }
