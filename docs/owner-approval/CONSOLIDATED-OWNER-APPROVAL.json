@@ -72,6 +72,7 @@
   ],
   "docs": "docs/WEB-BOOT-EPOCH-RECOVERY-V1.md",
   "ts": "2026-10-13T23:10:53Z",
-  "head_sha": "d9826cedae1f18f96f0d880612332f9bd4a15af3",
-  "note": "PR tip may include a subsequent docs pin commit; merge the exact GitHub PR head after review."
+  "head_sha": "d60647d77f250f686546fb68f9cb1918174f1e77",
+  "note": "Merge/squash the exact GitHub PR headRefOid at approval time. closeout_code_head is the security implementation commit; head_sha at authoring time was the then-current tip including this packet.",
+  "closeout_code_head": "d9826cedae1f18f96f0d880612332f9bd4a15af3"
 }
