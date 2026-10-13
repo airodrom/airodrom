@@ -43,7 +43,9 @@ function sourceContextSensitive(value) {
   if (/(?:^|[\s"'`=\/])auth\.json\b/i.test(value)) return true;
   if (/(?:^|[\s"'`=\/])(?:credentials?|secrets?)(?:\.[A-Za-z0-9._-]+)\b/i.test(value)) return true;
   if (/(?:\/)(?:credentials?|secrets?)(?:\/|$)/i.test(value)) return true;
-  if (/(?:^|[\s\/])[^\/\s"'`]+\.(?:pem|key|sqlite|db)\b/i.test(value)) return true;
+  // Path segments only: require `/` before *.key so JS property access (d.key) is not a hit.
+  if (/(?:\/)[\w.-]+\.(?:pem|key|sqlite|db)\b/i.test(value)) return true;
+  if (/(?:^|[\s"'`=(,:])[\w.-]+\.(?:pem|sqlite|db)\b/i.test(value)) return true;
   // Sensitive environment bindings in source text.
   if (/\bprocess\.env\.[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY)[A-Z0-9_]*\b/i.test(value)) return true;
   if (/\bAIRODROM_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY)[A-Z0-9_]*\b/i.test(value)) return true;
@@ -253,7 +255,11 @@ class OpenCodeAdapter extends AgentAdapter {
     if(b.authorityRuntime?.active){const a=b.authorityRuntime,p=a.store.one('context_pack_manifests',context.id);if(!p||!a.memory.validatePack(context.id,{operator_id:a.store.operatorId,project_id:p.project_id}).valid)fail('opencode_memory_context_unavailable');records=a.memory.items(context.id).map(m=>({subject:m.kind==='mission_episodic'?'Accepted mission episode':m.subject_key,content:require('../authority-memory').referenceContent(m),authority:false}));}
     else{const p=b.controlContext.inspect(context.id);records=p.refs.map(ref=>{const m=b.personalMemory.get(ref.memory_id,{includeSensitive:false});if(!m||require('../architecture-memory').hash(m.content)!==ref.content_hash)fail('opencode_memory_context_unavailable');return{subject:m.subject,content:m.content,authority:false};});}
     const binding=b.controlStore.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE context_pack_id=?').get(context.id),mission=binding?b.controlStore.missionForTask(binding.task_id):null;
-    const web=mission?.envelope.kind==='coding'&&b.missions._web?b.missions.web.context(b.tasks.get(mission.task_id)):[];
+    let web=[];
+    if(mission?.envelope.kind==='coding'&&b.missions._web){
+      try{web=b.missions.web.context(b.tasks.get(mission.task_id));}
+      catch(error){if(!/active_canonical_web_run_required|web_context_run_required/.test(String(error.code||error.message||error)))throw error;}
+    }
     const minimum={records,...(web.length?{web:[]}:{}),authority:false};if(records.length>20||Buffer.byteLength(JSON.stringify(minimum))>8000)fail('opencode_context_bound');
     for(const e of web.slice(-4)){const projected={...e,text:e.text?.slice(0,1400),links:e.links?.slice(0,3),projection_truncated:true};minimum.web.push(projected);while(Buffer.byteLength(JSON.stringify(minimum))>8000&&projected.text?.length)projected.text=projected.text.slice(0,-200);while(Buffer.byteLength(JSON.stringify(minimum))>8000&&projected.links?.length)projected.links.pop();if(Buffer.byteLength(JSON.stringify(minimum))>8000)minimum.web.pop();}
     safeText(JSON.stringify({...minimum,...(minimum.web?{web:webSafetyView(minimum.web)}:{})}));return minimum;

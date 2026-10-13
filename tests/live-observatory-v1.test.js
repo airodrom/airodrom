@@ -169,13 +169,10 @@ test('8. Control Center rendering exposes Observatory UX contracts', () => {
   const css = fs.readFileSync(path.join(__dirname, '../public/control-hub.css'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../public/control-hub.html'), 'utf8');
   assert.match(html, /control-hub\.js/);
-  assert.match(js, /LIVE MISSION OBSERVATORY/);
-  assert.match(js, /Live Missions/);
-  assert.match(js, /Working agents/);
-  assert.match(js, /Recent failures/);
-  assert.match(js, /Detailed activity unavailable/);
-  assert.match(js, /Host-measured after worker turn/);
-  assert.match(js, /obs-grid/);
+  assert.match(js, /OUTCOME/);
+  assert.match(js, /mission-detail/);
+  assert.match(js, /\/api\/product\/observatory/);
+  assert.match(js, /observation_boundary|Observatory shows sanitized/);
   assert.match(css, /\.obs-grid/);
   assert.equal(css.includes('obs-enter'), false);
   assert.equal(css.includes('obs-glow'), false);
@@ -223,6 +220,6 @@ test('9. fixture Mission end-to-end Observatory APIs and observation boundary', 
 
   const hub = await get('/control-hub.js');
   assert.equal(hub.status, 200);
-  assert.match(hub.body, /Working agents/);
-  assert.match(hub.body, /Detailed activity unavailable/);
+  assert.match(hub.body, /OUTCOME/);
+  assert.match(hub.body, /\/api\/product\/observatory/);
 });

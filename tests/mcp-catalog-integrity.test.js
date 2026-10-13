@@ -109,8 +109,9 @@ test('invalid names and duplicates never enter an observation', () => {
 test('PATH symlink resolves to installed executable regardless of old working directory', t => {
   const fixture = installedFixture(t);
   const found = verify.findExecutable('airodrom', { PATH: path.join(fixture.root, 'bin') });
-  assert.equal(found, fixture.executable);
-  assert.equal(verify.installationRoot(found), fixture.root);
+  // macOS may surface /var vs /private/var; compare real paths.
+  assert.equal(fs.realpathSync(found), fs.realpathSync(fixture.executable));
+  assert.equal(fs.realpathSync(verify.installationRoot(found)), fs.realpathSync(fixture.root));
   const observed = verify.verify({ sourceTools: rows(), installedTools: rows(), executable: found,
     sourceSha: null, installedSha: null, cwd: fixture.cwd });
   assert.equal(observed.local_status, 'PASS');

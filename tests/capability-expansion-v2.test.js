@@ -124,7 +124,9 @@ test('archives: roundtrip in scope; traversal entries and non-empty targets are 
   assert.equal(fs.readFileSync(path.join(home, 'Downloads/unpacked/pack/a.txt'), 'utf8'), 'A');
   assert.equal((await call(host, task, 'archive_extract', { archive: '~/Documents/pack.tar.gz', destination: '~/Downloads/unpacked' })).decision, 'approval_required');
   const evil = path.join(home, 'Documents/evil.tar');
-  execFileSync('/opt/homebrew/bin/python3', ['-c', `import tarfile, io\nwith tarfile.open(${JSON.stringify(evil)}, 'w') as t:\n  data = b'x'\n  info = tarfile.TarInfo('../escaped.txt'); info.size = len(data); t.addfile(info, io.BytesIO(data))`]);
+  const python = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'].find(p => { try { return fs.existsSync(p); } catch { return false; } });
+  if (!python) { t.skip('python3 required to build traversal tar fixture'); return; }
+  execFileSync(python, ['-c', `import tarfile, io\nwith tarfile.open(${JSON.stringify(evil)}, 'w') as t:\n  data = b'x'\n  info = tarfile.TarInfo('../escaped.txt'); info.size = len(data); t.addfile(info, io.BytesIO(data))`]);
   await assert.rejects(host.perform(task, await host.prepare(task, 'archive_extract', { archive: '~/Documents/evil.tar', destination: '~/Downloads/evil' })), /escapes the destination/);
   assert.equal(fs.existsSync(path.join(home, 'Downloads/escaped.txt')), false);
   assert.equal(fs.existsSync(path.join(root, 'escaped.txt')), false);

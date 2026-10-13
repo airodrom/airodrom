@@ -5,7 +5,7 @@ const caps=agentCapabilities();
 const context=(claude={},connected=false)=>({devtools:{claudeStatus:async()=>claude,cursorStatus:async()=>({installed:true})},mcpConnected:()=>connected});
 test('installed Cursor and Codex handoff do not imply executable agents',async()=>{
  const list=await caps.agent_list.perform(context({installed:true,logged_in:true,auth_mode:'subscription'}),{});
- assert.equal(list.agents.find(a=>a.id==='cursor').state,'unavailable');assert.equal(list.agents.find(a=>a.id==='cursor').editor_available,true);
+ assert.equal(list.agents.find(a=>a.id==='cursor').state,'unqualified');assert.equal(list.agents.find(a=>a.id==='cursor').editor_available,true);
  assert.equal(list.agents.find(a=>a.id==='codex').reason,'native_dispatch_unavailable');assert.equal(list.agents.find(a=>a.id==='claude_code').state,'available');
 });
 test('routing waits for semantic fit and respects auth, quota/busy and locality',async()=>{

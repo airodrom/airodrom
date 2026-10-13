@@ -181,7 +181,11 @@ test('zero-setup approve issues exactly one approval bound to the Mission contra
   // Approving twice returns the same durable state; no second approval or Mission.
   await f.bridge.zeroSetupWork.approve({ request_id, confirmed: true }, 'operator');
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 1);
-  await f.settle(mission.id);
+  // Exact-file pilot settles under the one owner approval; no second Acceptance click.
+  await f.settle(mission.id, 'completed');
   assert.equal(Buffer.from(fs.readFileSync(path.join(f.repo, 'fixture.txt'))).toString('hex'), '626574610a');
-  assert.equal(f.bridge.missions.detail(mission.id).acceptance.length, 0);
+  const settled = f.bridge.missions.detail(mission.id);
+  assert.equal(settled.state, 'completed');
+  assert.equal(settled.acceptance.length, 1);
+  assert.equal(settled.acceptance[0].decision, 'accept');
 });

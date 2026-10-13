@@ -2535,7 +2535,19 @@ class BridgeController extends EventEmitter {
     await this.slackRuntime?.stop();
     this.capabilityHost?.shutdown();
     const externalJobs=[...(this.capabilityHost?.jobs?.jobs?.values()||[])];
-    if(externalJobs.length){let timer;await Promise.race([Promise.allSettled(externalJobs.map(job=>job.done)),new Promise(resolve=>{timer=setTimeout(resolve,this.options.shutdownSettleMs||8000);})]);clearTimeout(timer);}
+    if(externalJobs.length){
+      let timer;
+      const waited=await Promise.race([
+        Promise.allSettled(externalJobs.map(job=>job.done)).then(results=>({ok:true,results})),
+        new Promise(resolve=>{timer=setTimeout(()=>resolve({ok:false}),this.options.shutdownSettleMs||8000);}),
+      ]);
+      clearTimeout(timer);
+      // Mark waited jobs terminal so lifecycle idle no longer counts them as active work.
+      if(waited.ok)for(let i=0;i<externalJobs.length;i++){
+        const job=externalJobs[i];
+        if(job&&!['completed','failed','cancelled'].includes(job.status))job.status=waited.results[i].status==='fulfilled'?'completed':'failed';
+      }
+    }
     this.leases.abortAll('Bridge shutdown');
     await Promise.allSettled([...this.runtimes.entries()].map(([taskId, runtime]) => {
       const task = this.tasks?.get(taskId);
