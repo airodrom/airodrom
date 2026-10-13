@@ -6,7 +6,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { manifest } = require('./fixtures/opencode-fixture.cjs');
-const { diagnose, repairInput } = require('../src/autonomous-repair');
+const { diagnose, repairInput, repairAuthority } = require('../src/autonomous-repair');
 
 function failingNative(f, extra = {}) {
   return f.create({
@@ -139,7 +139,8 @@ test('parent-baseline pre-existing dirty outside allowed_files does not block re
   assert.equal(fs.existsSync(path.join(f.repo, 'README-OWNER-ACCEPTANCE.txt')), true);
 });
 
-test('repairInput omits work_template so live template ceiling cannot block same-scope repair', () => {
+test('repairInput omits work_template and strips envelope-only authority fields', () => {
+  const now = Date.now();
   const parent = {
     id: randomUUID(),
     project_id: randomUUID(),
@@ -155,7 +156,14 @@ test('repairInput omits work_template so live template ceiling cannot block same
       capability_scopes: ['repo', 'developer_environment'],
       task_type: 'focused_refactor',
       work_template: { project: 'self-repair', workspace: 'self-repair', hash: 'abc' },
-      authority: { level: 'development' },
+      authority: {
+        version: 1,
+        level: 'development',
+        label: 'Development',
+        permissions: { repository: ['read', 'write'], runtime: ['diagnostic', 'test'], network: ['localhost'], secrets: [], data: ['read', 'workspace_write'] },
+        filesystem: { read: ['/tmp/fixture-workspace'], write: ['/tmp/fixture-workspace'] },
+        expiresAt: now + 48 * 60 * 60 * 1000,
+      },
     },
   };
   const input = repairInput(parent, {
@@ -166,6 +174,12 @@ test('repairInput omits work_template so live template ceiling cannot block same
   assert.equal(input.repair_of, parent.id);
   assert.equal(input.work_template, undefined);
   assert.deepEqual(input.allowed_files, ['fixture.txt']);
+  assert.equal(input.authority.version, undefined);
+  assert.equal(input.authority.label, undefined);
+  assert.equal(input.authority.level, 'development');
+  assert.ok(input.authority.expiresAt > now && input.authority.expiresAt <= now + 24 * 60 * 60 * 1000);
+  const refreshed = repairAuthority({ authority: { ...parent.envelope.authority, expiresAt: now - 1 } }, now);
+  assert.equal(refreshed.expiresAt, now + 60 * 60 * 1000);
 });
 
 test('new dirty outside allowed_files still blocks repair create', async t => {

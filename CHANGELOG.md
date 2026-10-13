@@ -2,6 +2,7 @@
 
 - Corrective Mission create allows dirty paths already recorded on the parent Mission baseline (for example owner README notes) while still denying newly introduced dirt outside `allowed_files`.
 - Same-scope repair Missions omit `work_template` rebinding so live template ceiling fingerprints cannot block corrective create after a failed parent.
+- Repair create strips envelope-only authority fields and refreshes expiry into the create window.
 - Focused regression in `tests/autonomous-self-repair.test.js`.
 
 ## Unreleased — ZeroSetup unique Mission names
