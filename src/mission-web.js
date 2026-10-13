@@ -93,7 +93,7 @@ class MissionWeb{
   const {object,identifier}=require('./control-plane-store');object(input,['run_id','termination_verified','request_id']);identifier(input.run_id);identifier(input.request_id);
   if(input.termination_verified!==true)throw error('explicit_termination_confirmation_required');
   return this.store.request('operator',input.request_id,{op:'mission_web_reconcile',run_id:input.run_id,termination_verified:true},()=>{
-   const run=this.store.run(input.run_id);this.assertRunReconcileGate(run);
+   const run=this.store.run(input.run_id);this.assertBootRecoveryEligibility(run);this.assertRunReconcileGate(run);
    const pid=run.pid;if(!Number.isSafeInteger(pid)||pid<=0)throw error('owned_process_pid_required');
    // PID ESRCH is only meaningful for processes owned on the current boot.
    const boot=this.bootEpoch(),bootMs=require('./os-boot-epoch').bootEpochMs(boot),anchor=run.ended_at||run.updated_at;

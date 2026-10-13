@@ -234,3 +234,16 @@ test('boot-recovery eligibility rejects coding/reasoning/external workers and un
  const preparedHost=b.missions.web.prepareBootRecovery({run_id:run.id,lease_id:lease.id,request_id:randomUUID()});
  assert.equal(preparedHost.run_id,run.id);
 });
+
+test('same-boot web-reconcile rejects unrelated quarantined non-web executions',async t=>{
+ const coding=await fixture(t);
+ const codingMission=coding.create({preferred_agent:'host',fallback_agents:[],task_type:'local_files',dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
+ const cm=coding.bridge.controlStore.requireMission(codingMission.id);
+ const cq=quarantineSyntheticRun(coding.bridge,{missionId:cm.id,taskId:cm.task_id,agentId:'host',workspace:cm.envelope.workspace,baseline:cm.envelope.baseline});
+ const boot={sec:Math.floor(Date.now()/1000)-60,usec:0,source:'kern.boottime'};
+ coding.bridge.missions.web.options={synthetic:true,bootEpoch:boot};
+ const pid=await deadPid();
+ coding.bridge.controlStore.db.prepare('UPDATE cp_runs SET pid=?,updated_at=?,ended_at=? WHERE id=?').run(pid,bootEpochMs(boot)+1000,bootEpochMs(boot)+1000,cq.run.id);
+ // Same-boot PID ESRCH would otherwise look viable; eligibility must refuse non-web quarantine.
+ assert.throws(()=>coding.bridge.missions.web.reconcile({run_id:cq.run.id,termination_verified:true,request_id:randomUUID()}),/boot_recovery_web_capability_required/);
+});
