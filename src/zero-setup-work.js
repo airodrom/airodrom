@@ -165,6 +165,9 @@ class ZeroSetupWork {
         ? 'Exact file content + focused test + git diff --check'
         : 'Registered focused verification',
       success_criteria: dod.items.map(i => i.text),
+      completion_policy: intent?.kind === 'exact_file'
+        ? 'Your initial approval also preauthorizes automatic completion only when the exact file bytes and all host checks pass.'
+        : 'Owner Acceptance remains required after verification.',
       measurable: dod.measurable,
       repair_budget: 'One automatic correction inside this scope',
       network: 'No external access',
@@ -411,7 +414,21 @@ class ZeroSetupWork {
       worker: 'auto',
       model: 'auto',
     };
-    const submitted = await handoff.submit(this.bridge, packet, 'operator');
+    // One authenticated approval binds both this exact expected result and
+    // its future automatic settlement. General tasks keep owner Acceptance.
+    const registered = this.bridge.workTemplates.template(live.project_alias, live.workspace_alias);
+    const eligible = live.intent?.kind === 'exact_file' &&
+      live.intent.file === 'fixture.txt' && live.intent.from === 'alpha\n' &&
+      live.intent.to === 'beta\n' && registered?.allowed_files?.length === 1 &&
+      registered.allowed_files[0] === live.intent.file;
+    let acceptance = null;
+    if (eligible) {
+      const target = path.join(live.workspace, live.intent.file);
+      if (fs.realpathSync(target) !== target || fs.readFileSync(target, 'utf8') !== live.intent.from)
+        throw Error('Exact-file baseline changed; prepare a new bounded request');
+      acceptance = { file: live.intent.file, before: live.intent.from, after: live.intent.to };
+    }
+    const submitted = await handoff.submit(this.bridge, packet, 'operator', acceptance);
     if (!submitted.mission_id) throw Error(submitted.reason || 'WORK handoff did not create a Mission');
     live.mission_id = submitted.mission_id;
     // ADR 0051: one authenticated owner approval bound to the Mission's immutable scope
@@ -436,7 +453,9 @@ class ZeroSetupWork {
       depends_on: [],
       mission_id: submitted.mission_id,
       objective,
-      acceptance_criteria: ['Independent host verification passed', 'Owner Acceptance remains required'],
+      acceptance_criteria: acceptance
+        ? ['Exact-file bytes and registered host checks passed; preauthorized automatic completion']
+        : ['Independent host verification passed', 'Owner Acceptance remains required'],
       verification_requirements: ['exact_file_or_registered_tests', 'git_diff_check'],
       human_checkpoint: false,
     }];
