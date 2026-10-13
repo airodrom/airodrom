@@ -223,7 +223,13 @@ async function request(home, route, body, { timeoutMs = 10000, signal, method } 
   const d = discovery(home);
   const verb = method || (body === undefined ? 'GET' : 'POST');
   const r = await fetch(d.origin + route, { method: verb, headers: { Authorization: 'Bearer ' + d.token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
-  const value = await r.json(); if (!r.ok) throw Error(value.error || 'Local request was refused.'); return value;
+  const text = await r.text();
+  let value = {};
+  if (text) {
+    try { value = JSON.parse(text); }
+    catch { throw Error(r.ok ? 'Local response was not JSON.' : (text.slice(0, 200) || 'Local request was refused.')); }
+  }
+  if (!r.ok) throw Error(value.error || 'Local request was refused.'); return value;
 }
 async function status(home, { allowOlderSource = false, timeoutMs = 10000, signal } = {}) {
   const s = await request(home, '/api/interactive/status', undefined, {timeoutMs, signal});

@@ -12,12 +12,21 @@ const PROJECT_ALIAS = 'release-qualification';
 const WORKSPACE_ALIAS = 'safe-dev';
 
 async function main() {
-  const workspace = fs.realpathSync(process.argv[2] || path.join(process.env.HOME || '', 'Documents/Codex/2026-10-13/airodrom-safe-dev-workspace'));
-  if (!fs.existsSync(path.join(workspace, '.git')) || !fs.existsSync(path.join(workspace, '.vscode/tasks.json'))) {
+  const defaultRoot = path.join(process.env.HOME || '', 'Documents/Codex/2026-10-13/airodrom-safe-dev-workspace');
+  const workspace = fs.realpathSync(process.argv[2] || defaultRoot);
+  const gitMeta = path.join(workspace, '.git');
+  if (!fs.existsSync(gitMeta) || fs.lstatSync(gitMeta).isSymbolicLink()) {
+    throw Error('Exact disposable git workspace required (no symlink .git)');
+  }
+  if (!fs.existsSync(path.join(workspace, '.vscode/tasks.json'))) {
     throw Error('Exact disposable git workspace with registered tasks required');
   }
+  if (!fs.existsSync(path.join(workspace, 'fixture.txt'))) throw Error('Disposable workspace fixture.txt required');
   const home = local.localHome();
   const project = await local.request(home, '/api/projects/' + PROJECT_ID);
+  if (project.name !== 'Airodrom Release Qualification' || project.status !== 'active') {
+    throw Error('Release Qualification project unavailable or not active');
+  }
   const repositories = Array.from(new Set([...(project.repositories || []), workspace]));
   let updated;
   try {
@@ -27,22 +36,29 @@ async function main() {
       autonomyLevel: project.autonomyLevel === 'observe' ? 'suggest' : project.autonomyLevel
     }, { method: 'PATCH' });
   } catch (error) {
-    // Live tip before this PR has no PATCH route. Fall back to a WAL-safe
-    // repositories update that the running bridge re-reads from SQLite.
-    if (!/Operation not exposed|Local request was refused|404/.test(error.message) && error.message !== 'Local request was refused.') throw error;
+    // Only fall back when this install predates PATCH. Never treat validation or
+    // auth refusals as a missing route — those must fail closed.
+    if (!/Operation not exposed/i.test(error.message || '')) throw error;
     const { DatabaseSync } = require('node:sqlite');
     const dbPath = path.join(home, 'data', 'memory.sqlite');
     const db = new DatabaseSync(dbPath);
     try {
       db.exec('PRAGMA busy_timeout=5000');
-      const row = db.prepare('SELECT repositories FROM projects WHERE project_id=?').get(PROJECT_ID);
-      if (!row) throw Error('Release Qualification project unavailable');
+      db.exec('BEGIN IMMEDIATE');
+      const row = db.prepare('SELECT name, status, repositories FROM projects WHERE project_id=?').get(PROJECT_ID);
+      if (!row || row.name !== 'Airodrom Release Qualification' || row.status !== 'active') {
+        throw Error('Release Qualification project unavailable');
+      }
       const current = JSON.parse(row.repositories || '[]');
       const next = Array.from(new Set([...current, workspace]));
-      db.prepare('UPDATE projects SET repositories=?, next_action=?, updated_at=? WHERE project_id=?')
-        .run(JSON.stringify(next), 'Governed local OpenCode work against the safe development workspace', Date.now(), PROJECT_ID);
+      db.prepare('UPDATE projects SET repositories=?, next_action=?, updated_at=? WHERE project_id=? AND status=?')
+        .run(JSON.stringify(next), 'Governed local OpenCode work against the safe development workspace', Date.now(), PROJECT_ID, 'active');
+      db.exec('COMMIT');
       updated = await local.request(home, '/api/projects/' + PROJECT_ID);
       updated.repositories = next;
+    } catch (fallbackError) {
+      try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+      throw fallbackError;
     } finally {
       db.close();
     }
