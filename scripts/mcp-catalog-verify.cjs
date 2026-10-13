@@ -88,8 +88,12 @@ function cli(argv = process.argv.slice(2)) {
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--installed') opts.command = argv[++i];
-    else if (arg === '--client') opts.clientFile = argv[++i];
+    if (arg === '--installed' || arg === '--client') {
+      const value = argv[++i];
+      if (!value || value.startsWith('--') || !path.isAbsolute(value)) throw Error('Expected an absolute file path after ' + arg);
+      if (arg === '--installed') opts.command = value;
+      else opts.clientFile = value;
+    }
     else if (arg === '--require-client') opts.requireClient = true;
     else if (arg === '--show-paths') opts.showPaths = true;
     else throw Error('Unknown MCP catalog option');
