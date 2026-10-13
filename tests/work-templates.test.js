@@ -34,3 +34,24 @@ test('template auto Acceptance refuses a changed preimage before Mission creatio
     file: 'fixture.txt', before: 'alpha\\n', after: 'beta\\n'
   }), /baseline changed/);
 });
+
+
+test('trusted expected-file approval is part of idempotent handoff identity', async t => {
+  const f = await setup(t), b = f.bridge;
+  qualifyCanonical(b);
+  b.workTemplates.register(f.input, 'operator');
+  const request = packet();
+  const expected = { file: 'fixture.txt', before: 'alpha\\n', after: 'beta\\n' };
+  const first = await handoff.submit(b, request, 'operator', expected);
+  assert.ok(first.mission_id);
+  const mission = b.missions.require(first.mission_id);
+  assert.equal(mission.envelope.criteria.length, 1);
+  assert.equal(mission.envelope.criteria[0].type, 'exact_file');
+  assert.equal(mission.envelope.risk_auto_acceptance.authorized, true);
+  const replay = await handoff.submit(b, request, 'operator', expected);
+  assert.equal(replay.mission_id, first.mission_id);
+  assert.equal(replay.duplicate, true);
+  await assert.rejects(() => handoff.submit(b, request, 'operator', {
+    ...expected, after: 'gamma\\n'
+  }), /replay|conflict|request|changed/i);
+});
