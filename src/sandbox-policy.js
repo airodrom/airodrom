@@ -444,7 +444,10 @@ function verifyManifest(root, manifest, jobName) {
   return { job, inputs: verified, steps };
 }
 
-function makeProfile({ readRoots, writeRoots, exactReadFiles = [], protectedRead = [], protectedWrite = [], protectedReadPatterns = [], protectedWritePatterns = [], socketPath = null, allowLoopbackNetwork = false, denyFork = false, allowForkWithExactExec = false, execPaths = [] }) {
+function makeProfile({ readRoots, writeRoots, exactReadFiles = [], protectedRead = [], protectedWrite = [], protectedReadPatterns = [], protectedWritePatterns = [], socketPath = null, allowLoopbackNetwork = false, loopbackPorts = null, denyFork = false, allowForkWithExactExec = false, execPaths = [] }) {
+  // ADR 0051: loopbackPorts narrows the loopback exception to explicit outbound ports
+  // (for example the local Ollama port) instead of every localhost port.
+  if (loopbackPorts !== null && (!Array.isArray(loopbackPorts) || !loopbackPorts.length || loopbackPorts.some(p => !Number.isInteger(p) || p < 1 || p > 65535))) throw new Error('Invalid loopback port allowlist');
   const unique = values => [...new Set(values.map(real))];
   const uniqueExactFiles = values => [...new Set(values.map(value => {
     if (typeof value !== 'string' || !path.isAbsolute(value) || /[\0\r\n]/.test(value)) throw new Error('Invalid exact sandbox read path');
@@ -478,7 +481,8 @@ function makeProfile({ readRoots, writeRoots, exactReadFiles = [], protectedRead
     const exceptions = [];
     if (socketPath) exceptions.push(`(require-not (remote unix-socket (path-literal ${sbplPath(socketPath)})))`);
     if (allowLoopbackNetwork) {
-      exceptions.push('(require-not (remote ip "localhost:*"))');
+      if (loopbackPorts) for (const port of loopbackPorts) exceptions.push(`(require-not (remote ip "localhost:${port}"))`);
+      else exceptions.push('(require-not (remote ip "localhost:*"))');
       exceptions.push('(require-not (local ip "localhost:*"))');
     }
     lines.push(`(deny network* (require-all ${exceptions.join(' ')}))`);
@@ -488,7 +492,8 @@ function makeProfile({ readRoots, writeRoots, exactReadFiles = [], protectedRead
     if (allowLoopbackNetwork) {
       lines.push('(allow network-bind (local ip "localhost:*"))');
       lines.push('(allow network-inbound (local ip "localhost:*"))');
-      lines.push('(allow network-outbound (remote ip "localhost:*"))');
+      if (loopbackPorts) for (const port of loopbackPorts) lines.push(`(allow network-outbound (remote ip "localhost:${port}"))`);
+      else lines.push('(allow network-outbound (remote ip "localhost:*"))');
     }
   } else lines.push('(deny network*)');
   // This boundary is inherited by every child, independent of caller metadata,

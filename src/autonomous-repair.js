@@ -44,7 +44,7 @@ function lastRunSafe(mission, store) {
   return { ok: true, run };
 }
 
-function diagnose(mission, store) {
+function diagnose(mission, store, { attempt = 1, maxAttempts = null, previous = [] } = {}) {
   if (!mission || mission.state !== 'needs_rework') return { ok: false, reason: 'not_needs_rework' };
   if (['conversation', 'browser_research', 'work_request'].includes(mission.envelope?.kind)) {
     return { ok: false, reason: 'unsupported_kind' };
@@ -53,14 +53,19 @@ function diagnose(mission, store) {
   if (!checks) return { ok: false, reason: 'no_host_verification_failure' };
   const run = lastRunSafe(mission, store);
   if (!run.ok) return run;
+  // ADR 0051: precise host-built feedback (expected vs observed, failed check ids, remaining
+  // budget) so the corrective worker does not have to guess what went wrong.
+  const context = require('./repair-context').buildRepairContext(mission, { checks: checks.checks, attempt, maxAttempts, remaining: maxAttempts === null ? null : Math.max(0, maxAttempts - attempt), previous });
   // Put the parent id in the first 180 chars so project_missions UNIQUE(goal_id, name)
   // cannot collide when several controlled failures share the same Goal.
+  const original = String(mission.envelope.objective || '').replace(/^Repair \[[0-9a-f]{8}\][\s\S]*?Original objective: /, '').slice(0, 1000);
   return {
     ok: true,
     summary: checks.summary,
     checks: checks.checks,
     run_id: run.run.id,
-    objective: 'Repair [' + String(mission.id).slice(0, 8) + '] failed verification (' + checks.summary + '). Restore the original approved outcome. Original objective: ' + String(mission.envelope.objective || '').slice(0, 1200),
+    context: context.record,
+    objective: 'Repair [' + String(mission.id).slice(0, 8) + '] failed verification (' + checks.summary + '). Restore the original approved outcome.\n' + context.text + '\nOriginal objective: ' + original,
   };
 }
 
@@ -215,7 +220,7 @@ class AutonomousRepair {
     if (pending && this.store.now() - pending.since >= PENDING_TIMEOUT_MS) return { ok: false, reason: 'repair_pending_timeout' };
     const classified = require('./failure-classifier').classifyMission(failed, this.store);
     if (classified.policy !== 'repair') return { ok: false, reason: classified.reason || 'failure_not_repairable' };
-    const diagnosis = diagnose(failed, this.store);
+    const diagnosis = diagnose(failed, this.store, { attempt: repairs + 1, maxAttempts: autonomous.max_repairs, previous: (autonomous.repair_history || []).filter(h => h.stage_id === stage.id) });
     if (!diagnosis.ok) return diagnosis;
     const approvals = this.bridge.missionApprovals;
     if (approvals) {
@@ -332,6 +337,7 @@ class AutonomousRepair {
             parent_mission_id: failed.id,
             repair_mission_id: repair.id,
             diagnosis: again.diagnosis.summary,
+            context: again.diagnosis.context || null,
             failure_signature: again.diagnosis.failure_signature || null,
             classification: again.diagnosis.classification || null,
             approval_id: again.diagnosis.approval_id || null,
