@@ -724,6 +724,7 @@
      ['File',(p.files||[]).join(', ')],
      ['Worker',p.worker||'Local OpenCode'],
      ['Verification',p.verification],
+     ['Completion',p.completion_policy],
      ['Network',p.network||'No external access'],
      ['GitHub',p.github||'No commits or pushes'],
      ['Production',p.production||'No access'],
