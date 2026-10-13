@@ -165,7 +165,9 @@ class ZeroSetupWork {
         ? 'Exact file content + focused test + git diff --check'
         : 'Registered focused verification',
       success_criteria: dod.items.map(i => i.text),
-      completion_policy: intent?.kind === 'exact_file'
+      completion_policy: intent?.kind === 'exact_file' &&
+        intent.file === 'fixture.txt' && intent.from === 'alpha\\n' &&
+        intent.to === 'beta\\n' && files.length === 1 && files[0] === intent.file
         ? 'Your initial approval also preauthorizes automatic completion only when the exact file bytes and all host checks pass.'
         : 'Owner Acceptance remains required after verification.',
       measurable: dod.measurable,
