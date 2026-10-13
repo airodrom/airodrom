@@ -260,3 +260,20 @@ test('poll keeps observing the same request_id through needs_rework until repair
   assert.equal(blocked.state, 'BLOCKED');
   assert.match(resultText(blocked), /repair_budget/);
 });
+
+
+test('Terminal shows completion without requesting an extra Acceptance after preauthorization', () => {
+  const view = {
+    state: 'VERIFIED',
+    outcome: { mission_state: 'completed', verification: { result: 'passed' } },
+    presentation: { files: ['fixture.txt'], completion_policy: 'Preauthorized exact file' },
+  };
+  const shown = resultText(view);
+  assert.match(shown, /completed under your earlier scoped approval/i);
+  assert.doesNotMatch(shown, /Awaiting owner Acceptance/);
+  const pending = resultText({
+    ...view, state: 'AWAITING_ACCEPTANCE',
+    outcome: { mission_state: 'awaiting_acceptance', verification: { result: 'operator_review' } },
+  });
+  assert.match(pending, /Awaiting owner Acceptance/);
+});
