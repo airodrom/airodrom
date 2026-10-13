@@ -77,9 +77,12 @@ class ResearchNetwork{
    const key=name+'\n'+cookiePath;if(expires<=Date.now()){account.cookies.delete(key);continue;}if(!account.cookies.has(key)&&account.cookies.size>=32)throw error('cookie_bound');account.cookies.set(key,{name,value,path:cookiePath,expires});
   }
  }
- async acquireSlot(signal){
+ async acquireSlot(signal,{priority=false}={}){
+  // Main-document navigations may use one reserved seat so subresource storms
+  // cannot starve domcontentloaded under Mission transport accounting.
+  const ceiling=priority?9:8;
   const deadline=Date.now()+this.timeoutMs;
-  while(this.active>=8){
+  while(this.active>=ceiling){
    if(signal?.aborted)throw error('cancelled');
    if(Date.now()>=deadline)throw error('concurrency_bound');
    await new Promise(resolve=>setTimeout(resolve,10));
@@ -107,7 +110,7 @@ class ResearchNetwork{
  }
  async fetch({url,method='GET',signal=this.signal,download=false,document=false,followRedirects=true}={}){
   const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,this.timeoutMs);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();
-  try{await this.acquireSlot(controller.signal);}catch(e){clearTimeout(timer);signal?.removeEventListener('abort',abort);throw e;}
+  try{await this.acquireSlot(controller.signal,{priority:document===true});}catch(e){clearTimeout(timer);signal?.removeEventListener('abort',abort);throw e;}
   try{
    let current=this.validate(url,method);const hops=[];
    for(;;){if(controller.signal.aborted)throw error('cancelled');const result=await this.hop(new URL(current),method,controller.signal,undefined,download?MAX_DOWNLOAD_BYTES:undefined);

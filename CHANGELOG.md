@@ -1,3 +1,10 @@
+## Unreleased — Public web termination reconcile
+
+- Bound owned research browser close so hung Playwright context teardown cannot strand Mission runs without a `browser_closed` receipt.
+- Record the owned Chromium PID on mission-web host runs; reserve a document concurrency seat so Mission transport accounting cannot starve navigation.
+- Add governed `control-v2/web-reconcile` (process ESRCH or explicit orphan attestation) to release quarantined website-only read leases without force-delete.
+- Focused regression: `tests/public-web-termination.test.js`.
+
 ## Unreleased — Unified Autonomous Development V1
 
 - Derived recovery phases (`src/recovery-phase.js`) keep Terminal, Control Center and MCP observing a Goal through automatic repair; terminal blocks are explained from a fixed vocabulary instead of a bare "Blocked"; `zero-setup-active.json` survives nonterminal repair.

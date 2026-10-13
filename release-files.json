@@ -728,6 +728,7 @@
   "tests/repair-observation-v1.test.js",
   "tests/repository-verification.test.js",
   "tests/research-browser.test.js",
+  "tests/public-web-termination.test.js",
   "tests/research-capability.test.js",
   "tests/research-credentials.test.js",
   "tests/research-mission.test.js",
