@@ -75,6 +75,40 @@ test('comparison workspace rejects arbitrary git directories and symlink aliases
  assert.throws(()=>profile.verifyComparisonWorkspace(link,{configured:false}),/Repository comparison needs|verified product repository/);
 });
 
+test('lexical path walk rejects unapproved intermediate symlinks and detects directory replacement',t=>{
+ const {root,dataDir}=privateRoot(t);
+ const mid=path.join(root,'via');fs.mkdirSync(mid,{mode:0o700});
+ const realData=path.join(mid,'data');fs.mkdirSync(realData,{mode:0o700});fs.chmodSync(realData,0o700);
+ const alias=path.join(root,'alias-data');
+ fs.symlinkSync(realData,alias);
+ assert.throws(()=>profile.ensureWebsiteOnlyWorkspace(alias),/unsafe/i);
+ const staging=profile.ensureWebsiteOnlyWorkspace(dataDir);
+ const baseline=new profile.WebsiteOnlyBaseline(staging);
+ const snapshot=baseline.capture();
+ const moved=path.join(root,'moved-staging');
+ fs.renameSync(staging,moved);
+ fs.mkdirSync(staging,{mode:0o700});
+ fs.writeFileSync(path.join(staging,'README.md'),profile.STAGING_README,{mode:0o600});
+ const git=(args)=>assert.equal(spawnSync('/usr/bin/git',['-C',staging,...args],{stdio:'pipe'}).status,0);
+ git(['init','-q']);git(['add','README.md']);git(['-c','user.name=F','-c','user.email=f@i','-c','commit.gpgSign=false','commit','-qm','replaced']);
+ assert.throws(()=>baseline.verify(snapshot),/identity|staging changed|unsafe/i);
+});
+
+test('approved macOS system path roots still allow private staging under tmp',t=>{
+ if(process.platform!=='darwin')return;
+ const tmp=fs.realpathSync(os.tmpdir());
+ const root=fs.mkdtempSync(path.join(tmp,'airodrom-sys-'));
+ fs.chmodSync(root,0o700);
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const dataDir=path.join(root,'data');fs.mkdirSync(dataDir,{mode:0o700});fs.chmodSync(dataDir,0o700);
+ // Use /tmp-style lexical path when tmpdir is under /var/folders (approved /var symlink).
+ const staging=profile.ensureWebsiteOnlyWorkspace(dataDir);
+ assert.ok(staging.includes('research-website-only'));
+ const checked=profile.assertCanonicalDirectory(staging,{privateMode:true});
+ assert.equal(checked.real,staging);
+ assert.match(checked.identity,/^[a-f0-9]{64}$/);
+});
+
 test('production comparison resolve ignores non-configured options.workspace',async t=>{
  const f=await require('./fixtures/mission-fixture.cjs').fixture(t);
  const decoy=path.join(f.root,'other-git');

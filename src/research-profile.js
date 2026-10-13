@@ -16,6 +16,11 @@ const COMPARISON_DENIED = 'Repository comparison needs a configured and independ
 const STAGING_UNSAFE = 'Website-only research staging is unsafe';
 const STAGING_CHANGED = 'Website-only research staging changed';
 
+/** Darwin system roots that may appear as symlinks in absolute paths (e.g. /tmp → /private/tmp). */
+const APPROVED_SYSTEM_SYMLINKS = Object.freeze(process.platform === 'darwin'
+  ? Object.freeze({ '/tmp': '/private/tmp', '/var': '/private/var' })
+  : Object.freeze({}));
+
 function loadConfig() {
   const c = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
   if (c.version !== 1 || c.project !== 'Arecibo' || c.workspace_sibling !== 'arecibo-core') throw Error('Unreviewed research baseline profile');
@@ -30,56 +35,91 @@ function gitEnv() {
   return { PATH: '/usr/bin:/bin', GIT_OPTIONAL_LOCKS: '0', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 }
 
-/** Walk every path component with lstat; reject symlinks before any mutation. */
-function assertCanonicalDirectory(directory, { privateMode = false } = {}) {
-  if (typeof directory !== 'string' || !path.isAbsolute(directory)) throw Error(STAGING_UNSAFE);
+function approvedSystemSymlink(lexicalComponent) {
+  const expected = APPROVED_SYSTEM_SYMLINKS[lexicalComponent];
+  if (!expected) return false;
+  let real;
+  try { real = fs.realpathSync(lexicalComponent); } catch { return false; }
+  return real === expected;
+}
+
+/**
+ * Inspect the original absolute path with lstat at every component.
+ * Reject unapproved symlink traversal; allow only known macOS system roots.
+ * The final component must be a real directory (never a symlink).
+ */
+function assertCanonicalDirectory(directory, { privateMode = false, mustExist = true } = {}) {
+  if (typeof directory !== 'string' || !path.isAbsolute(directory) || directory.includes('\0')) throw Error(STAGING_UNSAFE);
   const lexical = path.resolve(directory);
-  let st;
-  try { st = fs.lstatSync(lexical); } catch (error) {
-    if (error?.code === 'ENOENT') throw Error(STAGING_UNSAFE);
-    throw Error(STAGING_UNSAFE);
-  }
-  if (st.isSymbolicLink() || !st.isDirectory()) throw Error(STAGING_UNSAFE);
-  const real = fs.realpathSync(lexical);
-  const parts = real.split(path.sep).filter(Boolean);
+  const parts = lexical.split(path.sep).filter(Boolean);
+  if (!parts.length) throw Error(STAGING_UNSAFE);
+
   let current = path.sep;
-  for (const part of parts) {
-    current = path.join(current, part);
-    let step;
-    try { step = fs.lstatSync(current); } catch { throw Error(STAGING_UNSAFE); }
-    if (step.isSymbolicLink()) throw Error(STAGING_UNSAFE);
+  for (let i = 0; i < parts.length; i++) {
+    const next = path.join(current, parts[i]);
+    const isLast = i === parts.length - 1;
+    let st;
+    try { st = fs.lstatSync(next); } catch (error) {
+      if (!mustExist && isLast && error?.code === 'ENOENT') return { lexical, real: null, identity: null };
+      throw Error(STAGING_UNSAFE);
+    }
+    if (st.isSymbolicLink()) {
+      // Final directory must never be a symlink (blocks staging substitution).
+      if (isLast) throw Error(STAGING_UNSAFE);
+      if (!approvedSystemSymlink(next)) throw Error(STAGING_UNSAFE);
+      current = fs.realpathSync(next);
+      const followed = fs.lstatSync(current);
+      if (followed.isSymbolicLink() || !followed.isDirectory()) throw Error(STAGING_UNSAFE);
+      continue;
+    }
+    if (!st.isDirectory()) throw Error(STAGING_UNSAFE);
+    current = next;
   }
+
+  const real = fs.realpathSync(current);
+  // After lexical walk, confirm the resolved leaf has no symlink aliasing and matches ownership.
   const leaf = fs.lstatSync(real);
-  if (!leaf.isDirectory() || leaf.isSymbolicLink()) throw Error(STAGING_UNSAFE);
+  if (leaf.isSymbolicLink() || !leaf.isDirectory()) throw Error(STAGING_UNSAFE);
   if (leaf.uid !== process.getuid?.()) throw Error(STAGING_UNSAFE);
   if (privateMode && (leaf.mode & 0o077)) throw Error(STAGING_UNSAFE);
-  return real;
+  // Reject if realpath escaped outside the followed lexical chain's final directory identity.
+  if (fs.realpathSync(lexical) !== real) throw Error(STAGING_UNSAFE);
+  return { lexical, real, identity: directoryIdentity(real, leaf) };
+}
+
+function directoryIdentity(real, st = fs.lstatSync(real)) {
+  // nlink omitted: creating .git changes directory link count without replacement.
+  return hash({
+    path: real,
+    dev: st.dev,
+    ino: st.ino,
+    uid: st.uid,
+    mode: st.mode & 0o7777
+  });
 }
 
 function assertConfiguredProductRepository(directory, config = loadConfig()) {
   const expectedLexical = path.resolve(__dirname, '../../', config.workspace_sibling);
-  let expectedReal;
+  let expected, candidate;
   try {
-    // Configured sibling must itself be a non-symlink directory before acceptance.
-    expectedReal = assertCanonicalDirectory(expectedLexical, { privateMode: false });
+    expected = assertCanonicalDirectory(expectedLexical, { privateMode: false });
+    candidate = assertCanonicalDirectory(directory, { privateMode: false });
   } catch {
     throw Error(COMPARISON_DENIED);
   }
-  let candidateReal;
-  try { candidateReal = assertCanonicalDirectory(directory, { privateMode: false }); } catch { throw Error(COMPARISON_DENIED); }
-  if (candidateReal !== expectedReal) throw Error(COMPARISON_DENIED);
-  const top = spawnSync('/usr/bin/git', ['-C', candidateReal, 'rev-parse', '--show-toplevel'], {
+  if (!expected.real || !candidate.real || candidate.real !== expected.real) throw Error(COMPARISON_DENIED);
+  const top = spawnSync('/usr/bin/git', ['-C', candidate.real, 'rev-parse', '--show-toplevel'], {
     encoding: 'utf8', timeout: 5000, maxBuffer: 4096, env: gitEnv()
   });
   if (top.status !== 0) throw Error(COMPARISON_DENIED);
   let topReal;
   try { topReal = fs.realpathSync(String(top.stdout).trim()); } catch { throw Error(COMPARISON_DENIED); }
-  if (topReal !== candidateReal) throw Error(COMPARISON_DENIED);
-  const inside = spawnSync('/usr/bin/git', ['-C', candidateReal, 'rev-parse', '--is-inside-work-tree'], {
+  if (topReal !== candidate.real) throw Error(COMPARISON_DENIED);
+  const inside = spawnSync('/usr/bin/git', ['-C', candidate.real, 'rev-parse', '--is-inside-work-tree'], {
     encoding: 'utf8', timeout: 5000, maxBuffer: 64, env: gitEnv()
   });
   if (inside.status !== 0 || String(inside.stdout).trim() !== 'true') throw Error(COMPARISON_DENIED);
-  return candidateReal;
+  return candidate.real;
 }
 
 /** Comparison research only: independently verify the configured sibling repository. Never invent a baseline. */
@@ -100,14 +140,14 @@ function comparisonWorkspace(config = loadConfig()) {
 function verifyComparisonWorkspace(directory, { configured = false, config = loadConfig() } = {}) {
   if (configured) return assertConfiguredProductRepository(directory, config);
   try {
-    const real = assertCanonicalDirectory(directory, { privateMode: false });
-    const top = spawnSync('/usr/bin/git', ['-C', real, 'rev-parse', '--show-toplevel'], {
+    const checked = assertCanonicalDirectory(directory, { privateMode: false });
+    const top = spawnSync('/usr/bin/git', ['-C', checked.real, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8', timeout: 5000, maxBuffer: 4096, env: gitEnv()
     });
     if (top.status !== 0) throw Error(COMPARISON_DENIED);
     const topReal = fs.realpathSync(String(top.stdout).trim());
-    if (topReal !== real) throw Error(COMPARISON_DENIED);
-    return real;
+    if (topReal !== checked.real) throw Error(COMPARISON_DENIED);
+    return checked.real;
   } catch (error) {
     if (error?.message === COMPARISON_DENIED || error?.message === STAGING_UNSAFE) throw Error(COMPARISON_DENIED);
     throw Error(COMPARISON_DENIED);
@@ -139,16 +179,30 @@ function stagingDigest(root) {
     readme = fs.readFileSync(fd, 'utf8');
   } finally { fs.closeSync(fd); }
   if (readme !== STAGING_README) throw Error(STAGING_CHANGED);
-  return hash({ entries, readme: hash(readme), git: gitStat.isDirectory() ? 'dir' : 'file' });
+  const head = spawnSync('/usr/bin/git', ['-C', root, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8', timeout: 5000, maxBuffer: 64, env: gitEnv()
+  });
+  if (head.status !== 0 || !/^[a-f0-9]{40}$/.test(String(head.stdout).trim())) throw Error(STAGING_CHANGED);
+  const gitDir = spawnSync('/usr/bin/git', ['-C', root, 'rev-parse', '--git-dir'], {
+    encoding: 'utf8', timeout: 5000, maxBuffer: 256, env: gitEnv()
+  });
+  if (gitDir.status !== 0 || String(gitDir.stdout).trim() !== '.git') throw Error(STAGING_CHANGED);
+  return hash({
+    entries,
+    readme: hash(readme),
+    git: gitStat.isDirectory() ? 'dir' : 'file',
+    head: String(head.stdout).trim(),
+    identity: directoryIdentity(root)
+  });
 }
 
 function ensureWebsiteOnlyWorkspace(dataDir) {
   if (typeof dataDir !== 'string' || !path.isAbsolute(dataDir)) throw Error('Private research data directory required');
-  // Validate dataDir (private) and its parent (canonical, owned, no symlinks) before touching staging.
-  const dataReal = assertCanonicalDirectory(dataDir, { privateMode: true });
-  const parent = assertCanonicalDirectory(path.dirname(dataReal), { privateMode: false });
-  const lexical = path.resolve(path.join(parent, STAGING_NAME));
-  if (path.basename(lexical) !== STAGING_NAME || path.dirname(lexical) !== parent) throw Error(STAGING_UNSAFE);
+  // Lexical walk of dataDir and parent before any staging create/write.
+  const dataChecked = assertCanonicalDirectory(dataDir, { privateMode: true });
+  const parentChecked = assertCanonicalDirectory(path.dirname(dataChecked.real), { privateMode: false });
+  const lexical = path.resolve(path.join(parentChecked.real, STAGING_NAME));
+  if (path.basename(lexical) !== STAGING_NAME || path.dirname(lexical) !== parentChecked.real) throw Error(STAGING_UNSAFE);
 
   let existed = false;
   try {
@@ -167,7 +221,8 @@ function ensureWebsiteOnlyWorkspace(dataDir) {
     assertCanonicalDirectory(lexical, { privateMode: true });
   }
 
-  const root = assertCanonicalDirectory(lexical, { privateMode: true });
+  const rootChecked = assertCanonicalDirectory(lexical, { privateMode: true });
+  const root = rootChecked.real;
   const gitDir = path.join(root, '.git');
   let hasGit = false;
   try {
@@ -201,16 +256,18 @@ function ensureWebsiteOnlyWorkspace(dataDir) {
   }
 
   const verified = assertCanonicalDirectory(root, { privateMode: true });
-  stagingDigest(verified);
-  return verified;
+  if (verified.real !== root || verified.identity !== rootChecked.identity) throw Error(STAGING_UNSAFE);
+  stagingDigest(verified.real);
+  return verified.real;
 }
 
 /** Stable empty product baseline — never claims Arecibo coverage or invents repository evidence. */
 class WebsiteOnlyBaseline {
   constructor(workspace) {
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace)) throw Error('Website-only workspace required');
-    this.workspace = assertCanonicalDirectory(workspace, { privateMode: true });
-    this.workspace_identity = hash(this.workspace);
+    const checked = assertCanonicalDirectory(workspace, { privateMode: true });
+    this.workspace = checked.real;
+    this.workspace_identity = checked.identity;
     this.files = Object.freeze([]);
     this.features = Object.freeze([]);
     Object.freeze(this);
@@ -242,8 +299,8 @@ class WebsiteOnlyBaseline {
     const { digest, ...core } = snapshot;
     if (hash({ ...core, scope: 'website_only_no_repository' }) !== digest) throw Error('Website-only baseline digest mismatch');
     const current = assertCanonicalDirectory(this.workspace, { privateMode: true });
-    if (hash(current) !== this.workspace_identity) throw Error('Website-only workspace identity changed');
-    if (stagingDigest(current) !== snapshot.staging_digest) throw Error(STAGING_CHANGED);
+    if (current.identity !== this.workspace_identity || current.real !== this.workspace) throw Error('Website-only workspace identity changed');
+    if (stagingDigest(current.real) !== snapshot.staging_digest) throw Error(STAGING_CHANGED);
     return true;
   }
   workspaceSnapshot(_snapshot) {
@@ -278,9 +335,11 @@ module.exports = {
   wantsRepositoryComparison,
   loadConfig,
   assertCanonicalDirectory,
+  directoryIdentity,
   stagingDigest,
   STAGING_README,
   COMPARISON_DENIED,
   STAGING_UNSAFE,
-  STAGING_CHANGED
+  STAGING_CHANGED,
+  APPROVED_SYSTEM_SYMLINKS
 };
