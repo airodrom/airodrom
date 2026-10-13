@@ -1,7 +1,8 @@
 {
-  "title": "AIRODROM \u2014 consolidated owner approval for PR #103 + legacy PID-less quarantine closeout",
+  "title": "AIRODROM \u2014 consolidated owner approval for PR #103 boot-recovery security closeout",
   "pr": "https://github.com/airodrom/airodrom/pull/103",
-  "base": "c383544",
+  "base_live_installation": "c383544",
+  "starting_head": "860f7ee2fcf0146ae6bcf52903978c16e044f278",
   "live_hold": {
     "mission_id": "127229ca-ab86-43f9-8cd3-0ce86a2e30c6",
     "host_run_id": "b5f79b6b-22cf-43fd-98bc-3295226a1360",
@@ -13,52 +14,63 @@
   "verdict_today": {
     "RUNTIME_RECOVERY": "HOLD",
     "PUBLIC_WEB_RESEARCH": "NOT VERIFIED",
-    "dual_surface_Ready": false
+    "dual_surface_Ready": false,
+    "evidence_integrity": "implemented_in_pr_not_live_proven",
+    "boot_recovery_eligibility": "code_ready_live_requires_A_through_H"
   },
   "authorized_sequence_if_approved": [
     {
-      "step": 1,
-      "action": "APPROVE merge of PR #103 at the exact head SHA after review (no install yet)"
+      "step": "A",
+      "action": "Owner approval for squash merge of PR #103 at the exact head SHA below (no install yet)"
     },
     {
-      "step": 2,
-      "action": "APPROVE governed cutover/install of that SHA only (preserve Memory/Vault/Missions/dirty checkout/rollback)"
+      "step": "B",
+      "action": "Governed installation cutover of that SHA only; preserve Memory/Vault/Missions/dirty checkout/rollback"
     },
     {
-      "step": 3,
-      "action": "POST /api/control-v2/web-boot-recovery-prepare for host run b5f79b6b\u2026 with lease_id be1743be\u2026; retain evidence_id+sha256+boot_epoch"
+      "step": "C",
+      "action": "Prepare and preserve pre-reboot evidence: POST web-boot-recovery-prepare for host run b5f79b6b\u2026 with lease_id be1743be\u2026; retain evidence_id+sha256+boot_epoch; independently prepare bridge run 4616ce39\u2026 if it still blocks"
     },
     {
-      "step": 4,
-      "action": "Independently prepare boot recovery for bridge run 4616ce39\u2026 if it still blocks (exact mission/run binding; lease_id only if quarantined)"
+      "step": "D",
+      "action": "Owner-authorized Mac cold OS reboot of the machine owning the live install; no research relaunch"
     },
     {
-      "step": 5,
-      "action": "APPROVE cold OS reboot of the machine owning the live install; no research relaunch"
+      "step": "E",
+      "action": "Verify changed OS boot epoch vs sealed prior epoch"
     },
     {
-      "step": 6,
-      "action": "After new boot epoch differs: POST web-reconcile-boot for each prepared binding with recovery_kind=cold_os_reboot and termination_verified=true"
+      "step": "F",
+      "action": "Independently reconcile eligible runs via POST web-reconcile-boot with evidence_id+sha256+recovery_kind=cold_os_reboot+termination_verified=true"
     },
     {
-      "step": 7,
-      "action": "Verify harness healthy/mcp_ready AND product-control Ready before any arecibo retry"
+      "step": "G",
+      "action": "Confirm zero unresolved execution ownership for the named quarantines (siblings not auto-settled)"
+    },
+    {
+      "step": "H",
+      "action": "Verify product-control Ready AND harness Ready before any arecibo retry"
     }
   ],
+  "stop_if_any_gate_fails": true,
   "explicitly_not_authorized_until_owner_says_so": [
     "live DB force-release of quarantined lease",
     "orphan attestation reconcile",
     "manufacturing browser_closed receipts",
     "arecibo.ca research retry",
-    "merge/install/reboot without matching step approval"
+    "merge/install/reboot/reconcile without matching step approval",
+    "modifying dirty operator checkout a1f97c5"
   ],
   "safety_properties": [
     "ChildProcess.kill only; never process.kill(pid) for shutdown signaling",
-    "PID ESRCH reconcile only for same-boot recorded PIDs",
-    "Boot recovery requires sealed pre-reboot evidence + changed OS boot epoch + no post-boot execution events",
+    "PID ESRCH reconcile only for same-boot recorded PIDs with valid ownership",
+    "Boot recovery requires durable registry SHA-256 + sealed packet + changed OS boot epoch",
+    "Fail closed on tamper, substitution, stale snapshot, replay/consumed evidence, or post-boot run/dispatch/invocation/lease/event continuation",
     "Only the named run/lease/dispatch/linked invocations settle; siblings remain independent",
-    "recovery_not_execution distinguishes verified recovery from successful research"
+    "recovery_not_execution distinguishes verified recovery from successful research",
+    "Missing PID and orphan attestation are never termination proof"
   ],
   "docs": "docs/WEB-BOOT-EPOCH-RECOVERY-V1.md",
-  "ts": "2026-10-13T23:03:13Z"
+  "ts": "2026-10-13T23:10:53Z",
+  "head_sha": "pending_push"
 }

@@ -98,51 +98,87 @@ test('cross-boot recorded PID refuses PID reconcile and requires boot recovery',
  assert.throws(()=>b.missions.web.reconcile({run_id:run.id,termination_verified:true,request_id:randomUUID()}),/owned_process_cross_boot_use_boot_recovery/);
 });
 
-test('boot-epoch recovery: positive path after cold reboot; negatives for same boot, bad binding, post-boot activity',async t=>{
+function bootReconcile(ctx,prepared,overrides={}){
+ return {run_id:ctx.run.id,mission_id:ctx.m.mission_id,lease_id:ctx.lease.id,evidence_id:prepared.evidence_id,sha256:prepared.sha256,
+  termination_verified:true,request_id:randomUUID(),recovery_kind:'cold_os_reboot',...overrides};
+}
+async function preparedBootFixture(t,{priorOffsetSec=7_200,usec=1}={}){
  const nowSec=Math.floor(Date.now()/1000);
- const prior={sec:nowSec-7_200,usec:1,source:'kern.boottime'};
+ const prior={sec:nowSec-priorOffsetSec,usec,source:'kern.boottime'};
  let clock=bootEpochMs(prior)+60_000;
- const {b,m,run,lease}=await uncertainWebMission(t,{bootEpoch:prior,now:()=>clock});
- assert.ok(lease);
- // Confine the historical run to the prior boot timeline before sealing evidence.
- b.controlStore.db.prepare('UPDATE cp_runs SET updated_at=?,ended_at=? WHERE id=?').run(clock,clock,run.id);
- Object.assign(run,b.controlStore.run(run.id));
- assert.throws(()=>b.missions.web.prepareBootRecovery({run_id:run.id,request_id:randomUUID()}),/lease_binding_required/);
- const prepared=b.missions.web.prepareBootRecovery({run_id:run.id,lease_id:lease.id,request_id:randomUUID()});
+ const ctx=await uncertainWebMission(t,{bootEpoch:prior,now:()=>clock});
+ ctx.b.controlStore.db.prepare('UPDATE cp_runs SET updated_at=?,ended_at=? WHERE id=?').run(clock,clock,ctx.run.id);
+ Object.assign(ctx.run,ctx.b.controlStore.run(ctx.run.id));
+ const prepared=ctx.b.missions.web.prepareBootRecovery({run_id:ctx.run.id,lease_id:ctx.lease.id,request_id:randomUUID()});
+ const advance=()=>{const nextBoot={sec:nowSec+120+usec,usec:0,source:'kern.boottime'};ctx.b.missions.web.options.bootEpoch=nextBoot;clock=bootEpochMs(nextBoot)+1_000;return nextBoot;};
+ return {ctx,prepared,advance,nowSec,clock:()=>clock,setClock:v=>{clock=v;}};
+}
+
+test('boot-epoch recovery: valid transition, same-boot refusal, sibling isolation, exact lease/dispatch identity',async t=>{
+ const {ctx,prepared,advance}=await preparedBootFixture(t);
+ const {b,m,run,lease}=ctx;
  assert.equal(prepared.recovery_not_execution,true);
- assert.match(prepared.next,/cold OS reboot/i);
- assert.throws(()=>b.missions.web.reconcileBootRecovery({run_id:run.id,mission_id:m.mission_id,lease_id:lease.id,evidence_id:prepared.evidence_id,termination_verified:true,request_id:randomUUID(),recovery_kind:'cold_os_reboot'}),/cold_os_reboot_not_observed/);
- // Inject a boot epoch after sealed prior-boot event timestamps (fixture ledger
- // uses real wall time during Mission settle; production reboots naturally sort after).
- const nextBoot={sec:nowSec+120,usec:0,source:'kern.boottime'};
- b.missions.web.options.bootEpoch=nextBoot;
- clock=bootEpochMs(nextBoot)+1_000;
- assert.throws(()=>b.missions.web.reconcileBootRecovery({run_id:run.id,mission_id:randomUUID(),lease_id:lease.id,evidence_id:prepared.evidence_id,termination_verified:true,request_id:randomUUID(),recovery_kind:'cold_os_reboot'}),/mission_run_binding_mismatch/);
+ assert.match(prepared.sha256,/^[a-f0-9]{64}$/);
+ assert.equal(b.controlStore.db.prepare("SELECT state,sha256 FROM cp_mission_web_boot_recovery WHERE evidence_id=?").get(prepared.evidence_id).sha256,prepared.sha256);
+ assert.throws(()=>b.missions.web.prepareBootRecovery({run_id:run.id,request_id:randomUUID()}),/lease_binding_required/);
+ assert.throws(()=>b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared)),/cold_os_reboot_not_observed/);
+ advance();
+ assert.throws(()=>b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared,{mission_id:randomUUID()})),/recovery_evidence_registry_mismatch/);
+ assert.throws(()=>b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared,{lease_id:randomUUID()})),/recovery_evidence_registry_mismatch/);
  assert.throws(()=>b.missions.web.reconcile({run_id:run.id,termination_verified:true,request_id:randomUUID()}),/owned_process_pid_required/);
  const sibling=randomUUID();
  b.controlStore.startRun({id:sibling,taskId:run.task_id,missionId:m.mission_id,agentId:'bridge'});
  b.controlStore.updateRun(sibling,{state:'interrupted',processState:'unknown',verified:false,resolution:'reconcile_process'});
- const ok=b.missions.web.reconcileBootRecovery({run_id:run.id,mission_id:m.mission_id,lease_id:lease.id,evidence_id:prepared.evidence_id,termination_verified:true,request_id:randomUUID(),recovery_kind:'cold_os_reboot'});
+ const ok=b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared));
  assert.equal(ok.recovery_kind,'cold_os_reboot');
  assert.equal(ok.recovery_not_execution,true);
+ assert.equal(ok.sha256,prepared.sha256);
  assert.equal(b.controlStore.run(run.id).termination_verified,1);
  assert.equal(b.controlStore.db.prepare('SELECT state FROM cp_leases WHERE id=?').get(lease.id).state,'released');
+ assert.equal(b.controlStore.db.prepare("SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?").get(m.mission_id,run.id).state,'blocked');
  assert.equal(b.controlStore.run(sibling).termination_verified,0);
- const evidence=JSON.parse(fs.readFileSync(path.join(b.dataDir,'recovery','web-termination',prepared.evidence_id+'.json'),'utf8'));
- assert.equal(evidence.browser_closed_receipt,false);
+ assert.equal(b.controlStore.run(sibling).state,'interrupted');
+ assert.equal(b.controlStore.db.prepare("SELECT state FROM cp_mission_web_boot_recovery WHERE evidence_id=?").get(prepared.evidence_id).state,'consumed');
+ assert.throws(()=>b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared)),/recovery_evidence_already_consumed/);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(b.dataDir,'recovery','web-termination',prepared.evidence_id+'.json'),'utf8')).browser_closed_receipt,false);
+});
 
- // Separate fixture for post-boot execution refusal (append-only ledger; no deletes).
- const prior2={sec:nowSec-10_800,usec:2,source:'kern.boottime'};
- let clock2=bootEpochMs(prior2)+60_000;
- const second=await uncertainWebMission(t,{bootEpoch:prior2,now:()=>clock2});
- second.b.controlStore.db.prepare('UPDATE cp_runs SET updated_at=?,ended_at=? WHERE id=?').run(clock2,clock2,second.run.id);
- Object.assign(second.run,second.b.controlStore.run(second.run.id));
- const prepared2=second.b.missions.web.prepareBootRecovery({run_id:second.run.id,lease_id:second.lease.id,request_id:randomUUID()});
- const nextBoot2={sec:nowSec+180,usec:0,source:'kern.boottime'};
- second.b.missions.web.options.bootEpoch=nextBoot2;
- clock2=bootEpochMs(nextBoot2)+1_000;
- const eventId=randomUUID();
- second.b.controlStore.db.prepare("INSERT INTO event_ledger_events(event_id,idempotency_key,fingerprint,event_type,timestamp,timestamp_ms,run_id,mission_id,agent,direction,metadata,payload_byte_length,payload_stored_byte_length,payload_redacted,payload_truncated,protected) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-  .run(eventId,eventId,eventId,'research.browser_started',new Date(clock2).toISOString(),clock2,second.run.id,second.m.mission_id,'bridge','internal','{}',0,0,0,0,0);
- assert.throws(()=>second.b.missions.web.reconcileBootRecovery({run_id:second.run.id,mission_id:second.m.mission_id,lease_id:second.lease.id,evidence_id:prepared2.evidence_id,termination_verified:true,request_id:randomUUID(),recovery_kind:'cold_os_reboot'}),/post_boot_execution_observed/);
+test('boot-epoch recovery: fail closed on tampered, replaced, stale, wrong digest, and post-boot continuation',async t=>{
+ // Tampered packet bytes vs durable registry SHA-256.
+ const a=await preparedBootFixture(t,{priorOffsetSec:8_100,usec:3});
+ a.advance();
+ const fileA=path.join(a.ctx.b.dataDir,'recovery','web-termination',a.prepared.evidence_id+'.json');
+ const original=fs.readFileSync(fileA);
+ fs.writeFileSync(fileA,Buffer.concat([original,Buffer.from(' ')]));
+ assert.throws(()=>a.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(a.ctx,a.prepared)),/recovery_evidence_digest_mismatch/);
+ fs.writeFileSync(fileA,original,{mode:0o600});
+
+ // Replaced packet (same evidence_id filename, different body) without registry rewrite.
+ const replaced=JSON.parse(original.toString());
+ replaced.purpose='substituted';
+ fs.writeFileSync(fileA,Buffer.from(JSON.stringify(replaced)+'\n'),{mode:0o600});
+ assert.throws(()=>a.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(a.ctx,a.prepared)),/recovery_evidence_digest_mismatch/);
+ fs.writeFileSync(fileA,original,{mode:0o600});
+ assert.throws(()=>a.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(a.ctx,a.prepared,{sha256:'0'.repeat(64)})),/recovery_evidence_registry_mismatch/);
+
+ // Stale snapshot after prepare (run timestamps diverged).
+ const bfx=await preparedBootFixture(t,{priorOffsetSec:9_000,usec:4});
+ bfx.advance();
+ bfx.ctx.b.controlStore.db.prepare('UPDATE cp_runs SET updated_at=updated_at+1 WHERE id=?').run(bfx.ctx.run.id);
+ Object.assign(bfx.ctx.run,bfx.ctx.b.controlStore.run(bfx.ctx.run.id));
+ assert.throws(()=>bfx.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(bfx.ctx,bfx.prepared)),/recovery_evidence_stale/);
+
+ // Post-boot event evidence.
+ const c=await preparedBootFixture(t,{priorOffsetSec:10_800,usec:5});
+ const next=c.advance();
+ const eventId=randomUUID(),ts=bootEpochMs(next)+500;
+ c.ctx.b.controlStore.db.prepare("INSERT INTO event_ledger_events(event_id,idempotency_key,fingerprint,event_type,timestamp,timestamp_ms,run_id,mission_id,agent,direction,metadata,payload_byte_length,payload_stored_byte_length,payload_redacted,payload_truncated,protected) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(eventId,eventId,eventId,'research.browser_started',new Date(ts).toISOString(),ts,c.ctx.run.id,c.ctx.m.mission_id,'bridge','internal','{}',0,0,0,0,0);
+ assert.throws(()=>c.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(c.ctx,c.prepared)),/post_boot_execution_observed/);
+
+ // Post-boot dispatch / run continuation surfaces.
+ const d=await preparedBootFixture(t,{priorOffsetSec:11_400,usec:6});
+ const nextD=d.advance();
+ d.ctx.b.controlStore.db.prepare('UPDATE cp_dispatches SET updated_at=? WHERE mission_id=? AND run_id=?').run(bootEpochMs(nextD)+10,d.ctx.m.mission_id,d.ctx.run.id);
+ assert.throws(()=>d.ctx.b.missions.web.reconcileBootRecovery(bootReconcile(d.ctx,d.prepared)),/post_boot_dispatch_continuation/);
 });

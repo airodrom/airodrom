@@ -15,7 +15,13 @@ class MissionWeb{
   if(Object.keys(this.options).length&&!(process.env.NODE_ENV==='test'&&this.options.synthetic===true))throw error('synthetic_web_adapter_denied');
   this.db.exec(`CREATE TABLE IF NOT EXISTS cp_mission_web_grants(id TEXT PRIMARY KEY,mission_id TEXT NOT NULL,policy TEXT NOT NULL,policy_hash TEXT NOT NULL,seal TEXT NOT NULL,state TEXT NOT NULL,actions INTEGER NOT NULL DEFAULT 0,pages INTEGER NOT NULL DEFAULT 0,bytes INTEGER NOT NULL DEFAULT 0,requests INTEGER NOT NULL DEFAULT 0,visited_origins TEXT NOT NULL DEFAULT '[]');
    CREATE TABLE IF NOT EXISTS cp_mission_web_evidence(id TEXT PRIMARY KEY,grant_id TEXT NOT NULL,mission_id TEXT NOT NULL,task_id TEXT NOT NULL,run_id TEXT NOT NULL,sha256 TEXT NOT NULL,invocation_id TEXT NOT NULL,created_at INTEGER NOT NULL);
-   CREATE UNIQUE INDEX IF NOT EXISTS cp_current_web_grant ON cp_mission_web_grants(mission_id) WHERE state='active';`);
+   CREATE TABLE IF NOT EXISTS cp_mission_web_boot_recovery(
+     evidence_id TEXT PRIMARY KEY,sha256 TEXT NOT NULL,mission_id TEXT NOT NULL,run_id TEXT NOT NULL,lease_id TEXT,
+     boot_epoch TEXT NOT NULL,run_state TEXT NOT NULL,run_updated_at INTEGER NOT NULL,run_ended_at INTEGER,run_pid INTEGER,
+     lease_state TEXT,captured_at INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN ('prepared','consumed')),
+     created_at INTEGER NOT NULL,consumed_at INTEGER);
+   CREATE UNIQUE INDEX IF NOT EXISTS cp_current_web_grant ON cp_mission_web_grants(mission_id) WHERE state='active';
+   CREATE UNIQUE INDEX IF NOT EXISTS cp_web_boot_recovery_open_run ON cp_mission_web_boot_recovery(run_id) WHERE state='prepared';`);
  }
  binding(m){return fingerprint({mission_id:m.id,envelope:m.envelope,grant_id:m.grant_id});}
  qualify(m){
@@ -96,6 +102,15 @@ class MissionWeb{
    return this.settleNamedRun(run,{resolution:'operator_web_reconcile',owned_process_id:pid,recovery_kind:'owned_pid_esrch'});
   });
  }
+ assertNoPostBootContinuation(run,lease,currentBootMs){
+  if(run.updated_at>=currentBootMs||(run.ended_at!=null&&run.ended_at>=currentBootMs)||['starting','running','verifying'].includes(run.state))throw error('post_boot_run_continuation');
+  if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND run_id=? AND (updated_at>=? OR state IN ('dispatching','running'))").get(run.mission_id,run.id,currentBootMs))throw error('post_boot_dispatch_continuation');
+  if(this.db.prepare("SELECT 1 FROM cp_invocations WHERE task_id=? AND (created_at>=? OR (updated_at>=? AND state IN ('running','unknown')))").get(run.task_id,currentBootMs,currentBootMs))throw error('post_boot_invocation_continuation');
+  if(lease&&this.db.prepare("SELECT 1 FROM cp_leases WHERE id=? AND (state<>'quarantined' OR run_id<>?)").get(lease.id,run.id))throw error('post_boot_lease_continuation');
+  if(this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='held' AND acquired_at>=?").get(run.id,currentBootMs))throw error('post_boot_lease_continuation');
+  const post=this.db.prepare("SELECT count(*) n FROM event_ledger_events WHERE run_id=? AND timestamp_ms>=? AND event_type IN ('research.browser_started','research.navigated','research.network_denied','research.browser_closed','mission.web.evidence','run.started','mission.running','mission.dispatching')").get(run.id,currentBootMs).n;
+  if(post)throw error('post_boot_execution_observed');
+ }
  prepareBootRecovery(input){
   const {object,identifier}=require('./control-plane-store');object(input,['run_id','request_id','lease_id']);identifier(input.run_id);identifier(input.request_id);
   return this.store.request('operator',input.request_id,{op:'mission_web_boot_recovery_prepare',run_id:input.run_id,lease_id:input.lease_id||null},()=>{
@@ -103,24 +118,34 @@ class MissionWeb{
    if(Number.isSafeInteger(run.pid)&&run.pid>0)throw error('owned_process_pid_present_use_pid_reconcile');
    if(input.lease_id){if(!policy.UUID.test(input.lease_id))throw error('lease_binding_required');if(!lease||lease.id!==input.lease_id)throw error('lease_binding_mismatch');}
    else if(lease)throw error('lease_binding_required');
-   const boot=this.bootEpoch(),id=randomUUID(),capturedAt=typeof this.options.now==='function'?this.options.now():Date.now();
+   if(this.db.prepare("SELECT 1 FROM cp_mission_web_boot_recovery WHERE run_id=? AND state='prepared'").get(run.id))throw error('boot_recovery_already_prepared');
+   const boot=this.bootEpoch(),id=randomUUID(),capturedAt=typeof this.options.now==='function'?this.options.now():Date.now(),bootFp=require('./os-boot-epoch').fingerprint(boot);
    const packet={schema_version:'airodrom-web-boot-recovery-v1',evidence_id:id,mission_id:run.mission_id,run_id:run.id,lease_id:lease?.id||null,
     run:{state:run.state,process_state:run.process_state,termination_verified:!!run.termination_verified,pid:run.pid,updated_at:run.updated_at,ended_at:run.ended_at,resolution:run.resolution,agent_id:run.agent_id},
     lease:lease?{id:lease.id,state:lease.state,mode:lease.mode,resource:lease.resource}:null,
     boot_epoch:boot,captured_at:capturedAt,authority:false,browser_closed_receipt:false,
     purpose:'pre_cold_reboot_quarantine_evidence'};
-   const bytes=Buffer.from(JSON.stringify(packet)+'\n');fs.writeFileSync(path.join(this.recoveryDir(),id+'.json'),bytes,{mode:0o600,flag:'wx'});
-   this.store.event('mission.web.boot_recovery_prepared',run.mission_id,{evidence_id:id,boot_epoch:require('./os-boot-epoch').fingerprint(boot),lease_id:lease?.id||null},{runId:run.id});
-   return {evidence_id:id,mission_id:run.mission_id,run_id:run.id,lease_id:lease?.id||null,boot_epoch:boot,sha256:hash(bytes),authority:false,recovery_not_execution:true,
-    next:'Owner-authorized cold OS reboot required. After the new boot epoch differs, call web-reconcile-boot with this evidence_id. This packet is not a browser_closed receipt.'};
+   const bytes=Buffer.from(JSON.stringify(packet)+'\n'),digest=hash(bytes);
+   fs.writeFileSync(path.join(this.recoveryDir(),id+'.json'),bytes,{mode:0o600,flag:'wx'});
+   // Canonical SHA-256 is independently durable in SQLite; the file alone is not authority.
+   this.db.prepare("INSERT INTO cp_mission_web_boot_recovery(evidence_id,sha256,mission_id,run_id,lease_id,boot_epoch,run_state,run_updated_at,run_ended_at,run_pid,lease_state,captured_at,state,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'prepared',?)")
+    .run(id,digest,run.mission_id,run.id,lease?.id||null,bootFp,run.state,run.updated_at,run.ended_at??null,run.pid??null,lease?.state||null,capturedAt,capturedAt);
+   this.store.event('mission.web.boot_recovery_prepared',run.mission_id,{evidence_id:id,sha256:digest,boot_epoch:bootFp,lease_id:lease?.id||null},{runId:run.id});
+   return {evidence_id:id,mission_id:run.mission_id,run_id:run.id,lease_id:lease?.id||null,boot_epoch:boot,sha256:digest,authority:false,recovery_not_execution:true,
+    next:'Owner-authorized cold OS reboot required. After the new boot epoch differs, call web-reconcile-boot with this evidence_id and sha256. This packet is not a browser_closed receipt.'};
   });
  }
  reconcileBootRecovery(input){
-  const {object,identifier}=require('./control-plane-store');object(input,['run_id','mission_id','lease_id','evidence_id','termination_verified','request_id','recovery_kind']);
+  const {object,identifier}=require('./control-plane-store');object(input,['run_id','mission_id','lease_id','evidence_id','sha256','termination_verified','request_id','recovery_kind']);
   identifier(input.run_id);identifier(input.request_id);identifier(input.mission_id);if(!policy.UUID.test(input.evidence_id||''))throw error('evidence_binding_required');
+  if(typeof input.sha256!=='string'||!/^[a-f0-9]{64}$/.test(input.sha256))throw error('evidence_sha256_required');
   if(input.termination_verified!==true)throw error('explicit_termination_confirmation_required');
   if(input.recovery_kind!=='cold_os_reboot')throw error('cold_os_reboot_required');
-  return this.store.request('operator',input.request_id,{op:'mission_web_boot_recovery_reconcile',run_id:input.run_id,evidence_id:input.evidence_id,recovery_kind:'cold_os_reboot'},()=>{
+  return this.store.request('operator',input.request_id,{op:'mission_web_boot_recovery_reconcile',run_id:input.run_id,evidence_id:input.evidence_id,sha256:input.sha256,recovery_kind:'cold_os_reboot'},()=>{
+   const record=this.db.prepare("SELECT * FROM cp_mission_web_boot_recovery WHERE evidence_id=?").get(input.evidence_id);
+   if(!record)throw error('recovery_evidence_unknown');
+   if(record.state!=='prepared')throw error('recovery_evidence_already_consumed');
+   if(record.sha256!==input.sha256||record.mission_id!==input.mission_id||record.run_id!==input.run_id||(record.lease_id||null)!==(input.lease_id||null))throw error('recovery_evidence_registry_mismatch');
    const run=this.store.run(input.run_id);if(!run||run.mission_id!==input.mission_id)throw error('mission_run_binding_mismatch');
    const lease=this.assertRunReconcileGate(run,{requireLease:!!input.lease_id||!!this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='quarantined'").get(run.id)});
    if(Number.isSafeInteger(run.pid)&&run.pid>0)throw error('owned_process_pid_present_use_pid_reconcile');
@@ -129,18 +154,22 @@ class MissionWeb{
    const file=path.join(this.recoveryDir(),input.evidence_id+'.json');
    const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
    let packet,bytes;try{const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.uid!==process.getuid?.()||stat.mode&0o077||stat.size>65536)throw error('recovery_evidence_integrity_denied');bytes=fs.readFileSync(fd);packet=JSON.parse(bytes);}finally{fs.closeSync(fd);}
+   if(hash(bytes)!==record.sha256||hash(bytes)!==input.sha256)throw error('recovery_evidence_digest_mismatch');
    if(packet.schema_version!=='airodrom-web-boot-recovery-v1'||packet.evidence_id!==input.evidence_id||packet.mission_id!==input.mission_id||packet.run_id!==input.run_id||(packet.lease_id||null)!==(input.lease_id||null)||packet.browser_closed_receipt!==false||packet.authority!==false)throw error('recovery_evidence_binding_denied');
-   if(packet.run.state!==run.state||packet.run.updated_at!==run.updated_at||packet.run.pid!==run.pid||!!packet.run.termination_verified!==!!run.termination_verified||(lease&&packet.lease?.id!==lease.id))throw error('recovery_evidence_stale');
+   const bootFp=require('./os-boot-epoch').fingerprint(packet.boot_epoch);
+   if(bootFp!==record.boot_epoch||packet.captured_at!==record.captured_at||packet.run.state!==record.run_state||packet.run.updated_at!==record.run_updated_at||(packet.run.ended_at??null)!==(record.run_ended_at??null)||(packet.run.pid??null)!==(record.run_pid??null)||(packet.lease?.state||null)!==(record.lease_state||null))throw error('recovery_evidence_registry_mismatch');
+   if(packet.run.state!==run.state||packet.run.updated_at!==run.updated_at||packet.run.pid!==run.pid||!!packet.run.termination_verified!==!!run.termination_verified||(lease&&(packet.lease?.id!==lease.id||packet.lease?.state!==lease.state)))throw error('recovery_evidence_stale');
    const prior=packet.boot_epoch,current=this.bootEpoch(),boot=require('./os-boot-epoch');
    if(boot.sameBootEpoch(prior,current))throw error('cold_os_reboot_not_observed');
    const currentBootMs=boot.bootEpochMs(current),priorBootMs=boot.bootEpochMs(prior),anchor=run.ended_at||run.updated_at;
    if(!Number.isSafeInteger(packet.captured_at)||packet.captured_at<priorBootMs||currentBootMs<=packet.captured_at)throw error('boot_boundary_ordering_denied');
    if(!Number.isSafeInteger(anchor)||anchor>=currentBootMs)throw error('run_not_confined_to_prior_boot');
-   // No post-boot browser/run execution for this run. Recovery audit events are excluded.
-   const post=this.db.prepare("SELECT count(*) n FROM event_ledger_events WHERE run_id=? AND timestamp_ms>=? AND event_type IN ('research.browser_started','research.navigated','research.network_denied','research.browser_closed','mission.web.evidence','run.started')").get(run.id,currentBootMs).n;
-   if(post)throw error('post_boot_execution_observed');
-   if(this.db.prepare("SELECT 1 FROM cp_runs WHERE id=? AND state IN ('starting','running','verifying')").get(run.id))throw error('run_restarted');
-   return this.settleNamedRun(run,{resolution:'operator_web_boot_recovery',owned_process_id:null,recovery_kind:'cold_os_reboot'});
+   this.assertNoPostBootContinuation(run,lease,currentBootMs);
+   const settled=this.settleNamedRun(run,{resolution:'operator_web_boot_recovery',owned_process_id:null,recovery_kind:'cold_os_reboot'});
+   const consumedAt=typeof this.options.now==='function'?this.options.now():Date.now();
+   this.db.prepare("UPDATE cp_mission_web_boot_recovery SET state='consumed',consumed_at=? WHERE evidence_id=? AND state='prepared'").run(consumedAt,input.evidence_id);
+   if(!this.db.prepare("SELECT 1 FROM cp_mission_web_boot_recovery WHERE evidence_id=? AND state='consumed'").get(input.evidence_id))throw error('recovery_evidence_consume_failed');
+   return {...settled,evidence_id:input.evidence_id,sha256:input.sha256};
   });
  }
  assess(task,input,{budget=true}={}){

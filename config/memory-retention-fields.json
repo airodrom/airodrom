@@ -3686,6 +3686,43 @@
       "created_at": "A"
     }
   },
+  "cp_mission_web_boot_recovery": {
+    "fields": [
+      "evidence_id",
+      "sha256",
+      "mission_id",
+      "run_id",
+      "lease_id",
+      "boot_epoch",
+      "run_state",
+      "run_updated_at",
+      "run_ended_at",
+      "run_pid",
+      "lease_state",
+      "captured_at",
+      "state",
+      "created_at",
+      "consumed_at"
+    ],
+    "source": "src/mission-web.js",
+    "classification": {
+      "evidence_id": "A",
+      "sha256": "D",
+      "mission_id": "A",
+      "run_id": "A",
+      "lease_id": "A",
+      "boot_epoch": "A",
+      "run_state": "A",
+      "run_updated_at": "A",
+      "run_ended_at": "A",
+      "run_pid": "A",
+      "lease_state": "A",
+      "captured_at": "A",
+      "state": "A",
+      "created_at": "A",
+      "consumed_at": "A"
+    }
+  },
   "cp_worker_qualifications": {
     "fields": [
       "id",
