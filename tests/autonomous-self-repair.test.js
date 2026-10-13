@@ -6,7 +6,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { manifest } = require('./fixtures/opencode-fixture.cjs');
-const { diagnose } = require('../src/autonomous-repair');
+const { diagnose, repairInput } = require('../src/autonomous-repair');
 
 function failingNative(f, extra = {}) {
   return f.create({
@@ -116,4 +116,36 @@ test('uncertain or budget-exhausted failure does not spawn a repair', async t =>
   assert.equal(view.autonomous.repair_lineage?.one?.repair_mission_id || null, null);
   assert.equal(view.autonomous.last_action, 'repair_blocked');
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
+});
+
+test('parent-baseline pre-existing dirty outside allowed_files does not block repair create', async t => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.repo, 'README-OWNER-ACCEPTANCE.txt'), 'owner notes\n');
+  const parent = failingNative(f);
+  assert.deepEqual(parent.envelope.baseline.dirty, ['README-OWNER-ACCEPTANCE.txt']);
+  const g = plan(f, [stage(parent)]);
+  authorize(f, g.id, { max_repairs: 1 });
+  await f.bridge.autonomousExecution.tick();
+  let repairId = null;
+  for (let i = 0; i < 400 && !repairId; i++) {
+    await f.bridge.missions.tick();
+    repairId = f.bridge.autonomousExecution.inspect(g.id).autonomous.repair_lineage?.one?.repair_mission_id || null;
+    if (!repairId) await new Promise(r => setTimeout(r, 20));
+  }
+  assert.ok(repairId, 'repair must spawn despite pre-existing owner README dirt');
+  const repair = f.bridge.controlStore.requireMission(repairId);
+  assert.equal(repair.envelope.repair_of, parent.id);
+  assert.deepEqual(repair.envelope.allowed_files, parent.envelope.allowed_files);
+  assert.equal(fs.existsSync(path.join(f.repo, 'README-OWNER-ACCEPTANCE.txt')), true);
+});
+
+test('new dirty outside allowed_files still blocks repair create', async t => {
+  const f = await fixture(t), parent = failingNative(f);
+  f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });
+  await f.settle(parent.id, 'needs_rework');
+  fs.writeFileSync(path.join(f.repo, 'outside.txt'), 'leak\n');
+  const diagnosis = diagnose(f.bridge.controlStore.requireMission(parent.id), f.bridge.controlStore);
+  assert.equal(diagnosis.ok, true);
+  const input = repairInput(f.bridge.controlStore.requireMission(parent.id), diagnosis);
+  assert.throws(() => f.bridge.missions.create(input, 'operator'), /dirty_outside_repair_scope/);
 });

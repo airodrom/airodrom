@@ -87,8 +87,12 @@ class MissionService {
       const parentFiles=[...(parent.envelope.allowed_files||[])].sort();
       const nextFiles=[...input.allowed_files].sort();
       if(JSON.stringify(parentFiles)!==JSON.stringify(nextFiles))throw Error('Corrective Mission cannot expand allowed files');
-      // Dirty allowed files are expected after a failed attempt; never allow unrelated dirt.
-      if(baseline.dirty.some(f=>!input.allowed_files.includes(f)))throw Error('Workspace has dirty files outside the approved repair scope');
+      // Dirty allowed files are expected after a failed attempt. Pre-existing dirt captured on
+      // the parent baseline (for example owner README notes) must not block a same-scope repair.
+      const parentBaselineDirty=new Set(parent.envelope.baseline?.dirty||[]);
+      if(baseline.dirty.some(f=>!input.allowed_files.includes(f)&&!parentBaselineDirty.has(f))){
+        throw Error('dirty_outside_repair_scope');
+      }
       repairOf=parent.id;
     }else if(baseline.dirty.some(f=>input.allowed_files.includes(f)))throw Error('Requested changes overlap pre-existing dirty work');
     // Repair baselines may already include dirty allowed files; fresh Missions may not.
