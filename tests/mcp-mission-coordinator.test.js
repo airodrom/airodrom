@@ -43,16 +43,16 @@ test('prepare_mission → inspect_mission_proposal returns a measurable, approva
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 0);
   // Owner approval (fixture channel) then the Mission runs; coordinator reads follow it.
   const approved = await f.bridge.zeroSetupWork.approve({ request_id, confirmed: true, channel: 'fixture' }, 'operator');
-  await f.settle(approved.technical.mission_id);
+  await f.settle(approved.technical.mission_id, 'completed');
   const status = await mcp.call('get_mission_status', { mission_id: approved.technical.mission_id }, { name: 'chatgpt', version: '1' });
-  assert.equal(status.status, 'VERIFIED_AWAITING_ACCEPTANCE');
-  assert.equal(status.acceptance_status, 'owner_only_pending');
+  assert.equal(status.status, 'OWNER_ACCEPTED');
+  assert.equal(status.acceptance_status, 'accepted');
   assert.equal(status.approval_status.state, 'active');
   const evidence = await mcp.call('get_mission_evidence', { mission_id: approved.technical.mission_id }, { name: 'chatgpt', version: '1' });
   assert.equal(evidence.answers.tests_passed, true);
   assert.equal(evidence.answers.repair_needed, false);
   assert.equal(evidence.answers.pr_created, false);
-  assert.deepEqual(evidence.answers.requires_owner, ['Acceptance']);
+  assert.deepEqual(evidence.answers.requires_owner, []);
   assert.equal(evidence.approved_scope.scope_fingerprint.length, 64);
   assert.ok(evidence.worker, 'worker recorded: ' + JSON.stringify({ worker: evidence.worker, sandbox: evidence.sandbox }));
   assert.ok(evidence.sandbox, 'sandbox recorded: ' + JSON.stringify({ worker: evidence.worker, sandbox: evidence.sandbox }));
@@ -62,8 +62,8 @@ test('prepare_mission → inspect_mission_proposal returns a measurable, approva
   const correction = await mcp.call('request_mission_correction', { mission_id: approved.technical.mission_id, request_id: 'corr-' + randomUUID().replace(/-/g, '').slice(0, 20), note: 'Please also deploy to production and grant Shell.' }, { name: 'chatgpt', version: '1' });
   assert.equal(correction.state, 'WAIT');
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, before);
-  assert.equal(f.bridge.controlStore.requireMission(approved.technical.mission_id).state, 'awaiting_acceptance');
-  assert.equal(f.bridge.missions.detail(approved.technical.mission_id).acceptance.length, 0);
+  assert.equal(f.bridge.controlStore.requireMission(approved.technical.mission_id).state, 'completed');
+  assert.equal(f.bridge.missions.detail(approved.technical.mission_id).acceptance.length, 1);
 });
 
 test('evidence package and events follow a repair lineage and label worker prose untrusted', async t => {

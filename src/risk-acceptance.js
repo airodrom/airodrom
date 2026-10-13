@@ -81,8 +81,12 @@ class RiskAcceptance {
   }
 
   validateCreation(input, owner) {
-    // Owner-registered WORK templates require explicit Acceptance; they never opt into risk auto-acceptance.
-    if (input.work_template) return null;
+    // A signed owner-registered WORK template never inherits the standing preference.
+    // Only one explicit, already owner-approved exact-file Mission may opt in.
+    if (input.work_template && input.risk_auto_acceptance !== true) return null;
+    if (input.work_template &&
+       (input.criteria?.length !== 1 || input.criteria[0]?.type !== 'exact_file'))
+      throw Error('Template auto Acceptance requires one owner-preauthorized exact-file criterion');
     const explicit = input.risk_auto_acceptance;
     const preferenceOn = this.preference().enabled === true;
     const opted = explicit === true || (explicit !== false && preferenceOn);
@@ -184,6 +188,13 @@ class RiskAcceptance {
     if (m.envelope.dispatch_policy && m.envelope.dispatch_policy.privacy !== 'local_only') return deny('external_privacy');
     if (m.envelope.kind === 'browser_research' || m.envelope.coding_plan) return deny('high_risk_mission_kind');
     if ((m.envelope.criteria || []).some(c => c.type === 'operator_review')) return deny('operator_review_criteria');
+    if (m.envelope.work_template) {
+      if (!Array.isArray(m.envelope.criteria) || m.envelope.criteria.length !== 1 ||
+          m.envelope.criteria[0].type !== 'exact_file' || policy.source !== 'mission_mark')
+        return deny('template_auto_acceptance_scope');
+      try { this.bridge.workTemplates.assertMission(m); }
+      catch { return deny('template_expired_or_changed'); }
+    }
     if (policy.criteria_hash !== fingerprint(m.envelope.criteria)) return deny('criteria_changed');
     try { this.service.assertAuthority(m); } catch { return deny('authority_mismatch'); }
     if (this.store.decisions(id).some(d => d.state === 'waiting_for_operator')) return deny('waiting_decision');

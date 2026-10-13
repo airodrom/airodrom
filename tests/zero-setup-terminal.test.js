@@ -94,7 +94,7 @@ test('terminal y/N consent authorizes once; n cancels without writes', async t =
       calls.push(route);
       if (route.endsWith('/approve')) {
         const approved = await f.bridge.zeroSetupWork.approve(body, 'operator');
-        await f.settle(approved.technical.mission_id);
+        await f.settle(approved.technical.mission_id, 'completed');
         return approved;
       }
       if (route.includes('/status')) return f.bridge.zeroSetupWork.refreshState(request2);
@@ -108,7 +108,7 @@ test('terminal y/N consent authorizes once; n cancels without writes', async t =
   assert.match(yes.text(), /Working/);
   const missionId = done.technical.mission_id;
   assert.ok(missionId);
-  assert.equal(f.bridge.missions.detail(missionId).acceptance.length, 0);
+  assert.equal(f.bridge.missions.detail(missionId).acceptance.length, 1);
 });
 
 test('non-TTY cannot authorize bounded work', async t => {
@@ -259,4 +259,21 @@ test('poll keeps observing the same request_id through needs_rework until repair
   });
   assert.equal(blocked.state, 'BLOCKED');
   assert.match(resultText(blocked), /repair_budget/);
+});
+
+
+test('Terminal shows completion without requesting an extra Acceptance after preauthorization', () => {
+  const view = {
+    state: 'VERIFIED',
+    outcome: { mission_state: 'completed', verification: { result: 'passed' } },
+    presentation: { files: ['fixture.txt'], completion_policy: 'Preauthorized exact file' },
+  };
+  const shown = resultText(view);
+  assert.match(shown, /completed under your earlier scoped approval/i);
+  assert.doesNotMatch(shown, /Awaiting owner Acceptance/);
+  const pending = resultText({
+    ...view, state: 'AWAITING_ACCEPTANCE',
+    outcome: { mission_state: 'awaiting_acceptance', verification: { result: 'operator_review' } },
+  });
+  assert.match(pending, /Awaiting owner Acceptance/);
 });

@@ -80,6 +80,23 @@ class ZeroSetupWork {
         if (score.reasons.length) matches.push(score);
       }
     }
+    // A named active Project wins over unrelated self-repair fixture heuristics.
+    const named = projects.filter(p => (instruction || '').toLowerCase().includes(String(p.name || '').toLowerCase()) && p.repositories.length === 1);
+    if (named.length === 1) {
+      const root = fs.realpathSync(named[0].repositories[0]);
+      if (require('./control-execution').repositoryRoot(root) === root) return { ok: true, project: named[0], workspace: root };
+    }
+    // For general instructions, reuse only a UNIQUE already signed and active
+    // host-registered WORK scope. An MCP message cannot register new authority.
+    if (intent?.kind === 'general') {
+      const active = this.bridge.workTemplates.list('operator')
+        .filter(t => t.state === 'active' && projects.some(p => p.projectId === t.project_id &&
+          p.repositories.some(w => { try { return fs.realpathSync(w) === t.workspace; } catch { return false; } })));
+      if (active.length === 1) {
+        const project = projects.find(p => p.projectId === active[0].project_id);
+        return { ok: true, project, workspace: active[0].workspace };
+      }
+    }
     if (matches.length === 1) return { ok: true, project: matches[0].project, workspace: matches[0].workspace };
     if (matches.length > 1) {
       // Prefer a Project whose exact name appears in the instruction.
@@ -110,9 +127,6 @@ class ZeroSetupWork {
         choices: matches.map(m => ({ project_name: m.project.name, workspace_label: readablePath(m.workspace) })),
       };
     }
-    // Unique project whose name is mentioned and has a single repository.
-    const named = projects.filter(p => (instruction || '').toLowerCase().includes(String(p.name || '').toLowerCase()) && p.repositories.length === 1);
-    if (named.length === 1) return { ok: true, project: named[0], workspace: fs.realpathSync(named[0].repositories[0]) };
     return {
       ok: false, clarify: true,
       message: 'I could not uniquely resolve a disposable local workspace. Name the Project or prepare one disposable test repository.',
@@ -135,9 +149,9 @@ class ZeroSetupWork {
     });
   }
 
-  existingTemplate(workspace) {
+  existingTemplate(workspace, projectId) {
     for (const item of this.bridge.workTemplates.list('operator') || []) {
-      if (item.state !== 'active') continue;
+      if (item.state !== 'active' || item.project_id !== projectId) continue;
       try {
         const t = this.bridge.workTemplates.template(item.project, item.workspace_alias);
         if (t && t.workspace === workspace) return { project: item.project, workspace_alias: item.workspace_alias, template: t, inspect: item };
@@ -165,6 +179,11 @@ class ZeroSetupWork {
         ? 'Exact file content + focused test + git diff --check'
         : 'Registered focused verification',
       success_criteria: dod.items.map(i => i.text),
+      completion_policy: intent?.kind === 'exact_file' &&
+        intent.file === 'fixture.txt' && intent.from === 'alpha\n' &&
+        intent.to === 'beta\n' && files.length === 1 && files[0] === intent.file
+        ? 'Your initial approval also preauthorizes automatic completion only when the exact file bytes and all host checks pass.'
+        : 'Owner Acceptance remains required after verification.',
       measurable: dod.measurable,
       repair_budget: 'One automatic correction inside this scope',
       network: 'No external access',
@@ -219,7 +238,7 @@ class ZeroSetupWork {
       return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
     }
     const { project, workspace } = scope;
-    const existing = this.existingTemplate(workspace);
+    const existing = this.existingTemplate(workspace, project.projectId);
     const goal = existing?.template
       ? this.bridge.projects.getGoal(existing.template.goal_id)
       : this.resolveGoal(project, intent);
@@ -411,7 +430,21 @@ class ZeroSetupWork {
       worker: 'auto',
       model: 'auto',
     };
-    const submitted = await handoff.submit(this.bridge, packet, 'operator');
+    // One authenticated approval binds both this exact expected result and
+    // its future automatic settlement. General tasks keep owner Acceptance.
+    const registered = this.bridge.workTemplates.template(live.project_alias, live.workspace_alias);
+    const eligible = live.intent?.kind === 'exact_file' &&
+      live.intent.file === 'fixture.txt' && live.intent.from === 'alpha\n' &&
+      live.intent.to === 'beta\n' && registered?.allowed_files?.length === 1 &&
+      registered.allowed_files[0] === live.intent.file;
+    let acceptance = null;
+    if (eligible) {
+      const target = path.join(live.workspace, live.intent.file);
+      if (fs.realpathSync(target) !== target || fs.readFileSync(target, 'utf8') !== live.intent.from)
+        throw Error('Exact-file baseline changed; prepare a new bounded request');
+      acceptance = { file: live.intent.file, before: live.intent.from, after: live.intent.to };
+    }
+    const submitted = await handoff.submit(this.bridge, packet, 'operator', acceptance);
     if (!submitted.mission_id) throw Error(submitted.reason || 'WORK handoff did not create a Mission');
     live.mission_id = submitted.mission_id;
     // ADR 0051: one authenticated owner approval bound to the Mission's immutable scope
@@ -428,6 +461,15 @@ class ZeroSetupWork {
         summary: { goal: live.intent?.objective || live.instruction },
       }, 'operator');
       this.bridge.missionApprovals.bind(approval.approval_id, submitted.mission_id, 'operator');
+      // Binding the trusted approval seals a new Mission envelope revision.
+      // Rebind the auto-completion fingerprint only after that host mutation.
+      // A stale hash must never be interpreted as permission.
+      if (acceptance) {
+        const bound = this.bridge.controlStore.requireMission(submitted.mission_id);
+        if (!bound.envelope.risk_auto_acceptance?.authorized)
+          throw Error('Preauthorized completion policy was not recorded');
+        this.bridge.missions.riskAcceptance.register(bound, bound.envelope.risk_auto_acceptance);
+      }
       live.approval_id = approval.approval_id;
       live.approval_expires_at = approval.expires_at;
     }
@@ -436,7 +478,9 @@ class ZeroSetupWork {
       depends_on: [],
       mission_id: submitted.mission_id,
       objective,
-      acceptance_criteria: ['Independent host verification passed', 'Owner Acceptance remains required'],
+      acceptance_criteria: acceptance
+        ? ['Exact-file bytes and registered host checks passed; preauthorized automatic completion']
+        : ['Independent host verification passed', 'Owner Acceptance remains required'],
       verification_requirements: ['exact_file_or_registered_tests', 'git_diff_check'],
       human_checkpoint: false,
     }];

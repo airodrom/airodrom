@@ -1,6 +1,7 @@
 'use strict';
 // Untrusted requests choose no authority. Host templates fix WORK scope.
-const {object,text,identifier}=require('./control-plane-store'),{randomUUID}=require('node:crypto');
+const {object,text,identifier,fingerprint}=require('./control-plane-store'),{randomUUID}=require('node:crypto');
+const fs=require('node:fs'),path=require('node:path');
 const router=require('./model-worker-router');
 function validate(packet){
  object(packet,['version','request_id','objective','constraints','acceptance_criteria','references','capability_classes','data_class','privacy','worker','model','project','workspace','mission_class']);
@@ -14,9 +15,10 @@ function validate(packet){
  if(packet.mission_class==='CONVERSATION'&&((packet.capability_classes||[]).length||packet.workspace||packet.project))throw Error('Conversation cannot request capabilities or a workspace');
  return packet;
 }
-async function submit(bridge,packet,principal){
+async function submit(bridge,packet,principal,operatorAcceptance=null){
  validate(packet);identifier(principal);if(principal!=='operator'&&!principal.startsWith('mcp:'))throw Error('Authenticated handoff principal required');
- const operation={op:packet.version===1?'external_handoff_v1':'external_handoff_v2',packet};
+ const operation={op:packet.version===1?'external_handoff_v1':'external_handoff_v2',packet,
+   ...(operatorAcceptance!==null?{preauthorized_expected_digest:fingerprint(operatorAcceptance)}:{})};
  const previous=bridge.controlStore.db.prepare('SELECT owner FROM cp_requests WHERE request_id=? AND owner LIKE ?').all(packet.request_id,'mcp:%');
  if(previous.some(r=>r.owner!==principal))throw Error('Resume the original authenticated handoff session; duplicate execution denied');
  if(bridge.controlStore.db.prepare('SELECT 1 FROM cp_requests WHERE owner=? AND request_id=?').get(principal,packet.request_id))return bridge.controlStore.request(principal,packet.request_id,operation,()=>{throw Error('Invalid replay');});
@@ -29,6 +31,19 @@ async function submit(bridge,packet,principal){
  if(packet.mission_class==='WORK'&&template.workers){catalog.workers=catalog.workers.filter(w=>template.workers.includes(w.id));catalog.models=catalog.models.filter(m=>m.workers.some(w=>template.workers.includes(w)));}
  const route=router.select(catalog,{mission_class:packet.mission_class,data_class:packet.data_class,privacy:packet.privacy,model:packet.model,worker:packet.worker});
  if(route.state!=='READY')return {state:'WAIT',reason:route.reason,authority:false};
+ // Only a trusted owner-approved zero-setup flow may replace operator review with
+ // an exact-file criterion. The untrusted MCP packet has no such field or power.
+ if(operatorAcceptance!==null){
+  object(operatorAcceptance,['file','before','after']);
+  if(principal!=='operator'||packet.mission_class!=='WORK'||packet.privacy!=='local_only'||!template?.work_template||
+     (packet.acceptance_criteria||[]).length||template.allowed_files.length!==1||
+     template.allowed_files[0]!==operatorAcceptance.file||typeof operatorAcceptance.before!=='string'||
+     typeof operatorAcceptance.after!=='string'||operatorAcceptance.before===operatorAcceptance.after||
+     Buffer.byteLength(operatorAcceptance.after)>12000)throw Error('Preauthorized exact-file Acceptance scope required');
+  const expected=path.join(template.workspace,operatorAcceptance.file);
+  if(fs.realpathSync(expected)!==expected||fs.readFileSync(expected,'utf8')!==operatorAcceptance.before)
+   throw Error('Preauthorized file baseline changed; request fresh owner authorization');
+ }
  return bridge.controlStore.request(principal,packet.request_id,operation,()=>{
  const request_id='handoff:'+principal+':'+packet.request_id;
  let created;
@@ -40,7 +55,7 @@ async function submit(bridge,packet,principal){
   // vendor WORK keeps its worker_contract ceiling until a disclosure-authorized contract exists.
   // Owner-registered local WORK authorizes exactly one automatic correction (matches the zero-setup CAE budget).
  const contract=!external&&template.work_template?{contract:{objective:{original_instruction:String(packet.objective).slice(0,4000)},budget:{risk_class:template.risk_class||'normal',max_repair_attempts:1}}}:{};
-  created=bridge.missions.create({...scope,...contract,...(external?{model:route.model,fallback_agents:[],dispatch_policy:{privacy:'cloud_allowed',providers:[require('./bounded-worker').SPECS[route.worker].provider],billing_classes:['subscription'],max_attempts:1}}:{}),criteria:[...template.criteria,...(packet.acceptance_criteria||[]).map((description,i)=>({id:'external-review-'+i,type:'operator_review',description}))],request_id,objective:packet.objective,constraints:[template.constraints||'',packet.constraints||'',...(packet.acceptance_criteria||[]).map(c=>'Operator review criterion (request data): '+c)].filter(Boolean).join('\n')||'Use only the owner-registered bounded scope.',preferred_agent:route.worker},'operator');
+  created=bridge.missions.create({...scope,...contract,...(operatorAcceptance?{risk_auto_acceptance:true}:{}),...(external?{model:route.model,fallback_agents:[],dispatch_policy:{privacy:'cloud_allowed',providers:[require('./bounded-worker').SPECS[route.worker].provider],billing_classes:['subscription'],max_attempts:1}}:{}),criteria:[...(operatorAcceptance?[{id:'expected_file',type:'exact_file',path:operatorAcceptance.file,content:operatorAcceptance.after}]:template.criteria),...(packet.acceptance_criteria||[]).map((description,i)=>({id:'external-review-'+i,type:'operator_review',description}))],request_id,objective:packet.objective,constraints:[template.constraints||'',packet.constraints||'',...(packet.acceptance_criteria||[]).map(c=>'Operator review criterion (request data): '+c)].filter(Boolean).join('\n')||'Use only the owner-registered bounded scope.',preferred_agent:route.worker},'operator');
   created={mission_id:created.id,task_id:created.task_id,state:created.state};
  }else created=bridge.missions.createConversation({request_id,message:packet.objective+(packet.constraints?'\nConstraints (request data): '+packet.constraints:'')+((packet.acceptance_criteria||[]).length?'\nOperator review criteria (request data): '+packet.acceptance_criteria.join('; '):''),include_memory:principal==='operator'&&packet.data_class==='personal',runtime:route.worker,model:route.model,route_mode:route.mode});
  const task=bridge.tasks.get(created.task_id);

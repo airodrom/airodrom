@@ -149,3 +149,36 @@ test('operator preference enables new WORK only; historical awaits require autho
   assert.equal(done.acceptance.length, 1);
   assert.equal(done.acceptance[0].decision, 'accept');
 });
+
+
+test('template WORK cannot inherit standing auto Acceptance or bypass exact-file preauthorization', async t => {
+  const f = await fixture(t, { opencode: runtime(t).options });
+  const risk = f.bridge.missions.riskAcceptance;
+  risk.setPreference({ enabled: true, confirmed: true }, 'operator');
+  assert.equal(risk.validateCreation({
+    work_template: { project: 'fixture', workspace: 'local', hash: 'test-only' },
+    preferred_agent: 'opencode',
+    fallback_agents: [],
+    dispatch_policy: { ...LOCAL_POLICY },
+    data_class: 'public',
+    criteria: [{ id: 'manual', type: 'operator_review', description: 'Manual review' }],
+  }, 'operator'), null, 'standing preference must not silently authorize template WORK');
+  assert.throws(() => risk.validateCreation({
+    work_template: { project: 'fixture', workspace: 'local', hash: 'test-only' },
+    risk_auto_acceptance: true,
+    preferred_agent: 'opencode',
+    fallback_agents: [],
+    dispatch_policy: { ...LOCAL_POLICY },
+    data_class: 'public',
+    criteria: [{ id: 'manual', type: 'operator_review', description: 'Manual review' }],
+  }, 'operator'), /one owner-preauthorized exact-file criterion/);
+  assert.throws(() => risk.validateCreation({
+    work_template: { project: 'fixture', workspace: 'local', hash: 'test-only' },
+    risk_auto_acceptance: true,
+    preferred_agent: 'claude_code',
+    fallback_agents: [],
+    dispatch_policy: { ...LOCAL_POLICY },
+    data_class: 'public',
+    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }],
+  }, 'operator'), /OpenCode only/);
+});

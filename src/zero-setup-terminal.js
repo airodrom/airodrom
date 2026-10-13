@@ -22,6 +22,7 @@ function preview(presentation = {}) {
     'File: ' + files,
     'Worker: ' + (presentation.worker || 'Local OpenCode'),
     'Verification: ' + (presentation.verification || 'Registered focused checks'),
+    'Completion: ' + (presentation.completion_policy || 'Owner Acceptance required'),
     'Repair budget: ' + (presentation.repair_budget || 'One automatic correction inside this scope'),
     'Network: ' + (presentation.network || 'No external access'),
     'GitHub: ' + (presentation.github || 'No commits or pushes'),
@@ -167,7 +168,9 @@ function resultText(view) {
     lines.push('');
     lines.push('Updated ' + files + '.');
     lines.push('Original Goal resumed.');
-    lines.push('Awaiting owner Acceptance.');
+    lines.push(mission === 'completed'
+      ? 'Completed under your earlier scoped approval. No further Acceptance is required.'
+      : 'Awaiting owner Acceptance.');
     return lines.join('\n');
   }
   if (String(view.state || '').toUpperCase() === 'REJECTED' || mission === 'cancelled') return view.message || 'Cancelled. Nothing was written.';

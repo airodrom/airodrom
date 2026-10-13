@@ -32,6 +32,7 @@ test('ask prepares WAIT approval without writing or dispatching; approve runs on
   assert.equal(prepared.presentation.project_name, 'Human Acceptance Exact File');
   assert.deepEqual(prepared.presentation.files, ['fixture.txt']);
   assert.match(prepared.presentation.worker, /OpenCode/i);
+  assert.match(prepared.presentation.completion_policy, /initial approval.*preauthorizes automatic completion/i);
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
   assert.equal(f.bridge.controlStore.listMissions({ owner: 'operator', limit: 20 }).filter(m => m.envelope?.work_template).length, 0);
   assert.equal(f.bridge.workTemplates.list('operator').length, 0);
@@ -45,12 +46,15 @@ test('ask prepares WAIT approval without writing or dispatching; approve runs on
   const mission = f.bridge.missions.require(approved.technical.mission_id);
   assert.ok(['ready', 'dispatching', 'running', 'verifying', 'awaiting_acceptance'].includes(mission.state), mission.state);
   // Owner approval triggers CAE; OpenCode runs without further ChatGPT/Cursor prompts.
-  const done = await f.settle(approved.technical.mission_id);
-  assert.equal(done.state, 'awaiting_acceptance');
+  const done = await f.settle(approved.technical.mission_id, 'completed');
+  assert.equal(done.state, 'completed');
+  assert.equal(done.verifications[0].result, 'passed');
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'beta\n');
   assert.equal(Buffer.from(fs.readFileSync(path.join(f.repo, 'fixture.txt'))).toString('hex'), '626574610a');
   assert.ok(done.verifications[0].evidence.some(c => c.id === 'task:fixture-test' && c.status === 'passed'));
-  assert.equal(done.acceptance.length, 0);
+  assert.equal(done.acceptance.length, 1);
+  assert.equal(done.acceptance[0].decision, 'accept');
+  assert.equal(done.program_contract.settlement.state, 'settled');
   const replay = await f.bridge.zeroSetupWork.ask({
     instruction: 'Airodrom, change the test file from alpha to beta, verify the result, and tell me when you are finished.',
     request_id,
@@ -192,4 +196,40 @@ test('needs_rework stays non-terminal until repair is genuinely blocked', async 
   assert.equal(blocked.state, 'BLOCKED');
   assert.equal(blocked.technical.repair_blocked_reason, 'repair_budget');
   assert.match(blocked.presentation.status, /repair_budget/);
+});
+
+
+test('named release project overrides unrelated self-repair fixture heuristics', async t => {
+  const f = await fixture(t);
+  const release = f.bridge.projects.createProject({ name: 'Airodrom Release Qualification', repositories: [f.repo] });
+  f.bridge.projects.createProject({ name: 'Self-Repair Acceptance', repositories: [f.repo] });
+  const { ZeroSetupWork } = require('../src/zero-setup-work');
+  const scope = new ZeroSetupWork(f.bridge).resolveScope(
+    'In Airodrom Release Qualification, inspect the local development test.',
+    { kind: 'general', objective: 'Inspect development test' }
+  );
+  assert.equal(scope.ok, true);
+  assert.equal(scope.project.projectId, release.projectId);
+});
+
+test('general instructions select only one already-registered active WORK template', async t => {
+  const f = await fixture(t);
+  f.bridge.missionAuthority.initializeOperatorKey();
+  const release = f.bridge.projects.createProject({ name: 'Airodrom Release Qualification', repositories: [f.repo] });
+  const goal = f.bridge.projects.createGoal({ projectId: release.projectId, name: 'Verify test fixture' });
+  f.bridge.projects.createProject({ name: 'Self-Repair Acceptance', repositories: [f.repo] });
+  f.bridge.workTemplates.register({
+    project: 'release-qualification', workspace_alias: 'safe-dev',
+    project_id: release.projectId, goal_id: goal.goalId, workspace: f.repo,
+    allowed_files: ['fixture.txt'], diff_check: 'diff-check',
+    tests: ['fixture-test'], duration_minutes: 60, confirmed: true,
+  }, 'operator');
+  const { ZeroSetupWork } = require('../src/zero-setup-work');
+  const scope = new ZeroSetupWork(f.bridge).resolveScope(
+    'Please repair this bounded development test and verify it.',
+    { kind: 'general', objective: 'Repair bounded test' }
+  );
+  assert.equal(scope.ok, true);
+  assert.equal(scope.project.projectId, release.projectId);
+  assert.equal(scope.workspace, fs.realpathSync(f.repo));
 });
