@@ -1,6 +1,6 @@
 'use strict';
 // Untrusted requests choose no authority. Host templates fix WORK scope.
-const {object,text,identifier}=require('./control-plane-store'),{randomUUID}=require('node:crypto');
+const {object,text,identifier,fingerprint}=require('./control-plane-store'),{randomUUID}=require('node:crypto');
 const fs=require('node:fs'),path=require('node:path');
 const router=require('./model-worker-router');
 function validate(packet){
@@ -17,7 +17,8 @@ function validate(packet){
 }
 async function submit(bridge,packet,principal,operatorAcceptance=null){
  validate(packet);identifier(principal);if(principal!=='operator'&&!principal.startsWith('mcp:'))throw Error('Authenticated handoff principal required');
- const operation={op:packet.version===1?'external_handoff_v1':'external_handoff_v2',packet};
+ const operation={op:packet.version===1?'external_handoff_v1':'external_handoff_v2',packet,
+   ...(operatorAcceptance!==null?{preauthorized_expected_digest:fingerprint(operatorAcceptance)}:{})};
  const previous=bridge.controlStore.db.prepare('SELECT owner FROM cp_requests WHERE request_id=? AND owner LIKE ?').all(packet.request_id,'mcp:%');
  if(previous.some(r=>r.owner!==principal))throw Error('Resume the original authenticated handoff session; duplicate execution denied');
  if(bridge.controlStore.db.prepare('SELECT 1 FROM cp_requests WHERE owner=? AND request_id=?').get(principal,packet.request_id))return bridge.controlStore.request(principal,packet.request_id,operation,()=>{throw Error('Invalid replay');});
