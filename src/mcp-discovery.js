@@ -33,4 +33,8 @@ async function advertisedCatalog() {
  await server.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
  return (await server.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result.tools;
 }
-module.exports = { catalog, diagnose, advertisedCatalog };
+// Stronger release gate is additive to preserve existing report consumers.
+function verifyIntegrity(observations) {
+ return require('./mcp-catalog-integrity').inspect(observations);
+}
+module.exports = { catalog, diagnose, advertisedCatalog, verifyIntegrity };

@@ -30,9 +30,11 @@ ChatGPT may still keep a conversation-scoped snapshot of an older tool list.
 
 If `ask_airodrom` is missing after install:
 
-1. Confirm the connector points at the current npm-linked `airodrom` / install tip.
-2. Restart the MCP tunnel from Control Center diagnostics guidance.
-3. Start a **new** ChatGPT conversation (in-place catalog refresh is not guaranteed).
+1. Run the read-only [MCP Catalog Integrity gate](MCP-CATALOG-INTEGRITY-V1.md) and confirm the **real npm-linked executable** and fresh `tools/list` match the source.
+2. Start a **new** ChatGPT conversation. If tools are still missing, use ChatGPT's explicit Airodrom plugin **Refresh** when available and try another new chat.
+3. Investigate a wrong executable, process snapshot, or connector registration only where the specific diagnostic boundary differs. Do not restart the control plane, tunnel, or reset credentials by default.
+
+The gate must report ChatGPT tool visibility as UNVERIFIED unless an independent client catalog receipt is supplied.
 
 ## Focused validation
 
