@@ -182,7 +182,7 @@ class ControlServer {
     const gate=this.bridge.lifecycle;
     const route=new URL(req.url,this.origin).pathname;
     const maintenance=req.method==='GET'&&['/api/interactive/lifecycle','/api/interactive/status','/api/mcp/health','/api/control-v2/health'].includes(route)||req.method==='POST'&&['/api/interactive/drain','/api/interactive/resume-admission','/api/interactive/stop'].includes(route);
-    const recovery=req.method==='POST'&&(['/api/interactive/cancel','/api/assistant/conversation/cancel','/api/assistant/browser/revoke','/api/assistant/browser/close','/api/product/cancel-mission','/api/control-v2/codex-reconcile','/api/control-v2/codex-cancel','/api/control-v2/cancel-mission','/api/control-v2/cancel-mission-program','/api/control-v2/cancel-goal-plan'].includes(route)||/^\/api\/tasks\/[0-9a-f-]{36}\/(cancel|pause|resolve-stop)$/.test(route));
+    const recovery=req.method==='POST'&&(['/api/interactive/cancel','/api/assistant/conversation/cancel','/api/assistant/browser/revoke','/api/assistant/browser/close','/api/product/cancel-mission','/api/control-v2/codex-reconcile','/api/control-v2/web-reconcile','/api/control-v2/web-boot-recovery-prepare','/api/control-v2/web-reconcile-boot','/api/control-v2/codex-cancel','/api/control-v2/cancel-mission','/api/control-v2/cancel-mission-program','/api/control-v2/cancel-goal-plan'].includes(route)||/^\/api\/tasks\/[0-9a-f-]{36}\/(cancel|pause|resolve-stop)$/.test(route));
     if(!gate||maintenance)return this.handleRequest(req,res);
     try{if(!recovery||gate.state()==='stopping')gate.assertOpen();}catch{return this.json(res,503,{error:'Service admission is closed for maintenance'});}
     gate.requests++;

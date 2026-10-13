@@ -83,7 +83,8 @@ class ResearchBrowser{
      if(target.search||!allowed[kind]?.test(target.pathname)||! /^\/(?:assets|static|css|js|images|img|fonts|_next\/static)\//.test(target.pathname))throw error('private_dynamic_request_denied');
     }}
     let ancestor=request.redirectedFrom?.(),redirects=0;while(ancestor){if(++redirects>3)throw error('redirect_denied');ancestor=ancestor.redirectedFrom?.();}
-    const result=this.privateMode?await this.network.accountPage({handle:this.accountHandle,url,method:request.method(),signal:this.signal,followRedirects:false}):await this.network.fetch({url,method:request.method(),signal:this.signal,followRedirects:false});
+    const document=request.isNavigationRequest()&&!request.frame().parentFrame();
+    const result=this.privateMode?await this.network.accountPage({handle:this.accountHandle,url,method:request.method(),signal:this.signal,followRedirects:false}):await this.network.fetch({url,method:request.method(),signal:this.signal,followRedirects:false,document});
     this.validateURL(result.url,request.method());
     if(this.privateMode&&request.isNavigationRequest()&&result.location)this.privateNavigations.add(this.validateURL(result.location));
     await route.fulfill({status:result.status,headers:{'content-type':result.contentType,'cache-control':'no-store','x-content-type-options':'nosniff',...(result.location?{location:this.validateURL(result.location)}:{})},body:result.body});
@@ -228,11 +229,32 @@ class ResearchBrowser{
  async close(){
   if(this.closePromise)return this.closePromise;this.closed=true;this.signal?.removeEventListener('abort',this.abort);this.lifecycle.abort();
   this.closePromise=(async()=>{
-   await this.startPromise?.catch(()=>{});let verified=true;
-   try{await this.context?.close();}catch{}try{await this.browser?.close();}catch{}try{await this.server?.close();}catch{verified=false;}
-   const child=this.server?.process();if(child&&child.exitCode===null&&child.signalCode===null)verified=false;
-   if(this.proxy)await new Promise(resolve=>{this.proxy.closeAllConnections();this.proxy.close(resolve);});this.links.clear();this.forms.clear();this.loginForms.clear();this.privateNavigations.clear();for(const value of this.redactions)value.fill(0);this.redactions.length=0;this.network.closeAccount?.();
-   this.event('research.browser_closed',{termination_verified:verified});if(!verified)throw error('termination_unverified');return {closed:true,termination_verified:true,owned_process_termination:'verified'};
+   // Launch may still finish after this deadline; open() closes any late server
+   // because this.closed is already set. Unsettled start cannot verify termination.
+   let startSettled=!this.startPromise;
+   if(this.startPromise){await Promise.race([this.startPromise.catch(()=>{}).finally(()=>{startSettled=true;}),new Promise(resolve=>setTimeout(resolve,15000))]);}
+   const child=this.server&&typeof this.server.process==='function'?this.server.process():null;
+   const pid=child&&Number.isSafeInteger(child.pid)&&child.pid>0?child.pid:null;
+   const step=async(work,ms=10000)=>{try{await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>setTimeout(()=>reject(Error('close_timeout')),ms))]);return true;}catch{return false;}};
+   await step(async()=>{try{await this.context?.close();}catch{}});
+   await step(async()=>{try{await this.browser?.close();}catch{}});
+   const serverClosed=await step(async()=>{await this.server?.close();});
+   // Signal only through the owned ChildProcess handle. Never process.kill(pid):
+   // PID reuse must not redirect SIGTERM/SIGKILL to an unrelated process.
+   if(child&&pid&&child.pid===pid&&child.exitCode===null&&child.signalCode===null&&typeof child.kill==='function'){
+    try{child.kill('SIGTERM');}catch{}
+    await new Promise(resolve=>setTimeout(resolve,500));
+    if(child.pid===pid&&child.exitCode===null&&child.signalCode===null){try{child.kill('SIGKILL');}catch{}await new Promise(resolve=>setTimeout(resolve,500));}
+   }
+   // Verification uses the ChildProcess exit fields only — not a live PID probe,
+   // which can falsely observe a reused PID after exit.
+   let verified=startSettled&&serverClosed!==false;
+   if(!startSettled)verified=false;
+   else if(!this.server)verified=true;
+   else if(!child||(child.exitCode===null&&child.signalCode===null))verified=false;
+   await step(async()=>{if(!this.proxy)return;await new Promise(resolve=>{try{this.proxy.closeAllConnections();}catch{}try{this.proxy.close(()=>resolve());}catch{resolve();}});},5000);
+   this.links.clear();this.forms.clear();this.loginForms.clear();this.privateNavigations.clear();for(const value of this.redactions)value.fill(0);this.redactions.length=0;this.network.closeAccount?.();
+   this.event('research.browser_closed',{termination_verified:verified,owned_process_id:pid,start_settled:startSettled});if(!verified)throw error('termination_unverified');return {closed:true,termination_verified:true,owned_process_termination:'verified',owned_process_id:pid};
   })();return this.closePromise;
  }
 }
