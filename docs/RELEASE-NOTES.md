@@ -16,6 +16,10 @@ Compatibility: package 1.0.0-rc.1; SDK contract 1.0.0; Kernel contract 1.2.0. Le
 
 OpenCode is the default primary bounded worker; Airodrom host primitives own control and verification. Pi is removed. Claude Code is optional supported. Work is optional/live-unqualified, Cursor experimental with governed execution denied, and generic Cloud unsupported. No new live provider claim or physical deletion guarantee is made. See the [fresh validation](FRESH-VALIDATION.md), [runtime matrix](RUNTIME-SUPPORT-MATRIX.md) and [publication gate](../PUBLICATION-GATE.md).
 
+## Unified Autonomous Development V1 source changes (2026-10-12, PR pending)
+
+Canonical Mission contract and one owner approval bound to an immutable scope fingerprint; derived recovery phases and idempotent transactional corrective Missions; governed sandboxed headless Cursor worker (live UNQUALIFIED pending file credential; containment PROVEN); verifier test-integrity and proportional security scans; ChatGPT coordinator MCP tools and final evidence package; component states and worker tiers. OpenCode remains the primary live-verified worker. See [UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md](UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md).
+
 ## Product Experience V2 source changes
 
 Dimensional geometry-based terminal rendering, safe host pin requalification, an allowlisted live operations cockpit and native Airodrom menu are developed under [ADR 0009](adr/0009-product-observability-and-runtime-requalification.md). Integration and qualification evidence is recorded separately; these notes do not publish a release or claim unfinished gates passed.

@@ -1,5 +1,16 @@
 # Known limitations
 
+## Unified Autonomous Development V1 (2026-10-12)
+
+- Cursor live execution is **UNQUALIFIED**: the CLI login lives in the macOS Keychain, which the worker sandbox correctly denies. Owner step: `AGENT_CLI_CREDENTIAL_STORE=file agent login` (writes `~/.cursor/auth.json`) or an API-key file, then `npm run qualify:cursor`; `execution_qualified` stays `false` until reviewed. Cursor spend is unobservable (subscription); time/invocation ceilings are compensating controls.
+- Live local-model repair variance: with `qwen3-coder:30b` the corrective attempt succeeded on 1 of 2 live runs after repair context was added; failures stop safely under budget/signature rules and are reported, never retried blindly.
+- OpenCode sandbox allows loopback (its private server needs it; narrowing to the Ollama port broke 2.0.25 empirically); external network, Keychain, SSH and secrets are denied (PROVEN by canaries).
+- Hosted CI workflow remains `disabled_manually` and `main` is unprotected; required gates were run locally and are recorded in the PR.
+- Airodrom Slack delivery is unconfigured on the live install; Mission start/completion notifications are a recorded limitation (routes exist).
+- ChatGPT may hold a conversation-scoped 36-tool catalog; a new conversation is required after install to see the coordinator tools. Airodrom cannot wake an inactive conversation.
+- Legacy Missions without a contract keep prior ceilings and show `contract: absent (legacy)` in evidence.
+- Pre-existing unrelated test failures reproduce on `079eee9`: `mission-service` "waiting Decision … survive restart", `agent-dispatch` "restart after fallback selection", `mcp-protocol` `listChanged`.
+
 ## Continuous Autonomous Execution V1 (2026-10-12)
 
 - Source-only on `feat/continuous-autonomous-execution-v1`. Not live-installed; authorizing a goal in fixtures does not cut over the owner Mac service.
