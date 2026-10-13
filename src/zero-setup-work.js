@@ -268,21 +268,27 @@ class ZeroSetupWork {
       } catch { /* mission may not exist yet */ }
     }
     const presentationHint = live.presentation?.status || '';
+    const phase = live.phase || null;
     const repairing = !!(live.repair_of
       || outcome?.mission_state === 'needs_rework'
+      || (phase && /^REPAIR_/.test(phase))
       || /Repairing|repair completed|preparing automatic repair|Verification failed/i.test(presentationHint));
+    const { blockerMessage } = require('./recovery-phase');
+    const blockedLabel = () => {
+      if (live.blocker_message) return live.blocker_message;
+      if (live.repair_blocked_reason) return 'Automatic repair blocked (' + live.repair_blocked_reason + ')';
+      return blockerMessage('blocked');
+    };
     const statusLabel = ({
       clarify: 'Needs a short clarification',
       awaiting_approval: 'Waiting for your approval',
       approved: 'Working',
-      running: repairing ? (presentationHint || 'Repairing failed verification') : 'Working',
+      running: repairing ? (presentationHint || 'Repairing failed verification') : (presentationHint || 'Working'),
       verifying: repairing ? (presentationHint || 'Repair verification underway') : 'Verification underway',
       verified: 'Completed and verified',
       awaiting_acceptance: repairing ? (presentationHint || 'Repair completed. Verification passed') : 'Completed and verified',
-      blocked: live.repair_blocked_reason
-        ? ('Automatic repair blocked (' + live.repair_blocked_reason + ')')
-        : 'Blocked',
-      failed: 'Failed',
+      blocked: blockedLabel(),
+      failed: live.blocker_message || 'Stopped safely. No Acceptance was recorded.',
       rejected: 'Cancelled',
     })[state] || presentationHint || state;
     const presentation = { ...(live.presentation || {}), status: statusLabel };
@@ -291,6 +297,8 @@ class ZeroSetupWork {
       presentation.result = 'Updated ' + (presentation.files || []).join(', ');
       presentation.verification_label = 'Passed';
     }
+    const terminalStates = ['verified', 'awaiting_acceptance', 'blocked', 'failed', 'rejected', 'clarify'];
+    const phaseTerminal = phase ? !require('./recovery-phase').OBSERVING.has(phase) : terminalStates.includes(state);
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
       message: state === 'awaiting_approval'
@@ -307,6 +315,11 @@ class ZeroSetupWork {
         mission_id: live.mission_id,
         repair_of: live.repair_of || null,
         repair_blocked_reason: live.repair_blocked_reason || null,
+        blocker_message: live.blocker_message || null,
+        phase,
+        phase_terminal: state === 'awaiting_approval' ? false : phaseTerminal,
+        repair_attempt: live.repair_attempt || 0,
+        max_repairs: live.max_repairs || null,
         project_alias: live.project_alias,
         workspace_alias: live.workspace_alias,
       },
@@ -431,10 +444,11 @@ class ZeroSetupWork {
       const stage = plan.stages.find(s => s.mission_id === live.mission_id)
         || plan.stages.find(s => lineage[s.id]?.parent_mission_id === live.mission_id || lineage[s.id]?.repair_mission_id === live.mission_id)
         || plan.stages[0];
-      if (!stage) return { plan, autonomous, stage: null, lineage: null, blocked: null };
+      if (!stage) return { plan, autonomous, stage: null, lineage: null, blocked: null, phase: null };
       const stageLineage = lineage[stage.id] || null;
       const blocked = autonomous.repair_blocked?.[stage.id] || null;
-      return { plan, autonomous, stage, lineage: stageLineage, blocked };
+      const phase = autonomous.phases?.[stage.id] || null;
+      return { plan, autonomous, stage, lineage: stageLineage, blocked, phase };
     } catch {
       return null;
     }
@@ -444,6 +458,7 @@ class ZeroSetupWork {
     const live = this.read(request_id);
     if (!live || !live.mission_id) return live ? this.statusView(live) : null;
     try {
+      const { stagePhase, presentationFor, OBSERVING } = require('./recovery-phase');
       const observation = this.repairObservation(live);
       // Follow CAE repair rebind when the Goal Plan stage moved to a corrective Mission.
       if (observation?.stage?.mission_id && observation.stage.mission_id !== live.mission_id) {
@@ -454,55 +469,70 @@ class ZeroSetupWork {
         live.repair_of = observation.lineage.parent_mission_id;
       }
       const m = this.bridge.missions.require(live.mission_id);
+      // One derived phase decides observation vs terminal; never the raw Mission state alone.
+      const phase = observation?.phase || stagePhase({ mission: m, autonomous: observation?.autonomous || {}, stageId: observation?.stage?.id || 'work' });
+      if (phase.mission_id && phase.mission_id !== live.mission_id) {
+        live.mission_id = phase.mission_id;
+        live.repair_of = phase.parent_mission_id || live.repair_of || null;
+      }
+      live.phase = phase.phase;
+      live.repair_attempt = phase.repair_attempt || observation?.autonomous?.repair_counts?.[observation?.stage?.id] || 0;
+      live.max_repairs = phase.max_repairs || observation?.autonomous?.max_repairs || null;
       let state = live.state;
-      let presentationStatus = live.presentation?.status || null;
-      if (m.state === 'running' || m.state === 'dispatched' || m.state === 'dispatching') {
-        state = 'running';
-        if (live.repair_of || observation?.lineage?.repair_mission_id) {
-          presentationStatus = 'Repairing failed verification';
-        }
-      } else if (m.state === 'verifying') {
-        state = 'verifying';
-        if (live.repair_of || observation?.lineage?.repair_mission_id) {
-          presentationStatus = 'Repair verification underway';
-        }
-      } else if (m.state === 'awaiting_acceptance') {
-        state = 'awaiting_acceptance';
-        if (live.repair_of || observation?.lineage?.repair_mission_id) {
-          presentationStatus = 'Repair completed. Verification passed';
-        }
-      } else if (m.state === 'blocked') {
-        state = 'blocked';
-        live.repair_blocked_reason = observation?.blocked || live.repair_blocked_reason || m.reason || 'blocked';
-      } else if (m.state === 'needs_rework') {
-        // needs_rework is not a terminal Blocked outcome while CAE may still repair.
-        const blocked = observation?.blocked || null;
-        const repairMissionId = observation?.lineage?.repair_mission_id || null;
-        if (blocked && !repairMissionId) {
+      let presentationStatus = presentationFor(phase.phase, { files: live.presentation?.files || [] });
+      switch (phase.phase) {
+        case 'INITIAL_EXECUTION':
+        case 'VERIFICATION_FAILED':
+        case 'REPAIR_ELIGIBILITY_CHECK':
+        case 'REPAIR_PENDING':
+        case 'REPAIR_CREATING':
+        case 'REPAIR_DISPATCHED':
+        case 'REPAIR_RUNNING':
+          state = 'running';
+          if (phase.phase === 'REPAIR_PENDING' && phase.message) presentationStatus = phase.message;
+          break;
+        case 'INITIAL_VERIFICATION':
+        case 'REPAIR_VERIFYING':
+          state = 'verifying';
+          break;
+        case 'AWAITING_ACCEPTANCE':
+        case 'REPAIR_VERIFIED':
+          state = 'awaiting_acceptance';
+          break;
+        case 'MISSION_VERIFIED':
+          state = 'verified';
+          break;
+        case 'REPAIR_BLOCKED':
+        case 'QUARANTINED':
+        case 'WAITING_OWNER':
           state = 'blocked';
-          live.repair_blocked_reason = blocked;
-          presentationStatus = 'Automatic repair blocked (' + blocked + ')';
-        } else if (repairMissionId && repairMissionId !== m.id) {
-          state = 'running';
-          presentationStatus = 'Repairing failed verification';
-          live.mission_id = repairMissionId;
-          live.repair_of = observation.lineage.parent_mission_id || m.id;
-        } else {
-          state = 'running';
-          presentationStatus = repairMissionId
-            ? 'Repairing failed verification'
-            : 'Verification failed; preparing automatic repair';
-        }
-      } else if (m.state === 'failed' || m.state === 'cancelled') {
-        state = 'failed';
+          live.repair_blocked_reason = phase.reason || observation?.blocked || live.repair_blocked_reason || m.reason || 'blocked';
+          live.blocker_message = phase.message || null;
+          presentationStatus = phase.message || ('Automatic repair blocked (' + live.repair_blocked_reason + ')');
+          break;
+        case 'FAILED_TERMINAL':
+          state = 'blocked';
+          live.repair_blocked_reason = phase.reason || m.reason || 'blocked';
+          live.blocker_message = phase.message || null;
+          presentationStatus = phase.message || presentationStatus;
+          break;
+        case 'CANCELLED':
+          state = 'failed';
+          live.blocker_message = 'The task was cancelled. No Acceptance was recorded.';
+          break;
+        default:
+          state = OBSERVING.has(phase.phase) ? 'running' : live.state;
+      }
+      if (OBSERVING.has(phase.phase)) {
+        // A nonterminal phase must never carry a stale terminal reason forward.
+        live.repair_blocked_reason = null;
+        live.blocker_message = null;
       }
       if (presentationStatus) {
         live.presentation = { ...(live.presentation || {}), status: presentationStatus };
       }
-      if (state !== live.state || live.repair_of || live.repair_blocked_reason || presentationStatus) {
-        live.state = state;
-        this.write(request_id, live.principal, live, state);
-      }
+      live.state = state;
+      this.write(request_id, live.principal, live, state);
       return this.statusView(live);
     } catch {
       return this.statusView(live);

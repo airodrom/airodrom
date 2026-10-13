@@ -6,11 +6,12 @@ const { randomUUID } = require('node:crypto');
 const { transaction } = require('./control-transaction');
 const { object, identifier } = require('./control-plane-store');
 
-const WORKERS = new Set(['host', 'opencode', 'claude_code', 'codex']);
+const WORKERS = new Set(['host', 'opencode', 'claude_code', 'codex', 'cursor']);
 const LIFECYCLE = new Set([
   'created', 'validating', 'ready', 'running', 'waiting_dependency', 'waiting_approval',
   'recovering', 'verifying', 'completed', 'failed', 'cancelled', 'quarantined'
 ]);
+const { stagePhase } = require('./recovery-phase');
 
 function defaultAutonomous() {
   return {
@@ -25,6 +26,10 @@ function defaultAutonomous() {
     repair_counts: {},
     repair_lineage: {},
     repair_blocked: {},
+    repair_pending: {},
+    repair_reservations: {},
+    repair_signatures: {},
+    repair_history: [],
     worker_history: [],
     progress_at: null,
     last_action: null,
@@ -64,19 +69,48 @@ class AutonomousExecution {
     this.db.prepare('UPDATE cp_mission_programs SET goal_plan=? WHERE id=?').run(JSON.stringify(row.plan), id);
   }
 
-  deriveLifecycle(view, autonomous) {
+  deriveLifecycle(view, autonomous, phases = {}) {
     if (view.state === 'cancelled' || autonomous.paused && !autonomous.enabled) return 'cancelled';
     if (view.state === 'completed') return 'completed';
     if (autonomous.paused) return 'waiting_approval';
     if (!autonomous.enabled) return view.ready.length ? 'ready' : 'created';
     if (view.stages.some(s => s.reason === 'uncertain_execution')) return 'quarantined';
+    if (Object.values(phases).some(p => p.phase === 'QUARANTINED')) return 'quarantined';
     if (view.stages.some(s => s.state === 'waiting_approval')) return 'waiting_approval';
     if (view.stages.some(s => s.state === 'active')) return 'running';
     if (view.stages.some(s => s.reason === 'dependency_unverified')) return 'waiting_dependency';
-    if (view.stages.some(s => s.state === 'blocked' && s.reason === 'explicit_mission_recovery_required')) return 'recovering';
+    const recovering = view.stages.filter(s => s.state === 'blocked' && s.reason === 'explicit_mission_recovery_required');
+    if (recovering.length) {
+      // A failed parent is only "recovering" while repair is pending or possible. Permanent
+      // blocks are failed, not perpetually recovering.
+      if (recovering.some(s => !phases[s.id] || !['REPAIR_BLOCKED', 'FAILED_TERMINAL', 'WAITING_OWNER'].includes(phases[s.id].phase))) return 'recovering';
+      return 'failed';
+    }
     if (view.ready.length) return 'running';
     if (view.blocked.length) return 'failed';
     return 'ready';
+  }
+
+  /** Derived recovery phase per stage. Observational only; never grants authority. */
+  phases(view, autonomous) {
+    const out = {};
+    for (const stage of view.stages) {
+      const mission = stage.mission_id ? this.store.getMission(stage.mission_id) : null;
+      const lineage = autonomous.repair_lineage?.[stage.id] || null;
+      const repair = lineage?.repair_mission_id && lineage.repair_mission_id !== stage.mission_id ? this.store.getMission(lineage.repair_mission_id) : null;
+      const quarantined = mission ? !!(this.db.prepare("SELECT 1 FROM cp_leases WHERE mission_id=? AND state='quarantined'").get(mission.id)
+        || this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='unknown'").get(mission.id)) : false;
+      const phase = stagePhase({ mission, autonomous, stageId: stage.id, repair, quarantined });
+      out[stage.id] = {
+        ...phase,
+        stage_id: stage.id,
+        mission_id: repair?.id || mission?.id || null,
+        parent_mission_id: lineage?.parent_mission_id || (mission?.envelope?.repair_of) || null,
+        repair_attempt: autonomous.repair_counts?.[stage.id] || 0,
+        max_repairs: autonomous.max_repairs,
+      };
+    }
+    return out;
   }
 
   inspect(id, owner = 'operator') {
@@ -84,13 +118,15 @@ class AutonomousExecution {
     const row = this.planRow(id, owner);
     const autonomous = this.readAutonomous(row);
     const claims = this.db.prepare('SELECT * FROM cp_autonomous_claims WHERE plan_id=? ORDER BY created_at').all(id);
-    const lifecycle = this.deriveLifecycle(view, autonomous);
+    const phases = this.phases(view, autonomous);
+    const lifecycle = this.deriveLifecycle(view, autonomous, phases);
     return {
       ...view,
       execution_enabled: autonomous.enabled === true && autonomous.paused !== true,
       autonomous: {
         ...autonomous,
         lifecycle,
+        phases,
         claims: claims.map(c => ({ stage_id: c.stage_id, mission_id: c.mission_id, state: c.state, request_id: c.request_id })),
         next_eligible: view.ready.slice(0, autonomous.max_concurrent_missions),
         production_mutation: false,
@@ -268,6 +304,7 @@ class AutonomousExecution {
             this.db.prepare("UPDATE cp_autonomous_claims SET state='settled' WHERE plan_id=? AND mission_id=? AND state IN ('claimed','dispatched')").run(id, m.id);
           } else if (m.state === 'needs_rework') {
             // One in-scope corrective Mission when termination is verified and budgets allow.
+            // 'pending' keeps the claim so a later tick re-evaluates a transient block.
             const repair = this.repair || (this.repair = new (require('./autonomous-repair').AutonomousRepair)(this));
             const outcome = repair.handleFailure(id, view, autonomous, claim, m);
             if (outcome?.action === 'repaired') dispatched += 1;
