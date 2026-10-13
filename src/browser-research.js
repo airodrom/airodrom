@@ -28,10 +28,15 @@ function parse(message,{pendingResearch,researchURL}={}){
  const urls=request.match(/https?:\/\/[^\s<>"'`]+/gi)||[];
  if(urls.length!==1)return {route:'WORK',kind:'clarify',...(urls.length===0?{pending_research:'public'}:{}),message:'Which public website should I research? Give one URL to approve its domain scope.'};
  if(!require('./provider-policy').ordinaryWebsiteSyntax(urls[0].replace(/[.,;!]+$/,'')))return {route:'WORK',kind:'clarify',message:'Use one HTTPS website address without credentials or encoded/private path data.'};
- if(/\b(?:implement|deploy|publish|send|delete|purchase|subscribe|sign\s*up|create\s+(?:an?\s+)?account|(?:log|sign)\s+(?:in|into))\b/i.test(request))return {route:'WORK',kind:'clarify',message:'Public research and account or implementation actions need separate scopes. Start with “Research <public URL> and compare with Arecibo”.'};
+ if(/\b(?:implement|deploy|publish|send|delete|purchase|subscribe|sign\s*up|create\s+(?:an?\s+)?account|(?:log|sign)\s+(?:in|into))\b/i.test(request))return {route:'WORK',kind:'clarify',message:'Public research and account or implementation actions need separate scopes. Start with “explore website <public URL>” or “Research <public URL> and compare with Arecibo”.'};
  let u;try{u=new URL(urls[0].replace(/[.,;!]+$/,''));}catch{return {route:'WORK',kind:'clarify',message:'Give a valid public HTTPS website URL.'};}
  if(u.username||u.password||u.search||u.hash||u.protocol!=='https:')return {route:'WORK',kind:'clarify',message:'Give a public HTTPS URL without credentials, query parameters or a fragment.'};
- return {route:'WORK',kind:'research',objective:bare?'Research '+u.href+' and compare its public features with Arecibo.':message,entry_url:u.href,capability_classes:['web_read']};
+ // Hostnames like arecibo.ca are website addresses, not product-comparison intent.
+ const prose=request.replace(/https?:\/\/[^\s<>"'`]+/gi,' ');
+ const wantsCompare=/\barecibo\b/i.test(prose)&&(/\b(?:compare|comparison|versus|vs\.?|adopt|gap)\b/i.test(prose)||/\bfeatures\b/i.test(prose));
+ // Ordinary public website inspection uses the governed public-web consent flow; repository comparison stays explicit.
+ if(!wantsCompare)return {kind:'public_web_offer',route:'WORK',objective:bare?'Explore website '+u.href:message,mode:'on',entries:[u.href],authority:false};
+ return {route:'WORK',kind:'research',objective:message,entry_url:u.href,capability_classes:['web_read']};
 }
 function research(){return {state:'unavailable',message:MESSAGE,available:false,evidence:[],comparison:'unverified'};}
 module.exports={parse,research,MESSAGE};

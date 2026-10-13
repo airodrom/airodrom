@@ -471,7 +471,15 @@ class ControlServer {
       if(url.pathname==='/api/assistant/provider'){const saved=require('./conversation-provider').save(this.bridge.dataDir,body,'operator');for(const entry of this.conversationEngine.active.values())entry.controller.abort();this.bridge.controlStore.event('conversation.provider_preference_saved',null,{revision:saved.revision,provider:saved.provider,authority:false});return this.json(res,200,await require('./assistant-service').providerStatus(this));}
       if(url.pathname==='/api/assistant/conversation/session')return this.json(res,201,this.conversationEngine.session(body));
       if(url.pathname==='/api/assistant/conversation/cancel')return this.json(res,200,this.conversationEngine.cancel(body));
-      if(url.pathname==='/api/assistant/web/research'){const created=this.bridge.missions.web.createResearch(body);this.bridge.missions.dispatch(created.mission_id,{request_id:'public-web-dispatch:'+body.request_id});return this.json(res,202,{...created,browser_research_available:true});}
+      if(url.pathname==='/api/assistant/web/research'){
+        try{
+          const created=this.bridge.missions.web.createResearch(body);this.bridge.missions.dispatch(created.mission_id,{request_id:'public-web-dispatch:'+body.request_id});return this.json(res,202,{...created,browser_research_available:true});
+        }catch(error){
+          const message=String(error?.message||'');
+          if(/\bENOENT\b|no such file or directory|lstat|realpath|\/(?:Users|home|private|tmp|var)\b/i.test(message))return this.json(res,400,{error:'Public website research could not be started. Approve a public HTTPS URL for website-only research, or configure a verified product repository for comparison research. No website has been investigated.',browser_research_available:true,authority:false});
+          throw error;
+        }
+      }
       if(url.pathname==='/api/assistant/mission/web'){require('./control-plane-store').object(body,['mission_id','request_id','mode','entries','query','confirmed','duration_ms','permission_mode']);const {mission_id,...input}=body;return this.json(res,200,this.bridge.missions.web.configure(mission_id,input));}
       if(url.pathname==='/api/assistant/research/download'){
         require('./control-plane-store').object(body,['mission_id','url','request_id']);
