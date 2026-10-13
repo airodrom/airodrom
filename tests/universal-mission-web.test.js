@@ -99,6 +99,21 @@ test('worker receives bounded public excerpts while immutable full evidence stay
  const original=web.context;web.context=()=>[{evidence_id:randomUUID(),classification:'documented',title:'Public document',text:'Public documentation. '.repeat(900),url:'https://example.com/',links:[{id:randomUUID(),text:'Public source',url:'https://example.org/'}],source:{source_id:'public_document',source_url:'https://example.com/',fetched_at:Date.now()},untrusted:true,authority:false}];try{const context=f.bridge.opencodeAdapter.authorizedContext({id:pack.id});assert.ok(Buffer.byteLength(JSON.stringify(context))<=8000);assert.ok(context.web[0].text.length<=1400);assert.equal(context.web[0].authority,false);}finally{web.context=original;}
 });
 
+test('Memory probe without web run succeeds; executing Mission without web run fails closed',async t=>{
+ const f=await fixture(t),web=f.bridge.missions.web,m=native(f);synthetic(f);
+ const pack=f.bridge.controlContext.build(f.bridge.controlStore.requireMission(m.id));
+ f.bridge.controlStore.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,m.task_id);
+ // Draft Mission Memory probe: missing web run is omitted, never forged.
+ const probe=f.bridge.opencodeAdapter.authorizedContext({id:pack.id});
+ assert.equal(probe.authority,false);assert.equal(probe.web,undefined);
+ web.configure(m.id,{request_id:randomUUID(),mode:'on',entries:['https://example.com/'],confirmed:true});
+ f.bridge.controlStore.state(m.id,'dispatching');f.bridge.controlStore.state(m.id,'running');
+ const original=web.context;
+ web.context=()=>{const err=Error('active_canonical_web_run_required');err.code='active_canonical_web_run_required';throw err;};
+ try{assert.throws(()=>f.bridge.opencodeAdapter.authorizedContext({id:pack.id}),/active_canonical_web_run_required|web_context_run_required/);}
+ finally{web.context=original;}
+});
+
 test('browser storage budget is reserved before artifact write, including refused captures',async t=>{
  const f=await fixture(t),dir=path.join(f.root,'public-evidence'),{ResearchBrowser}=require('../src/research-browser');const browser=new ResearchBrowser({scope:{origins:['https://example.com']},evidenceDir:dir,signal:new AbortController().signal,onEvidenceBytes:()=>{throw Error('synthetic storage budget exhausted');}});const id=randomUUID();assert.throws(()=>browser.write(id+'.png',Buffer.alloc(10)),/storage budget/);assert.equal(fs.existsSync(path.join(dir,id+'.png')),false);await browser.close();
 });

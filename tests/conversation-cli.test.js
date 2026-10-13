@@ -92,6 +92,39 @@ test('conversation polling failure requests cancellation to clean up inference',
   assert.equal(f.calls.at(-1).route, '/api/assistant/conversation/cancel');
 });
 
+test('conversation poll transport timeout retries without cancelling inference', async t => {
+  let polls = 0;
+  const f = fixture(t, route => {
+    if (route.includes('?')) {
+      if (++polls === 1) { const err = new DOMException('The operation was aborted due to timeout', 'TimeoutError'); throw err; }
+      return { state: 'completed', summary: 'Recovered answer.' };
+    }
+    assert.fail('cancel must not run for transport timeout');
+  });
+  const result = await waitConversation('synthetic', { conversation_id: 'host-session', turn_id: 'turn' });
+  assert.equal(result.summary, 'Recovered answer.');
+  assert.equal(polls, 2);
+  assert.equal(f.calls.some(c => c.route === '/api/assistant/conversation/cancel'), false);
+});
+
+test('admission timeout reconnects to the active turn without a duplicate submit', async t => {
+  const { admitConversation } = require('../src/interactive-cli');
+  let submits = 0;
+  const f = fixture(t, (route, body) => {
+    if (route === '/api/assistant/input') {
+      submits++;
+      const err = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      throw err;
+    }
+    assert.match(route, /active=1/);
+    return { kind: 'chat', conversation_id: 'host-session', turn_id: 'turn-live', state: 'running', activity: 'Thinking…' };
+  });
+  const receipt = await admitConversation('synthetic', { message: 'Hi', request_id: '11111111-1111-4111-8111-111111111111', conversation_id: 'host-session', include_memory: true });
+  assert.equal(receipt.turn_id, 'turn-live');
+  assert.equal(submits, 1);
+  assert.equal(f.calls.filter(c => String(c.route).includes('active=1')).length, 1);
+});
+
 test('manual Mission controls use host routing and preserve the selected Mission', async t => {
   const f = fixture(t, (route, body) => {
     assert.equal(route, '/api/assistant/mission');

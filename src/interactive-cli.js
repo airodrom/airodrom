@@ -50,30 +50,61 @@ async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {
   await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() });
   throw Error('Bounded task timed out and cancellation was requested. Check /mission status; the CLI is still open.');
 }
-async function waitConversation(home, turn, { signal } = {}) {
+function isTransportTimeout(error) {
+  return error?.name === 'TimeoutError' || /aborted due to timeout|timed out|TimeoutError/i.test(String(error?.message || error || ''));
+}
+async function waitConversation(home, turn, { signal, onProgress, timeoutMs = 130000 } = {}) {
   const identity = { conversation_id: turn.conversation_id, turn_id: turn.turn_id };
   if (!identity.conversation_id || !identity.turn_id) throw Error('Conversation receipt is unavailable.');
   const cancel = () => local.request(home, '/api/assistant/conversation/cancel', identity);
-  const deadline = Date.now() + 130000;
-  const cancelled='Conversation cancelled. The CLI is still open.';
-  const timedOut='Conversation timed out while waiting for the local model. Check /status and retry; the CLI is still open.';
-  try {
-    while (Date.now() < deadline) {
+  const deadline = Date.now() + Math.max(1000, timeoutMs);
+  const cancelled = 'Conversation cancelled. The CLI is still open.';
+  const timedOut = 'Conversation timed out while waiting for the local model. Check /status and retry; the CLI is still open.';
+  let lastActivity = null;
+  while (Date.now() < deadline) {
+    if (signal?.aborted) { await cancel(); throw Error(cancelled); }
+    let result;
+    try {
+      result = await local.request(home, '/api/assistant/conversation?conversation_id=' + encodeURIComponent(identity.conversation_id) + '&turn_id=' + encodeURIComponent(identity.turn_id), undefined, { timeoutMs: 10000, signal });
+    } catch (error) {
       if (signal?.aborted) { await cancel(); throw Error(cancelled); }
-      const result = await local.request(home, '/api/assistant/conversation?conversation_id=' + encodeURIComponent(identity.conversation_id) + '&turn_id=' + encodeURIComponent(identity.turn_id));
-      if (signal?.aborted) { await cancel(); throw Error(cancelled); }
-      if (result.state === 'completed') return result;
-      if (['failed', 'cancelled'].includes(result.state)) throw Error(result.reason || 'Conversation stopped. The CLI is still open.');
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    await cancel();
-    throw Error(timedOut);
-  } catch (error) {
-    // A lost delivery must not leave an inference turn running in the background.
-    if (![cancelled, timedOut].includes(error.message)) {
+      // Transient poll transport loss must not cancel a healthy in-flight turn.
+      if (isTransportTimeout(error) || /ECONNRESET|fetch failed|network/i.test(String(error?.message || error || ''))) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        continue;
+      }
       await cancel().catch(() => {});
+      throw error;
     }
-    throw error;
+    if (signal?.aborted) { await cancel(); throw Error(cancelled); }
+    if (result.activity && result.activity !== lastActivity) { lastActivity = result.activity; onProgress?.(result); }
+    if (result.state === 'completed') return result;
+    if (['failed', 'cancelled'].includes(result.state)) throw Error(result.reason || 'Conversation stopped. The CLI is still open.');
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  await cancel();
+  throw Error(timedOut);
+}
+async function admitConversation(home, body, { signal, timeoutMs = 15000 } = {}) {
+  const request_id = body.request_id || randomUUID();
+  const payload = { ...body, request_id };
+  try {
+    // Admission uses its own budget. Operator cancel (signal) still aborts the HTTP
+    // attempt, but a pure admission timeout reconnects instead of killing inference.
+    return await local.request(home, '/api/assistant/input', payload, { timeoutMs, signal });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (!isTransportTimeout(error)) throw error;
+    if (payload.conversation_id) {
+      const active = await local.request(home, '/api/assistant/conversation?conversation_id=' + encodeURIComponent(payload.conversation_id) + '&active=1', undefined, { timeoutMs: 5000, signal }).catch(() => null);
+      if (active?.kind === 'chat' && active.state === 'running' && active.turn_id) return active;
+    }
+    // Durable request identity recovers a turn admitted after the socket closed.
+    try {
+      return await local.request(home, '/api/assistant/input', payload, { timeoutMs: 10000, signal });
+    } catch {
+      throw error;
+    }
   }
 }
 function secureIngressLine(line) {
@@ -479,21 +510,30 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           if(!output.isTTY)output.write(`\n${userName||'You'} › `+terminalText(value)+'\n');
           active = new AbortController();
           startAnswer();
-          // Admission can take longer than the default 10s client budget while the
-          // local model warms; keep the CLI open and surface an honest timeout.
-          const created = await local.request(home, '/api/assistant/input', { message:value,request_id:randomUUID(),include_memory:true,model,worker,conversation_id:await session(),workspace:fs.realpathSync(process.cwd()) }, {timeoutMs:35000,signal:active.signal});
-          await handleReceipt(created,false,value);active=null;
+          const created = await admitConversation(home, {
+            message: value,
+            request_id: randomUUID(),
+            include_memory: true,
+            model,
+            worker,
+            conversation_id: await session(),
+            workspace: fs.realpathSync(process.cwd())
+          }, { signal: active.signal, timeoutMs: 15000 });
+          await handleReceipt(created, false, value); active = null;
         }
       } catch (error) {
         stopAnswer();
         active = null;
-        const timeout = error.name === 'TimeoutError' || /timed out|TimeoutError/i.test(error.message || '');
+        const timeout = isTransportTimeout(error);
         const cancelled = error.name === 'AbortError' || /cancelled/i.test(error.message || '');
-        const message = timeout
-          ? 'The request timed out waiting for local admission. Check /status and retry; the CLI is still open.'
-          : cancelled
-            ? (error.message || 'Request cancelled. The CLI is still open.')
-            : require('./secret-observation').safeValue(error.message);
+        const inferenceTimeout = /timed out while waiting for the local model/i.test(error.message || '');
+        const message = inferenceTimeout
+          ? error.message
+          : timeout
+            ? 'Local admission timed out. If a reply is still generating, wait or retry; the CLI is still open.'
+            : cancelled
+              ? (error.message || 'Request cancelled. The CLI is still open.')
+              : require('./secret-observation').safeValue(error.message);
         output.write('Airo: ' + terminalText(message) + '\n');
       }
       readerLocked=false;
@@ -579,4 +619,4 @@ async function main(args = process.argv.slice(2)) {
   throw Error('Unknown command. Use airodrom --help.');
 }
 if (require.main === module) main().catch(error => { console.error('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message))); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
-module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, missionReceipt, interactive, main, showStatus, serviceCommand };
+module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, missionReceipt, interactive, main, showStatus, serviceCommand };

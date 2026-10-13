@@ -40,7 +40,9 @@ test('ordinary authorized source paths and JS syntax are not sensitive context',
     'headers:{Authorization:`Bearer ${token}`}',
     'Conversations cannot change credentials or deploy.',
     'session credentials remain operator-local',
-    'Sensitive Memory · app secret withheld'
+    'Sensitive Memory · app secret withheld',
+    'const value = d.key;',
+    'return options.key || defaults.key;'
   ];
   for (const sample of samples) assert.equal(sourceContextSensitive(sample), false, sample);
 });
@@ -75,7 +77,12 @@ test('credentials, absolute sensitive paths and protected locations remain fail-
     'read auth.json from disk',
     'open vault.sqlite for export',
     'load credentials.json before dispatch',
-    'read /secrets/prod from disk'
+    'read /secrets/prod from disk',
+    'private.key',
+    'open server.key for TLS',
+    'cat /etc/ssl/private.key',
+    'restore backup.sqlite',
+    'read notes.pem from disk'
   ];
   for (const sample of denied) assert.equal(sourceContextSensitive(sample), true, sample);
 });
