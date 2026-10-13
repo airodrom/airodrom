@@ -731,14 +731,14 @@
    ]){if(!present(value))continue;const fact=node('div');fact.append(node('small',label),node('span',value));facts.append(fact);}
    card.append(facts);
    const controls=node('div',null,'actions');
-   const approve=button('Approve this task',async()=>{if(!window.confirm('Approve this bounded local task?\n\n'+ (p.goal||'') +'\nProject: '+(item.project_name||'')+'\nFiles: '+((p.files||[]).join(', ')||'none')+'\n\nThis registers the WORK scope, authorizes one Goal Plan, and allows local OpenCode to run. Acceptance remains a separate owner decision.'))return;try{await api('/api/assistant/zero-setup/approve',{request_id:item.request_id,confirmed:true});await refresh();}catch(e){$('notice').textContent=e.message;}},true);
+   const approve=button('Approve this task',async()=>{if(!window.confirm('Approve this bounded local task?\n\n'+ (p.goal||'') +'\nProject: '+(item.project_name||'')+'\nFiles: '+((p.files||[]).join(', ')||'none')+'\n\nThis registers the WORK scope and allows local OpenCode to run.\nCompletion: '+(p.completion_policy||'Owner Acceptance required')+''))return;try{await api('/api/assistant/zero-setup/approve',{request_id:item.request_id,confirmed:true});await refresh();}catch(e){$('notice').textContent=e.message;}},true);
    approve.dataset.focusKey='zero-setup:'+item.request_id+':approve';
    const cancel=button('Cancel',async()=>{if(!window.confirm('Cancel this prepared task? Nothing has been written yet.'))return;try{await api('/api/assistant/zero-setup/reject',{request_id:item.request_id,confirmed:true});await refresh();}catch(e){$('notice').textContent=e.message;}});
    cancel.dataset.focusKey='zero-setup:'+item.request_id+':cancel';
    const advanced=node('details');advanced.append(node('summary','View technical details'),node('pre',JSON.stringify({request_id:item.request_id,template_ready:item.template_ready},null,2)));
    controls.append(approve,cancel);card.append(controls,advanced);root.append(card);
   }
-  root.append(node('h2','Continuous Autonomous Execution'),node('p','After approval, Airodrom schedules, monitors, repairs and verifies within bounds. You are asked only for genuine decisions and final Acceptance.','muted'));
+  root.append(node('h2','Continuous Autonomous Execution'),node('p','After approval, Airodrom schedules, monitors, repairs and verifies within bounds. Verified preauthorized exact-file tasks settle automatically; general tasks still require owner Acceptance.','muted'));
   const items=snapshot.autonomous_goals?.items||snapshot.goal_plans?.items||[];
   for(const g of items){
    const life=g.autonomous?.lifecycle||g.state;
