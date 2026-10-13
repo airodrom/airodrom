@@ -63,7 +63,8 @@ test('MCP catalog includes ask_airodrom and get_ask_status', () => {
   assert.ok(names.includes('ask_airodrom'));
   assert.ok(names.includes('get_ask_status'));
   assert.ok(names.includes('list_authorized_scopes'));
-  assert.equal(names.length, 36);
+  for (const n of ['prepare_mission', 'inspect_mission_proposal', 'get_mission_status', 'get_mission_events', 'get_mission_evidence', 'request_mission_correction', 'cancel_mission']) assert.ok(names.includes(n), n);
+  assert.equal(names.length, 43);
 });
 
 test('approval boundary rejects unconfirmed approve and MCP cannot register templates', async t => {

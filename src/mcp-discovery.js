@@ -19,11 +19,12 @@ function diagnose({ source = TOOLS, installed = null, advertised = null, client 
   if (a.digest !== b.digest || a.schema_digest && b.schema_digest && a.schema_digest !== b.schema_digest) differences.push({ from: left, to: right, missing: a.names.filter(n => !b.names.includes(n)), extra: b.names.filter(n => !a.names.includes(n)), schema_changed: a.names.length === b.names.length && a.names.every(n => b.names.includes(n)) });
  }
  const sha = x => typeof x === 'string' && /^[a-f0-9]{40}$/.test(x) ? x : null;
- return { schema_version: 1, server_version: require('../package.json').version, observed, source_sha: sha(sourceSha), installed_sha: sha(installedSha),
+ const coordinator=['prepare_mission','inspect_mission_proposal','get_mission_status','get_mission_events','get_mission_evidence','request_mission_correction','cancel_mission'];
+ return { schema_version: 2, catalog_version: 'unified-autonomous-development-v1', coordinator_tools: coordinator, coordinator_tools_present: coordinator.every(n => PUBLIC.has(n)), server_version: require('../package.json').version, observed, source_sha: sha(sourceSha), installed_sha: sha(installedSha),
   version_mismatch: sha(sourceSha) && sha(installedSha) ? sourceSha !== installedSha : null,
   differences, health: differences.length ? 'observed_mismatch' : observed.installed && observed.advertised && observed.client ? 'observed_match' : 'incomplete_observation',
   list_changed: true, catalog_lifetime: 'process_snapshot_with_list_changed_capability',
-  limitations: ['Client catalog is unknown unless separately supplied by the client.', 'A mismatch alone cannot distinguish filtering from a cached client snapshot.', 'ChatGPT may keep a conversation-scoped tool catalog; a new conversation is required when ask_airodrom is missing after install refresh.', 'Restart or reconnect must be authorized separately; this diagnostic performs neither.'], authority: false };
+  limitations: ['Client catalog is unknown unless separately supplied by the client.', 'A mismatch alone cannot distinguish filtering from a cached client snapshot.', 'ChatGPT may keep a conversation-scoped tool catalog; a new conversation is required when ask_airodrom or prepare_mission is missing after install refresh.', 'Airodrom cannot inject a message into an inactive ChatGPT conversation; durable evidence (get_mission_evidence) is retrieved when the conversation resumes and completion alerts use supported notifications only.', 'Restart or reconnect must be authorized separately; this diagnostic performs neither.'], authority: false };
 }
 async function advertisedCatalog() {
  const { McpStdio } = require('./mcp-stdio');
