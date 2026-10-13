@@ -15,7 +15,7 @@ test('MCP packet cannot authorize template auto Acceptance or alter the approved
   const f = await setup(t), b = f.bridge;
   qualifyCanonical(b);
   b.workTemplates.register(f.input, 'operator');
-  const auto = { file: 'fixture.txt', before: 'alpha\\n', after: 'beta\\n' };
+  const auto = { file: 'fixture.txt', before: 'alpha\n', after: 'beta\n' };
   await assert.rejects(() => handoff.submit(b, packet(), 'mcp:fixture-auto', auto), /Preauthorized exact-file Acceptance scope required/);
   await assert.rejects(() => handoff.submit(b, packet(), 'operator', { ...auto, file: 'other.txt' }), /Preauthorized exact-file Acceptance scope required/);
   const manual = await handoff.submit(b, packet(), 'operator');
@@ -29,9 +29,9 @@ test('template auto Acceptance refuses a changed preimage before Mission creatio
   const f = await setup(t), b = f.bridge;
   qualifyCanonical(b);
   b.workTemplates.register(f.input, 'operator');
-  fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'gamma\\n');
+  fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'gamma\n');
   await assert.rejects(() => handoff.submit(b, packet(), 'operator', {
-    file: 'fixture.txt', before: 'alpha\\n', after: 'beta\\n'
+    file: 'fixture.txt', before: 'alpha\n', after: 'beta\n'
   }), /baseline changed/);
 });
 
@@ -41,7 +41,7 @@ test('trusted expected-file approval is part of idempotent handoff identity', as
   qualifyCanonical(b);
   b.workTemplates.register(f.input, 'operator');
   const request = packet();
-  const expected = { file: 'fixture.txt', before: 'alpha\\n', after: 'beta\\n' };
+  const expected = { file: 'fixture.txt', before: 'alpha\n', after: 'beta\n' };
   const first = await handoff.submit(b, request, 'operator', expected);
   assert.ok(first.mission_id);
   const mission = b.missions.require(first.mission_id);
@@ -52,6 +52,6 @@ test('trusted expected-file approval is part of idempotent handoff identity', as
   assert.equal(replay.mission_id, first.mission_id);
   assert.equal(replay.duplicate, true);
   await assert.rejects(() => handoff.submit(b, request, 'operator', {
-    ...expected, after: 'gamma\\n'
+    ...expected, after: 'gamma\n'
   }), /replay|conflict|request|changed/i);
 });
