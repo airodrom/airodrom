@@ -87,7 +87,13 @@ async function newMission(server,input){
   if(!server.bridge.missions.research)return {...draft(server,request,require('./browser-research').MESSAGE),browser_research_available:false,evidence:[],comparison:'unverified'};
   let created;
   try{created=server.bridge.missions.createResearch({request_id:input.request_id,objective:input.objective,entry_url:research.entry_url},'operator');}
-  catch{return {...draft(server,request,'Research needs a valid approved public HTTPS domain and the current host-registered Arecibo repository. Review the scope before execution; no website has been investigated.'),browser_research_available:false,evidence:[],comparison:'unverified'};}
+  catch(error){
+   const message=String(error?.message||'');
+   const safe=/Repository comparison needs|Public website research could not|public HTTPS|Website-only research/i.test(message)&&!/(?:\/(?:Users|home|private|tmp|var)|ENOENT|lstat)/i.test(message)
+    ?message
+    :'Public website research could not be started. Approve a public HTTPS URL for website-only research, or configure a verified product repository for comparison research. No website has been investigated.';
+   return {...draft(server,request,safe),browser_research_available:false,evidence:[],comparison:'unverified'};
+  }
   const missionId=created.mission_id||created.id;
   if(created.state==='ready')server.bridge.missions.dispatch(missionId,{request_id:'assistant-research-dispatch:'+input.request_id},'operator');
   return {kind:'mission',route:input.explicit?'EXPLICIT MISSION':'WORK',mission_id:missionId,state:server.bridge.missions.require(missionId,'operator').state,browser_research_available:true,message:'Research Mission created. Beginning public website investigation within the approved domain. Account-only features require separate owner authorization.',authority:false};

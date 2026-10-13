@@ -20,9 +20,11 @@ async function guide({offer,mission_id,input,output,home,signal,request=local.re
 }
 function parse(message){
  if(typeof message!=='string')return null;const request=message.normalize('NFKC').trim().replace(/^airo(?:drom)?[,:]?\s+/i,'').replace(/^(?:(?:please|can you|could you|help me)\s+)+/i,'');
+ // Conversational approval text never authorizes public web access; only the Terminal confirm path does.
+ if(/^(?:i(?:['’]ve| have)?\s+approved|approved(?:\s+it)?|yes[,.]?\s*i\s+approve)\b/i.test(request))return {kind:'clarify',route:'WORK',message:'Public web authorization requires the Terminal permission prompt (y/n). Saying “I approved” in chat does not grant browsing.',authority:false};
  const match=/^(?:search (?:the )?(?:web|internet)(?: for)?|web search(?: for)?|research (?:public sources|competitors)(?: for)?)\s+(.+)$/i.exec(request);
  // Require https:// or an explicit website keyword so bare "visit foo" does not open public research.
- const explore=/^(?:explore|browse|visit|inspect)\s+(?:(?:these|the)\s+)?(?:public\s+)?(?:websites?|sites?|urls?|pages?)?\s*:?\s*(.+)$/i.exec(request);
+ const explore=/^(?:explore|browse|visit|inspect|review|check|look at|take a look at|open)\s+(?:(?:these|the)\s+)?(?:public\s+)?(?:websites?|sites?|urls?|pages?)?\s*:?\s*(.+)$/i.exec(request);
  if(!match&&!explore)return null;if(/\b(?:my account|authenticated|log in|sign in|password|credentials|mfa|bypass|ignore|override|deploy|publish|send|delete|purchase|signup|sign-up)\b/i.test(request))return null;
  if(match){const query=match[1];if(require('./research-baseline').unsafeEvidenceText(query))return null;return {kind:'public_web_offer',route:'WORK',objective:message,mode:'all',entries:[],query,authority:false};}
  const tokens=explore[1].split(/\s*(?:,| and )\s*/).filter(Boolean);

@@ -2,9 +2,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {randomUUID}=require('node:crypto');
 const intent=require('../src/assistant-intent'),{secretLike}=require('../src/provider-policy'),{redactText}=require('../src/secret-observation');
-const EXACT=['https://app.monarch.com','Research https://app.monarch.com and compare it with Arecibo.','Andrew: Research https://app.monarch.com and compare it with Arecibo.'];
 test('exact Monarch inputs route to governed research; URL formatting is not credential evidence',()=>{
- for(const message of EXACT){const p=intent.parse(message);assert.equal(p.kind,'research');assert.equal(p.entry_url,'https://app.monarch.com/');assert.deepEqual(p.capability_classes,['web_read']);assert.equal(secretLike(message),false);}
+ assert.equal(intent.parse('https://app.monarch.com').kind,'public_web_offer');
+ for(const message of ['Research https://app.monarch.com and compare it with Arecibo.','Andrew: Research https://app.monarch.com and compare it with Arecibo.']){const p=intent.parse(message);assert.equal(p.kind,'research');assert.equal(p.entry_url,'https://app.monarch.com/');assert.deepEqual(p.capability_classes,['web_read']);assert.equal(secretLike(message),false);}
  for(const v of ['https://app.monarch.com/','https://www.example.com/features','Research https://www.example.com/product/features and compare with Arecibo'])assert.equal(secretLike(v),false);
  assert.equal(redactText('https://www.example.com/features'),'https://www.example.com/[redacted-path]');
  assert.match(redactText('Use /vault for credentials and enter them only in its hidden prompt.'),/hidden prompt/);
