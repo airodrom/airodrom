@@ -453,7 +453,7 @@ class ControlServer {
             return this.json(res,200,require('./mission-visibility').previewOrganize(this.bridge,{older_than_ms:body.older_than_ms||0,limit:body.limit}));
           }
           if(action==='organize-missions'){
-            require('./control-plane-store').object(body,['confirmed','request_id','older_than_ms','limit','reason']);
+            require('./control-plane-store').object(body,['confirmed','request_id','older_than_ms','limit','reason','preview_id','digest']);
             return this.json(res,200,require('./mission-visibility').organizeHistory(this.bridge,body));
           }
           if (!['dispatch-mission','cancel-mission','accept-mission'].includes(action)) return this.json(res, 404, { error: 'Product action unavailable' });
