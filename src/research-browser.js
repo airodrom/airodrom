@@ -148,6 +148,15 @@ class ResearchBrowser{
   const current=this.observeURL(this.page.url(),safe);if(current!==safe){this.observeURL(current,safe);}
   const inspection=await this.inspect();if(inspection.state==='blocked')return inspection;
   if(this.privateMode&&!this.authenticated)return inspection;
+  // HTTP commit is not observation. Require projected title or body text before
+  // claiming an observed public document; empty shells must not fabricate content.
+  if(!this.privateMode){
+   const text=clean(inspection.text||''),title=clean(inspection.title||'');
+   if(!text&&!title){
+    this.event('research.network_denied',this.denialMeta(safe,{reason:'page_observation_unavailable',method:'GET',resource:'document',main_document:true,stage:'commit',document_commit_observed:true}));
+    throw error('page_observation_unavailable');
+   }
+  }
   this.event('research.navigated',{origin:new URL(current).origin});return {state:'navigated',url:this.privateMode?this.accountAuthorization.origin+'/':current,private_context:this.privateMode,classification:'observed',untrusted:true,authority:false};
  }
  async project(inspector){

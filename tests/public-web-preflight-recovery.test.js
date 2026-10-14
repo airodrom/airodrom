@@ -159,6 +159,37 @@ test('observeURL keeps approved path when client adds hash or non-credential que
  assert.throws(()=>browser.observeURL('https://example.com/sign-in','https://example.com/'),/origin_or_sensitive_path_denied|navigation_unavailable/);
 });
 
+test('commit without projected title or text is not claimed as observed',async t=>{
+ const dir=privateDir(t),ORIGIN='https://example.com';
+ let current='about:blank';
+ const page={
+  url:()=>current,mainFrame:()=>({}),waitForTimeout:async()=>{},waitForLoadState:async()=>{},close:async()=>{},
+  goto:async url=>{current=url;},
+  on(){},evaluate:async()=>{},addStyleTag:async()=>({evaluate:async()=>{}}),screenshot:async()=>Buffer.from('png'),setViewportSize:async()=>{}
+ };
+ const context={
+  setDefaultTimeout(){},setDefaultNavigationTimeout(){},addInitScript:async()=>{},routeWebSocket:async()=>{},
+  route:async(_p,handler)=>{await handler({request:()=>({url:()=>ORIGIN+'/',method:()=>'GET',postData:()=>null,isNavigationRequest:()=>true,resourceType:()=>'document',frame:()=>({parentFrame:()=>null}),redirectedFrom:()=>null}),fulfill:async()=>{},abort:async()=>{}});},
+  newPage:async()=>page,close:async()=>{},newCDPSession:async()=>({
+   send:async method=>method==='Page.getFrameTree'?{frameTree:{frame:{id:'f'}}}:method==='Page.createIsolatedWorld'?{executionContextId:1}:{result:{value:{auth:false,text:'',title:'',links:[],forms:[],url:current}}},
+   detach:async()=>{}
+  }),
+  on(){}
+ };
+ const child={pid:4244,exitCode:null,signalCode:null};
+ const playwright={chromium:{
+  launchServer:async()=>({wsEndpoint:()=>'ws://127.0.0.1/x',process:()=>child,close:async()=>{child.exitCode=0;}}),
+  connect:async()=>({newContext:async()=>context,close:async()=>{}})
+ }};
+ const network={fetch:async({url})=>({url,status:200,contentType:'text/html',body:Buffer.from('<html></html>')}),validate:u=>u,accountURL:u=>u,origins:new Set([ORIGIN])};
+ const events=[];
+ const browser=new ResearchBrowser({scope:{origins:[ORIGIN],maxActions:10},evidenceDir:dir,network,playwright,onEvent:e=>events.push(e)});
+ t.after(()=>browser.close().catch(()=>{}));
+ await assert.rejects(browser.execute({type:'navigate',url:ORIGIN+'/'}),/page_observation_unavailable/);
+ assert.ok(events.some(e=>e.type==='research.network_denied'&&e.reason==='page_observation_unavailable'&&e.document_commit_observed===true&&e.main_document===true));
+ assert.equal(events.some(e=>e.type==='research.navigated'),false);
+});
+
 test('MissionWeb records main_document denial diagnostics without collapsing into navigation_unavailable alone',async t=>{
  const f=await require('./fixtures/mission-fixture.cjs').fixture(t);
  const events=[];
