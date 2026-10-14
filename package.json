@@ -118,6 +118,7 @@
     "config/safe-autonomy-level1.json",
     "config/safe-autonomy-manifest.example.json",
     "config/trusted-routine-actions-v1.json",
+    "config/trusted-autonomy-v1.json",
     "config/verification-runtime-v1.json",
     "config/wait-presentation-v1.json",
     "config/whatsapp-conversations-v1.json",

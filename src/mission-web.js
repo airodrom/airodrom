@@ -327,9 +327,17 @@ class MissionWeb{
  runFor(m,task){const dispatch=this.db.prepare("SELECT run_id FROM cp_dispatches WHERE mission_id=? AND task_id=? AND state='running'").get(m.id,task.id),run=dispatch?.run_id?this.store.run(dispatch.run_id):null;if(!run||run.task_id!==task.id||run.mission_id!==m.id||run.state!=='running')throw error('active_canonical_web_run_required');return run;}
  context(task){const m=this.store.requireMission(task.controlPlaneMissionId),run=this.runFor(m,task);if(!run||run.task_id!==task.id)throw error('web_context_run_required');this.verify(m,run);return this.rows(m,run.id).map(r=>this.project(this.read(r))).slice(0,8);}
  async preflight(m,task){
-  const requested=policy.proposal(m.envelope.objective);let g;try{g=this.grant(m);}catch(e){if(requested.needed)throw e;return;}
+  const requested=policy.proposal(m.envelope.objective);let g;try{g=this.grant(m);}catch(e){
+   if(requested.needed){
+    const standing=this.service.riskAcceptance?.authorizeStandingGrant(m.id,{entries:requested.entries,mode:requested.mode==='on'?'on':undefined});
+    if(!standing?.granted)throw e;
+    g=this.grant(m);
+   }else return;
+  }
   task.activeRunId=this.db.prepare("SELECT id FROM cp_runs WHERE task_id=? AND mission_id=? AND state='running' ORDER BY created_at DESC LIMIT 1").get(task.id,m.id)?.id;if(!task.activeRunId)throw error('active_canonical_web_run_required');
-  const actions=g.policy.query?[{type:'search'}]:[];actions.push(...g.policy.entries.slice(0,3).map(url=>({type:/\.pdf$/i.test(new URL(url).pathname)?'document':'explore',url})));
+  // Operational one-page bound for standing exact-origin grants; host ceiling remains max_pages=8.
+  const entryLimit=g.policy.provenance==='authenticated_operator'&&this.service.riskAcceptance?.preference()?.enabled?1:3;
+  const actions=g.policy.query?[{type:'search'}]:[];actions.push(...g.policy.entries.slice(0,entryLimit).map(url=>({type:/\.pdf$/i.test(new URL(url).pathname)?'document':'explore',url})));
   for(const action of actions){if(action.type==='search'&&!this.source())throw error('approved_search_provider_unavailable');await this.call(m,task,action);}
  }
  async call(m,task,action){
@@ -347,10 +355,20 @@ class MissionWeb{
  }
  createResearch(input,owner='operator'){
   if(owner!=='operator')throw error('operator_web_consent_required');object(input,['objective','mode','entries','query','confirmed','request_id','duration_ms','permission_mode']);
-  const p=policy.normalize(inputPolicy(input));
-  return this.store.request(owner,'web-research:'+input.request_id,{op:'public_web_research',...input},()=>{
-   const created=this.service.research.create({request_id:input.request_id,objective:input.objective,entry_url:p.entries[0]||'https://html.duckduckgo.com/html/',public_web:inputPolicy(input)});
-   this.configure(created.mission_id,{...inputPolicy(input),request_id:randomUUID()});return created;
+  // Standing Trusted Autonomy may supply confirmed for exact approved origins only.
+  let body=input;
+  if(input.confirmed!==true&&this.service.riskAcceptance?.preference()?.enabled){
+   const origins=(input.entries||[]).map(v=>{try{return require('./research-network').safeOrigin(new URL(v).origin);}catch{return null;}}).filter(Boolean);
+   if(input.mode==='on'&&origins.length&&this.service.riskAcceptance.originsApproved(origins)){
+    body={...input,confirmed:true,permission_mode:input.permission_mode||'strict'};
+   }
+  }
+  const p=policy.normalize(inputPolicy(body));
+  return this.store.request(owner,'web-research:'+body.request_id,{op:'public_web_research',...body},()=>{
+   const created=this.service.research.create({request_id:body.request_id,objective:body.objective,entry_url:p.entries[0]||'https://html.duckduckgo.com/html/',public_web:inputPolicy(body)});
+   this.configure(created.mission_id,{...inputPolicy(body),request_id:randomUUID()});
+   this.store.event('trusted_autonomy.public_research.authorized',created.mission_id,{origins:p.origins,automated:body.confirmed===true&&input.confirmed!==true,owner_policy:'trusted_autonomy'});
+   return created;
   });
  }
  async launchResearch(dispatch,m){

@@ -284,7 +284,7 @@ function missionView(bridge, mission) {
  const acceptedBinding=verification?db.prepare("SELECT 1 FROM cp_acceptances WHERE mission_id=? AND verification_id=? AND decision='accept'").get(mission.id,verification.id):null;
  const verificationCurrent=!!verification&&verification.run_id===worker?.id&&(verification.revision===mission.revision||mission.state==='completed'&&!!acceptedBinding);
  const checks=verification?JSON.parse(verification.evidence).slice(0,100).map((c,i)=>({label:checkLabel(c.id,i),status:enumValue(c.status,['passed','failed','operator_review','unavailable']),evidence:'Host-measured outcome; raw evidence withheld'})):[];
- const acceptance=verification?db.prepare('SELECT decision,created_at FROM cp_acceptances WHERE mission_id=? AND verification_id=? ORDER BY created_at DESC LIMIT 1').get(mission.id,verification.id):null;
+  const acceptance=verification?db.prepare('SELECT decision,created_at,rationale FROM cp_acceptances WHERE mission_id=? AND verification_id=? ORDER BY created_at DESC LIMIT 1').get(mission.id,verification.id):null;
  const settlement=db.prepare('SELECT state,updated_at FROM cp_mission_settlements WHERE mission_id=?').get(mission.id);
  const context=db.prepare('SELECT id,refs,created_at FROM cp_context_packs WHERE mission_id=? ORDER BY created_at DESC LIMIT 1').get(mission.id);
  let selected=null,contextCurrent=false;
@@ -305,7 +305,9 @@ function missionView(bridge, mission) {
   memory:{selected_count:selected,delivery:delivered?'delivered this turn':contextCurrent?'selected; delivery not observed':'unavailable or invalidated',used_this_turn:'Model use is not observable',provenance:contextCurrent?'Current authorized canonical context':'Unavailable'},
   verification:{current:verificationCurrent,id:id(verification?.id),status:enumValue(verification?.result,['passed','failed','operator_review','unavailable'],'not_observed'),checks,run_id:id(verification?.run_id)},
   acceptance:(()=>{
-    const auto=!!(acceptance?.decision==='accept'&&(mission.envelope.risk_auto_acceptance?.authorized||mission.envelope.fixture_auto_acceptance?.authorized||mission.envelope.automatic_acceptance));
+    const acceptancePayload=(()=>{try{return JSON.parse(acceptance?.rationale||'');}catch{return null;}})();
+    const delegatedResearch=!!(acceptancePayload&&(/Trusted Autonomy/.test(acceptancePayload.rationale||'')||/human_acceptance=false/.test(acceptancePayload.evidence||'')));
+    const auto=!!(acceptance?.decision==='accept'&&(mission.envelope.risk_auto_acceptance?.authorized||mission.envelope.fixture_auto_acceptance?.authorized||mission.envelope.automatic_acceptance||delegatedResearch));
     const reviewReason=state==='awaiting_acceptance'?(bridge.missions.riskAcceptance?.reviewReason(mission.id)||null):null;
     return{
       status:enumValue(acceptance?.decision,['accept','rework'], state==='draft'?'not_applicable':'pending'),

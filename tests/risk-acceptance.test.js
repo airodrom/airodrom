@@ -45,12 +45,14 @@ test('eligible low-risk OpenCode WORK auto-accepts, settles, and is idempotent a
 test('pending approval and high-risk shapes stay awaiting with durable review_reason', async t => {
   const r = runtime(t);
   const f = await fixture(t, { opencode: r.options });
+  const risk = f.bridge.missions.riskAcceptance;
   assert.throws(() => riskCreate(f, { criteria: [{ id: 'review', type: 'operator_review', description: 'Human review' }] }), /operator_review/);
   assert.throws(() => riskCreate(f, {
     preferred_agent: 'claude_code',
     dispatch_policy: { privacy: 'cloud_allowed', providers: ['anthropic_subscription'], billing_classes: ['subscription'], task_category: 'focused_coding' }
   }), /OpenCode only|Risk auto acceptance/);
-  // Ordinary Mission without opt-in remains awaiting_acceptance after verification.
+  // Explicit OFF: ordinary Mission without opt-in remains awaiting_acceptance after verification.
+  risk.setPreference({ enabled: false, confirmed: true }, 'operator');
   const ordinary = f.create({ preferred_agent: 'opencode', fallback_agents: [], dispatch_policy: { ...LOCAL_POLICY } });
   assert.equal(ordinary.envelope.risk_auto_acceptance, undefined);
   f.bridge.missions.dispatch(ordinary.id, { request_id: randomUUID() });
@@ -58,6 +60,7 @@ test('pending approval and high-risk shapes stay awaiting with durable review_re
   assert.equal(waiting.acceptance.length, 0);
   assert.equal(f.bridge.missions.riskAcceptance.attempt(ordinary.id).reason, 'not_preauthorized_risk');
   reset(f);
+  risk.setPreference({ enabled: true, confirmed: true }, 'operator');
 
   const m = riskCreate(f, { objective: 'Risk-policy Mission: change fixture.txt from alpha to beta. Make its test pass.' });
   const attempt = f.bridge.missions.riskAcceptance.attempt.bind(f.bridge.missions.riskAcceptance);
@@ -104,15 +107,18 @@ test('MCP owner cannot authorize risk auto acceptance', async t => {
   assert.throws(() => f.bridge.missions.riskAcceptance.setPreference({ enabled: true, confirmed: true }, 'mcp'), /operator/);
 });
 
-test('operator preference enables new WORK only; historical awaits require authorizeExisting', async t => {
+test('Trusted Autonomy defaults ON; preference enables new WORK only; historical awaits require authorizeExisting', async t => {
   const r = runtime(t);
   const f = await fixture(t, { opencode: r.options });
   const risk = f.bridge.missions.riskAcceptance;
-  assert.equal(risk.preference().enabled, false);
-  assert.throws(() => risk.setPreference({ enabled: true, confirmed: false }, 'operator'), /confirmation/);
-  assert.equal(risk.setPreference({ enabled: true, confirmed: true }, 'operator').enabled, true);
+  assert.equal(risk.preference().enabled, true);
+  assert.equal(risk.preference().trusted_autonomy.enabled, true);
+  assert.equal(risk.preference().trusted_autonomy.persistence, 'permanent');
+  assert.equal(risk.preference().trusted_autonomy.verified_mission_completion, 'automatic');
+  assert.throws(() => risk.setPreference({ enabled: false, confirmed: false }, 'operator'), /confirmation/);
   const overview = await require('../src/product-observability').overview(f.bridge, { includeMissions: false });
   assert.equal(overview.acceptance_config.preference.enabled, true);
+  assert.equal(overview.acceptance_config.trusted_autonomy.enabled, true);
   assert.equal(overview.acceptance_config.waits.approval_expiry.configurable, false);
 
   const viaPref = f.create({
@@ -125,9 +131,14 @@ test('operator preference enables new WORK only; historical awaits require autho
   assert.equal(viaPref.envelope.risk_auto_acceptance.source, 'operator_preference');
   f.bridge.missions.dispatch(viaPref.id, { request_id: randomUUID() });
   await f.settle(viaPref.id, 'completed');
+  const completedEvents = f.bridge.ledger.list({ missionId: viaPref.id, limit: 100, order: 'desc' }).events
+    .some(e => e.event_type === 'risk.auto_acceptance.completed' && e.metadata?.human_acceptance === false);
+  assert.equal(completedEvents, true);
   reset(f);
 
   risk.setPreference({ enabled: false, confirmed: true }, 'operator');
+  assert.equal(risk.preference().owner_set, true);
+  assert.equal(risk.preference().enabled, false);
   const historical = f.create({
     preferred_agent: 'opencode',
     fallback_agents: [],
@@ -148,6 +159,34 @@ test('operator preference enables new WORK only; historical awaits require autho
   assert.equal(done.state, 'completed');
   assert.equal(done.acceptance.length, 1);
   assert.equal(done.acceptance[0].decision, 'accept');
+});
+
+test('explicit Trusted Autonomy OFF survives reopen and upgrade default migration', async t => {
+  const r = runtime(t);
+  const f = await fixture(t, { opencode: r.options });
+  const risk = f.bridge.missions.riskAcceptance;
+  assert.equal(risk.preference().enabled, true);
+  risk.setPreference({ enabled: false, confirmed: true }, 'operator');
+  assert.equal(risk.preference().enabled, false);
+  assert.equal(risk.preference().owner_set, true);
+  await f.reopen();
+  const again = f.bridge.missions.riskAcceptance;
+  assert.equal(again.preference().enabled, false);
+  assert.equal(again.preference().owner_set, true);
+  // Simulate prior system-default OFF row that was never owner-set → migration turns ON.
+  again.db.prepare("UPDATE cp_risk_acceptance_preference SET enabled=0, owner_set=0, updated_by='system' WHERE id=1").run();
+  const { RiskAcceptance } = require('../src/risk-acceptance');
+  const migrated = new RiskAcceptance(f.bridge.missions);
+  assert.equal(migrated.preference().enabled, true);
+  assert.equal(migrated.preference().owner_set, false);
+  const defaulted = f.bridge.ledger.list({ limit: 50, order: 'desc' }).events
+    .some(e => e.event_type === 'risk.auto_acceptance.default_enabled');
+  assert.equal(defaulted, true);
+  // Owner OFF must never be reset by constructing RiskAcceptance again.
+  migrated.setPreference({ enabled: false, confirmed: true }, 'operator');
+  const held = new RiskAcceptance(f.bridge.missions);
+  assert.equal(held.preference().enabled, false);
+  assert.equal(held.preference().owner_set, true);
 });
 
 

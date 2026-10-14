@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "standing_public_origins": [
+    "https://arecibo.ca"
+  ],
+  "public_research": {
+    "mode": "on",
+    "permission_mode": "strict",
+    "methods": ["GET", "HEAD"],
+    "max_pages_operational": 1,
+    "host_max_pages": 8,
+    "downloads": false,
+    "private_accounts": false,
+    "forms": false,
+    "logins": false
+  }
+}

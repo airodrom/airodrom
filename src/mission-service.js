@@ -445,6 +445,7 @@ class MissionService {
       if(m.envelope.kind!=='browser_research'&&m.envelope.automatic_acceptance)this.acceptanceEngine.attempt(m.id);
       if(m.envelope.fixture_auto_acceptance?.authorized)this.bridge.fixtureAcceptance.attempt(m.id);
       if(m.envelope.risk_auto_acceptance?.authorized)this.riskAcceptance.attempt(m.id);
+      if(this.store.getMission(m.id).state==='awaiting_acceptance'&&(m.envelope.kind==='browser_research'||m.envelope.manifest?.public_web))this.riskAcceptance.attemptPublicResearch(m.id);
     }
   }
   async reverify(id,input,owner='operator'){
