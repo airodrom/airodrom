@@ -143,7 +143,12 @@ class ResearchBrowser{
   }catch(e){
    this.ensure();
    let committed=null;try{const current=this.page?.url?.();if(current&&current!=='about:blank')committed=this.observeURL(current,safe);}catch{}
-   if(!committed){this.event('research.network_denied',this.denialMeta(safe,{reason:'navigation_unavailable',method:'GET',resource:'document',main_document:true,stage:'navigation',document_commit_observed:false}));throw error('navigation_unavailable');}
+   if(!committed){
+    // Preserve the underlying boundary: Playwright timeouts are commit failures, not origin denials.
+    const reason=/timeout/i.test(String(e?.message||''))?'document_commit_timeout':/^[a-z_]+$/.test(e?.code||'')?e.code:'navigation_unavailable';
+    this.event('research.network_denied',this.denialMeta(safe,{reason,method:'GET',resource:'document',main_document:true,stage:'navigation',document_commit_observed:false}));
+    throw error(reason);
+   }
   }
   const current=this.observeURL(this.page.url(),safe);if(current!==safe){this.observeURL(current,safe);}
   const inspection=await this.inspect();if(inspection.state==='blocked')return inspection;

@@ -265,7 +265,17 @@ class MissionWeb{
   const network=this.network(g);try{url=network.validate(url);}catch(e){this.store.event('mission.web.permission_needed',m.id,{grant_id:g.id,reason:e.code,origin:new URL(url).origin,public_only:true});throw e;}
   return url;
  }
- transportUsage(g,{origin,bytes=0}={}){transaction(this.db,()=>{const m=this.store.requireMission(g.mission_id),current=this.grant(m);if(current.id!==g.id||m.state!=='running'||this.bridge.tasks.get(m.task_id).cancelRequested)throw error('mission_web_stopped');const visited=JSON.parse(current.visited_origins);if(origin&&!visited.includes(origin)){require('./research-network').safeOrigin(origin);if(visited.length>=g.policy.max_origins)throw error('mission_web_domain_budget');visited.push(origin);}if(origin&&current.requests>=g.policy.max_requests||current.bytes+bytes>g.policy.max_bytes)throw error('mission_web_transport_budget');this.db.prepare('UPDATE cp_mission_web_grants SET requests=requests+?,bytes=bytes+?,visited_origins=? WHERE id=?').run(origin?1:0,bytes,JSON.stringify(visited),g.id);});}
+ transportUsage(g,{origin,bytes=0}={}){transaction(this.db,()=>{
+   const m=this.store.requireMission(g.mission_id);
+   // Byte-only callbacks must not re-seal the grant; sealing is for request/origin admission.
+   if(!origin&&bytes){
+    const current=this.db.prepare("SELECT id,bytes,state FROM cp_mission_web_grants WHERE id=? AND mission_id=? AND state='active'").get(g.id,m.id);
+    if(!current||m.state!=='running'||this.bridge.tasks.get(m.task_id).cancelRequested)throw error('mission_web_stopped');
+    if(current.bytes+bytes>g.policy.max_bytes)throw error('mission_web_transport_budget');
+    this.db.prepare('UPDATE cp_mission_web_grants SET bytes=bytes+? WHERE id=?').run(bytes,g.id);return;
+   }
+   const current=this.grant(m);if(current.id!==g.id||m.state!=='running'||this.bridge.tasks.get(m.task_id).cancelRequested)throw error('mission_web_stopped');const visited=JSON.parse(current.visited_origins);if(origin&&!visited.includes(origin)){require('./research-network').safeOrigin(origin);if(visited.length>=g.policy.max_origins)throw error('mission_web_domain_budget');visited.push(origin);}if(origin&&current.requests>=g.policy.max_requests||current.bytes+bytes>g.policy.max_bytes)throw error('mission_web_transport_budget');this.db.prepare('UPDATE cp_mission_web_grants SET requests=requests+?,bytes=bytes+?,visited_origins=? WHERE id=?').run(origin?1:0,bytes,JSON.stringify(visited),g.id);
+  });}
  network(g,signal){const origins=g.policy.origins.length?g.policy.origins:['https://example.com'];return new ResearchNetwork({scope:{origins,publicDiscovery:g.policy.mode==='all',maxOrigins:g.policy.max_origins},signal,testing:this.options.testing,...(signal?{onRequest:origin=>this.transportUsage(g,{origin}),onBytes:bytes=>this.transportUsage(g,{bytes})}:{})});}
  async perform(task,input,signal){
   this.assess(task,input);const m=this.store.requireMission(input.mission_id),g=this.grant(m),runId=this.runFor(m,task).id;if(this.active.has(m.id))throw error('mission_web_busy');

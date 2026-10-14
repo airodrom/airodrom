@@ -142,8 +142,10 @@ class ResearchNetwork{
      const status=res.statusCode;if(REDIRECTS.has(status))return finish(null,{status,location:res.headers.location});
      if(String(res.headers['content-encoding']||'identity').toLowerCase()!=='identity')return finish(error('compressed_response_denied'));
      const length=res.headers['content-length'];if(length!==undefined&&(!/^\d+$/.test(String(length))||BigInt(length)>BigInt(responseLimit)))return finish(error('response_bound'));
-     let bytes=0;const chunks=[];res.on('data',chunk=>{const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);try{this.onBytes?.(data.length);}catch(e){return finish(e);}bytes+=data.length;if(bytes>responseLimit||method==='HEAD'&&bytes)return finish(error('response_bound'));chunks.push(data);});
-     res.on('end',()=>{if(!res.complete)return finish(error('incomplete_response'));finish(null,{status,contentType:res.headers['content-type'],attachment:/\battachment\b/i.test(String(res.headers['content-disposition']||'')),body:Buffer.concat(chunks,bytes)});});
+     // Account bytes once after the complete body is received. Per-chunk Mission
+     // grant re-sealing blocked Playwright's event loop past navigation commit.
+     let bytes=0;const chunks=[];res.on('data',chunk=>{const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);bytes+=data.length;if(bytes>responseLimit||method==='HEAD'&&bytes)return finish(error('response_bound'));chunks.push(data);});
+     res.on('end',()=>{if(!res.complete)return finish(error('incomplete_response'));try{if(bytes)this.onBytes?.(bytes);}catch(e){return finish(e);}finish(null,{status,contentType:res.headers['content-type'],attachment:/\battachment\b/i.test(String(res.headers['content-disposition']||'')),body:Buffer.concat(chunks,bytes)});});
     });
     req.on('error',()=>finish(error('transport_unavailable')));req.on('upgrade',(_r,socket)=>{socket.destroy();finish(error('upgrade_denied'));});req.on('connect',(_r,socket)=>{socket.destroy();finish(error('tunnel_denied'));});if(settled)req.destroy();else req.end(privateRequest?.body);
    }catch{finish(error('transport_unavailable'));}
