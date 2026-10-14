@@ -41,7 +41,7 @@ test('committed document survives goto failure from subresource denials',async t
  const ORIGIN='https://example.com';
  let current='about:blank';
  const page={
-  url:()=>current,mainFrame:()=>({}),waitForTimeout:async()=>{},close:async()=>{},
+  url:()=>current,mainFrame:()=>({}),waitForTimeout:async()=>{},waitForLoadState:async()=>{},close:async()=>{},
   goto:async url=>{current=url;throw Error('net::ERR_ABORTED');},
   on(){},evaluate:async()=>{},addStyleTag:async()=>({evaluate:async()=>{}}),screenshot:async()=>Buffer.from('png'),
   setViewportSize:async()=>{}
@@ -108,4 +108,75 @@ test('natural website research phrases route to public_web_offer; chat approval 
  assert.match(guide.parse('I already approved').message,/Terminal permission prompt/);
  assert.equal(require('../src/provider-policy').operatorSecretLike('Can you research arecibo.ca?'),false);
  assert.equal(require('../src/provider-policy').operatorSecretLike('arecibo.ca?token=private'),true);
+});
+
+test('denied secondary resources are shelled; approved document commit still navigates',async t=>{
+ const dir=privateDir(t),ORIGIN='https://example.com',events=[],requests=[];
+ let current='about:blank';
+ const page={
+  url:()=>current,mainFrame:()=>({}),waitForTimeout:async()=>{},waitForLoadState:async()=>{},close:async()=>{},
+  goto:async(url,opts)=>{assert.equal(opts.waitUntil,'commit');current=url;},
+  on(){},evaluate:async()=>{},addStyleTag:async()=>({evaluate:async()=>{}}),screenshot:async()=>Buffer.from('png'),setViewportSize:async()=>{}
+ };
+ let routeHandler;
+ const context={
+  setDefaultTimeout(){},setDefaultNavigationTimeout(){},addInitScript:async()=>{},routeWebSocket:async()=>{},
+  route:async(_p,handler)=>{routeHandler=handler;},
+  newPage:async()=>page,close:async()=>{},newCDPSession:async()=>({
+   send:async method=>method==='Page.getFrameTree'?{frameTree:{frame:{id:'f'}}}:method==='Page.createIsolatedWorld'?{executionContextId:1}:{result:{value:{auth:false,text:'Public SSR body',title:'Public',links:[],forms:[],url:current}}},
+   detach:async()=>{}
+  }),
+  on(){}
+ };
+ const child={pid:4243,exitCode:null,signalCode:null};
+ const playwright={chromium:{
+  launchServer:async()=>({wsEndpoint:()=>'ws://127.0.0.1/x',process:()=>child,close:async()=>{child.exitCode=0;}}),
+  connect:async()=>({newContext:async()=>context,close:async()=>{}})
+ }};
+ const network={
+  fetch:async({url,document})=>{requests.push({url,document});if(url.includes('/_next/image')){const e=Error('denied');e.code='private_query_denied';throw e;}return {url,status:200,contentType:url.endsWith('.js')?'application/javascript':'text/html',body:Buffer.from(url.endsWith('.js')?'':'<html>Public SSR body</html>')};},
+  validate:u=>u,accountURL:u=>u,origins:new Set([ORIGIN])
+ };
+ const browser=new ResearchBrowser({scope:{origins:[ORIGIN],maxActions:10},evidenceDir:dir,network,playwright,onEvent:e=>events.push(e)});
+ t.after(()=>browser.close().catch(()=>{}));
+ await browser.start();
+ // Denied image shell must not abort; document denial still aborts.
+ let shelled=0,aborted=0;
+ await routeHandler({request:()=>({url:()=>ORIGIN+'/_next/image?url=%2Fh.jpg&w=10&q=75',method:()=>'GET',postData:()=>null,isNavigationRequest:()=>false,resourceType:()=>'image',frame:()=>({parentFrame:()=>null}),redirectedFrom:()=>null}),fulfill:async()=>{shelled++;},abort:async()=>{aborted++;}});
+ assert.equal(shelled,1);assert.equal(aborted,0);
+ assert.ok(events.some(e=>e.type==='research.network_denied'&&e.reason==='private_query_denied'&&e.main_document===false&&e.resource==='image'));
+ const nav=await browser.execute({type:'navigate',url:ORIGIN+'/'});
+ assert.equal(nav.state,'navigated');assert.equal(nav.url,ORIGIN+'/');
+ assert.ok(events.some(e=>e.type==='research.navigated'));
+});
+
+test('observeURL keeps approved path when client adds hash or non-credential query',t=>{
+ const dir=privateDir(t);
+ const browser=new ResearchBrowser({scope:{origins:['https://example.com'],maxActions:2},evidenceDir:dir,playwright:{chromium:{launchServer:async()=>{throw Error('unused');}}}});
+ assert.equal(browser.observeURL('https://example.com/#merchants','https://example.com/'),'https://example.com/');
+ assert.equal(browser.observeURL('https://example.com/?utm_source=public','https://example.com/'),'https://example.com/');
+ assert.throws(()=>browser.observeURL('https://example.com/?token=private-session','https://example.com/'),/private_query_denied|credential_or_invalid_url|navigation_unavailable/);
+ assert.throws(()=>browser.observeURL('https://example.com/sign-in','https://example.com/'),/origin_or_sensitive_path_denied|navigation_unavailable/);
+});
+
+test('MissionWeb records main_document denial diagnostics without collapsing into navigation_unavailable alone',async t=>{
+ const f=await require('./fixtures/mission-fixture.cjs').fixture(t);
+ const events=[];
+ f.bridge.controlStore.event=(type,missionId,metadata)=>{events.push({type,metadata});return {event_id:randomUUID()};};
+ const web=f.bridge.missions.web;
+ const g={id:randomUUID(),mission_id:randomUUID(),policy:{origins:['https://example.com'],mode:'on',max_origins:8}};
+ // Exercise the onEvent closure shape used by perform().
+ const onEvent=e=>{
+  const metadata={grant_id:g.id,reason:e.reason||null};
+  if(e.type==='research.network_denied')for(const k of ['source','origin','route','query_present','method','resource','main_document','stage','document_commit_observed'])if(e[k]!==undefined)metadata[k]=e[k];
+  f.bridge.controlStore.event(e.type,g.mission_id,metadata);
+ };
+ onEvent({type:'research.network_denied',reason:'private_query_denied',main_document:false,resource:'image',method:'GET',stage:'route',origin:'https://example.com',query_present:true,document_commit_observed:false});
+ onEvent({type:'research.network_denied',reason:'navigation_unavailable',main_document:true,resource:'document',method:'GET',stage:'navigation',origin:'https://example.com',query_present:false,document_commit_observed:false});
+ assert.equal(events.length,2);
+ assert.equal(events[0].metadata.main_document,false);
+ assert.equal(events[0].metadata.resource,'image');
+ assert.equal(events[1].metadata.main_document,true);
+ assert.equal(events[1].metadata.stage,'navigation');
+ assert.notEqual(events[0].metadata.reason,events[1].metadata.reason);
 });

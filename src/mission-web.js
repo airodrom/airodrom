@@ -281,7 +281,11 @@ class MissionWeb{
     if(input.action.type==='document')result=await require('./mission-web-document').read({url,network:this.network(g,controller.signal),signal:controller.signal});
     else{
      const scope={origins:g.policy.origins.length?g.policy.origins:[new URL(url).origin],publicDiscovery:g.policy.mode==='all',maxOrigins:g.policy.max_origins,maxActions:10,allowDownloads:false};
-     browser=this.options.browserFactory?this.options.browserFactory({scope,signal:controller.signal,evidenceDir:this.directory(task)}):new (require('./research-browser').ResearchBrowser)({scope,network:this.network(g,controller.signal),onEvidenceBytes:bytes=>this.transportUsage(g,{bytes}),signal:controller.signal,evidenceDir:this.directory(task),onEvent:e=>this.store.event(e.type,m.id,{grant_id:g.id,reason:e.reason||null},{runId})});
+     browser=this.options.browserFactory?this.options.browserFactory({scope,signal:controller.signal,evidenceDir:this.directory(task)}):new (require('./research-browser').ResearchBrowser)({scope,network:this.network(g,controller.signal),onEvidenceBytes:bytes=>this.transportUsage(g,{bytes}),signal:controller.signal,evidenceDir:this.directory(task),onEvent:e=>{
+      const metadata={grant_id:g.id,reason:e.reason||null};
+      if(e.type==='research.network_denied')for(const k of ['source','origin','route','query_present','method','resource','main_document','stage','document_commit_observed'])if(e[k]!==undefined)metadata[k]=e[k];
+      this.store.event(e.type,m.id,metadata,{runId});
+     }});
      if(typeof browser.start==='function')await browser.start();
      const pid=browser.ownedProcessId?.()||null;if(pid)this.store.updateRun(runId,{state:'running',processState:'alive',pid});
      await browser.execute({type:'navigate',url});const row=await browser.execute({type:input.action.type==='screenshot'||input.action.type==='explore'?'screenshot':'snapshot'});

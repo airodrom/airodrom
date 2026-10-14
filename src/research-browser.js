@@ -74,41 +74,78 @@ class ResearchBrowser{
   await this.context.addInitScript(restrictPage);
   await this.context.routeWebSocket('**/*',socket=>socket.close());
   await this.context.route('**/*',async route=>{
+   const request=route.request(),kind=typeof request.resourceType==='function'?request.resourceType():'other';
+   const mainDocument=request.isNavigationRequest()&&!request.frame()?.parentFrame?.();
    try{
-    this.ensure();const request=route.request(),url=this.validateURL(request.url(),request.method());
+    this.ensure();const url=this.validateURL(request.url(),request.method());
     if(request.postData())throw error('body_denied');
     if(request.isNavigationRequest()&&request.frame().parentFrame())throw error('embedded_navigation_denied');
     if(this.privateMode){const target=new URL(url);if(request.isNavigationRequest()){if(!this.privateNavigations.has(url))throw error('host_account_navigation_required');}else{
-     const kind=request.resourceType?.(),allowed={stylesheet:/\.css$/i,script:/\.(?:js|mjs)$/i,image:/\.(?:png|jpe?g|webp|gif|svg|ico)$/i,font:/\.(?:woff2?|ttf|otf)$/i};
+     const allowed={stylesheet:/\.css$/i,script:/\.(?:js|mjs)$/i,image:/\.(?:png|jpe?g|webp|gif|svg|ico)$/i,font:/\.(?:woff2?|ttf|otf)$/i};
      if(target.search||!allowed[kind]?.test(target.pathname)||! /^\/(?:assets|static|css|js|images|img|fonts|_next\/static)\//.test(target.pathname))throw error('private_dynamic_request_denied');
     }}
     let ancestor=request.redirectedFrom?.(),redirects=0;while(ancestor){if(++redirects>3)throw error('redirect_denied');ancestor=ancestor.redirectedFrom?.();}
-    const document=request.isNavigationRequest()&&!request.frame().parentFrame();
-    const result=this.privateMode?await this.network.accountPage({handle:this.accountHandle,url,method:request.method(),signal:this.signal,followRedirects:false}):await this.network.fetch({url,method:request.method(),signal:this.signal,followRedirects:false,document});
+    const result=this.privateMode?await this.network.accountPage({handle:this.accountHandle,url,method:request.method(),signal:this.signal,followRedirects:false}):await this.network.fetch({url,method:request.method(),signal:this.signal,followRedirects:false,document:mainDocument});
     this.validateURL(result.url,request.method());
     if(this.privateMode&&request.isNavigationRequest()&&result.location)this.privateNavigations.add(this.validateURL(result.location));
     await route.fulfill({status:result.status,headers:{'content-type':result.contentType,'cache-control':'no-store','x-content-type-options':'nosniff',...(result.location?{location:this.validateURL(result.location)}:{})},body:result.body});
-   }catch(e){try{await route.abort('blockedbyclient');}catch{}this.event('research.network_denied',{reason:/^[a-z_]+$/.test(e?.code||'')?e.code:'transport_unavailable'});}
+   }catch(e){
+    const reason=/^[a-z_]+$/.test(e?.code||'')?e.code:'transport_unavailable';
+    // Aborting parser-blocking subresources can stall domcontentloaded forever.
+    // Deny them with an empty fulfill so the approved main document can commit.
+    try{
+     if(mainDocument)await route.abort('blockedbyclient');
+     else{
+      const type={stylesheet:'text/css',script:'application/javascript',image:'image/png',font:'font/woff2',xhr:'application/json',fetch:'application/json'}[kind]||'application/octet-stream';
+      await route.fulfill({status:200,headers:{'content-type':type,'cache-control':'no-store','x-content-type-options':'nosniff'},body:Buffer.alloc(0)});
+     }
+    }catch{}
+    this.event('research.network_denied',this.denialMeta(request.url(),{reason,method:request.method(),resource:kind,main_document:mainDocument,stage:'route'}));
+   }
   });
   this.context.on('page',page=>{if(this.page&&page!==this.page)page.close().catch(()=>{});});
   this.page=await this.context.newPage();this.page.on('download',download=>download.cancel().catch(()=>{}));this.page.on('dialog',dialog=>dialog.dismiss().catch(()=>{}));
-  this.page.on('framenavigated',frame=>{if(frame!==this.page.mainFrame())return;const value=frame.url();if(value==='about:blank')return;try{this.validateURL(value);}catch{this.blocked=true;this.page.close().catch(()=>{});}});
+  this.page.on('framenavigated',frame=>{if(frame!==this.page.mainFrame())return;const value=frame.url();if(value==='about:blank')return;try{const u=new URL(value);u.hash='';this.validateURL(u.href);}catch{this.blocked=true;this.page.close().catch(()=>{});}});
   this.event('research.browser_started',{private_context:true,credentials_available:false,network:'pinned_public_host'});
  }
  validateURL(url,method='GET'){if(!['GET','HEAD'].includes(method))throw error('method_denied');return this.privateMode?this.network.accountURL(url,this.accountAuthorization.origin):this.policy.validate(url,method);}
+ // Safe denial diagnostics: origins and classes only — never query values, headers or bodies.
+ denialMeta(value,{reason,method='GET',resource='other',main_document=false,stage='route',document_commit_observed=false}={}){
+  let origin='[invalid]',query_present=false;try{const u=new URL(value);origin=this.policy.origins.has(u.origin)?u.origin:'[unapproved origin]';query_present=!!u.search;}catch{}
+  return {reason:/^[a-z_]+$/.test(reason||'')?reason:'transport_unavailable',method:['GET','HEAD'].includes(method)?method:'OTHER',resource:['document','stylesheet','script','image','font','xhr','fetch','other'].includes(resource)?resource:'other',main_document:main_document===true,stage:['route','navigation','commit'].includes(stage)?stage:'route',origin,query_present,document_commit_observed:document_commit_observed===true};
+ }
+ // Client hash / non-credential query must not erase an otherwise approved document.
+ observeURL(value,approved){
+  if(typeof value!=='string'||!value||value==='about:blank')throw error('navigation_unavailable');
+  let current=value;try{const u=new URL(value);if(u.hash){u.hash='';current=u.href;}}catch{throw error('navigation_unavailable');}
+  try{return this.validateURL(current);}catch(e){
+   try{
+    const u=new URL(current),a=new URL(approved);
+    if(u.origin===a.origin&&u.pathname===a.pathname){
+     for(const [k,v]of u.searchParams){if(secretLike(k)||secretLike(v)||/\b(?:bearer|password|passphrase|api.?key|private.?key|secret|credential|oauth|access.?token|refresh.?token|session|cookie)\b/i.test(`${k}=${v}`))throw e;}
+     return this.validateURL(a.href);
+    }
+   }catch{}
+   throw error(/^[a-z_]+$/.test(e?.code||'')?e.code:'navigation_unavailable');
+  }
+ }
  async qualify(){try{await this.start();this.ensure();return {available:true,engine:'playwright-core',version:require('playwright-core/package.json').version,context:'owned_fresh',network:'pinned_public_host',authority:false,termination:'owned_until_close'};}catch(e){let termination='verified';try{await this.close();}catch{termination='unverified';}return {available:false,reason:/^[a-z_]+$/.test(e?.code||'')?e.code:'browser_unavailable',authority:false,termination};}}
  async navigate(url){
   if(this.accountAuthorization&&!this.privateMode){if(url!==this.accountAuthorization.login_url)throw error('sealed_login_url_required');this.accountHandle=this.network.openAccount({origin:this.accountAuthorization.origin,loginUrl:url});this.privateMode=true;}
   if(this.privateMode&&this.takeover)throw error('human_takeover_required');
   const safe=this.validateURL(url);if(this.privateMode){this.privateNavigations.clear();this.privateNavigations.add(safe);}await this.start();this.links.clear();this.forms.clear();this.loginForms.clear();
-  // Subresource denials (concurrency, private query, sensitive paths) must not
-  // abort research when the approved document already committed.
-  try{await this.page.goto(safe,{waitUntil:'domcontentloaded'});await this.page.waitForTimeout(100);}catch(e){
+  // Commit when the approved document response is accepted. Do not require
+  // subresource completion: denied scripts/images must not stall research.
+  try{
+   await this.page.goto(safe,{waitUntil:'commit'});
+   try{await this.page.waitForLoadState('domcontentloaded',{timeout:3000});}catch{}
+   await this.page.waitForTimeout(100);
+  }catch(e){
    this.ensure();
-   let committed=null;try{const current=this.page?.url?.();if(current&&current!=='about:blank')committed=this.validateURL(current);}catch{}
-   if(!committed){this.event('research.network_denied',{reason:'navigation_unavailable',detail:/^[a-z_]+$/.test(e?.code||'')?e.code:'goto_failed'});throw error('navigation_unavailable');}
+   let committed=null;try{const current=this.page?.url?.();if(current&&current!=='about:blank')committed=this.observeURL(current,safe);}catch{}
+   if(!committed){this.event('research.network_denied',this.denialMeta(safe,{reason:'navigation_unavailable',method:'GET',resource:'document',main_document:true,stage:'navigation',document_commit_observed:false}));throw error('navigation_unavailable');}
   }
-  const current=this.validateURL(this.page.url());if(current!==safe){this.validateURL(current);}
+  const current=this.observeURL(this.page.url(),safe);if(current!==safe){this.observeURL(current,safe);}
   const inspection=await this.inspect();if(inspection.state==='blocked')return inspection;
   if(this.privateMode&&!this.authenticated)return inspection;
   this.event('research.navigated',{origin:new URL(current).origin});return {state:'navigated',url:this.privateMode?this.accountAuthorization.origin+'/':current,private_context:this.privateMode,classification:'observed',untrusted:true,authority:false};
@@ -125,7 +162,8 @@ class ResearchBrowser{
  }
  async inspect(){
   if(this.privateMode)return this.inspectAccount();const row=await this.project(inspectDocument);
-  const url=this.policy.validate(row.url);const text=clean(row.text),title=clean(row.title);
+  let observed=row.url;try{const u=new URL(row.url);if(u.hash){u.hash='';observed=u.href;}}catch{}
+  const url=this.policy.validate(observed);const text=clean(row.text),title=clean(row.title);
   if(row.auth||unsafeEvidenceText(row.text)||unsafeEvidenceText(row.title)){
    this.blocked=true;this.links.clear();this.forms.clear();this.event('research.page_blocked',{reason:'authentication_or_sensitive_content'});await this.page.close().catch(()=>{});
    return this.receipt({id:randomUUID(),state:'blocked',reason:'authentication_or_sensitive_content',classification:'inaccessible',url,title:'',text:'',content:'',sha256:sha(''),untrusted:true,authority:false,captured_at:Date.now()});
