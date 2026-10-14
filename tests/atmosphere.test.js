@@ -42,5 +42,6 @@ test('control-hub HTML keeps premium mount fingerprint to prevent silent UI repl
  assert.match(js,/\/api\/product\/accept-mission/);
  assert.match(js,/Google Connections/);
  assert.match(js,/deriveConnection/);
- assert.match(js,/const views=\['Overview'/);
+ assert.match(js,/const primaryViews=\['Overview','Live Activity','Missions'/);
+ assert.match(js,/const moreViews=/);
 });

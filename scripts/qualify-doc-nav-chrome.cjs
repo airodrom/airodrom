@@ -7,11 +7,10 @@ const {ResearchBrowser}=require('../src/research-browser');
 const {ResearchNetwork}=require('../src/research-network');
 
 async function main(){
- const outBase=process.argv[2]||'/Users/andrew/Documents/Codex/2026-10-13/airodrom-service-crash-recovery/evidence/mission-doc-nav-closeout';
+ const outBase=process.argv[2]||fs.mkdtempSync(path.join(require('node:os').tmpdir(),'airodrom-doc-nav-'));
  fs.mkdirSync(outBase,{recursive:true,mode:0o700});
- const base=path.join(outBase,'scratch-chrome');
- fs.rmSync(base,{recursive:true,force:true});
- fs.mkdirSync(base,{recursive:true,mode:0o700});fs.chmodSync(base,0o700);
+ const base=fs.mkdtempSync(path.join(outBase,'scratch-chrome-'));
+ fs.chmodSync(base,0o700);
  const evidenceDir=path.join(base,'web-evidence');fs.mkdirSync(evidenceDir,{mode:0o700});fs.chmodSync(evidenceDir,0o700);
 
  const body=Buffer.from('<!DOCTYPE html><html><head><title>Local Mission Closeout</title></head><body><h1>Local Mission Closeout</h1><p>Nonempty public body for document commit verification.</p><script src="/blocked.js?token=private"></script><img src="/x.png?api_key=private"></body></html>');

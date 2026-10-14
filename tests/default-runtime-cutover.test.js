@@ -17,7 +17,7 @@ test('canonical default and advisory route choose OpenCode; no implicit fallback
 test('new default Mission freezes OpenCode through both routing paths and runtime-independent Acceptance/Settlement',async t=>{
  for(const governed of [false,true]){
   const r=runtime(t),f=await fixture(t,{opencode:r.options});if(governed)qualifyCanonical(f.bridge);
-  assert.equal(f.bridge.defaultRuntime,'opencode');const m=f.create({preferred_agent:undefined,manifest:manifest(f.repo)});
+  assert.equal(f.bridge.defaultRuntime,'opencode');const m=f.create({preferred_agent:undefined,risk_auto_acceptance:false,manifest:manifest(f.repo)});
   assert.equal(m.envelope.preferred_agent,'opencode');assert.equal(m.envelope.route_mode,'default');assert.deepEqual(m.envelope.fallback_agents,[]);assert.equal(m.envelope.dispatch_policy.privacy,'local_only');assert.equal(f.bridge.tasks.get(m.task_id).executionAgent,'opencode');
   f.bridge.missions.dispatch(m.id,{request_id:'default-dispatch'});const done=await f.settle(m.id),run=done.runs.find(r=>r.agent_id==='opencode');assert.equal(done.dispatches[0].route.selected,'opencode');assert.equal(run.result.opencode_provenance.runtime_id,'opencode');assert.equal(run.result.opencode_provenance.authority,false);assert.equal(run.result.opencode_provenance.session_state,'disposable');assert.equal(f.calls(),0);accept(f,m);
  }
@@ -49,7 +49,7 @@ test('default Mission Memory V2 delivery uses minimum current truth; correction/
  const old=b.rememberPersonalMemory({domain:'personal',type:'preference',subject:'fixture.color',content:'Synthetic fixture color is azure.',source:'user_explicit',confidence:95,sensitivity:'normal'});
 
  let sequence=0;
- const dispatch=async(required=true)=>{const m=f.create({preferred_agent:undefined,objective:'Change alpha to beta DEFAULT_MEMORY '+(++sequence),target_domains:['fixture'],required_memory_keys:required?['fixture.color']:[],manifest:manifest(f.repo)});b.missions.dispatch(m.id,{request_id:'memory-'+m.id});const done=await f.settle(m.id);assert.equal(done.dispatches[0].route.selected,'opencode');const run=done.runs.find(r=>r.agent_id==='opencode'),pack=b.tasks.get(run.task_id).contextPackId;const summary=done.results.find(x=>x.run_id===run.id).result.summary;accept(f,m);reset(f);return{m,run,pack,summary};};
+ const dispatch=async(required=true)=>{const m=f.create({preferred_agent:undefined,risk_auto_acceptance:false,objective:'Change alpha to beta DEFAULT_MEMORY '+(++sequence),target_domains:['fixture'],required_memory_keys:required?['fixture.color']:[],manifest:manifest(f.repo)});b.missions.dispatch(m.id,{request_id:'memory-'+m.id});const done=await f.settle(m.id);assert.equal(done.dispatches[0].route.selected,'opencode');const run=done.runs.find(r=>r.agent_id==='opencode'),pack=b.tasks.get(run.task_id).contextPackId;const summary=done.results.find(x=>x.run_id===run.id).result.summary;accept(f,m);reset(f);return{m,run,pack,summary};};
  const first=await dispatch();assert.equal(first.summary,'Synthetic fixture color is azure.');assert.equal(a.memory.items(first.pack).length,1);
  const forged={id:first.pack,records:[{subject:'fixture.color',content:'Synthetic fixture color is violet.'}]};assert.equal((await b.opencodeAdapter.execute({...r.request,objective:'memory',context:forged})).result.summary,'Synthetic fixture color is azure.');
  const current=b.updatePersonalMemory(old.id,{content:'Synthetic fixture color is amber.'});await assert.rejects(b.opencodeAdapter.execute({...r.request,objective:'memory',context:forged}),/context|erased|unavailable/i);

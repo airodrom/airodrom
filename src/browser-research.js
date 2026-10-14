@@ -31,6 +31,8 @@ function parse(message,{pendingResearch,researchURL}={}){
  if(/\b(?:implement|deploy|publish|send|delete|purchase|subscribe|sign\s*up|create\s+(?:an?\s+)?account|(?:log|sign)\s+(?:in|into))\b/i.test(request))return {route:'WORK',kind:'clarify',message:'Public research and account or implementation actions need separate scopes. Start with “explore website <public URL>” or “Research <public URL> and compare with Arecibo”.'};
  let u;try{u=new URL(urls[0].replace(/[.,;!]+$/,''));}catch{return {route:'WORK',kind:'clarify',message:'Give a valid public HTTPS website URL.'};}
  if(u.username||u.password||u.search||u.hash||u.protocol!=='https:')return {route:'WORK',kind:'clarify',message:'Give a public HTTPS URL without credentials, query parameters or a fragment.'};
+ // Apply the shared public-network policy before offering consent or creating a Mission.
+ try{new (require('./research-network').ResearchNetwork)({scope:{origins:[u.origin]}}).validate(u.href);}catch{return {route:'WORK',kind:'clarify',message:'Give a public HTTPS website URL within the read-only network policy.',authority:false};}
  // Hostnames like arecibo.ca are website addresses, not product-comparison intent.
  const prose=request.replace(/https?:\/\/[^\s<>"'`]+/gi,' ');
  const wantsCompare=/\barecibo\b/i.test(prose)&&(/\b(?:compare|comparison|versus|vs\.?|adopt|gap)\b/i.test(prose)||/\bfeatures\b/i.test(prose));

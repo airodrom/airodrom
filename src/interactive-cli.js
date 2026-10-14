@@ -150,6 +150,8 @@ function secureIngressLine(line) {
   if (/^\/(?:vault|secret|quit|exit|help|status|mission|connect|remember|forget|provider|workspace|task|google|gmail|calendar|drive)\b/i.test(value)) return true;
   try {
     if (require('./assistant-intent').secret(value)) return true;
+    // Account consent detaches input; pasted follow-up text must never be echoed or forwarded.
+    if (require('./browser-research').parse(value)?.kind === 'research_session') return true;
     if (require('./private-vault-intent').parse(value) || require('./private-vault-intent').containsPrivate(value)) return true;
     if (require('./personal-storage-intent').containsPrivate(value) || require('./personal-storage-intent').parse(require('./personal-storage-intent').normalize(value))) return true;
   } catch { return true; }

@@ -68,7 +68,7 @@ test('OpenCode Mission runs through independent verifier, Acceptance and ordered
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),canonical=qualifyCanonical(f.bridge);assert.equal(canonical.routing,true);
  assert.throws(()=>f.create({preferred_agent:'opencode'}),/local-only/);
  assert.throws(()=>f.create({fallback_agents:['opencode']}),/explicit preferred route/);
- const m=f.create({preferred_agent:'opencode',fallback_agents:[],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'focused_coding'},manifest:manifest(f.repo)});
+ const m=f.create({preferred_agent:'opencode',risk_auto_acceptance:false,fallback_agents:[],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'focused_coding'},manifest:manifest(f.repo)});
  assert.throws(()=>f.bridge.missions.accept(m.id,{request_id:'early',verification_id:'unverified',decision:'accept',rationale:'No evidence'}));
  assert.throws(()=>f.bridge.missions.program.settle(m.id,'accept'),/Settlement requires/);
  const dispatch=f.bridge.missions.dispatch(m.id,{request_id:'opencode-dispatch'}),same=f.bridge.missions.dispatch(m.id,{request_id:'opencode-dispatch'});assert.equal(dispatch.dispatch_id,same.dispatch_id);

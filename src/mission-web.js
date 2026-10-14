@@ -335,8 +335,9 @@ class MissionWeb{
    }else return;
   }
   task.activeRunId=this.db.prepare("SELECT id FROM cp_runs WHERE task_id=? AND mission_id=? AND state='running' ORDER BY created_at DESC LIMIT 1").get(task.id,m.id)?.id;if(!task.activeRunId)throw error('active_canonical_web_run_required');
-  // Operational one-page bound for standing exact-origin grants; host ceiling remains max_pages=8.
-  const entryLimit=g.policy.provenance==='authenticated_operator'&&this.service.riskAcceptance?.preference()?.enabled?1:3;
+  // The standing completion preference must not discard explicitly approved sources.
+  // Keep the bounded three-source preflight; each call enforces the signed grant budgets.
+  const entryLimit=3;
   const actions=g.policy.query?[{type:'search'}]:[];actions.push(...g.policy.entries.slice(0,entryLimit).map(url=>({type:/\.pdf$/i.test(new URL(url).pathname)?'document':'explore',url})));
   for(const action of actions){if(action.type==='search'&&!this.source())throw error('approved_search_provider_unavailable');await this.call(m,task,action);}
  }

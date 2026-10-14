@@ -59,6 +59,7 @@ test('Control Center UX v2: missions pagination, archive, status, responsive the
  await page.getByRole('status').filter({hasText:/matching/}).waitFor();
  assert.ok(settledCount>0);
  assert.match(await page.getByRole('status').filter({hasText:/matching/}).innerText(),/[1-9]\d* matching/);
+ await page.locator('details.nav-more > summary').click();
  await page.getByRole('button',{name:'Autonomous Goals',exact:true}).click();
  await page.getByText(/Continuous Autonomous Execution|Autonomous Goals|Outcome-first|Goals/).first().waitFor();
  await page.screenshot({path:path.join(outDir,'autonomous-goals.png'),fullPage:true});

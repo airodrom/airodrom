@@ -7,7 +7,9 @@ test('expired writer lease remains quarantined on restart until termination is i
  const f=await fixture(t),m=f.create(),h=f.bridge.codexAdapter.startTask(m.id,'stale-lease');
  f.bridge.memory.db.prepare('UPDATE cp_leases SET expires_at=1 WHERE run_id=?').run(h.run_id);await f.reopen();
  assert.equal(f.bridge.memory.db.prepare('SELECT state FROM cp_leases WHERE run_id=?').get(h.run_id).state,'quarantined');
- assert.throws(()=>f.bridge.controlStore.acquireLease({resource:f.repo,runId:'replacement'}),/writer/);assert.equal(f.calls(),0);
+ assert.equal(f.bridge.lifecycle.status().idle,false);
+ assert.throws(()=>f.bridge.controlStore.acquireLease({resource:f.repo,runId:'replacement'}),/Service admission is closed/);
+ assert.equal(f.bridge.memory.db.prepare('SELECT state FROM cp_leases WHERE run_id=?').get(h.run_id).state,'quarantined');assert.equal(f.calls(),0);
 });
 test('auth or quota loss after selection blocks before process start and pauses without hidden fallback',async t=>{
  for(const reason of ['auth_required','quota']){

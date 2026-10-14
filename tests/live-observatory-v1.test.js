@@ -207,7 +207,7 @@ test('9. fixture Mission end-to-end Observatory APIs and observation boundary', 
 
   const snap = await get('/api/product/observatory?mission=' + mid);
   assert.equal(snap.status, 200);
-  assert.equal(snap.json.observation_boundary.continuous_filesystem_watch, false);
+  assert.equal(snap.json.observation_boundary.continuous_filesystem_watch, true);
   assert.equal(snap.json.observation_boundary.hidden_reasoning, false);
   assert.ok(snap.json.files.some(e => e.path === 'fixture.txt'));
   assert.ok(snap.json.worker.some(e => e.event_type === 'worker.tool_requested' || e.tool === 'edit'));

@@ -19,6 +19,8 @@ const { evidencePackage } = require('../src/mission-evidence');
 test('unified end-to-end: proposal → approval → failure → one repair → verified → evidence, no duplicates across a disconnect', async t => {
   // Generous bounds: the unified group runs test files concurrently and the fixture worker is CPU-sensitive.
   const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 180000 });
+  // This scenario exercises manual Acceptance after repair, independently of the standing default.
+  f.bridge.missions.riskAcceptance.setPreference({enabled:false,confirmed:true},'operator');
   f.bridge.missionAuthority.initializeOperatorKey();
   qualifyCanonical(f.bridge);
   // Disposable self-repair marker: exactly one controlled wrong write before the first host verification.
