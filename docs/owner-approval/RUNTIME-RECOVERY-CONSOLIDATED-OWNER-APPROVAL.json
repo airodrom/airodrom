@@ -1,0 +1,68 @@
+{
+  "schema_version": "airodrom-owner-approval-request-v1",
+  "title": "Runtime recovery consolidated cutover (PR #104 + bridge-invocation recovery)",
+  "status": "awaiting_owner_authorization",
+  "not_authorization": true,
+  "stacks": [
+    {
+      "pr": 104,
+      "purpose": "web-boot-recovery pre-boot running dispatch gate + run-scoped invocation settlement",
+      "head_at_preparation": "62cfc422bb0ddeb999657edfdfd34949a5220e58"
+    },
+    {
+      "branch": "fix/bridge-invocation-boot-recovery",
+      "purpose": "non-web bridge invocation-lease cold-boot reconciliation",
+      "base": "62cfc422bb0ddeb999657edfdfd34949a5220e58",
+      "review_corrections": [
+        "removed lifecycle.lease_acquired ownership",
+        "require capability request bind with capability field",
+        "package.json files + package-check require module",
+        "ownership-order regression with real lease acquire sequence"
+      ],
+      "head_at_preparation": "see_pr_105_exact_head",
+      "ownership_fix_sha": "92b087cdef87dc0f09a37f1fa797d4029e480b90"
+    }
+  ],
+  "live_install_sha": "88c693f637b74a27f28f021d62991fd76fe991b5",
+  "protected_dirty_checkout": "a1f97c501e203d72e5e90d24fd36c2ebaeb24320",
+  "sealed_host_evidence": {
+    "evidence_id": "4c33d49b-4c43-46e5-8e2b-b55e3938e387",
+    "sha256": "cb58d222702240fb75256f890623c940e48317a6514d23b7e6588e89de67aa53",
+    "host_run_id": "b5f79b6b-22cf-43fd-98bc-3295226a1360",
+    "lease_id": "be1743be-2951-4cdf-945c-0e43a6809965",
+    "mission_id": "127229ca-ab86-43f9-8cd3-0ce86a2e30c6",
+    "prior_boot": "kern.boottime:1791778624.277648",
+    "do_not_reprepare": true,
+    "do_not_overwrite_timestamps": true
+  },
+  "bridge_ownership": {
+    "run_id": "4616ce39-ea67-4dcc-a85a-826a2497386e",
+    "invocation_id": "134d8f08-a98b-49ac-8898-e04af8dff7c5",
+    "mechanism": "bridge-invocation-reconcile-boot",
+    "not_web_boot_recovery": true
+  },
+  "second_reboot_required": false,
+  "reason_no_second_reboot": "Cold reboot already observed; current boot epoch differs from sealed prior. Source correction does not require another reboot.",
+  "requested_authorizations": [
+    "merge_pr_104",
+    "merge_bridge_invocation_recovery_pr",
+    "immutable_install_of_merged_tip",
+    "single_supervisor_replacement",
+    "live_web_reconcile_boot_host",
+    "live_bridge_invocation_reconcile_boot",
+    "resume_ordinary_admission_when_idle"
+  ],
+  "forbidden_without_authorization": [
+    "merge",
+    "live_install",
+    "supervisor_replacement",
+    "live_reconcile",
+    "force_release_quarantine",
+    "reboot",
+    "resume_admission_while_blockers",
+    "website_research_retry",
+    "manual_sqlite_settlement"
+  ],
+  "procedure": "docs/RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md",
+  "hold_until": "owner names exact merged SHAs and authorizes live cutover steps"
+}

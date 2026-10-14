@@ -787,5 +787,10 @@
   "THIRD_PARTY_NOTICES.md",
   "tsconfig.authority.json",
   "tsconfig.sdk.json",
-  "docs/owner-approval/CONSOLIDATED-OWNER-APPROVAL.json"
+  "docs/owner-approval/CONSOLIDATED-OWNER-APPROVAL.json",
+  "docs/BRIDGE-INVOCATION-BOOT-RECOVERY-V1.md",
+  "docs/RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md",
+  "docs/owner-approval/RUNTIME-RECOVERY-CONSOLIDATED-OWNER-APPROVAL.json",
+  "src/bridge-invocation-recovery.js",
+  "tests/bridge-invocation-recovery.test.js"
 ]

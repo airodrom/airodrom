@@ -7,6 +7,8 @@
 
 **Final reconciliation V4** (PR inventory, merge HOLD, Memory/CLI/Mission/MCP evidence, Arecibo handoff): [AIRODROM-FINAL-RECONCILIATION.md](AIRODROM-FINAL-RECONCILIATION.md).
 **Always-On / Full Mac Reboot Acceptance V1** (login auto-start qualification): [AIRODROM-REBOOT-ACCEPTANCE-V1.md](AIRODROM-REBOOT-ACCEPTANCE-V1.md).
+**Web boot-epoch recovery V1**: [WEB-BOOT-EPOCH-RECOVERY-V1.md](WEB-BOOT-EPOCH-RECOVERY-V1.md). Dispatch continuation cutover: [WEB-BOOT-RECOVERY-DISPATCH-CONTINUATION-CUTOVER.md](WEB-BOOT-RECOVERY-DISPATCH-CONTINUATION-CUTOVER.md).
+**Bridge invocation boot recovery V1**: [BRIDGE-INVOCATION-BOOT-RECOVERY-V1.md](BRIDGE-INVOCATION-BOOT-RECOVERY-V1.md). Consolidated runtime recovery cutover: [RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md](RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md).
 
 **Runtime Identity and Health Reporting V1** (`pi_bridge` alias, verified PIDs): [RUNTIME-IDENTITY-HEALTH-V1.md](RUNTIME-IDENTITY-HEALTH-V1.md).
 

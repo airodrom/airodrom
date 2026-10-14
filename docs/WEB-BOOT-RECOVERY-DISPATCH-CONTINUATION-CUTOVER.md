@@ -34,16 +34,17 @@ Checkpoint copy: `~/.airodrom/backups/boot-recovery-cutover-88c693f-20261013T232
 9. Confirm product-control Ready and harness healthy/`mcp_ready` only when unresolved ownership is actually zero. Do not claim Ready while bridge sibling and/or unproven invocations remain.
 10. No arecibo.ca / public-web research retry. No second reboot unless a safety gate requires it.
 
-## Bridge sibling — correct independent mechanism
+## Bridge sibling — independent non-web mechanism
 
 | Fact | Implication |
 | --- | --- |
-| `agent_id=bridge`, no `cp_mission_web_evidence` / web ledger on that `run_id` | `boot_recovery_bridge_web_unproven` — correctly refused |
+| `agent_id=bridge`, no `cp_mission_web_evidence` / web ledger on that `run_id` | `boot_recovery_bridge_web_unproven` — correctly refused by web path |
 | Shares Mission/task with the host web run | Sharing is **not** web-execution proof |
 | No recorded PID | Same-boot PID ESRCH reconcile does not apply |
 | Resolution `reconcile_process` | Non-web interrupted ownership |
+| Ledger bind inv→bridge run | Use `bridge-invocation-reconcile-boot` (see [BRIDGE-INVOCATION-BOOT-RECOVERY-V1.md](BRIDGE-INVOCATION-BOOT-RECOVERY-V1.md)) |
 
-Do **not** falsely classify the bridge run as web execution to clear blockers. After host recovery, if bridge still blocks idle/Ready, stop and request a separate owner-authorized non-web reconciliation design. Do not invent a settle path in this cutover.
+Do **not** falsely classify the bridge run as web execution. After host recovery, reconcile bridge ownership only through the stacked non-web API with the sealed host packet as boot-boundary witness. Consolidated owner procedure: [RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md](RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md).
 
 ## Rollback
 

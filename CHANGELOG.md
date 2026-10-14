@@ -1,3 +1,18 @@
+## Unreleased — Bridge invocation ownership and packaging
+
+- `proveInvocationOwnership` no longer accepts `lifecycle.lease_acquired` (lease acquire precedes `latestMcpRequestId` and can bind a previous invocation id to a new bridge Run).
+- Authoritative ownership requires `orchestrator.capability.requested` or `capability.requested` with exact `request_id` and non-empty `metadata.capability`; contradictory column/metadata ids fail closed.
+- Include `src/bridge-invocation-recovery.js` in `package.json` `files` and require it in `package-check`.
+- Regression covers real lease→capability event order with prior+current unknown invocations.
+
+## Unreleased — Bridge invocation boot recovery
+
+- Add governed `control-v2/bridge-invocation-reconcile-boot` for interrupted `agent_id=bridge` invocation-lease Runs that are not web-execution proven.
+- Ownership requires an exact Event Ledger bind of `invocation_id` to the named bridge `run_id`; shared Mission/task never settles an invocation.
+- Boot boundary is witnessed by an existing web-boot evidence packet (`prepared` or already `consumed`) without consuming or rewriting that row.
+- Settles only the named bridge Run and proven invocation as `recovery_not_execution`; host lease/dispatch/evidence and unproven siblings remain untouched.
+- Focused regression: `tests/bridge-invocation-recovery.test.js`. Consolidated cutover: `docs/RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md`.
+
 ## Unreleased — Boot-recovery pre-boot dispatch continuation
 
 - `assertNoPostBootContinuation` no longer treats a durable `dispatching`/`running` dispatch state alone as post-boot execution. Only `created_at`/`updated_at` at or after the current OS boot epoch (or a post-boot-created row) counts as continuation; historical pre-boot running rows remain eligible after a verified cold reboot.

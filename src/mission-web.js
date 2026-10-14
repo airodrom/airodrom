@@ -183,6 +183,30 @@ class MissionWeb{
     next:'Owner-authorized cold OS reboot required. After the new boot epoch differs, call web-reconcile-boot with this evidence_id and sha256. This packet is not a browser_closed receipt.'};
   });
  }
+ // Boot-epoch witness for non-web recovery paths. Accepts prepared or consumed
+ // host web-boot evidence, verifies digest integrity, and never mutates the row.
+ verifyBootBoundaryWitness(input){
+  const {object,identifier}=require('./control-plane-store');object(input,['evidence_id','sha256','mission_id','exclude_run_id']);
+  identifier(input.mission_id);identifier(input.exclude_run_id);if(!policy.UUID.test(input.evidence_id||''))throw error('evidence_binding_required');
+  if(typeof input.sha256!=='string'||!/^[a-f0-9]{64}$/.test(input.sha256))throw error('evidence_sha256_required');
+  const record=this.db.prepare('SELECT * FROM cp_mission_web_boot_recovery WHERE evidence_id=?').get(input.evidence_id);
+  if(!record)throw error('recovery_evidence_unknown');
+  if(!['prepared','consumed'].includes(record.state))throw error('recovery_evidence_state_denied');
+  if(record.sha256!==input.sha256||record.mission_id!==input.mission_id)throw error('recovery_evidence_registry_mismatch');
+  if(record.run_id===input.exclude_run_id)throw error('boot_boundary_witness_self_run_denied');
+  const file=path.join(this.recoveryDir(),input.evidence_id+'.json');
+  const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+  let packet,bytes;try{const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.uid!==process.getuid?.()||stat.mode&0o077||stat.size>65536)throw error('recovery_evidence_integrity_denied');bytes=fs.readFileSync(fd);packet=JSON.parse(bytes);}finally{fs.closeSync(fd);}
+  if(hash(bytes)!==record.sha256||hash(bytes)!==input.sha256)throw error('recovery_evidence_digest_mismatch');
+  if(packet.schema_version!=='airodrom-web-boot-recovery-v1'||packet.evidence_id!==input.evidence_id||packet.mission_id!==input.mission_id||packet.run_id!==record.run_id||(packet.lease_id||null)!==(record.lease_id||null)||packet.browser_closed_receipt!==false||packet.authority!==false)throw error('recovery_evidence_binding_denied');
+  const bootFp=require('./os-boot-epoch').fingerprint(packet.boot_epoch);
+  if(bootFp!==record.boot_epoch||packet.captured_at!==record.captured_at||packet.run.state!==record.run_state||packet.run.updated_at!==record.run_updated_at||(packet.run.ended_at??null)!==(record.run_ended_at??null)||(packet.run.pid??null)!==(record.run_pid??null)||(packet.lease?.state||null)!==(record.lease_state||null))throw error('recovery_evidence_registry_mismatch');
+  const prior=packet.boot_epoch,current=this.bootEpoch(),boot=require('./os-boot-epoch');
+  if(boot.sameBootEpoch(prior,current))throw error('cold_os_reboot_not_observed');
+  const currentBootMs=boot.bootEpochMs(current),priorBootMs=boot.bootEpochMs(prior);
+  if(!Number.isSafeInteger(packet.captured_at)||packet.captured_at<priorBootMs||currentBootMs<=packet.captured_at)throw error('boot_boundary_ordering_denied');
+  return {record,packet,prior,current,currentBootMs,priorBootMs};
+ }
  reconcileBootRecovery(input){
   const {object,identifier}=require('./control-plane-store');object(input,['run_id','mission_id','lease_id','evidence_id','sha256','termination_verified','request_id','recovery_kind']);
   identifier(input.run_id);identifier(input.request_id);identifier(input.mission_id);if(!policy.UUID.test(input.evidence_id||''))throw error('evidence_binding_required');
