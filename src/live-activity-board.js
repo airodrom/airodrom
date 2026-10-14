@@ -334,7 +334,14 @@ function liveActivityBoard(bridge, url) {
     return cardsCache.get(key);
   };
 
-  const activeMissions = all.filter(m => ACTIVE.has(m.state) && !visibility.isArchived(bridge.controlStore.db, m.id));
+  // Align with product Active (autonomouslyCurrent): live execution plus authorized recovery.
+  const activeMissions = all.filter(m => {
+    if (visibility.isArchived(bridge.controlStore.db, m.id)) return false;
+    const view = display.missionView(bridge, m);
+    return ACTIVE.has(m.state) || (typeof display.autonomouslyCurrent === 'function'
+      ? display.autonomouslyCurrent(m, view)
+      : (view.autonomous_managed && ['recovering', 'eligible', 'waiting'].includes(view.recovery?.kind)));
+  });
   const attention = all
     .filter(m => !visibility.isArchived(bridge.controlStore.db, m.id))
     .map(m => ({ m, v: display.missionView(bridge, m) }))

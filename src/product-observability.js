@@ -596,4 +596,4 @@ function events(bridge,url) {
  const batch=bridge.ledger.list({afterSequence:after,limit:200,...(mission?{missionId:mission}:{})});
  return {events:timeline(batch.events).filter(e=>!category||e.category===category),cursor:batch.events.at(-1)?.sequence||after,has_more:batch.has_more,observed_at:Date.now()};
 }
-module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,FILTERS,PAGE_SIZES,displayStatus,outcomeSummary,autonomousManaged,recoveryStatus,ownerAttentionRequired,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus,operatorTitle,missionHistory,missionCounts,missionIndex,notificationEvents};
+module.exports={id,state:value=>enumValue(value,STATES),STAGES,STATES,ACTIVE,FILTERS,PAGE_SIZES,displayStatus,outcomeSummary,autonomousManaged,recoveryStatus,ownerAttentionRequired,autonomouslyCurrent,eventView,timeline,progress,missionView,runtimeView,overview,nativeStatus,events,memoryStatus,operatorTitle,missionHistory,missionCounts,missionIndex,notificationEvents};
