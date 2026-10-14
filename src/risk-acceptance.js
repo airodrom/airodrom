@@ -66,8 +66,6 @@ class RiskAcceptance {
       updated_by TEXT NOT NULL,
       owner_set INTEGER NOT NULL DEFAULT 0
     );
-    INSERT OR IGNORE INTO cp_risk_acceptance_preference(id,enabled,privacy,data_class,workers,updated_at,updated_by,owner_set)
-      VALUES(1,1,'local_only','public','["opencode"]',0,'system',0);
     CREATE TABLE IF NOT EXISTS cp_trusted_autonomy_origins(
       origin TEXT PRIMARY KEY,
       approved_at INTEGER NOT NULL,
@@ -75,7 +73,10 @@ class RiskAcceptance {
       source TEXT NOT NULL,
       revoked_at INTEGER
     );`);
+    // Existing installs may predate owner_set; add the column before any INSERT that names it.
     this.#ensureOwnerSetColumn();
+    this.db.prepare(`INSERT OR IGNORE INTO cp_risk_acceptance_preference(id,enabled,privacy,data_class,workers,updated_at,updated_by,owner_set)
+      VALUES(1,1,'local_only','public','["opencode"]',0,'system',0)`).run();
     this.#applyTrustedAutonomyDefault();
     this.#ensureStandingOrigins();
   }
