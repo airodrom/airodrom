@@ -1,5 +1,11 @@
 # Known limitations
 
+## Mission registration / supervisor hard-exit (2026-10-14)
+
+- A live incident left Mission `cc7337b9-58b9-4cad-82a9-54478eca6a54` mid public-web explore (browser started; last ledger event `research.network_denied` / `private_query_denied`) when supervisor PID 51113 exited without a macOS crash report or service log. Durable recovery quarantined the lease and blocked the Mission; admission correctly remains closed while unresolved runs/leases/invocations exist.
+- Exact OS exit code/signal for that hard exit was not retained. Source now ignores supervisor SIGINT, records unhandled rejections to `supervisor-diagnostics.log` without exiting, returns live post-dispatch Mission state (including blocked), and surfaces transport loss without implying Mission failure. Host Run `51b53252-ed9d-4538-a3d7-4f2ccf4f9f81` is same-boot `web-reconcile` eligible (recorded PID ESRCH); sibling bridge Run `e116c392-…` still requires cancelled Mission + cold-boot witness for `bridge-invocation-reconcile-boot`. Expired arecibo grants are not reused.
+- Terminal “Airo: fetch failed” after registration was a client transport symptom of supervisor death, not proof that registration failed.
+
 ## Unified Autonomous Development V1 (2026-10-12)
 
 - Cursor live execution is **UNQUALIFIED**: the CLI login lives in the macOS Keychain, which the worker sandbox correctly denies. Owner step: `AGENT_CLI_CREDENTIAL_STORE=file agent login` (writes `~/.cursor/auth.json`) or an API-key file, then `npm run qualify:cursor`; `execution_qualified` stays `false` until reviewed. Cursor spend is unobservable (subscription); time/invocation ceilings are compensating controls.

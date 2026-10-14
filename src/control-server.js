@@ -473,7 +473,22 @@ class ControlServer {
       if(url.pathname==='/api/assistant/conversation/cancel')return this.json(res,200,this.conversationEngine.cancel(body));
       if(url.pathname==='/api/assistant/web/research'){
         try{
-          const created=this.bridge.missions.web.createResearch(body);this.bridge.missions.dispatch(created.mission_id,{request_id:'public-web-dispatch:'+body.request_id});return this.json(res,202,{...created,browser_research_available:true});
+          const created=this.bridge.missions.web.createResearch(body);
+          this.bridge.missions.dispatch(created.mission_id,{request_id:'public-web-dispatch:'+body.request_id});
+          // Live state after dispatch — do not return the create-time "ready" snapshot while browser work has already begun.
+          const current=this.bridge.missions.require(created.mission_id,'operator');
+          const running=['dispatching','running','verifying'].includes(current.state);
+          const blocked=['blocked','needs_rework','cancelled','failed'].includes(current.state);
+          return this.json(res,202,{
+            ...created,
+            state:current.state,
+            browser_research_available:true,
+            message:running
+              ?'Bounded public website research is registered and dispatch has started. Inspect /mission status; the report requires owner Acceptance. No product repository comparison was requested.'
+              :blocked
+                ?('Bounded public website research is registered; Mission is now '+current.state+'. Inspect /mission status. Registration succeeded; this is not a Terminal transport failure.')
+                :created.message
+          });
         }catch(error){
           const message=String(error?.message||'');
           if(/\bENOENT\b|no such file or directory|lstat|realpath|\/(?:Users|home|private|tmp|var)\b/i.test(message))return this.json(res,400,{error:'Public website research could not be started. Approve a public HTTPS URL for website-only research, or configure a verified product repository for comparison research. No website has been investigated.',browser_research_available:true,authority:false});

@@ -36,22 +36,48 @@ Privacy    Local inference · scoped Memory · credentials stay private
 `;
 }
 function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) / chat   Attach to the managed service and open conversation\n  status                Show live service health (client; never starts a supervisor)\n  doctor                Safe readiness, pins, and CLI install alignment\n  help                  Show this guidance\n  open                  Open Control Center through private discovery\n  memory [query]        List/search Personal Memory V2\n  service start         Start the managed local service when stopped\n  service stop          Gracefully stop the owned local service\n  service restart       Stop then start the owned local service\n  service status        Same as airodrom status\n  start|stop|restart    Legacy aliases for service start|stop|restart\n  menu                  Open the native macOS menu helper\n  requalify             Fresh confined qualification while stopped\n  browser options       Show browser connection availability\n  task <file>           Register and dispatch a scoped Mission JSON\n  whatsapp              bind | status | discover | use-test | rotate-verify-token | commit-verify-token | rollback-verify-token | prepare-callback <https://host/webhooks/whatsapp>\n  secret                prepare | put [operator|gmail|whatsapp] | forget <ref> | status\n  mcp                   Existing MCP stdio transport\n  --version             Show version\n\nClient commands discover the existing managed service and never launch a second supervisor.\nUse airodrom service start only when the service is stopped.\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nWhatsApp credentials use hidden Terminal input only (airodrom whatsapp bind). Public ingress stays OFF.\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
+function isTransportTimeout(error) {
+  return error?.name === 'TimeoutError' || /aborted due to timeout|timed out|TimeoutError/i.test(String(error?.message || error || ''));
+}
+function isTransportLoss(error) {
+  return isTransportTimeout(error) || /ECONNRESET|ECONNREFUSED|fetch failed|network|socket hang up|other side closed/i.test(String(error?.message || error || ''));
+}
+function transportLossMessage(missionId) {
+  const id = missionId ? ' Mission ' + missionId + ' remains in durable host records.' : '';
+  return 'Lost contact with the managed Airodrom service.' + id + ' Run airodrom status. A Terminal disconnect does not cancel a registered Mission. The CLI is still open.';
+}
 async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
-  const deadline = Date.now() + timeoutMs; let lastState=null;
+  const deadline = Date.now() + timeoutMs; let lastState=null; let transportLosses=0;
   while (Date.now() < deadline) {
-    if (signal?.aborted) { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); throw Error('Task cancelled. The CLI is still open.'); }
-    const r = await local.request(home, '/api/interactive/task?mission_id=' + encodeURIComponent(id));
+    if (signal?.aborted) {
+      try { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); }
+      catch (error) { if (isTransportLoss(error)) throw Error(transportLossMessage(id)); throw error; }
+      throw Error('Task cancelled. The CLI is still open.');
+    }
+    let r;
+    try {
+      r = await local.request(home, '/api/interactive/task?mission_id=' + encodeURIComponent(id), undefined, { timeoutMs: 10000, signal });
+    } catch (error) {
+      if (signal?.aborted) throw Error('Task cancelled. The CLI is still open.');
+      // Transient poll loss must not cancel durable Mission work or imply Mission failure.
+      if (isTransportLoss(error)) {
+        transportLosses++;
+        if (transportLosses >= 8 || local.isStopped(home)) throw Error(transportLossMessage(id));
+        await new Promise(resolve => setTimeout(resolve, 250));
+        continue;
+      }
+      throw error;
+    }
+    transportLosses=0;
     if(r.state!==lastState){lastState=r.state;onProgress?.(r);}
     if (['awaiting_acceptance', 'completed'].includes(r.state)) return r;
     if(r.state==='waiting_for_operator')return r;
     if (['blocked', 'needs_rework', 'cancelled'].includes(r.state)) throw Error(r.reason || 'Mission stopped; inspect its status. The CLI is still open.');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() });
+  try { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); }
+  catch (error) { if (isTransportLoss(error)) throw Error(transportLossMessage(id)); throw error; }
   throw Error('Bounded task timed out and cancellation was requested. Check /mission status; the CLI is still open.');
-}
-function isTransportTimeout(error) {
-  return error?.name === 'TimeoutError' || /aborted due to timeout|timed out|TimeoutError/i.test(String(error?.message || error || ''));
 }
 async function waitConversation(home, turn, { signal, onProgress, timeoutMs = 130000 } = {}) {
   const identity = { conversation_id: turn.conversation_id, turn_id: turn.turn_id };
@@ -69,7 +95,7 @@ async function waitConversation(home, turn, { signal, onProgress, timeoutMs = 13
     } catch (error) {
       if (signal?.aborted) { await cancel(); throw Error(cancelled); }
       // Transient poll transport loss must not cancel a healthy in-flight turn.
-      if (isTransportTimeout(error) || /ECONNRESET|fetch failed|network/i.test(String(error?.message || error || ''))) {
+      if (isTransportLoss(error)) {
         await new Promise(resolve => setTimeout(resolve, 200));
         continue;
       }
@@ -582,9 +608,14 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         const timeout = isTransportTimeout(error);
         const cancelled = error.name === 'AbortError' || /cancelled/i.test(error.message || '');
         const inferenceTimeout = /timed out while waiting for the local model/i.test(error.message || '');
+        const transport = isTransportLoss(error) && !timeout;
         const message = inferenceTimeout
           ? error.message
-          : timeout
+          : /Lost contact with the managed Airodrom service/i.test(error.message || '')
+            ? error.message
+            : transport
+              ? transportLossMessage(lastMission)
+            : timeout
             ? 'Local admission timed out. If a reply is still generating, wait or retry; the CLI is still open.'
             : cancelled
               ? (error.message || 'Request cancelled. The CLI is still open.')
@@ -674,4 +705,4 @@ async function main(args = process.argv.slice(2)) {
   throw Error('Unknown command. Use airodrom --help.');
 }
 if (require.main === module) main().catch(error => { console.error('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message))); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
-module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, sanitizePaste, pastePreview, secureIngressLine, missionReceipt, interactive, main, showStatus, serviceCommand };
+module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, isTransportLoss, transportLossMessage, sanitizePaste, pastePreview, secureIngressLine, missionReceipt, interactive, main, showStatus, serviceCommand };

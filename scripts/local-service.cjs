@@ -29,7 +29,19 @@ async function main() {
     local.writePrivate(path.join(c.dataDir, 'ui.json'), { ...address, pid: process.pid });
     local.writePrivate(path.join(c.dataDir, 'mcp.json'), { port: address.port, token: server.mcpToken, pid: process.pid });
   } catch (error) { await stop(); throw error; }
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => stop().catch(() => { process.exitCode = 1; }));
+  // Managed supervisors are detached from Terminal clients. SIGINT is a client
+  // cancel signal and must not drain or stop the durable control plane.
+  process.on('SIGINT', () => {});
+  for (const signal of ['SIGTERM', 'SIGHUP']) process.on(signal, () => stop().catch(() => { process.exitCode = 1; }));
+  // Mission/browser async faults must settle through durable recovery paths.
+  // Do not exit the supervisor on unhandledRejection, and do not pretend the
+  // process is healthy: append a bounded diagnostic line for audit.
+  process.on('unhandledRejection', reason => {
+    try {
+      const text = String(reason && (reason.stack || reason.message) || reason).slice(0, 2000);
+      fs.appendFileSync(path.join(c.dataDir, 'supervisor-diagnostics.log'), JSON.stringify({ at: Date.now(), kind: 'unhandledRejection', text }) + '\n', { mode: 0o600 });
+    } catch { /* diagnostics must never take down the supervisor */ }
+  });
 }
 if (require.main === module) main().catch(() => { process.exitCode = 1; });
 module.exports = { main };

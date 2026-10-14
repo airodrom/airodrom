@@ -1,3 +1,11 @@
+## Unreleased — Mission registration reliability after Terminal disconnect
+
+- Public `/api/assistant/web/research` returns the live Mission state after auto-dispatch instead of the stale create-time `ready` snapshot, including honest blocked messaging when dispatch already failed closed.
+- Interactive CLI `waitResult` retries transport loss (`fetch failed`, reset, refused) without cancelling durable Mission work; Terminal errors distinguish service contact loss from Mission failure and keep the Mission ID visible.
+- Managed `local-service` ignores SIGINT (client cancel) so Terminal Ctrl+C cannot stop the detached supervisor; SIGTERM/SIGHUP still perform managed stop.
+- `unhandledRejection` no longer exits the supervisor, but appends a bounded `supervisor-diagnostics.log` line instead of silently pretending health. No `uncaughtException` swallow.
+- Focused regression: `tests/mission-registration-reliability.test.js` (live state, transport loss, SIGINT survival, network-denial honesty, expired grant).
+
 ## Unreleased — Bridge invocation ownership and packaging
 
 - `proveInvocationOwnership` no longer accepts `lifecycle.lease_acquired` (lease acquire precedes `latestMcpRequestId` and can bind a previous invocation id to a new bridge Run).
