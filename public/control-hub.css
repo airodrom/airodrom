@@ -148,3 +148,44 @@ nav button{transition:color .15s ease,background-color .15s ease,border-color .1
 :root[data-theme="light"] .mission-tabs button.active-tab{background:#5091ff18;color:#173f60}
 
 .nav-more{margin-top:8px}.nav-more summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 13px;letter-spacing:.08em;text-transform:uppercase}.nav-more div{display:grid;gap:4px;margin-top:4px}.grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+
+
+/* Live Activity Experience V2 — Mission-centered work monitoring */
+.live-activity-v2{display:grid;gap:18px;max-width:1100px}
+.la-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:16px;align-items:flex-start}
+.la-title-block h2{margin-bottom:6px}.la-title-block p{max-width:52rem;margin:0}
+.la-stream-status{display:grid;gap:6px;justify-items:end;text-align:right;font-size:12px}
+.la-tabs{margin-top:0}
+.la-empty-now{padding:28px}.la-empty-now h3{margin:0 0 8px;font-size:20px}
+.la-mission-list{display:grid;gap:14px}
+.la-card{border:1px solid var(--border);border-radius:14px;background:var(--elevated);padding:18px 20px}
+.la-card-live{border-color:#78caff55;background:linear-gradient(140deg,#122943b8,#10182aee 70%)}
+.la-card-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.la-card-head h3{margin:0;font-size:17px;letter-spacing:-.2px;flex:1;min-width:12rem}
+.la-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px;margin:0 0 12px;font-size:12px}
+.la-facts small{display:block;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-size:10px;margin-bottom:2px}
+.la-facts span{overflow-wrap:anywhere}
+.la-latest{margin:0 0 6px;font-size:14px}
+.la-blockers{margin:12px 0;padding:12px;border:1px solid #c4923a55;border-radius:10px;background:#c4923a12}
+.la-blockers strong{display:block;color:#e0b56a;font-size:12px;margin-bottom:6px}
+.la-blockers p{margin:0 0 4px;font-size:13px}
+.la-timeline,.la-files,.la-technical{margin:12px 0 0}
+.la-timeline summary,.la-files summary,.la-technical summary{cursor:pointer;color:var(--cyan);font-size:13px}
+.la-stages{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+.la-stage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px}
+.la-stage small{grid-column:1/-1}
+.la-stage.la-completed{border-color:#55d2af44}
+.la-stage.la-in-progress{border-color:#45c8dc66;background:#45c8dc10}
+.la-stage.la-failed,.la-stage.la-blocked{border-color:#e5768555}
+.la-stage.la-pending,.la-stage.la-unavailable{opacity:.85}
+.la-file-list{list-style:none;margin:10px 0 0;padding:0}
+.la-file{display:grid;gap:6px;padding:12px 0;border-bottom:1px solid var(--border);font-size:13px}
+.la-file:last-child{border-bottom:0}
+.la-file-main strong{display:block}
+.la-file-meta{display:flex;flex-wrap:wrap;gap:10px;color:var(--muted);font-size:12px}
+.la-attention{margin-bottom:4px}
+:root[data-theme="light"] .la-card-live{background:linear-gradient(140deg,#f4faff,#eef5f8)}
+:root[data-theme="light"] .la-blockers{background:#fff8eb}
+@media(max-width:900px){.la-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.la-stream-status{justify-items:start;text-align:left}}
+@media(max-width:760px){.la-facts{grid-template-columns:1fr}.la-card{padding:16px}.la-stage{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.la-card-live{background:var(--elevated)}}

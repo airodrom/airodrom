@@ -18,6 +18,7 @@
  }catch{}
  const researchReports=new Map(),researchImages=new Map();
  let observatory=null,obsFollow=true,obsFilter='',obsQuery='',obsStream=null,obsCursor=0,diffCache=new Map(),expandedOutput=new Set();
+ let liveBoard=null,liveTab='now',liveWindow='24h',liveTechOpen=false,liveBoardTimer=null,liveExpanded=new Set(),livePausedStale=false;
  let lastOkAt=null,connectionView=null,secondaryNotice='';
  let missionPage=null,missionFilter='Active',missionOffset=0,missionLimit=15,missionWorker='',missionSort='newest',searchTimer=null,missionTab='Active',missionDetailTab='Outcome',contentScroll=0,missionListContext=null;
  const deepLinkViews=new Set(['Conversation','Missions','Development Sessions','System Health']);
@@ -203,27 +204,229 @@
  }
  function health(){const c=node('article',null,'glass');c.append(node('h2','System Health'));const conn=snapshot.connectivity||connectionView;if(conn){const r=node('div',null,'table-row');const text=node('div','Service connectivity');text.append(node('small',(conn.detail||conn.label)+(lastOkAt?' · Last ok '+stamp(lastOkAt):'')));r.append(text,chip(conn.label||conn.state));c.append(r);}for(const [label,item]of [['Control Plane',snapshot.control],['OpenCode · Primary',snapshot.runtime],['Memory V2 · Local',snapshot.memory],['Local provider',snapshot.provider],['Audit / events',snapshot.audit],['External client / MCP',snapshot.connection],['Disk capacity',snapshot.disk]]){const r=node('div',null,'table-row');const text=node('div',label);text.append(node('small',item.reason|| (label.startsWith('OpenCode')?'Exact artifact readiness':label.startsWith('Memory')?snapshot.memory.backend+' store observed':label==='Audit / events'?'Canonical ledger health':label.includes('MCP')?'Does not imply service disconnect':'Host observation')));r.append(text,chip(item.state));c.append(r);}const install=snapshot.installation_compatibility;if(install){const r=node('div',null,'table-row');const text=node('div','Installation compatibility');text.append(node('small',(install.mutations_allowed?'Mutations allowed':'Mutations blocked')+' · '+(install.upgrade_guidance?.length?install.upgrade_guidance.map(g=>g.component+': '+g.guidance).join(' · '):'Components observed without private context')));r.append(text,chip(install.overall||'Unavailable'));c.append(r);}const security=snapshot.runtime_security;if(security?.items){for(const item of security.items.slice(0,4)){const r=node('div',null,'table-row');const text=node('div','Runtime security · '+item.adapter);const props=Object.entries(item.properties||{}).map(([k,v])=>readable(k)+' '+readable(v.state)).join(' · ');text.append(node('small',props||'Host evidence classification'));r.append(text,chip(item.kind==='model_provider'?'Ready':'Degraded'));c.append(r);}}c.append(node('small',`Observed ${stamp(snapshot.observed_at)} · ${snapshot.leases.held} held leases · ${snapshot.leases.quarantined} quarantined`));return c;}
  function activity(limit=500){const list=node('ol',null,'feed');for(const e of [...feed.values()].filter(e=>!category||e.category===category).slice(-limit).reverse()){const item=node('li'),at=node('time',stamp(e.timestamp_ms)),body=node('div',e.label);if(e.timestamp_ms)at.dateTime=new Date(e.timestamp_ms).toISOString();body.append(node('small',e.category+(e.outcome?' · '+e.outcome:'')));item.append(at,body);list.append(item);}return list.children.length?list:empty('No matching observed events. Unsupported stages are never inferred.');}
+
+ function liveUnavailable(v){return (v==null||v===''||v==='Unavailable')?'Unavailable':String(v);}
+ function liveDuration(s){if(!Number.isFinite(s)||s<0)return 'Unavailable';if(s<60)return s+'s';if(s<3600)return Math.floor(s/60)+'m '+(s%60)+'s';return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';}
+ async function refreshLiveBoard(){
+   if(!authorized||view!=='Live Activity')return;
+   try{
+     const params=new URLSearchParams({tab:liveTab,window:liveWindow,limit:'20'});
+     if(liveTechOpen)params.set('technical','1');
+     if(obsQuery)params.set('q',obsQuery);
+     if(obsFilter)params.set('category',obsFilter);
+     const board=await api('/api/product/live-activity?'+params);
+     liveBoard=board; livePausedStale=!!paused;
+     if(view==='Live Activity'&&!document.hidden)render();
+   }catch(e){if(view==='Live Activity')$('notice').textContent=e.message;}
+ }
+ function scheduleLiveBoardRefresh(){
+   clearTimeout(liveBoardTimer);
+   liveBoardTimer=setTimeout(()=>{liveBoardTimer=null;refreshLiveBoard();},350);
+ }
+ function liveFileRow(file){
+   const row=node('li',null,'la-file');
+   const main=node('div',null,'la-file-main');
+   main.append(node('strong',file.name||file.path||'Unavailable'));
+   main.append(node('small',(file.path||'')+(file.branch&&file.branch!=='Unavailable'?' · '+file.branch:'')+(file.writer_class?' · '+file.writer_class:''),'muted'));
+   const meta=node('div',null,'la-file-meta');
+   const add=Number.isInteger(file.lines_added)?('+'+file.lines_added):null;
+   const del=Number.isInteger(file.lines_removed)?('-'+file.lines_removed):null;
+   meta.append(node('span',file.change_type||'modified'));
+   if(file.git_backed&&(add||del))meta.append(node('span',[add,del].filter(Boolean).join(' / ')));
+   else meta.append(node('span','Git counts unavailable','muted'));
+   meta.append(node('span',stamp(file.last_modified_ms),'muted'));
+   const actions=node('div',null,'actions');
+   if(file.mission_id&&file.path){
+     actions.append(button('View Diff',async()=>{
+       try{
+         const diff=await api('/api/product/observatory/diff?mission='+encodeURIComponent(file.mission_id)+'&path='+encodeURIComponent(file.path));
+         const pre=node('pre',diff.diff||'No diff observed','diff-view');
+         row.append(pre);
+       }catch(e){$('notice').textContent=e.message;}
+     }));
+     actions.append(button('Open Mission',()=>selectMission(file.mission_id)));
+   }
+   row.append(main,meta,actions);return row;
+ }
+ function liveMissionCard(card){
+   const article=node('article',null,'la-card'+(card.advancing?' la-card-live':''));
+   article.setAttribute('aria-label',(card.display?.label||card.state)+' · '+card.title);
+   const head=node('div',null,'la-card-head');
+   head.append(chip(card.display?.key||card.state,card.display?.tone),node('h3',card.title));
+   article.append(head);
+   const facts=node('div',null,'la-facts');
+   for(const [label,value] of [
+     ['Project',liveUnavailable(card.project)],
+     ['Worker',liveUnavailable(card.worker)],
+     ['Model',liveUnavailable(card.model)],
+     ['Branch',liveUnavailable(card.branch)],
+     ['Elapsed',liveDuration(card.elapsed_s)],
+     ['Stage',liveUnavailable(card.current_stage)],
+     ['Files',String(card.changed_file_count??0)],
+     ['Verification',liveUnavailable(card.verification_state)],
+     ['Tests',card.tests?.observed?(card.tests.outcome||card.tests.latest||'Observed'):'Not started']
+   ]){const fact=node('div');fact.append(node('small',label),node('span',value));facts.append(fact);}
+   article.append(facts);
+   article.append(node('p',card.latest_event||'No meaningful host observations yet','la-latest'));
+   if(card.grouping?.detail)article.append(node('small',card.grouping.detail,'muted'));
+   if(card.blockers?.length){
+     const block=node('div',null,'la-blockers');
+     block.append(node('strong','Blockers'));
+     for(const b of card.blockers.slice(0,3))block.append(node('p',b.reason+(b.required_decision?' — '+b.required_decision:'')));
+     article.append(block);
+   }
+   const tlKey='tl:'+card.id;
+   const tl=node('details',null,'la-timeline');
+   if(liveExpanded.has(tlKey))tl.open=true;
+   tl.ontoggle=()=>{if(tl.open)liveExpanded.add(tlKey);else liveExpanded.delete(tlKey);};
+   const sum=node('summary','Workflow timeline');tl.append(sum);
+   const ol=node('ol',null,'la-stages');
+   for(const step of card.timeline||[]){
+     const li=node('li',null,'la-stage la-'+String(step.status||'').toLowerCase().replace(/\s+/g,'-'));
+     li.append(node('strong',step.name),node('span',step.status));
+     const times=[];
+     if(step.start_ms)times.push('start '+stamp(step.start_ms));
+     if(step.end_ms)times.push('end '+stamp(step.end_ms));
+     if(Number.isFinite(step.duration_ms))times.push(Math.round(step.duration_ms/1000)+'s');
+     if(step.evidence_event_id)times.push('evidence '+step.evidence_event_id.slice(0,8));
+     li.append(node('small',times.join(' · ')||'Unavailable','muted'));
+     ol.append(li);
+   }
+   tl.append(ol);article.append(tl);
+   if(card.changed_files?.length){
+     const files=node('details',null,'la-files');
+     const fk='files:'+card.id; if(liveExpanded.has(fk))files.open=true;
+     files.ontoggle=()=>{if(files.open)liveExpanded.add(fk);else liveExpanded.delete(fk);};
+     files.append(node('summary','Changed files ('+card.changed_file_count+')'));
+     const ul=node('ul',null,'la-file-list');
+     for(const f of card.changed_files.slice(0,12))ul.append(liveFileRow(f));
+     files.append(ul);article.append(files);
+   }
+   const actions=node('div',null,'actions');
+   actions.append(button('View Mission',()=>selectMission(card.id),true));
+   if(card.changed_file_count)actions.append(button('View Files',()=>{liveExpanded.add('files:'+card.id);liveTab='now';render();}));
+   article.append(actions);
+   return article;
+ }
+ function liveAttentionInbox(items){
+   const panel=node('section',null,'glass la-attention');
+   panel.append(node('h3','Needs Attention'),node('p','Owner decisions and unresolved actionable problems only. Historical failures stay in History.','muted'));
+   if(!items?.length){panel.append(empty('No owner decisions waiting.'));return panel;}
+   for(const item of items){
+     const row=node('div',null,'table-row');
+     const text=node('div',item.title||item.mission_id);
+     text.append(node('small',item.reason+(item.required_decision?' · '+item.required_decision:'')));
+     row.append(text,button('Open',()=>selectMission(item.mission_id)));
+     panel.append(row);
+   }
+   return panel;
+ }
  function liveActivityView(){
-   const root=node('div',null,'observatory live-activity');
-   root.append(node('h2','Live Activity'),node('p','Streaming host-observed Mission, OpenCode, Git, file, and test events. Progress is never fabricated. Unsaved editor typing is not observable.','muted'));
-   const filter=node('select');filter.setAttribute('aria-label','Event category');filter.dataset.focusKey='live-category';
-   for(const name of ['','Mission','Runtime','Worker','File','Git','Command','Test','Verification','Approval','Settlement','System']){const o=node('option',name||'All categories');o.value=name;filter.append(o);}
-   filter.value=obsFilter||category;filter.onchange=()=>{obsFilter=filter.value;category=filter.value;generation++;cursor=0;obsCursor=0;feed.clear();if(observatory)observatory.events=[];connectGlobalLiveStream();refresh();render();};
-   root.append(filter);
-   const facts=node('div',null,'live-facts');
-   for(const [label,value]of [
-     ['OpenCode',snapshot.runtime?.state],
-     ['Cursor Agent',snapshot.cursor?.agent_availability||'unqualified'],
-     ['Cursor editor',snapshot.cursor?.editor_available?'available':'not observed'],
-     ['FS watch',snapshot.workspace_watch?.continuous_filesystem_watch?'saved-file watch on':'after-turn / event only'],
-     ['Needs Attention',snapshot.mission_counts?.['Needs Attention']??snapshot.counts?.review??0],
-     ['Active',snapshot.mission_counts?.Active??snapshot.counts?.active??0]
-   ]){const fact=node('div');fact.append(node('small',label),node('span',String(value)));facts.append(fact);}
-   root.append(facts);
-   const liveEvents=(observatory?.events||[]).length?observatory.events:[...feed.values()];
-   if(liveEvents.length)root.append(observatoryFeed(liveEvents,120));
-   else root.append(activity(120));
-   root.append(node('p','Writer classes: OPENCODE_WRITE only with OpenCode evidence · SAVED_FILE_CHANGE for observed saves · never invent authorship.','privacy'));
+   const root=node('div',null,'live-activity-v2');
+   const head=node('div',null,'la-head');
+   head.append(node('div',null,'la-title-block'));
+   head.firstChild.append(node('h2','Live Activity'),node('p','Mission-centered work monitoring. Progress is host-observed only. Unsaved typing is not observable. Cursor Agent is unqualified.','muted'));
+   const status=node('div',null,'la-stream-status');
+   const connLabel=paused?'Paused — display may be stale':(obsStream?'Live':'Connecting…');
+   status.append(chip(paused?'waiting':obsStream?'Ready':'Degraded'),node('span',connLabel+(livePausedStale&&paused?' · stale':''),'muted'));
+   if(liveBoard?.observation_boundary){
+     status.append(node('small','FS watch: '+(liveBoard.observation_boundary.continuous_filesystem_watch?'on':'off')+' · OpenCode: host-observed events only','muted'));
+   }
+   head.append(status);root.append(head);
+
+   const tabs=node('div',null,'mission-tabs la-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Live Activity views');
+   for(const [id,label] of [['now','Now'],['recent','Recent'],['history','History']]){
+     const b=button(label,()=>{liveTab=id;generation++;refreshLiveBoard();render();});
+     b.setAttribute('role','tab');b.setAttribute('aria-selected',liveTab===id?'true':'false');
+     if(liveTab===id)b.classList.add('active-tab');
+     b.dataset.focusKey='live-tab-'+id;tabs.append(b);
+   }
+   root.append(tabs);
+
+   if(liveTab==='recent'||liveTab==='history'){
+     const filters=node('div',null,'filters');
+     if(liveTab==='recent'){
+       const win=node('select');win.setAttribute('aria-label','Recent time window');win.dataset.focusKey='live-window';
+       for(const [v,l] of [['1h','Last hour'],['24h','Last 24 hours'],['7d','Last 7 days'],['30d','Last 30 days']]){const o=node('option',l);o.value=v;win.append(o);}
+       win.value=liveWindow;win.onchange=()=>{liveWindow=win.value;refreshLiveBoard();};
+       filters.append(win);
+     }
+     if(liveTab==='history'){
+       const search=node('input');search.type='search';search.placeholder='Search Missions or events…';search.setAttribute('aria-label','Search history');search.dataset.focusKey='live-search';search.value=obsQuery;search.maxLength=80;
+       search.oninput=()=>{obsQuery=search.value;clearTimeout(liveBoardTimer);liveBoardTimer=setTimeout(()=>refreshLiveBoard(),300);};
+       const cat=node('select');cat.setAttribute('aria-label','Technical event category');cat.dataset.focusKey='live-category';
+       for(const name of ['','Mission','Runtime','Worker','Capability','File','Git','Command','Test','Verification','Approval','Settlement','System']){const o=node('option',name||'All technical categories');o.value=name;cat.append(o);}
+       cat.value=obsFilter;cat.onchange=()=>{obsFilter=cat.value;refreshLiveBoard();};
+       filters.append(search,cat);
+     }
+     root.append(filters);
+   }
+
+   if(!liveBoard){root.append(empty('Loading Live Activity…'));if(!obsStream)connectGlobalLiveStream();refreshLiveBoard();return root;}
+
+   const board=liveBoard;
+   if(liveTab==='now'){
+     root.append(liveAttentionInbox(board.attention||[]));
+     if(board.now.empty){
+       const emptyNow=node('section',null,'glass la-empty-now');
+       emptyNow.append(node('h3','No active work.'),node('p','Recently completed Missions and historical activity are under Recent and History. Live Activity never fills this view with old events.','muted'));
+       const actions=node('div',null,'actions');
+       actions.append(button('Open Recent',()=>{liveTab='recent';refreshLiveBoard();render();},true));
+       actions.append(button('Open History',()=>{liveTab='history';refreshLiveBoard();render();}));
+       emptyNow.append(actions);root.append(emptyNow);
+     }else{
+       if(board.now.workers?.length){
+         const w=node('section',null,'glass');w.append(node('h3','Current workers'));
+         for(const worker of board.now.workers){
+           const row=node('div',null,'table-row');
+           const text=node('div',liveUnavailable(worker.worker)+' · '+liveUnavailable(worker.model));
+           text.append(node('small',worker.mission_title+' · '+liveUnavailable(worker.stage)));
+           row.append(text,chip('running'));w.append(row);
+         }
+         root.append(w);
+       }
+       const list=node('div',null,'la-mission-list');
+       for(const card of board.now.missions)list.append(liveMissionCard(card));
+       root.append(list);
+       if(board.now.changed_files?.length){
+         const files=node('section',null,'glass');files.append(node('h3','Recently changed files'));
+         const ul=node('ul',null,'la-file-list');
+         for(const f of board.now.changed_files.slice(0,20))ul.append(liveFileRow(f));
+         files.append(ul);root.append(files);
+       }
+     }
+   }else if(liveTab==='recent'){
+     if(board.recent.empty)root.append(empty('No completed or failed work in this window.'));
+     else{
+       const list=node('div',null,'la-mission-list');
+       for(const card of board.recent.missions)list.append(liveMissionCard(card));
+       root.append(list);
+     }
+     if(board.recent.changed_files?.length){
+       const files=node('section',null,'glass');files.append(node('h3','Changed files'));
+       const ul=node('ul',null,'la-file-list');
+       for(const f of board.recent.changed_files.slice(0,24))ul.append(liveFileRow(f));
+       files.append(ul);root.append(files);
+     }
+   }else{
+     const list=node('div',null,'la-mission-list');
+     if(!board.history.missions.length)list.append(empty(obsQuery?'No Missions match this search.':'No retained Mission records.'));
+     for(const card of board.history.missions)list.append(liveMissionCard(card));
+     root.append(list);
+     const tech=node('details',null,'glass la-technical');
+     tech.open=liveTechOpen;
+     tech.ontoggle=()=>{liveTechOpen=tech.open;if(tech.open)refreshLiveBoard();};
+     tech.append(node('summary','Technical events'));
+     tech.append(node('p','Full low-level host event stream. Capability chatter and run IDs live here — not in Now.','muted'));
+     if(tech.open){
+       const feedList=board.history.technical_events||[];
+       if(feedList.length)tech.append(observatoryFeed(feedList,160));
+       else tech.append(empty('No technical events in this window.'));
+     }
+     root.append(tech);
+   }
+
+   root.append(node('p','Writer classes require evidence: OPENCODE_WRITE · SAVED_FILE_CHANGE · EDITOR_EVENT · UNKNOWN_WRITER. Authorship is never invented.','privacy'));
    if(!obsStream)connectGlobalLiveStream();
    return root;
  }
@@ -231,7 +434,6 @@
    stopObsStream(); if(!authorized||paused||document.hidden||typeof ReadableStream==='undefined')return;
    const controller=new AbortController(); obsStream=controller;
    const params=new URLSearchParams({after:String(obsCursor||cursor||0)});
-   if(obsFilter||category)params.set('category',obsFilter||category);
    (async()=>{
      try{
        const response=await fetch('/api/product/live-stream?'+params,{headers:{Authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:controller.signal});
@@ -246,6 +448,8 @@
            for(const line of lines){if(line.startsWith('event:'))event=line.slice(6).trim(); if(line.startsWith('data:'))data+=line.slice(5).trim();}
            if(!data)continue;
            let payload; try{payload=JSON.parse(data);}catch{continue;}
+           if(event==='ready'&&Number.isFinite(payload.cursor)){obsCursor=Math.max(obsCursor,payload.cursor||0);continue;}
+           if(event==='heartbeat'&&Number.isFinite(payload.cursor)){obsCursor=Math.max(obsCursor,payload.cursor||0);continue;}
            if(event==='event'&&payload.event_id){
              if(!observatory)observatory={mission:{id:null},events:[],files:[],commands:[],tests:[],worker:[],activity:{}};
              const list=observatory.events||[]; if(!list.some(e=>e.event_id===payload.event_id))list.push(payload);
@@ -253,7 +457,8 @@
              feed.set(payload.event_id,payload);
              if(['File','Git'].includes(payload.category))observatory.files=[...(observatory.files||[]),payload].slice(-64);
              if(['Worker','Runtime','Capability'].includes(payload.category))observatory.worker=[...(observatory.worker||[]),payload].slice(-64);
-             if((view==='Live Activity'||view==='Activity & Audit')&&!document.hidden)render();
+             if(view==='Live Activity'&&!document.hidden&&!paused)scheduleLiveBoardRefresh();
+             else if((view==='Activity & Audit')&&!document.hidden)render();
            }
          }
        }
@@ -890,7 +1095,7 @@
        const historyQuery=missionId?'?mission_id='+encodeURIComponent(missionId):(conversationSessionId&&!pendingNewConversation?'?conversation_id='+encodeURIComponent(conversationSessionId):'');
        history=historyQuery?await api('/api/assistant/history'+historyQuery,undefined,inflight.signal):{items:[],streaming:null,generation:current.memory.generation};
      }let nextCursor=snapshot?.epoch!==current.epoch?0:cursor;const incoming=[];let pages=0,batch;do{batch=await api('/api/product/events?after='+nextCursor+(filter?'&category='+encodeURIComponent(filter):'')+(eventMission?'&mission='+encodeURIComponent(eventMission):''),undefined,inflight.signal);nextCursor=batch.cursor;incoming.push(...batch.events);pages++;}while(batch.has_more&&pages<4);if(version!==generation||paused||document.hidden)return;if(snapshot?.epoch!==current.epoch)feed.clear();if(snapshot?.memory?.generation!==current.memory.generation){const keepSession=conversationSessionId;const keepPending=pendingNewConversation;const keepPrevious=previousConversationSessionId;clearMemory();conversationSessionId=keepSession;pendingNewConversation=keepPending;previousConversationSessionId=keepPrevious;}snapshot=current;if(live&&missionId){observatory=live;obsCursor=Math.max(obsCursor,live.cursor||0);if(!obsStream)connectObsStream(missionId);}if(['AI & Workers','Conversation'].includes(view)&&current.provider?.schema_version===1)providerGeneration=version;if(nextMissionPage)missionPage=nextMissionPage;if(history&&(view==='Conversation'||missionId)&&history.generation===current.memory.generation){if(pendingNewConversation){conversationHistory=[];conversationStreaming=null;}else{conversationHistory=history.items;conversationStreaming=history.streaming||null;}}cursor=nextCursor;for(const e of incoming)if(e.event_id)feed.set(e.event_id,e);while(feed.size>500)feed.delete(feed.keys().next().value);failures=0;document.body.classList.remove('offline');lastOkAt=snapshot.observed_at;applyConnection(deriveConnection({authorized:true,reachable:true,paused:false,failures:0,overviewStatus:snapshot.status||'Ready'}));$('notice').textContent='Observed '+stamp(current.observed_at)+' · '+(view==='Missions'&&!missionId&&missionPage?missionPage.scope:current.counts.scope);render();if(batch.has_more)timer=setTimeout(()=>{timer=null;refresh();},250);}catch(e){if(version!==generation||paused||document.hidden)return;clearMemory();failures++;render();document.body.classList.add('offline');applyConnection(deriveConnection({authorized,reachable:false,paused:false,failures,error:e.message}));$('notice').textContent=e.message+(authorized?' Previous observations are stale.':'');}finally{busy=false;inflight=null;if(!timer&&!paused&&authorized&&!document.hidden)timer=setTimeout(()=>{timer=null;refresh();},version!==generation?250:Math.min(30000,2500*2**Math.min(failures,4)));}}
- $('pause').onclick=()=>{generation++;inflight?.abort();paused=!paused;$('pause').textContent=paused?'Resume updates':'Pause updates';applyConnection(deriveConnection({authorized,reachable:!!snapshot,paused,overviewStatus:snapshot?.status,failures}));if(paused){stopObsStream();clearTimeout(timer);}else{timer=null;refresh();}};
+ $('pause').onclick=()=>{generation++;inflight?.abort();paused=!paused;livePausedStale=paused;$('pause').textContent=paused?'Resume updates':'Pause updates';applyConnection(deriveConnection({authorized,reachable:!!snapshot,paused,overviewStatus:snapshot?.status,failures}));if(paused){stopObsStream();clearTimeout(timer);if(view==='Live Activity')render();}else{timer=null;if(view==='Live Activity'){connectGlobalLiveStream();refreshLiveBoard();}refresh();}};
  document.addEventListener('visibilitychange',()=>{generation++;inflight?.abort();clearTimeout(timer);timer=null;if(document.hidden){const keepSession=conversationSessionId;const keepPending=pendingNewConversation;const keepPrevious=previousConversationSessionId;clearMemory();conversationSessionId=keepSession;pendingNewConversation=keepPending;previousConversationSessionId=keepPrevious;render();document.body.classList.add('offline');}else refresh();});
  function showDialog(d,trigger=document.activeElement){lastFocus=trigger;d.showModal();d.querySelector('textarea,button')?.focus();}for(const d of [$('new-dialog'),$('review-dialog')])d.addEventListener('close',()=>{const key=lastFocus?.dataset?.focusKey;const target=key?[...document.querySelectorAll('[data-focus-key]')].find(e=>e.dataset.focusKey===key):lastFocus;target?.focus();});
  $('new').onclick=()=>showDialog($('new-dialog'),$('new'));$('close-new').onclick=()=>$('new-dialog').close();$('close-review').onclick=()=>$('review-dialog').close();

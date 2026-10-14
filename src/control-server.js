@@ -285,6 +285,7 @@ class ControlServer {
       if (req.method === 'GET' && url.pathname === '/api/product/missions') return this.json(res,200,require('./product-observability').missionHistory(this.bridge,url));
       if (req.method === 'GET' && url.pathname === '/api/product/events') return this.json(res, 200, require('./product-observability').events(this.bridge, url));
       if (req.method === 'GET' && url.pathname === '/api/product/live-events') return this.json(res, 200, require('./live-observatory').liveEvents(this.bridge, url));
+      if (req.method === 'GET' && url.pathname === '/api/product/live-activity') return this.json(res, 200, require('./live-activity-board').liveActivityBoard(this.bridge, url));
       if (req.method === 'GET' && url.pathname === '/api/product/observatory') return this.json(res, 200, require('./live-observatory').snapshot(this.bridge, url.searchParams.get('mission')));
       if (req.method === 'GET' && url.pathname === '/api/product/observatory/diff') return this.json(res, 200, require('./live-observatory').authorizedDiff(this.bridge, url.searchParams.get('mission'), url.searchParams.get('path')));
       if (req.method === 'GET' && url.pathname === '/api/product/live-stream') {

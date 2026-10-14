@@ -372,6 +372,7 @@
     "src/level1-profile.js",
     "src/level1-provider.js",
     "src/level1-restricted-worker.js",
+    "src/live-activity-board.js",
     "src/live-observatory.js",
     "src/local-bootstrap.js",
     "src/local-model-capability.js",
@@ -526,6 +527,7 @@
     "tests/mission-activity.test.js",
     "tests/reboot-acceptance-v1.test.js",
     "tests/reliability-browser.cjs",
-    "tests/reliability-opencode-live.cjs"
+    "tests/reliability-opencode-live.cjs",
+    "tests/live-activity-v2.test.js"
   ]
 }
