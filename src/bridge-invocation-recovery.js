@@ -8,10 +8,13 @@ const {object,identifier}=require('./control-plane-store');
 const {error}=require('./research-network');
 const policy=require('./mission-web-policy');
 
+// Authoritative only: capability request events that bind exact request_id + capability
+// on this run_id. lifecycle.lease_acquired is never sufficient — the orchestrator
+// acquires the lease before assigning task.latestMcpRequestId, so that event can
+// carry a previous invocation's request_id onto the new bridge Run.
 const OWNERSHIP_EVENTS=new Set([
   'orchestrator.capability.requested',
-  'capability.requested',
-  'lifecycle.lease_acquired'
+  'capability.requested'
 ]);
 const POST_BOOT_EXECUTION_EVENTS=new Set([
   'orchestrator.capability.requested',
@@ -74,16 +77,28 @@ class BridgeInvocationRecovery{
   if(!inv)throw error('invocation_required');
   if(inv.task_id!==run.task_id)throw error('invocation_task_mismatch');
   if(!['running','unknown'].includes(inv.state))throw error('invocation_state_denied');
-  // Exact durable bind: ledger event on this run_id carrying this request_id.
-  // Never infer from shared Mission/task alone or timestamp proximity.
+  // Exact durable bind: authoritative capability-request event on this run_id
+  // with matching request_id and a declared capability. Never infer from shared
+  // Mission/task, timestamps, or lifecycle.lease_acquired.
   const rows=this.db.prepare('SELECT event_id,event_type,request_id,metadata,timestamp_ms FROM event_ledger_events WHERE run_id=?').all(run.id);
-  const owned=rows.find(row=>{
-   if(!OWNERSHIP_EVENTS.has(row.event_type))return false;
-   if(row.request_id===invocationId)return true;
-   try{const meta=JSON.parse(row.metadata||'{}');return meta.request_id===invocationId;}catch{return false;}
-  });
-  if(!owned)throw error('invocation_run_ownership_unproven');
-  return {invocation:inv,ownership_event_id:owned.event_id,ownership_event_type:owned.event_type};
+  const owned=[];
+  for(const row of rows){
+   if(!OWNERSHIP_EVENTS.has(row.event_type))continue;
+   let meta={};
+   try{meta=JSON.parse(row.metadata||'{}');}catch{throw error('invocation_ownership_metadata_denied');}
+   const columnId=row.request_id||null;
+   const metaId=typeof meta.request_id==='string'?meta.request_id:null;
+   if(columnId&&metaId&&columnId!==metaId)throw error('invocation_ownership_contradiction');
+   const boundId=columnId||metaId;
+   if(boundId!==invocationId)continue;
+   const capability=typeof meta.capability==='string'?meta.capability.trim():'';
+   if(!capability)throw error('invocation_ownership_capability_required');
+   owned.push({event_id:row.event_id,event_type:row.event_type,capability});
+  }
+  if(!owned.length)throw error('invocation_run_ownership_unproven');
+  // Multiple authoritative binds for the same request on this run must agree on capability.
+  if(new Set(owned.map(o=>o.capability)).size!==1)throw error('invocation_ownership_contradiction');
+  return {invocation:inv,ownership_event_id:owned[0].event_id,ownership_event_type:owned[0].event_type,capability:owned[0].capability};
  }
  assertNoPostBootContinuation(run,invocationId,currentBootMs){
   if(run.updated_at>=currentBootMs||(run.ended_at!=null&&run.ended_at>=currentBootMs)||['starting','running','verifying'].includes(run.state))throw error('post_boot_run_continuation');

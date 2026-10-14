@@ -7,12 +7,18 @@
     {
       "pr": 104,
       "purpose": "web-boot-recovery pre-boot running dispatch gate + run-scoped invocation settlement",
-      "head_at_preparation": "03e0e4ed0d62d267d47e8cf169719a32a6a79bf8"
+      "head_at_preparation": "62cfc422bb0ddeb999657edfdfd34949a5220e58"
     },
     {
       "branch": "fix/bridge-invocation-boot-recovery",
       "purpose": "non-web bridge invocation-lease cold-boot reconciliation",
-      "base": "03e0e4ed0d62d267d47e8cf169719a32a6a79bf8"
+      "base": "62cfc422bb0ddeb999657edfdfd34949a5220e58",
+      "review_corrections": [
+        "removed lifecycle.lease_acquired ownership",
+        "require capability request bind with capability field",
+        "package.json files + package-check require module",
+        "ownership-order regression with real lease acquire sequence"
+      ]
     }
   ],
   "live_install_sha": "88c693f637b74a27f28f021d62991fd76fe991b5",

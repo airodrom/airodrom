@@ -290,6 +290,7 @@
     "src/bounded-worker.js",
     "src/branding.js",
     "src/bridge-controller.js",
+    "src/bridge-invocation-recovery.js",
     "src/bridge-restart.js",
     "src/browser-cdp.js",
     "src/browser-connections.js",

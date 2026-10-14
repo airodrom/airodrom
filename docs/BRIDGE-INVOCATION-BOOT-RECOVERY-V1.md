@@ -45,9 +45,12 @@ Fail closed unless all hold:
 2. Mission/task binding exact; Mission state `cancelled`.
 3. No web evidence / research browser ledger on this `run_id`.
 4. No held/quarantined lease and no dispatch bound to this `run_id`.
-5. Ledger ownership: event on this `run_id` in
-   `orchestrator.capability.requested` / `capability.requested` / `lifecycle.lease_acquired`
-   with matching `request_id` (column or metadata).
+5. Ledger ownership: authoritative event on this `run_id` of type
+   `orchestrator.capability.requested` or `capability.requested` with exact
+   matching `request_id` (column and/or metadata) **and** a non-empty
+   `metadata.capability`. `lifecycle.lease_acquired` is never sufficient
+   (lease acquire precedes `latestMcpRequestId` assignment and can carry a
+   previous invocation id).
 6. Boot-boundary witness: existing `cp_mission_web_boot_recovery` row (`prepared` **or** `consumed`) for the same Mission, different Run, digest-intact packet, current boot ≠ sealed prior boot. Witness row is **not** consumed by this path.
 7. Run/invocation timestamps confined to prior boot; no post-boot execution events on the Run (observational `approval.decision` / task-phase events allowed when Mission is cancelled).
 8. Settlement is exact-Run + exact-invocation only; siblings remain untouched.

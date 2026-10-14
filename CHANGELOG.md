@@ -1,3 +1,10 @@
+## Unreleased — Bridge invocation ownership and packaging
+
+- `proveInvocationOwnership` no longer accepts `lifecycle.lease_acquired` (lease acquire precedes `latestMcpRequestId` and can bind a previous invocation id to a new bridge Run).
+- Authoritative ownership requires `orchestrator.capability.requested` or `capability.requested` with exact `request_id` and non-empty `metadata.capability`; contradictory column/metadata ids fail closed.
+- Include `src/bridge-invocation-recovery.js` in `package.json` `files` and require it in `package-check`.
+- Regression covers real lease→capability event order with prior+current unknown invocations.
+
 ## Unreleased — Bridge invocation boot recovery
 
 - Add governed `control-v2/bridge-invocation-reconcile-boot` for interrupted `agent_id=bridge` invocation-lease Runs that are not web-execution proven.

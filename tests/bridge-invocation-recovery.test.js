@@ -200,3 +200,68 @@ test('bridge-invocation boot recovery: exact run isolation — settling A does n
  assert.equal(ctx.b.controlStore.invocation(b.invocationId).state,'unknown');
  assert.equal(ctx.b.controlStore.run(ctx.run.id).termination_verified,0);
 });
+
+test('bridge-invocation ownership: lease_acquired with previous request_id cannot settle; capability bind required',async t=>{
+ // Reproduce the real orchestrator order: leases.acquire records lifecycle.lease_acquired
+ // using the still-current task.latestMcpRequestId (previous invocation), then the new
+ // request_id is assigned and orchestrator.capability.requested is recorded.
+ const {ctx,prepared,advance}=await preparedBootFixture(t,{priorOffsetSec:12_900,usec:20});
+ const {b,m,run}=ctx;
+ const task=b.tasks.get(run.task_id);
+ const previousId=randomUUID(), currentId=randomUUID();
+ const priorMs=run.updated_at;
+ b.controlStore.beginInvocation(task.id,previousId,'prev-bridge-hash');
+ b.controlStore.db.prepare("UPDATE cp_invocations SET state='unknown',created_at=?,updated_at=? WHERE request_id=?").run(priorMs,priorMs,previousId);
+ task.latestMcpRequestId=previousId; b.tasks.save(task);
+ const lease=b.leases.acquire(task.id,{agentId:'bridge'});
+ const bridgeId=lease.runId;
+ const leaseEvt=b.controlStore.db.prepare("SELECT request_id FROM event_ledger_events WHERE run_id=? AND event_type='lifecycle.lease_acquired'").get(bridgeId);
+ assert.equal(leaseEvt.request_id,previousId,'lease event must carry previous invocation id');
+ task.latestMcpRequestId=currentId; task.activeRunId=bridgeId; b.tasks.save(task);
+ b.controlStore.beginInvocation(task.id,currentId,'curr-bridge-hash');
+ b.controlStore.db.prepare("UPDATE cp_invocations SET state='unknown',created_at=?,updated_at=? WHERE request_id=?").run(priorMs,priorMs,currentId);
+ b._ledgerRecord({...b._ledgerContext(task),eventType:'orchestrator.capability.requested',agent:'chatgpt',direction:'incoming',status:'received',
+  metadata:{capability:'mission_web',request_id:currentId},idempotencyKey:'ownership-order:'+currentId},{critical:true});
+ b.controlStore.updateRun(bridgeId,{state:'interrupted',processState:'unknown',verified:false,resolution:'reconcile_process'});
+ b.controlStore.db.prepare('UPDATE cp_runs SET updated_at=?,ended_at=? WHERE id=?').run(priorMs,priorMs,bridgeId);
+ if(b.controlStore.getMission(m.mission_id).state!=='cancelled')b.controlStore.state(m.mission_id,'cancelled','fixture_stop');
+ // Drop in-memory lease so fixture teardown is not blocked; durable ownership is what recovery inspects.
+ b.leases.releaseIfOwner(lease,{verified:false});
+ advance();
+ const hostBefore=b.controlStore.run(run.id);
+ // Previous inv: only lease_acquired binds it to this run — must fail closed.
+ assert.throws(()=>b.missions.bridgeInvocation.reconcileBoot(bridgeReconcile(ctx,prepared,bridgeId,previousId)),/invocation_run_ownership_unproven/);
+ assert.equal(b.controlStore.invocation(previousId).state,'unknown');
+ assert.equal(b.controlStore.run(bridgeId).termination_verified,0);
+ // Current inv: authoritative capability request bind — settles only that inv + run.
+ const ok=b.missions.bridgeInvocation.reconcileBoot(bridgeReconcile(ctx,prepared,bridgeId,currentId));
+ assert.equal(ok.recovery_not_execution,true);
+ assert.equal(ok.invocation_id,currentId);
+ assert.equal(b.controlStore.invocation(currentId).state,'settled');
+ assert.equal(b.controlStore.invocation(previousId).state,'unknown');
+ assert.equal(b.controlStore.run(bridgeId).termination_verified,1);
+ assert.equal(b.controlStore.run(run.id).termination_verified,hostBefore.termination_verified);
+ assert.equal(b.controlStore.db.prepare("SELECT state FROM cp_mission_web_boot_recovery WHERE evidence_id=?").get(prepared.evidence_id).state,'prepared');
+});
+
+test('bridge-invocation ownership: contradictory or capability-less binds fail closed',async t=>{
+ const {ctx,prepared,advance}=await preparedBootFixture(t,{priorOffsetSec:13_500,usec:21});
+ const priorMs=ctx.run.updated_at;
+ const {bridgeId,invocationId}=bridgeInvocationFixture(ctx,priorMs,{owned:false});
+ // Column/metadata request_id mismatch on an otherwise matching event type.
+ const eventId=randomUUID();
+ ctx.b.controlStore.db.prepare("INSERT INTO event_ledger_events(event_id,idempotency_key,fingerprint,event_type,timestamp,timestamp_ms,run_id,mission_id,task_id,request_id,agent,direction,metadata,payload_byte_length,payload_stored_byte_length,payload_redacted,payload_truncated,protected) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(eventId,eventId,eventId,'orchestrator.capability.requested',new Date(priorMs).toISOString(),priorMs,bridgeId,ctx.m.mission_id,ctx.run.task_id,invocationId,'bridge','internal',JSON.stringify({capability:'mission_web',request_id:randomUUID()}),0,0,0,0,0);
+ advance();
+ assert.throws(()=>ctx.b.missions.bridgeInvocation.reconcileBoot(bridgeReconcile(ctx,prepared,bridgeId,invocationId)),/invocation_ownership_contradiction/);
+ assert.equal(ctx.b.controlStore.invocation(invocationId).state,'unknown');
+ assert.equal(ctx.b.controlStore.run(bridgeId).termination_verified,0);
+
+ const missing=await preparedBootFixture(t,{priorOffsetSec:14_100,usec:22});
+ const priorMissing=missing.ctx.run.updated_at;
+ const fx=bridgeInvocationFixture(missing.ctx,priorMissing,{owned:false});
+ insertLedger(missing.ctx.b,{runId:fx.bridgeId,missionId:missing.ctx.m.mission_id,taskId:missing.ctx.run.task_id,requestId:fx.invocationId,eventType:'orchestrator.capability.requested',ts:priorMissing,metadata:{request_id:fx.invocationId}});
+ missing.advance();
+ assert.throws(()=>missing.ctx.b.missions.bridgeInvocation.reconcileBoot(bridgeReconcile(missing.ctx,missing.prepared,fx.bridgeId,fx.invocationId)),/invocation_ownership_capability_required/);
+ assert.equal(missing.ctx.b.controlStore.invocation(fx.invocationId).state,'unknown');
+});
