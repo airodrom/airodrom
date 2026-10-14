@@ -73,7 +73,10 @@ class MissionWeb{
   const mission=this.store.getMission(run.mission_id),outcome=mission?.state==='cancelled'||run.resolution==='reconcile_process'?'cancelled':'failed';
   this.store.updateRun(run.id,{state:outcome,processState:'exited',verified:true,resolution});
   this.db.prepare("UPDATE cp_leases SET state='released' WHERE run_id=? AND state='quarantined'").run(run.id);
+  // Exact run-bound dispatch only; sibling/unrelated mission dispatches are untouched.
   this.db.prepare("UPDATE cp_dispatches SET state='blocked' WHERE mission_id=? AND run_id=?").run(run.mission_id,run.id);
+  // Invocations settle only when canonical run-scoped web evidence binds invocation_id→run_id.
+  // Never infer ownership from shared task/Mission, timestamps, or a separate dispatch row.
   for(const inv of this.db.prepare("SELECT invocation_id FROM cp_mission_web_evidence WHERE run_id=?").all(run.id)){
    const row=this.store.invocation(inv.invocation_id);if(row&&['running','unknown'].includes(row.state))this.store.finishInvocation(inv.invocation_id,{status:'failed',error:'web_reconciled',capability:'mission_web'});
   }
@@ -142,8 +145,14 @@ class MissionWeb{
   return false;
  }
  assertNoPostBootContinuation(run,lease,currentBootMs){
+  // Live Run states starting/running/verifying are current execution, not durable history.
   if(run.updated_at>=currentBootMs||(run.ended_at!=null&&run.ended_at>=currentBootMs)||['starting','running','verifying'].includes(run.state))throw error('post_boot_run_continuation');
-  if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND run_id=? AND (updated_at>=? OR state IN ('dispatching','running'))").get(run.mission_id,run.id,currentBootMs))throw error('post_boot_dispatch_continuation');
+  // Persisted dispatching/running alone is not post-boot proof: after a cold reboot the
+  // durable row may remain running while all authoritative timestamps predate the boot.
+  // Only timestamp advancement (or a post-boot-created row) is continuation.
+  if(this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=? AND run_id=? AND (updated_at>=? OR created_at>=?)').get(run.mission_id,run.id,currentBootMs,currentBootMs))throw error('post_boot_dispatch_continuation');
+  // Unbound running/dispatching rows on this task are relationship drift, not historical ownership.
+  if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND task_id=? AND state IN ('dispatching','running') AND run_id IS NULL").get(run.mission_id,run.task_id))throw error('post_boot_dispatch_relationship_denied');
   if(this.db.prepare("SELECT 1 FROM cp_invocations WHERE task_id=? AND (created_at>=? OR (updated_at>=? AND state IN ('running','unknown')))").get(run.task_id,currentBootMs,currentBootMs))throw error('post_boot_invocation_continuation');
   if(lease&&this.db.prepare("SELECT 1 FROM cp_leases WHERE id=? AND (state<>'quarantined' OR run_id<>?)").get(lease.id,run.id))throw error('post_boot_lease_continuation');
   if(this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state='held' AND acquired_at>=?").get(run.id,currentBootMs))throw error('post_boot_lease_continuation');
