@@ -248,19 +248,28 @@ test('same-boot web-reconcile rejects unrelated quarantined non-web executions',
  assert.throws(()=>coding.bridge.missions.web.reconcile({run_id:cq.run.id,termination_verified:true,request_id:randomUUID()}),/boot_recovery_web_capability_required/);
 });
 
-test('boot-recovery: pre-boot running dispatch and linked unknown invocation settle after valid reboot',async t=>{
+function insertUnknownInvocation(db,{requestId,taskId,fingerprint,at}){
+ db.prepare("INSERT INTO cp_invocations(request_id,task_id,fingerprint,state,result,created_at,updated_at,origin_event_id) VALUES(?,?,?,'unknown',NULL,?,?,?)")
+  .run(requestId,taskId,fingerprint,at,at,randomUUID());
+}
+function bindRunScopedWebEvidence(db,{run,missionId,invocationId,at}){
+ // Canonical run-scoped web evidence is the only authoritative invocation→run bind.
+ db.prepare('INSERT INTO cp_mission_web_evidence(id,grant_id,mission_id,task_id,run_id,sha256,invocation_id,created_at) VALUES(?,?,?,?,?,?,?,?)')
+  .run(randomUUID(),randomUUID(),missionId,run.task_id,run.id,'a'.repeat(64),invocationId,at);
+}
+
+test('boot-recovery: pre-boot running dispatch settles; only run-scoped web-evidence invocations finish',async t=>{
  const {ctx,prepared,advance}=await preparedBootFixture(t,{priorOffsetSec:12_000,usec:7});
- const {b,m,run,lease}=ctx;
+ const {b,m,run,lease}=ctx,db=b.controlStore.db;
  const priorMs=run.ended_at||run.updated_at;
  // Historical durable running dispatch (updated_at still prior-boot) must not false-fail continuation.
- b.controlStore.db.prepare("UPDATE cp_dispatches SET state='running',updated_at=? WHERE mission_id=? AND run_id=?").run(priorMs-1_000,m.mission_id,run.id);
- assert.equal(b.controlStore.db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?').get(m.mission_id,run.id).state,'running');
- // Linked pre-boot unknown invocation on the exact task; unrelated later invocation on another task stays open.
- const linkedInv=randomUUID(),unrelatedInv=randomUUID(),otherTask=randomUUID();
- b.controlStore.db.prepare("INSERT INTO cp_invocations(request_id,task_id,fingerprint,state,result,created_at,updated_at,origin_event_id) VALUES(?,?,?,'unknown',NULL,?,?,?)")
-  .run(linkedInv,run.task_id,'fixture-linked',priorMs-500,priorMs-500,randomUUID());
- b.controlStore.db.prepare("INSERT INTO cp_invocations(request_id,task_id,fingerprint,state,result,created_at,updated_at,origin_event_id) VALUES(?,?,?,'unknown',NULL,?,?,?)")
-  .run(unrelatedInv,otherTask,'fixture-unrelated',priorMs-500,priorMs-500,randomUUID());
+ db.prepare("UPDATE cp_dispatches SET state='running',updated_at=? WHERE mission_id=? AND run_id=?").run(priorMs-1_000,m.mission_id,run.id);
+ assert.equal(db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?').get(m.mission_id,run.id).state,'running');
+ const linkedInv=randomUUID(),sameTaskUnproven=randomUUID(),otherTaskInv=randomUUID(),otherTask=randomUUID();
+ insertUnknownInvocation(db,{requestId:linkedInv,taskId:run.task_id,fingerprint:'fixture-linked',at:priorMs-500});
+ insertUnknownInvocation(db,{requestId:sameTaskUnproven,taskId:run.task_id,fingerprint:'fixture-same-task-unproven',at:priorMs-400});
+ insertUnknownInvocation(db,{requestId:otherTaskInv,taskId:otherTask,fingerprint:'fixture-other-task',at:priorMs-300});
+ bindRunScopedWebEvidence(db,{run,missionId:m.mission_id,invocationId:linkedInv,at:priorMs-450});
  const sibling=randomUUID();
  b.controlStore.startRun({id:sibling,taskId:run.task_id,missionId:m.mission_id,agentId:'bridge'});
  b.controlStore.updateRun(sibling,{state:'interrupted',processState:'unknown',verified:false,resolution:'reconcile_process'});
@@ -269,13 +278,32 @@ test('boot-recovery: pre-boot running dispatch and linked unknown invocation set
  assert.equal(ok.recovery_kind,'cold_os_reboot');
  assert.equal(ok.recovery_not_execution,true);
  assert.equal(b.controlStore.run(run.id).termination_verified,1);
- assert.equal(b.controlStore.db.prepare('SELECT state FROM cp_leases WHERE id=?').get(lease.id).state,'released');
- assert.equal(b.controlStore.db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?').get(m.mission_id,run.id).state,'blocked');
+ assert.equal(db.prepare('SELECT state FROM cp_leases WHERE id=?').get(lease.id).state,'released');
+ assert.equal(db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?').get(m.mission_id,run.id).state,'blocked');
  assert.equal(b.controlStore.invocation(linkedInv).state,'settled');
- assert.equal(b.controlStore.invocation(unrelatedInv).state,'unknown');
+ assert.equal(b.controlStore.invocation(sameTaskUnproven).state,'unknown');
+ assert.equal(b.controlStore.invocation(otherTaskInv).state,'unknown');
  assert.equal(b.controlStore.run(sibling).state,'interrupted');
  assert.equal(b.controlStore.run(sibling).termination_verified,0);
  assert.throws(()=>b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared)),/recovery_evidence_already_consumed/);
+});
+
+test('boot-recovery: same-task unproven invocations stay unknown without run-scoped web evidence',async t=>{
+ const {ctx,prepared,advance}=await preparedBootFixture(t,{priorOffsetSec:12_300,usec:17});
+ const {b,m,run}=ctx,db=b.controlStore.db;
+ const priorMs=run.ended_at||run.updated_at;
+ db.prepare("UPDATE cp_dispatches SET state='running',updated_at=? WHERE mission_id=? AND run_id=?").run(priorMs-2_000,m.mission_id,run.id);
+ const a=randomUUID(),bridgeLike=randomUUID();
+ insertUnknownInvocation(db,{requestId:a,taskId:run.task_id,fingerprint:'fixture-host-unproven',at:priorMs-800});
+ insertUnknownInvocation(db,{requestId:bridgeLike,taskId:run.task_id,fingerprint:'fixture-bridge-unproven',at:priorMs-700});
+ // No cp_mission_web_evidence bind for either invocation.
+ advance();
+ const ok=b.missions.web.reconcileBootRecovery(bootReconcile(ctx,prepared));
+ assert.equal(ok.recovery_not_execution,true);
+ assert.equal(b.controlStore.run(run.id).termination_verified,1);
+ assert.equal(db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? AND run_id=?').get(m.mission_id,run.id).state,'blocked');
+ assert.equal(b.controlStore.invocation(a).state,'unknown');
+ assert.equal(b.controlStore.invocation(bridgeLike).state,'unknown');
 });
 
 test('boot-recovery: post-boot running dispatch, post-boot events, wrong relationship, and tamper still fail closed',async t=>{

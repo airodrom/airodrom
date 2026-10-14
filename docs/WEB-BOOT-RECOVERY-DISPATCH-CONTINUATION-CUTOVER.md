@@ -28,10 +28,11 @@ Checkpoint copy: `~/.airodrom/backups/boot-recovery-cutover-88c693f-20261013T232
 3. Exceptional owned-supervisor replacement to the new tip with ordinary Mission admission closed (durable blockers remain until reconcile). Do not force-release leases; do not clear locks manually; do not start a second supervisor.
 4. Verify one supervisor, install identity, sealed evidence still `prepared` with matching SHA-256, and `/usr/sbin/sysctl kern.boottime` still differs from the sealed prior epoch.
 5. Call **only** `POST /api/control-v2/web-reconcile-boot` for the host run with the existing evidence_id/sha256/`recovery_kind=cold_os_reboot`/`termination_verified=true`.
-6. Expect host run settled, quarantined lease released, exact host dispatch blocked, historically linked pre-boot unknown invocation on that task settled, evidence row `consumed`, `recovery_not_execution=true`.
-7. Do **not** call web-boot-recovery on bridge run `4616ce39-ea67-4dcc-a85a-826a2497386e` unless independent run-scoped web-execution proof exists (it does not today).
-8. Confirm product-control Ready and harness healthy/`mcp_ready` only when unresolved ownership is actually zero. Do not claim Ready while the bridge sibling remains unresolved.
-9. No arecibo.ca / public-web research retry.
+6. Expect host run settled, quarantined lease released, exact host dispatch blocked, evidence row `consumed`, `recovery_not_execution=true`.
+7. Invocation settlement requires canonical run-scoped `cp_mission_web_evidence` binding `invocation_id`→host `run_id`. Live inspection found **no** such row for `134d8f08-a98b-49ac-8898-e04af8dff7c5`; leave that invocation `unknown` and treat it as continued HOLD for separate investigation. Never invent a task/Mission/timestamp join.
+8. Do **not** call web-boot-recovery on bridge run `4616ce39-ea67-4dcc-a85a-826a2497386e` unless independent run-scoped web-execution proof exists (it does not today).
+9. Confirm product-control Ready and harness healthy/`mcp_ready` only when unresolved ownership is actually zero. Do not claim Ready while bridge sibling and/or unproven invocations remain.
+10. No arecibo.ca / public-web research retry. No second reboot unless a safety gate requires it.
 
 ## Bridge sibling — correct independent mechanism
 

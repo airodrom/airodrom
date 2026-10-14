@@ -68,24 +68,17 @@ class MissionWeb{
  processGone(pid){if(!Number.isSafeInteger(pid)||pid<=0)return false;try{process.kill(pid,0);return false;}catch(e){return e.code==='ESRCH';}}
  bootEpoch(){return require('./os-boot-epoch').readBootEpoch({testing:this.options.bootEpoch?{epoch:this.options.bootEpoch}:this.options.testing?.bootEpoch});}
  recoveryDir(){const root=path.resolve(this.bridge.dataDir,'recovery','web-termination');privateDirectory(path.dirname(root),true);return privateDirectory(root,true);}
- settleNamedRun(run,{resolution,owned_process_id=null,recovery_kind,currentBootMs=null}){
+ settleNamedRun(run,{resolution,owned_process_id=null,recovery_kind}){
   this.db.prepare("UPDATE cp_runs SET state='termination_unverified' WHERE id=? AND state='interrupted'").run(run.id);
   const mission=this.store.getMission(run.mission_id),outcome=mission?.state==='cancelled'||run.resolution==='reconcile_process'?'cancelled':'failed';
   this.store.updateRun(run.id,{state:outcome,processState:'exited',verified:true,resolution});
   this.db.prepare("UPDATE cp_leases SET state='released' WHERE run_id=? AND state='quarantined'").run(run.id);
   // Exact run-bound dispatch only; sibling/unrelated mission dispatches are untouched.
   this.db.prepare("UPDATE cp_dispatches SET state='blocked' WHERE mission_id=? AND run_id=?").run(run.mission_id,run.id);
-  const finished=new Set();
+  // Invocations settle only when canonical run-scoped web evidence binds invocation_id→run_id.
+  // Never infer ownership from shared task/Mission, timestamps, or a separate dispatch row.
   for(const inv of this.db.prepare("SELECT invocation_id FROM cp_mission_web_evidence WHERE run_id=?").all(run.id)){
-   const row=this.store.invocation(inv.invocation_id);if(row&&['running','unknown'].includes(row.state)){this.store.finishInvocation(inv.invocation_id,{status:'failed',error:'web_reconciled',capability:'mission_web'});finished.add(inv.invocation_id);}
-  }
-  // Cold-boot recovery may also settle historically linked pre-boot invocations on this
-  // exact run's task when a dispatch for this run_id exists. Never touch post-boot rows.
-  if(recovery_kind==='cold_os_reboot'&&Number.isSafeInteger(currentBootMs)){
-   for(const inv of this.db.prepare("SELECT request_id FROM cp_invocations WHERE task_id=? AND state IN ('running','unknown') AND created_at<? AND updated_at<? AND EXISTS (SELECT 1 FROM cp_dispatches d WHERE d.run_id=? AND d.mission_id=? AND d.task_id=?)").all(run.task_id,currentBootMs,currentBootMs,run.id,run.mission_id,run.task_id)){
-    if(finished.has(inv.request_id))continue;
-    const row=this.store.invocation(inv.request_id);if(row&&['running','unknown'].includes(row.state))this.store.finishInvocation(inv.request_id,{status:'failed',error:'web_boot_recovery_reconciled',capability:'mission_web'});
-   }
+   const row=this.store.invocation(inv.invocation_id);if(row&&['running','unknown'].includes(row.state))this.store.finishInvocation(inv.invocation_id,{status:'failed',error:'web_reconciled',capability:'mission_web'});
   }
   this.active.delete(run.mission_id);
   this.store.event('mission.web.reconciled',run.mission_id,{run_id:run.id,actor:'operator',owned_process_id,recovery_kind,recovery_not_execution:true},{runId:run.id});
@@ -221,7 +214,7 @@ class MissionWeb{
    if(!Number.isSafeInteger(packet.captured_at)||packet.captured_at<priorBootMs||currentBootMs<=packet.captured_at)throw error('boot_boundary_ordering_denied');
    if(!Number.isSafeInteger(anchor)||anchor>=currentBootMs)throw error('run_not_confined_to_prior_boot');
    this.assertNoPostBootContinuation(run,lease,currentBootMs);
-   const settled=this.settleNamedRun(run,{resolution:'operator_web_boot_recovery',owned_process_id:null,recovery_kind:'cold_os_reboot',currentBootMs});
+   const settled=this.settleNamedRun(run,{resolution:'operator_web_boot_recovery',owned_process_id:null,recovery_kind:'cold_os_reboot'});
    const consumedAt=typeof this.options.now==='function'?this.options.now():Date.now();
    this.db.prepare("UPDATE cp_mission_web_boot_recovery SET state='consumed',consumed_at=? WHERE evidence_id=? AND state='prepared'").run(consumedAt,input.evidence_id);
    if(!this.db.prepare("SELECT 1 FROM cp_mission_web_boot_recovery WHERE evidence_id=? AND state='consumed'").get(input.evidence_id))throw error('recovery_evidence_consume_failed');
