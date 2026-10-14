@@ -15,7 +15,7 @@
   if(sessionStorage.getItem('airodromConversationPendingNew')==='1'){pendingNewConversation=true;conversationSessionId=null;}
  }catch{}
  const researchReports=new Map(),researchImages=new Map();
- let observatory=null,obsFollow=true,obsFilter='',obsQuery='',obsStream=null,obsCursor=0,diffCache=new Map(),expandedOutput=new Set();
+ let observatory=null,obsFollow=true,obsFilter='',obsQuery='',obsStream=null,obsCursor=0,diffCache=new Map(),expandedOutput=new Set(),openMissionPanels=new Map();
  let lastOkAt=null,connectionView=null,secondaryNotice='';
  let missionPage=null,missionFilter='Active',missionOffset=0,missionLimit=15,missionWorker='',missionSort='newest',searchTimer=null,missionTab='Active',missionDetailTab='Outcome',contentScroll=0,missionListContext=null;
  const deepLinkViews=new Set(['Conversation','Missions','Development Sessions','System Health']);
@@ -310,6 +310,16 @@
    }
    return ol.children.length?ol:empty('No observed events in this filter. Progress is never inferred.');
  }
+ // Keep open details panels stable across periodic polling and SSE updates.
+ function persistentMissionPanel(mission,key,label,content){
+   const identity=mission+':'+key,details=node('details');
+   details.open=openMissionPanels.get(identity)===true;
+   details.append(node('summary',label),content);
+   details.addEventListener('toggle',()=>{
+     if(details.isConnected)openMissionPanels.set(identity,details.open);
+   });
+   return details;
+ }
  function missionDetail(m){
    const obs=observatory?.mission?.id===m.id?observatory:null;
    const activity=obs?.activity||{};
@@ -322,6 +332,7 @@
    if(outcome.detail)title.append(node('p',outcome.detail,'muted'));
    top.append(title);
    const controls=node('div',null,'actions obs-controls');
+   controls.append(button('View Live Logs',()=>{missionDetailTab='Live Logs';render();}));
    if(m.actions.accept)controls.append(button('Review Acceptance',event=>openReview(m,event.currentTarget),true));
    if(m.actions.dispatch&&!m.autonomous_managed)controls.append(button('Run Mission',async()=>{try{await api('/api/assistant/mission',{action:'run',mission_id:m.id,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}}));
    if(m.autonomous_managed&&!m.actions.accept)controls.append(node('small','Autonomous execution authorized — no Continue / Retry / Next Mission required.','muted'));
@@ -338,7 +349,7 @@
    root.append(summary);
 
    const tabs=node('div',null,'mission-tabs detail-tabs');tabs.setAttribute('role','tablist');
-   const tabDefs=[['Outcome','Outcome'],['Activity','Activity'],['Worker','Worker'],['Files & Git','Files'],['Tests','Tests'],['Verification','Verification'],['Audit','Audit']];
+   const tabDefs=[['Outcome','Outcome'],['Live Logs','Live Logs'],['Worker','Worker'],['Files & Git','Files'],['Tests','Tests'],['Verification','Verification'],['Audit','Audit']];
    for(const [label] of tabDefs){
      const b=button(label,()=>{missionDetailTab=label;render();});b.setAttribute('role','tab');b.setAttribute('aria-selected',missionDetailTab===label?'true':'false');
      if(missionDetailTab===label)b.classList.add('active-tab');tabs.append(b);
@@ -355,11 +366,25 @@
      split.append(glass('Verification',readable(m.verification.status)||'Not observed',m.verification.current?'Current':'Not current'),glass('Acceptance',readable(m.acceptance.status)||'Not applicable',m.actions.accept?'Decision required':null),glass('Settlement',readable(m.settlement.status)||'Not observed',null));
      panel.append(split);
      if(m.next_action)panel.append(node('p','Required of you: '+m.next_action,'mission-next'));
-     const diag=node('details');diag.append(node('summary','Execution stages (secondary)'),lifecycle(m));panel.append(diag);
-   }else if(missionDetailTab==='Activity'){
+     panel.append(persistentMissionPanel(m.id,'stages','Execution stages',lifecycle(m)));
+   }else if(missionDetailTab==='Live Logs'||missionDetailTab==='Activity'){
      const events=obs?.events||m.timeline||[];
-     if(!events.length)panel.append(empty('No activity observed yet.'));
-     else panel.append(observatoryFeed(events,120));
+     const working=ACTIVE_UI(m.state)&&!!m.worker_assigned;
+     panel.append(node('h3','Live Logs'));
+     panel.append(node('p',working?'Mission state indicates execution; verify the owned Run before treating the worker as active.':'No actively executing worker confirmed for this Mission.','muted'));
+     panel.append(node('p','This view contains timestamped Airodrom host observations, not a raw worker terminal. Command output is shown only when captured by the host.','muted'));
+     const filters=node('div',null,'filters');
+     const findLabel=node('label','Filter observed events'),find=node('input');
+     find.type='search';find.placeholder='File, tool, event…';find.value=obsQuery;find.dataset.focusKey='live-log-search';
+     find.oninput=()=>{obsQuery=find.value;render();};findLabel.append(find);filters.append(findLabel);
+     const categoryLabel=node('label','Event category'),categorySelect=node('select');
+     categorySelect.dataset.focusKey='live-log-category';
+     for(const name of ['','Worker','Runtime','Command','File','Git','Test','Capability']){
+       const option=node('option',name||'All events');option.value=name;categorySelect.append(option);
+     }
+     categorySelect.value=obsFilter;categorySelect.onchange=()=>{obsFilter=categorySelect.value;render();};
+     categoryLabel.append(categorySelect);filters.append(categoryLabel);panel.append(filters);
+     panel.append(events.length?observatoryFeed(events,120):empty('No host events recorded for this Mission.'));
    }else if(missionDetailTab==='Worker'){
      if(!m.worker_assigned&&!m.runtime)panel.append(empty('No worker assigned. Normal before execution starts.'));
      else{panel.append(node('p',(m.runtime||'Worker')+(m.model?.id?' · '+m.model.id:'')));panel.append((obs?.worker||[]).length?observatoryFeed(obs.worker,40):empty('No mid-run worker events observed yet.'));}
@@ -382,7 +407,7 @@
      if(trace){panel.append(node('p',trace.explanation),node('p',trace.next_safe_action));const list=node('ol');for(const e of trace.events||[])list.append(node('li',(stamp(e.timestamp)||'')+' · '+e.label+(e.policy_outcome?' · '+e.policy_outcome:'')));panel.append(list);}
      else if(m.timeline?.length)panel.append(observatoryFeed(m.timeline,80));
      else panel.append(empty('No audit timeline observed yet.'));
-     const tech=node('details');tech.append(node('summary','Technical diagnostics'),node('pre',JSON.stringify({id:m.id,state:m.state,revision:m.revision,termination:m.termination,budget:m.budget,authority:m.authority,autonomous_managed:m.autonomous_managed},null,2)));panel.append(tech);
+     panel.append(persistentMissionPanel(m.id,'technical','Technical diagnostics',node('pre',JSON.stringify({id:m.id,state:m.state,revision:m.revision,termination:m.termination,budget:m.budget,authority:m.authority,autonomous_managed:m.autonomous_managed},null,2))));
    }
    root.append(panel,node('p',(obs?.limitations||['Observatory shows sanitized host observations only.']).join(' '),'privacy'));
    return root;
@@ -791,7 +816,7 @@
  function flightView(){const root=node('section',null,'glass'),trace=snapshot.flight_recorder;root.append(node('h2','Mission Flight Recorder'));if(!trace){root.append(empty('Trace unavailable.'));return root;}
   root.append(node('p',trace.explanation),node('p',trace.next_safe_action));const list=node('ol');for(const e of trace.events){const li=node('li',stamp(e.timestamp)+' · '+e.label+(e.policy_outcome?' · '+e.policy_outcome:'')+(e.error_class?' · '+e.error_class:''));list.append(li);}root.append(list);if(trace.has_more)root.append(node('p','First 100 canonical events shown; the API supports cursor pagination.'));return root;
  }
- function selectMission(id){missionListContext={filter:missionFilter,tab:missionTab,offset:missionOffset,limit:missionLimit,worker:missionWorker,sort:missionSort,query:searchQuery};clearMemory();stopObsStream();observatory=null;obsCursor=0;diffCache.clear();missionDetailTab='Outcome';generation++;missionId=id;view='Missions';$('heading').textContent='Mission';render();$('content').focus();refresh();}
+ function selectMission(id){missionListContext={filter:missionFilter,tab:missionTab,offset:missionOffset,limit:missionLimit,worker:missionWorker,sort:missionSort,query:searchQuery};clearMemory();stopObsStream();observatory=null;obsCursor=0;diffCache.clear();missionDetailTab=(snapshot?.missions||[]).some(m=>m.id===id&&ACTIVE_UI(m.state))?'Live Logs':'Outcome';generation++;missionId=id;view='Missions';$('heading').textContent='Mission';render();$('content').focus();refresh();}
  for(const name of views){const b=button(name,()=>{const keepSession=conversationSessionId;const keepPending=pendingNewConversation;const keepPrevious=previousConversationSessionId;clearMemory();conversationSessionId=keepSession;pendingNewConversation=keepPending;previousConversationSessionId=keepPrevious;view=name;missionId=null;generation++;for(const [n,item]of nav)item.setAttribute('aria-current',n===name?'page':'false');$('heading').textContent=name;render();refresh();});nav.set(name,b);$('nav').append(b);}nav.get(view)?.setAttribute('aria-current','page');$('heading').textContent=missionId?'Mission':view;
  async function send(action,body){generation++;inflight?.abort();try{await api('/api/product/'+action,{...body,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}}
  async function refresh(){clearTimeout(timer);timer=null;if(busy||paused||document.hidden||!authorized)return;busy=true;const version=generation,filter=category;inflight=new AbortController();try{let live=null;const current=await api('/api/product/overview?current_offset='+currentOffset,undefined,inflight.signal);let history=null,nextMissionPage=null;if(view==='Reliability')current.reliability=await api('/api/control-v2/reliability',undefined,inflight.signal);if(view==='Autonomous Goals'||view==='Overview'){current.goal_plans=await api('/api/control-v2/goal-plans',undefined,inflight.signal);current.autonomous_goals=await api('/api/control-v2/autonomous-goals',undefined,inflight.signal);try{current.zero_setup=await api('/api/assistant/zero-setup',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.zero_setup={items:[]};}}if(view==='MCP Diagnostics')current.mcp_discovery=await api('/api/control-v2/mcp-discovery',undefined,inflight.signal);if(missionId)current.flight_recorder=await api('/api/control-v2/flight-recorder?id='+encodeURIComponent(missionId),undefined,inflight.signal);if(view==='Missions'&&!missionId&&current.mission_counts)nextMissionPage=await api('/api/product/missions?filter='+encodeURIComponent(missionFilter)+'&query='+encodeURIComponent(searchQuery)+'&offset='+missionOffset+'&limit='+missionLimit+'&sort='+encodeURIComponent(missionSort)+(missionWorker?'&worker='+encodeURIComponent(missionWorker):''),undefined,inflight.signal);if(view==='Google Connections')current.google=await api('/api/assistant/google',{action:'status'},inflight.signal);if(view==='AI & Workers'||view==='Conversation'){try{current.provider=await api('/api/assistant/provider',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.provider=null;}}if(view==='AI & Workers'||view==='Overview'){try{current.orchestration=await api('/api/assistant/preferences',undefined,inflight.signal);}catch(e){if(!authorized||inflight.signal.aborted)throw e;current.orchestration=null;}}if(['WORK Templates','Automation & Permissions'].includes(view))current.work_templates=await api('/api/assistant/work-templates',undefined,inflight.signal);if(missionId)current.selected_mission=await api('/api/product/mission?id='+encodeURIComponent(missionId),undefined,inflight.signal);try{live=await api('/api/product/observatory?mission='+encodeURIComponent(missionId),undefined,inflight.signal);}catch(e){secondaryNotice='Observatory snapshot unavailable';live=null;}if(view==='Conversation'||missionId&&current.selected_mission?.label==='Bounded local conversation'){
