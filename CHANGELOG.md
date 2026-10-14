@@ -1,3 +1,10 @@
+## Unreleased — Autonomous Supervisor V1 (Issue #108)
+
+- Project Mission V2 / CAE execution into Live Activity with explicit states, active Run honesty, repair budget, and AUTO worker admission (no second scheduler).
+- Now excludes obsolete blocked `needs_rework`; Control Center can presentation-archive eligible obsolete rework while preserving evidence.
+- CLI: `airodrom logs follow` and interactive `/logs` stream redacted host-observed live events; `GET /api/product/execution-sessions` exposes session classification and standing WORK-template status.
+- Docs: `docs/AUTONOMOUS-SUPERVISOR-V1.md`, ADR 0052. Focused tests: `tests/autonomous-supervisor-v1.test.js`.
+
 ## Unreleased — Same-boot denied bridge invocation reconcile
 
 - Add governed `control-v2/bridge-invocation-reconcile-denied` for interrupted `agent_id=bridge` Runs whose authoritative ledger bind proves `capability.requested` with `approved:false` and no post-denial browser/detached/external execution.

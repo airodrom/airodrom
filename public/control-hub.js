@@ -249,12 +249,15 @@
    row.append(main,meta,actions);return row;
  }
  function liveMissionCard(card){
-   const article=node('article',null,'la-card'+(card.advancing?' la-card-live':''));
-   article.setAttribute('aria-label',(card.display?.label||card.state)+' · '+card.title);
+   const article=node('article',null,'la-card'+(card.advancing||card.worker_active?' la-card-live':''));
+   article.setAttribute('aria-label',(card.execution_state||card.display?.label||card.state)+' · '+card.title);
    const head=node('div',null,'la-card-head');
-   head.append(chip(card.display?.key||card.state,card.display?.tone),node('h3',card.title));
+   head.append(chip(card.execution_state||card.display?.key||card.state,card.display?.tone),node('h3',card.title));
    article.append(head);
    const facts=node('div',null,'la-facts');
+   const repair=card.repair;
+   const repairText=repair&&Number.isFinite(repair.remaining)?String(repair.remaining)+(repair.max_repairs!=null?' / '+repair.max_repairs:'')+(repair.phase_label?' · '+repair.phase_label:''):(repair?.phase_label||'Unavailable');
+   const runText=card.active_run?String(card.active_run.worker||'worker')+' · '+String(card.active_run.state||'')+(card.active_run.run_id?' · '+card.active_run.run_id.slice(0,8):''):(card.worker_active?'Active run':'No active Run');
    for(const [label,value] of [
      ['Project',liveUnavailable(card.project)],
      ['Worker',liveUnavailable(card.worker)],
@@ -262,6 +265,9 @@
      ['Branch',liveUnavailable(card.branch)],
      ['Elapsed',liveDuration(card.elapsed_s)],
      ['Stage',liveUnavailable(card.current_stage)],
+     ['Execution',liveUnavailable(card.execution_state)],
+     ['Agent Run',runText],
+     ['Repair budget',repairText],
      ['Files',String(card.changed_file_count??0)],
      ['Verification',liveUnavailable(card.verification_state)],
      ['Tests',card.tests?.observed?(card.tests.outcome||card.tests.latest||'Observed'):'Not started']
@@ -362,6 +368,26 @@
    const board=liveBoard;
    if(liveTab==='now'){
      root.append(liveAttentionInbox(board.attention||[]));
+     if(board.supervisor?.summary){
+       const sum=board.supervisor.summary;
+       const strip=node('section',null,'glass la-supervisor-strip');
+       strip.append(node('h3','Execution sessions'),node('p','Active agent Runs: '+(sum.active_agent_runs??0)+' · Live work: '+(sum.live_work??0)+' · Obsolete rework: '+(sum.obsolete_rework??0)+' · Owner gates: '+(sum.owner_gates??0),'muted'));
+       strip.append(node('p','Terminal/MCP client sessions are not agent Runs. Cursor IDE edits appear only as saved-file observations.','muted'));
+       if((board.supervisor.obsolete_rework||[]).length){
+         const cleanup=button('Archive obsolete rework…',async()=>{
+           try{
+             const preview=await api('/api/product/archive-obsolete-rework-preview',{request_id:crypto.randomUUID(),limit:50});
+             if(!preview.items?.length||!preview.preview_id){$('notice').textContent=preview.note||'No obsolete rework ready to archive.';return;}
+             if(!confirm('Archive '+preview.items.length+' obsolete needs_rework Mission(s) from Now? Evidence is preserved.'))return;
+             await api('/api/product/archive-obsolete-rework',{confirmed:true,request_id:crypto.randomUUID(),preview_id:preview.preview_id,digest:preview.digest,reason:'obsolete_rework_cleanup'});
+             $('notice').textContent='Archived '+preview.items.length+' obsolete Mission(s).';
+             refreshLiveBoard();refresh();
+           }catch(e){$('notice').textContent=e.message||'Archive refused.';}
+         });
+         cleanup.dataset.focusKey='la-archive-obsolete';strip.append(cleanup);
+       }
+       root.append(strip);
+     }
      if(board.now.empty){
        const emptyNow=node('section',null,'glass la-empty-now');
        emptyNow.append(node('h3','No active work.'),node('p','Recently completed Missions and historical activity are under Recent and History. Live Activity never fills this view with old events.','muted'));

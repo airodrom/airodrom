@@ -1,6 +1,6 @@
 # Unified Autonomous Development V1
 
-Canonical description of the ChatGPT → Airodrom → coding worker → independent verification → bounded repair → evidence workflow. Decision record: [ADR 0051](adr/0051-unified-autonomous-development.md). Engineering state on 2026-10-12: **PASS WITH KNOWN LIMITATIONS**. These are separate states and are never collapsed: IMPLEMENTED, TESTED, LIVE VERIFIED, OWNER ACCEPTED, PRODUCTION AUTHORIZED.
+Canonical description of the ChatGPT → Airodrom → coding worker → independent verification → bounded repair → evidence workflow. Live Activity projection, CLI log follow, and session cleanup for Issue #108 are documented in [Autonomous Supervisor V1](AUTONOMOUS-SUPERVISOR-V1.md). Decision record: [ADR 0051](adr/0051-unified-autonomous-development.md). Engineering state on 2026-10-12: **PASS WITH KNOWN LIMITATIONS**. These are separate states and are never collapsed: IMPLEMENTED, TESTED, LIVE VERIFIED, OWNER ACCEPTED, PRODUCTION AUTHORIZED.
 
 ## Architecture
 

@@ -50,5 +50,6 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Git Repository Cleanup V1](GIT-REPOSITORY-CLEANUP-V1.md)
 
 - [Autonomous Reliability & Intelligence V1](AUTONOMOUS-RELIABILITY-V1.md): local evaluations, memory metrics, durable observing goals, flight traces and discovery diagnostics.
+- [Autonomous Supervisor V1](AUTONOMOUS-SUPERVISOR-V1.md): Live Activity execution projection, CLI `logs follow`, AUTO admission honesty, obsolete rework cleanup, standing WORK-template authorization (Issue #108).
 - [Unified Autonomous Development V1](UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md): ChatGPT proposal → one owner approval → sandboxed worker → independent verification → bounded idempotent repair → durable evidence; Cursor governed worker and honest qualification.
 - [Continuous Autonomous Execution V1](CONTINUOUS-AUTONOMOUS-EXECUTION-V1.md): durable authorized goal continuation without ChatGPT/Cursor ownership; extends Goal Planner.

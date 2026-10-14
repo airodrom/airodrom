@@ -3,6 +3,7 @@
 const display = require('./product-observability');
 const observatory = require('./live-observatory');
 const visibility = require('./mission-visibility');
+const supervisor = require('./autonomous-supervisor');
 
 const ACTIVE = new Set(['dispatching', 'running', 'verifying']);
 const RECENT_STATES = new Set(['completed', 'cancelled', 'blocked', 'needs_rework', 'awaiting_acceptance']);
@@ -279,7 +280,7 @@ function missionCard(bridge, mission, { includeTimeline = true, includeTechnical
   if (!ACTIVE.has(view.state)) {
     card.current_stage = view.display?.label || unavailable(view.state);
   }
-  return card;
+  return supervisor.enrichMissionCard(bridge, mission, card, view);
 }
 
 function workspaceFiles(bridge, sinceMs) {
@@ -334,13 +335,11 @@ function liveActivityBoard(bridge, url) {
     return cardsCache.get(key);
   };
 
-  // Align with product Active (autonomouslyCurrent): live execution plus authorized recovery.
+  // NOW = live execution or authorized non-terminal recovery only (never obsolete blocked rework).
   const activeMissions = all.filter(m => {
     if (visibility.isArchived(bridge.controlStore.db, m.id)) return false;
     const view = display.missionView(bridge, m);
-    return ACTIVE.has(m.state) || (typeof display.autonomouslyCurrent === 'function'
-      ? display.autonomouslyCurrent(m, view)
-      : (view.autonomous_managed && ['recovering', 'eligible', 'waiting'].includes(view.recovery?.kind)));
+    return supervisor.isLiveWork(m, view);
   });
   const attention = all
     .filter(m => !visibility.isArchived(bridge.controlStore.db, m.id))
@@ -457,6 +456,14 @@ function liveActivityBoard(bridge, url) {
       technical_has_more: technical.has_more
     },
     attention,
+    supervisor: (() => {
+      const sessions = supervisor.executionSessions(bridge);
+      return {
+        summary: sessions.summary,
+        workers: sessions.workers,
+        obsolete_rework: sessions.sessions.filter(s => s.obsolete_rework).slice(0, 20)
+      };
+    })(),
     connection: {
       stream: 'sse',
       resume: 'cursor',
