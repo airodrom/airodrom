@@ -19,7 +19,8 @@
         "package.json files + package-check require module",
         "ownership-order regression with real lease acquire sequence"
       ],
-      "head_at_preparation": "92b087cdef87dc0f09a37f1fa797d4029e480b90"
+      "head_at_preparation": "see_pr_105_exact_head",
+      "ownership_fix_sha": "92b087cdef87dc0f09a37f1fa797d4029e480b90"
     }
   ],
   "live_install_sha": "88c693f637b74a27f28f021d62991fd76fe991b5",
