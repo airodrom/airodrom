@@ -1,5 +1,6 @@
 # Architecture Decision Records
 
+- [0052 Autonomous Supervisor V1](0052-autonomous-supervisor.md): Proposed; Live Activity / CLI projection over Mission V2 + CAE without a second scheduler; AUTO admission honesty; obsolete rework presentation archive; standing WORK templates.
 - [0051 Unified Autonomous Development V1](0051-unified-autonomous-development.md): Proposed; derived recovery phases, canonical Mission contract with immutable scope fingerprint, one owner approval, idempotent transactional repair, governed sandboxed Cursor worker (live UNQUALIFIED pending file credential), empirical containment, verifier test integrity, ChatGPT coordinator tools.
 - [0013 governed browser product research](0013-governed-browser-product-research.md): Proposed; replaces ADR 0012's unavailable browser gate with a scoped host research capability, preserving its Vault boundaries.
 

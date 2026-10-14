@@ -132,3 +132,8 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 - Production Connection V1 / Meta policy gate: exact proposed production use (WhatsApp as the primary channel for Airodrom’s general-purpose personal AI) is **prohibited** under Meta’s published AI Providers terms except where Meta is legally required to permit it. **Production messaging remains HOLD.** Do not bypass via branding, routing, alternate numbers, or account arrangements. See [Production Connection V1](WHATSAPP-PRODUCTION-CONNECTION-V1.md), [ADR 0042](adr/0042-whatsapp-production-connection-v1.md).
 - Outbound sending and WhatsApp-triggered Mission execution remain disabled.
 - Distinctions: source integration on this branch ≠ local service activation ≠ Meta dashboard proof ≠ production readiness.
+
+## Live unresolved execution ownership (observational)
+
+Host records may retain quarantined Runs, leases, or invocations after a prior supervisor hard-exit (see historical Mission `cc7337b9-58b9-4cad-82a9-54478eca6a54`). Autonomous Supervisor V1 is a display/admission projection only: it does **not** reconcile ownership, clear quarantine, or authorize cutover. Resolve each held record through governed recovery with independent per-run evidence. Do not clear a record merely to make Live Activity green.
+

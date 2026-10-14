@@ -37,9 +37,12 @@ function safeTool(name) {
   return name;
 }
 
-function record(bridge, { eventType, missionId, runId = null, metadata = {}, payload = undefined, idempotencyKey = undefined }) {
+const WORKSPACE_SCOPED = new Set(['fs.file_created', 'fs.file_modified', 'fs.file_deleted', 'fs.file_read', 'git.diff_observed', 'git.diff.observed', 'git.branch.observed']);
+
+function record(bridge, { eventType, missionId = null, runId = null, metadata = {}, payload = undefined, idempotencyKey = undefined }) {
   if (!STAGES[eventType]) throw Error('Unsupported observatory event type');
-  if (!id(missionId)) throw Error('Invalid Mission ID');
+  if (missionId != null && !id(missionId)) throw Error('Invalid Mission ID');
+  if (missionId == null && !WORKSPACE_SCOPED.has(eventType)) throw Error('Invalid Mission ID');
   const meta = {};
   for (const [key, value] of Object.entries(metadata || {})) {
     if (typeof key !== 'string' || key.length > 64) continue;
@@ -96,7 +99,14 @@ function observeHostFileChanges(bridge, { missionId, runId, changes = [], agentI
     const linesRemoved = count(change.lines_removed) ?? null;
     out.push(record(bridge, {
       eventType, missionId, runId,
-      metadata: { agent_id: agentId, path: file, ...(linesAdded !== null ? { lines_added: linesAdded } : {}), ...(linesRemoved !== null ? { lines_removed: linesRemoved } : {}), sha256: typeof change.sha256 === 'string' && /^[a-f0-9]{64}$/.test(change.sha256) ? change.sha256 : undefined },
+      metadata: {
+        agent_id: agentId,
+        path: file,
+        writer_class: agentId === 'opencode' ? 'OPENCODE_WRITE' : 'UNKNOWN_WRITER',
+        ...(linesAdded !== null ? { lines_added: linesAdded } : {}),
+        ...(linesRemoved !== null ? { lines_removed: linesRemoved } : {}),
+        sha256: typeof change.sha256 === 'string' && /^[a-f0-9]{64}$/.test(change.sha256) ? change.sha256 : undefined
+      },
       idempotencyKey: `obs-fs:${missionId}:${runId || 'na'}:${eventType}:${file}:${change.sha256 || change.preimage_sha256 || Date.now()}`
     }));
   }
@@ -159,18 +169,31 @@ function projectEvent(event) {
   if (count(meta.lines_added) !== null) extra.lines_added = meta.lines_added;
   if (count(meta.lines_removed) !== null) extra.lines_removed = meta.lines_removed;
   if (Array.isArray(meta.paths)) extra.paths = meta.paths.map(safeRel).filter(Boolean).slice(0, 16);
+  if (typeof meta.writer_class === 'string' && ['SAVED_FILE_CHANGE', 'EDITOR_EVENT', 'OPENCODE_WRITE', 'UNKNOWN_WRITER'].includes(meta.writer_class)) {
+    extra.writer_class = meta.writer_class;
+  }
+  if (typeof meta.branch === 'string') extra.branch = clipText(meta.branch, 120);
+  if (typeof meta.project === 'string') extra.project = clipText(meta.project, 120);
+  if (meta.untracked === true) extra.untracked = true;
   if (event.payload && ['Command', 'Test', 'Git'].includes(base.category)) extra.output = clipText(event.payload, 1200);
   return { ...base, ...extra, heartbeat_at: time(meta.heartbeat_at) || base.timestamp_ms };
 }
 
 function liveEvents(bridge, url) {
-  const after = Number(url.searchParams.get('after') || 0);
+  let after = Number(url.searchParams.get('after') || 0);
   if (!Number.isSafeInteger(after) || after < 0) throw Error('Invalid event cursor');
   const mission = url.searchParams.get('mission');
   if (mission && !id(mission)) throw Error('Invalid Mission ID');
   const category = url.searchParams.get('category');
   if (category && !OBSERVATORY_CATEGORIES.includes(category)) throw Error('Invalid category');
   const query = (url.searchParams.get('q') || '').trim().slice(0, 80).toLowerCase();
+  // after=0 means “catch up from a recent window”, not replay from ledger genesis.
+  if (after === 0) {
+    try {
+      const latest = bridge.controlStore.db.prepare('SELECT coalesce(max(seq),0) n FROM event_ledger_events').get().n;
+      after = Math.max(0, Number(latest) - 200);
+    } catch { /* fall through with after=0 */ }
+  }
   const batch = bridge.ledger.list({ afterSequence: after, limit: 200, ...(mission ? { missionId: mission } : {}) });
   const seen = new Set();
   const events = [];
@@ -231,10 +254,12 @@ function snapshot(bridge, missionId) {
     },
     observation_boundary: {
       worker_tools: 'openCode_ndjson_mid_run',
-      files: 'host_measured_after_turn',
+      files: 'host_measured_after_turn_or_saved_watch',
       git_diff: 'host_measured_authorized_paths',
       commands_tests: 'governed_job_ledger',
-      continuous_filesystem_watch: false,
+      continuous_filesystem_watch: !!bridge.workspaceActivityWatch?.status?.()?.continuous_filesystem_watch,
+      unsaved_typing_observable: false,
+      authorship_without_evidence: false,
       hidden_reasoning: false
     },
     files: files.slice(-64),
@@ -249,7 +274,8 @@ function snapshot(bridge, missionId) {
     limitations: [
       'Observatory shows host-observed sanitized events only.',
       'OpenCode tool names are observed from mid-run NDJSON; arguments and reasoning are never stored.',
-      'File creates/modifies/deletes are host-measured after the worker turn — not a continuous filesystem watch.',
+      'Saved file changes may be observed by a lightweight workspace watcher; unsaved typing is not observable.',
+      'Writer class is SAVED_FILE_CHANGE unless OpenCode evidence proves OPENCODE_WRITE; process authorship is never invented.',
       'File contents appear only for authorized workspace paths via bounded Git diff.',
       'Model reasoning and prompts remain private.'
     ]
@@ -359,6 +385,7 @@ function attachSse(req, res, bridge, url) {
 
 module.exports = {
   OBSERVATORY_CATEGORIES,
+  WORKSPACE_SCOPED,
   record,
   observeOpenCodeLine,
   observeHostFileChanges,

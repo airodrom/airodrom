@@ -1,3 +1,11 @@
+## Unreleased — Autonomous Supervisor V1 (Issue #108)
+
+- Project Mission V2 / CAE execution into Live Activity with explicit states, active Run honesty, multi-generation repair-budget lineage, and AUTO worker admission (no second scheduler).
+- Now excludes obsolete blocked `needs_rework`; Control Center can presentation-archive eligible obsolete rework while preserving evidence.
+- CLI: `airodrom logs follow` and interactive `/logs` stream redacted host-observed live events; `GET /api/product/execution-sessions` exposes session classification and standing WORK-template status.
+- Scope isolation: Trusted Autonomy default-on / standing public-research Acceptance, bridge-invocation recovery, and Mission-web navigation remain on preserve branches and are not part of this change.
+- Docs: `docs/AUTONOMOUS-SUPERVISOR-V1.md`, ADR 0052. Focused tests: `tests/autonomous-supervisor-v1.test.js`.
+
 ## Unreleased — Bridge invocation ownership and packaging
 
 - `proveInvocationOwnership` no longer accepts `lifecycle.lease_acquired` (lease acquire precedes `latestMcpRequestId` and can bind a previous invocation id to a new bridge Run).
