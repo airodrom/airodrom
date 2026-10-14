@@ -14,7 +14,8 @@ This path proves prior-boot execution is gone via an OS boot-epoch boundary afte
 - File evidence alone is not authoritative; the durable registry SHA-256 is required.
 - Coding Missions without web capability, reasoning/conversation Missions, and external-worker runs are not boot-recovery eligible.
 - The same Mission/Task/Run/web-capability eligibility gate applies to same-boot `web-reconcile` (PID ESRCH); unrelated quarantined executions are refused.
-- A sibling `bridge` run is eligible only when that run_id itself has proven web-execution evidence; sharing a Mission with a host web run is not enough.
+- A sibling `bridge` run is eligible for **web** boot-recovery only when that run_id itself has proven web-execution evidence; sharing a Mission with a host web run is not enough.
+- An unproven bridge **invocation-lease** Run uses the separate [bridge-invocation boot recovery](BRIDGE-INVOCATION-BOOT-RECOVERY-V1.md) path and must not be forced through web-boot-recovery.
 
 ## Procedure
 

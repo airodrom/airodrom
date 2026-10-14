@@ -15,6 +15,7 @@ class MissionService {
   get autonomous(){return this.bridge.autonomousExecution;}
   createConversation(input,owner='operator'){return require('./conversation-mission').create(this,input,owner);}
   get web(){return this._web||(this._web=new (require('./mission-web').MissionWeb)(this));}
+  get bridgeInvocation(){return this._bridgeInvocation||(this._bridgeInvocation=new (require('./bridge-invocation-recovery').BridgeInvocationRecovery)(this));}
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
   createResearch(input,owner='operator'){return this.research.create(input,owner);}
   create(input,owner='operator'){
