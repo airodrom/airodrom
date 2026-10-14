@@ -15,12 +15,37 @@ This path returns `recovery_not_execution: true`. It does **not** prove the capa
 
 - Shared Mission/task with a host web Run is never ownership proof.
 - Timestamp proximity is never ownership proof.
-- Process absence alone is never sufficient without a cold-boot boundary witness.
+- Process absence alone is never sufficient without a cold-boot boundary witness **on the cold-boot path**.
 - Web-proven bridge Runs must use `web-reconcile-boot`, not this path.
 - Unknown invocations without a ledger bind on the named Run stay `unknown` (HOLD).
 - Capability replay is refused; Mission must already be `cancelled`.
 
-## API
+## Same-boot denied path
+
+When ledger evidence proves the capability was durably denied before any browser/detached/external work, cold reboot is not required:
+
+`POST /api/control-v2/bridge-invocation-reconcile-denied`
+
+```json
+{
+  "run_id": "<bridge run>",
+  "mission_id": "<mission>",
+  "invocation_id": "<cp_invocations.request_id>",
+  "termination_verified": true,
+  "recovery_kind": "denied_in_process_same_boot",
+  "request_id": "<operator idempotency uuid>"
+}
+```
+
+Additional gates beyond ownership + cancelled Mission:
+
+1. Authoritative `capability.requested` on this `run_id` with exact `request_id` and `approved:false`.
+2. No post-denial execution events (`capability.completed`, browser/research, shell, agent dispatch).
+3. No PID, no held/quarantined lease, no dispatch on this `run_id`.
+4. No uncertain Slack/effect outbox delivery.
+5. Does **not** invent or consume cold-boot evidence.
+
+## API (cold boot)
 
 `POST /api/control-v2/bridge-invocation-reconcile-boot`
 
@@ -61,5 +86,6 @@ Fail closed unless all hold:
 | --- | --- | --- | --- |
 | `web-reconcile-boot` | Host (or web-proven bridge) Run + quarantined lease + exact dispatch | Consumes prepared web-boot packet | Only via run-scoped `cp_mission_web_evidence` |
 | `bridge-invocation-reconcile-boot` | Bridge invocation-lease Run + proven invocation | Witnesses web-boot packet (no consume) | Only via ledger bind on that Run |
+| `bridge-invocation-reconcile-denied` | Bridge invocation-lease Run + proven denied invocation | Same-boot ledger denial (`approved:false`) | Only via ledger bind + denial on that Run |
 
 Both paths preserve PR #104 semantics: historical pre-boot `running` dispatch is not automatic post-boot proof; unproven same-task invocations stay protected.

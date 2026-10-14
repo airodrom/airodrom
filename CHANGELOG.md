@@ -1,3 +1,10 @@
+## Unreleased — Same-boot denied bridge invocation reconcile
+
+- Add governed `control-v2/bridge-invocation-reconcile-denied` for interrupted `agent_id=bridge` Runs whose authoritative ledger bind proves `capability.requested` with `approved:false` and no post-denial browser/detached/external execution.
+- Same-boot path does not invent cold-boot witnesses; cold-boot `bridge-invocation-reconcile-boot` remains unchanged and still requires a prior-boot evidence packet.
+- Settles only the named bridge Run and proven invocation as `recovery_not_execution`; host quarantine, sibling bridge Runs, and unproven invocations remain untouched.
+- Recovery route remains available while admission is closed/draining. Focused regression extended in `tests/bridge-invocation-recovery.test.js`.
+
 ## Unreleased — Mission registration reliability after Terminal disconnect
 
 - Public `/api/assistant/web/research` returns the live Mission state after auto-dispatch instead of the stale create-time `ready` snapshot, including honest blocked messaging when dispatch already failed closed.

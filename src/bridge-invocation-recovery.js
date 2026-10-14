@@ -124,23 +124,72 @@ class BridgeInvocationRecovery{
    exclude_run_id:input.run_id
   });
  }
- settle(run,invocationId,{ownership_event_id,ownership_event_type}){
+ settle(run,invocationId,{ownership_event_id,ownership_event_type,recovery_kind,resolution}){
   this.db.prepare("UPDATE cp_runs SET state='termination_unverified' WHERE id=? AND state='interrupted'").run(run.id);
-  this.store.updateRun(run.id,{state:'cancelled',processState:'not_started',verified:true,resolution:'operator_bridge_invocation_boot_recovery'});
+  this.store.updateRun(run.id,{state:'cancelled',processState:'not_started',verified:true,resolution});
   const inv=this.store.invocation(invocationId);
   if(inv&&['running','unknown'].includes(inv.state)){
    this.store.finishInvocation(invocationId,{status:'failed',error:'bridge_invocation_reconciled',recovery_not_execution:true,capability:null});
   }
   this.store.event('mission.bridge_invocation.reconciled',run.mission_id,{
-   run_id:run.id,invocation_id:invocationId,actor:'operator',recovery_kind:'cold_os_reboot',
+   run_id:run.id,invocation_id:invocationId,actor:'operator',recovery_kind,
    recovery_not_execution:true,ownership_event_id,ownership_event_type
   },{runId:run.id,taskId:run.task_id});
   return {
    run_id:run.id,mission_id:run.mission_id,invocation_id:invocationId,
-   reconciled:true,termination_verified:true,recovery_kind:'cold_os_reboot',
+   reconciled:true,termination_verified:true,recovery_kind,
    recovery_not_execution:true,authority:false,
    ownership_event_id,ownership_event_type
   };
+ }
+ // Same-boot path for in-process bridge invocations that were durably denied before
+ // any browser/detached/external work. Does not invent cold-boot evidence and does
+ // not settle host/web siblings. Requires cancelled Mission (cancel ≠ reconcile).
+ proveDeniedNonExecution(run,invocationId){
+  const rows=this.db.prepare('SELECT event_id,event_type,request_id,metadata FROM event_ledger_events WHERE run_id=?').all(run.id);
+  let denied=null;
+  for(const row of rows){
+   if(row.event_type!=='capability.requested')continue;
+   let meta={};
+   try{meta=JSON.parse(row.metadata||'{}');}catch{throw error('invocation_ownership_metadata_denied');}
+   const boundId=row.request_id||(typeof meta.request_id==='string'?meta.request_id:null);
+   if(boundId!==invocationId)continue;
+   if(meta.approved!==false)throw error('bridge_invocation_execution_not_denied');
+   const capability=typeof meta.capability==='string'?meta.capability.trim():'';
+   if(!capability)throw error('invocation_ownership_capability_required');
+   denied={event_id:row.event_id,capability};
+  }
+  if(!denied)throw error('bridge_invocation_denial_unproven');
+  if(this.db.prepare("SELECT 1 FROM event_ledger_events WHERE run_id=? AND event_type IN ('capability.completed','research.browser_started','research.navigated','research.browser_closed','mission.web.evidence','shell.command.requested','agent.dispatch.requested')").get(run.id))throw error('bridge_invocation_post_denial_execution');
+  if(this.db.prepare('SELECT 1 FROM cp_mission_web_evidence WHERE run_id=?').get(run.id))throw error('bridge_web_evidence_use_web_boot_recovery');
+  if(Number.isSafeInteger(run.pid)&&run.pid>0)throw error('owned_process_pid_present_use_pid_reconcile');
+  if(this.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state IN ('held','quarantined')").get(run.id))throw error('bridge_invocation_lease_present_use_web_or_pid_path');
+  if(this.db.prepare('SELECT 1 FROM cp_dispatches WHERE run_id=?').get(run.id))throw error('bridge_invocation_dispatch_bound_denied');
+  if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='cp_slack_outbox'").get()&&this.db.prepare("SELECT 1 FROM cp_slack_outbox WHERE state IN ('sending','delivery_unknown')").get())throw error('bridge_invocation_external_effect_uncertain');
+  if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='cp_effect_outbox'").get()&&this.db.prepare("SELECT 1 FROM cp_effect_outbox WHERE status IN ('dispatching','delivery_unknown')").get())throw error('bridge_invocation_external_effect_uncertain');
+  return denied;
+ }
+ reconcileDeniedSameBoot(input){
+  object(input,['run_id','mission_id','invocation_id','termination_verified','request_id','recovery_kind']);
+  identifier(input.run_id);identifier(input.mission_id);identifier(input.invocation_id);identifier(input.request_id);
+  if(input.termination_verified!==true)throw error('explicit_termination_confirmation_required');
+  if(input.recovery_kind!=='denied_in_process_same_boot')throw error('denied_in_process_same_boot_required');
+  return this.store.request('operator',input.request_id,{
+   op:'bridge_invocation_denied_same_boot_reconcile',
+   run_id:input.run_id,mission_id:input.mission_id,invocation_id:input.invocation_id,recovery_kind:'denied_in_process_same_boot'
+  },()=>{
+   const run=this.store.run(input.run_id);
+   this.assertBridgeRun(run,input.mission_id);
+   const owned=this.proveInvocationOwnership(run,input.invocation_id);
+   const denial=this.proveDeniedNonExecution(run,input.invocation_id);
+   if(denial.capability!==owned.capability)throw error('invocation_ownership_contradiction');
+   return this.settle(run,input.invocation_id,{
+    ownership_event_id:owned.ownership_event_id,
+    ownership_event_type:owned.ownership_event_type,
+    recovery_kind:'denied_in_process_same_boot',
+    resolution:'operator_bridge_invocation_denied_same_boot'
+   });
+  });
  }
  reconcileBoot(input){
   object(input,['run_id','mission_id','invocation_id','boot_boundary_evidence_id','boot_boundary_sha256','termination_verified','request_id','recovery_kind']);
@@ -162,7 +211,9 @@ class BridgeInvocationRecovery{
    const currentBootMs=boot.bootEpochMs(witness.current),anchor=run.ended_at||run.updated_at;
    if(!Number.isSafeInteger(anchor)||anchor>=currentBootMs)throw error('run_not_confined_to_prior_boot');
    this.assertNoPostBootContinuation(run,input.invocation_id,currentBootMs);
-   const settled=this.settle(run,input.invocation_id,owned);
+   const settled=this.settle(run,input.invocation_id,{
+    ...owned,recovery_kind:'cold_os_reboot',resolution:'operator_bridge_invocation_boot_recovery'
+   });
    // Host / web sibling ownership must remain untouched.
    return {
     ...settled,

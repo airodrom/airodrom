@@ -244,6 +244,134 @@ test('bridge-invocation ownership: lease_acquired with previous request_id canno
  assert.equal(b.controlStore.db.prepare("SELECT state FROM cp_mission_web_boot_recovery WHERE evidence_id=?").get(prepared.evidence_id).state,'prepared');
 });
 
+function deniedSameBoot(ctx,bridgeId,invocationId,overrides={}){
+ return {
+  run_id:bridgeId,mission_id:ctx.m.mission_id,invocation_id:invocationId,
+  termination_verified:true,request_id:randomUUID(),recovery_kind:'denied_in_process_same_boot',...overrides
+ };
+}
+function markDenied(ctx,bridgeId,invocationId,ts,{approved=false,capability='mission_web'}={}){
+ insertLedger(ctx.b,{runId:bridgeId,missionId:ctx.m.mission_id,taskId:ctx.run.task_id,requestId:invocationId,eventType:'capability.requested',ts,metadata:{capability,request_id:invocationId,approved,automatic:true,origin:'orchestrator'}});
+}
+
+test('bridge-invocation same-boot denied: settles exact run/inv; preserves host quarantine and sibling',async t=>{
+ const {ctx}=await preparedBootFixture(t,{priorOffsetSec:14_700,usec:23});
+ const priorMs=ctx.run.updated_at;
+ const a=bridgeInvocationFixture(ctx,priorMs);
+ const b=bridgeInvocationFixture(ctx,priorMs);
+ markDenied(ctx,a.bridgeId,a.invocationId,priorMs);
+ markDenied(ctx,b.bridgeId,b.invocationId,priorMs);
+ const hostBefore=ctx.b.controlStore.run(ctx.run.id);
+ const leaseBefore=ctx.b.controlStore.db.prepare('SELECT state FROM cp_leases WHERE id=?').get(ctx.lease.id).state;
+ const ok=ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(ctx,a.bridgeId,a.invocationId));
+ assert.equal(ok.recovery_not_execution,true);
+ assert.equal(ok.recovery_kind,'denied_in_process_same_boot');
+ assert.equal(ok.run_id,a.bridgeId);
+ assert.equal(ok.invocation_id,a.invocationId);
+ assert.equal(ctx.b.controlStore.run(a.bridgeId).state,'cancelled');
+ assert.equal(ctx.b.controlStore.run(a.bridgeId).termination_verified,1);
+ assert.equal(ctx.b.controlStore.run(a.bridgeId).resolution,'operator_bridge_invocation_denied_same_boot');
+ assert.equal(ctx.b.controlStore.invocation(a.invocationId).state,'settled');
+ assert.equal(ctx.b.controlStore.run(b.bridgeId).termination_verified,0);
+ assert.equal(ctx.b.controlStore.invocation(b.invocationId).state,'unknown');
+ assert.equal(ctx.b.controlStore.run(ctx.run.id).termination_verified,hostBefore.termination_verified);
+ assert.equal(ctx.b.controlStore.run(ctx.run.id).state,hostBefore.state);
+ assert.equal(ctx.b.controlStore.db.prepare('SELECT state FROM cp_leases WHERE id=?').get(ctx.lease.id).state,leaseBefore);
+});
+
+test('bridge-invocation same-boot denied: refuses missing denial, approved execution, detached/external uncertainty',async t=>{
+ const missing=await preparedBootFixture(t,{priorOffsetSec:15_300,usec:24});
+ const priorMissing=missing.ctx.run.updated_at;
+ const owned=bridgeInvocationFixture(missing.ctx,priorMissing);
+ assert.throws(()=>missing.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(missing.ctx,owned.bridgeId,owned.invocationId)),/bridge_invocation_denial_unproven/);
+ assert.equal(missing.ctx.b.controlStore.invocation(owned.invocationId).state,'unknown');
+
+ const approved=await preparedBootFixture(t,{priorOffsetSec:15_900,usec:25});
+ const priorApproved=approved.ctx.run.updated_at;
+ const ap=bridgeInvocationFixture(approved.ctx,priorApproved);
+ markDenied(approved.ctx,ap.bridgeId,ap.invocationId,priorApproved,{approved:true});
+ assert.throws(()=>approved.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(approved.ctx,ap.bridgeId,ap.invocationId)),/bridge_invocation_execution_not_denied/);
+
+ const post=await preparedBootFixture(t,{priorOffsetSec:16_500,usec:26});
+ const priorPost=post.ctx.run.updated_at;
+ const p=bridgeInvocationFixture(post.ctx,priorPost);
+ markDenied(post.ctx,p.bridgeId,p.invocationId,priorPost);
+ insertLedger(post.ctx.b,{runId:p.bridgeId,missionId:post.ctx.m.mission_id,taskId:post.ctx.run.task_id,requestId:p.invocationId,eventType:'capability.completed',ts:priorPost+1,metadata:{request_id:p.invocationId}});
+ assert.throws(()=>post.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(post.ctx,p.bridgeId,p.invocationId)),/bridge_invocation_post_denial_execution/);
+
+ const pid=await preparedBootFixture(t,{priorOffsetSec:17_100,usec:27});
+ const priorPid=pid.ctx.run.updated_at;
+ const pr=bridgeInvocationFixture(pid.ctx,priorPid);
+ markDenied(pid.ctx,pr.bridgeId,pr.invocationId,priorPid);
+ pid.ctx.b.controlStore.db.prepare('UPDATE cp_runs SET pid=? WHERE id=?').run(424242,pr.bridgeId);
+ assert.throws(()=>pid.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(pid.ctx,pr.bridgeId,pr.invocationId)),/owned_process_pid_present_use_pid_reconcile/);
+
+ const external=await preparedBootFixture(t,{priorOffsetSec:17_700,usec:28});
+ const priorExt=external.ctx.run.updated_at;
+ const ex=bridgeInvocationFixture(external.ctx,priorExt);
+ markDenied(external.ctx,ex.bridgeId,ex.invocationId,priorExt);
+ if(external.ctx.b.controlStore.db.prepare("SELECT 1 FROM sqlite_master WHERE name='cp_slack_outbox'").get()){
+  external.ctx.b.controlStore.db.prepare("INSERT INTO cp_slack_outbox(id,mission_id,kind,body,state,attempts,next_at,created_at) VALUES(?,?,?,?,?,?,?,?)")
+   .run(randomUUID(),external.ctx.m.mission_id,'notify','{}','delivery_unknown',0,priorExt,priorExt);
+  assert.throws(()=>external.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(external.ctx,ex.bridgeId,ex.invocationId)),/bridge_invocation_external_effect_uncertain/);
+ }
+});
+
+test('bridge-invocation same-boot denied: refuses wrong kind, uncancelled mission, previous request_id, and fabricated cold-boot fields',async t=>{
+ const kind=await preparedBootFixture(t,{priorOffsetSec:18_300,usec:29});
+ const priorKind=kind.ctx.run.updated_at;
+ const k=bridgeInvocationFixture(kind.ctx,priorKind);
+ markDenied(kind.ctx,k.bridgeId,k.invocationId,priorKind);
+ assert.throws(()=>kind.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(kind.ctx,k.bridgeId,k.invocationId,{recovery_kind:'cold_os_reboot'})),/denied_in_process_same_boot_required/);
+
+ const ignored=await preparedBootFixture(t,{priorOffsetSec:18_600,usec:32});
+ const priorIgnored=ignored.ctx.run.updated_at;
+ const ig=bridgeInvocationFixture(ignored.ctx,priorIgnored);
+ markDenied(ignored.ctx,ig.bridgeId,ig.invocationId,priorIgnored);
+ // Fabricated cold-boot witness fields are refused (exact schema); same-boot never consumes a boot packet.
+ assert.throws(()=>ignored.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot({
+  run_id:ig.bridgeId,mission_id:ignored.ctx.m.mission_id,invocation_id:ig.invocationId,termination_verified:true,
+  request_id:randomUUID(),recovery_kind:'denied_in_process_same_boot',
+  boot_boundary_evidence_id:randomUUID(),boot_boundary_sha256:'a'.repeat(64)
+ }),/Unexpected input fields/);
+ assert.equal(ignored.ctx.b.controlStore.run(ig.bridgeId).termination_verified,0);
+
+ const blocked=await preparedBootFixture(t,{priorOffsetSec:18_900,usec:30});
+ const priorBlocked=blocked.ctx.run.updated_at;
+ const bl=bridgeInvocationFixture(blocked.ctx,priorBlocked,{missionCancelled:false});
+ markDenied(blocked.ctx,bl.bridgeId,bl.invocationId,priorBlocked);
+ if(blocked.ctx.b.controlStore.getMission(blocked.ctx.m.mission_id).state==='cancelled'){
+  blocked.ctx.b.controlStore.db.prepare("UPDATE cp_missions SET state='blocked' WHERE id=?").run(blocked.ctx.m.mission_id);
+ }
+ assert.throws(()=>blocked.ctx.b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(blocked.ctx,bl.bridgeId,bl.invocationId)),/bridge_invocation_mission_not_cancelled/);
+
+ const prev=await preparedBootFixture(t,{priorOffsetSec:19_500,usec:31});
+ const {b,m,run}=prev.ctx;
+ const task=b.tasks.get(run.task_id);
+ const previousId=randomUUID(), currentId=randomUUID();
+ const priorPrev=run.updated_at;
+ b.controlStore.beginInvocation(task.id,previousId,'prev-same-boot-hash');
+ b.controlStore.db.prepare("UPDATE cp_invocations SET state='unknown',created_at=?,updated_at=? WHERE request_id=?").run(priorPrev,priorPrev,previousId);
+ task.latestMcpRequestId=previousId; b.tasks.save(task);
+ const lease=b.leases.acquire(task.id,{agentId:'bridge'});
+ const bridgePrev=lease.runId;
+ task.latestMcpRequestId=currentId; task.activeRunId=bridgePrev; b.tasks.save(task);
+ b.controlStore.beginInvocation(task.id,currentId,'curr-same-boot-hash');
+ b.controlStore.db.prepare("UPDATE cp_invocations SET state='unknown',created_at=?,updated_at=? WHERE request_id=?").run(priorPrev,priorPrev,currentId);
+ b._ledgerRecord({...b._ledgerContext(task),eventType:'orchestrator.capability.requested',agent:'chatgpt',direction:'incoming',status:'received',
+  metadata:{capability:'mission_web',request_id:currentId},idempotencyKey:'same-boot-own:'+currentId},{critical:true});
+ insertLedger(b,{runId:bridgePrev,missionId:m.mission_id,taskId:run.task_id,requestId:currentId,eventType:'capability.requested',ts:priorPrev,metadata:{capability:'mission_web',request_id:currentId,approved:false}});
+ b.controlStore.updateRun(bridgePrev,{state:'interrupted',processState:'unknown',verified:false,resolution:'reconcile_process'});
+ b.controlStore.db.prepare('UPDATE cp_runs SET updated_at=?,ended_at=? WHERE id=?').run(priorPrev,priorPrev,bridgePrev);
+ if(b.controlStore.getMission(m.mission_id).state!=='cancelled')b.controlStore.state(m.mission_id,'cancelled','fixture_stop');
+ b.leases.releaseIfOwner(lease,{verified:false});
+ assert.throws(()=>b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(prev.ctx,bridgePrev,previousId)),/invocation_run_ownership_unproven/);
+ const ok=b.missions.bridgeInvocation.reconcileDeniedSameBoot(deniedSameBoot(prev.ctx,bridgePrev,currentId));
+ assert.equal(ok.recovery_not_execution,true);
+ assert.equal(b.controlStore.invocation(currentId).state,'settled');
+ assert.equal(b.controlStore.invocation(previousId).state,'unknown');
+});
+
 test('bridge-invocation ownership: contradictory or capability-less binds fail closed',async t=>{
  const {ctx,prepared,advance}=await preparedBootFixture(t,{priorOffsetSec:13_500,usec:21});
  const priorMs=ctx.run.updated_at;
