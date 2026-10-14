@@ -146,3 +146,5 @@ nav button{transition:color .15s ease,background-color .15s ease,border-color .1
 @media(max-width:1024px){.mission-row{grid-template-columns:minmax(0,1fr) auto}}
 :root[data-theme="light"] .mission-row{background:var(--surface)}
 :root[data-theme="light"] .mission-tabs button.active-tab{background:#5091ff18;color:#173f60}
+
+.nav-more{margin-top:8px}.nav-more summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 13px;letter-spacing:.08em;text-transform:uppercase}.nav-more div{display:grid;gap:4px;margin-top:4px}.grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}

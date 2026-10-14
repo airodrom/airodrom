@@ -80,10 +80,13 @@ function progress({state, checks = [], declaredChecks = null} = {}) {
  return {mode:ACTIVE.includes(state)?'indeterminate':'paused',label:ACTIVE.includes(state)?'Observed activity; completion denominator unavailable':'No advancing activity observed'};
 }
 const checkLabel = (key, index) => ({read_only_boundary:'Read-only confinement and termination',response:'Response factual accuracy',runtime_provenance:'Runtime provenance',repository_v2:'Repository boundary',creation_repository_v2:'Original scope',workspace:'Workspace available',protected_files:'Protected files',expected_changes:'Expected changes',git_status:'Repository status',task_owned_diff:'Task-owned diff',verification_workspace_stable:'Verification workspace stability',verification_available:'Verification available',native_execution:'Native execution'})[key] || 'Declared check '+(index+1);
-function displayStatus(state, { started = false, settled = false, archived = false } = {}) {
+function displayStatus(state, { started = false, settled = false, archived = false, kind = null } = {}) {
   if (archived) return { key: 'archived', label: 'Archived', tone: 'muted' };
   if (settled && state === 'completed') return { key: 'settled', label: 'Settled', tone: 'ready' };
   if (state === 'draft' || (state === 'ready' && !started)) return { key: 'registered', label: 'Registered — execution not started', tone: 'waiting' };
+  if (state === 'awaiting_acceptance' && kind === 'conversation') {
+    return { key: 'unread_result', label: 'Unread result', tone: 'muted' };
+  }
   return {
     key: state,
     label: ({
@@ -221,6 +224,9 @@ function outcomeSummary(view) {
   const failedVerify = view.verification?.status === 'failed';
   const recovery = view.recovery || { kind: 'none' };
   if (view.archived) return { kind: 'archived', headline: 'Archived', detail: 'Hidden from the primary list; canonical evidence retained.', success: false };
+  if (view.kind === 'conversation' && view.state === 'awaiting_acceptance') {
+    return { kind: 'result', headline: 'Unread conversation result', detail: 'Historical chat result — not an urgent owner decision. Review in History or archive when finished.', success: false };
+  }
   if (view.actions?.accept) return { kind: 'decision', headline: 'Owner decision required', detail: verified ? 'Independent verification passed — Acceptance is still required.' : 'Review verification evidence before Acceptance.', success: false };
   if (view.state === 'waiting_for_operator') return { kind: 'decision', headline: 'Owner decision required', detail: 'Autonomous execution cannot proceed past this gate.', success: false };
   if (ACTIVE.includes(view.state)) return { kind: 'progress', headline: view.display?.label || 'In progress', detail: view.latest_activity || 'Airodrom is executing within authorized bounds.', success: false };
@@ -257,8 +263,13 @@ function nextActionFor(mission, view) {
   return null;
 }
 function ownerAttentionRequired(mission, view) {
-  if (['awaiting_acceptance', 'waiting_for_operator'].includes(mission.state)) return true;
-  if (view.actions?.accept) return true;
+  if (mission.state === 'waiting_for_operator') return true;
+  if (mission.state === 'awaiting_acceptance') {
+    // Conversation turns awaiting Acceptance are unread historical results, not Needs Attention.
+    if ((mission.envelope?.kind || view.kind) === 'conversation') return false;
+    return true;
+  }
+  if (view.actions?.accept && view.kind !== 'conversation') return true;
   if (!['blocked', 'needs_rework'].includes(mission.state)) return false;
   // Historical non-autonomous failures stay in Failed/History — not the primary attention queue.
   if (!view.autonomous_managed) return false;
@@ -275,8 +286,8 @@ function missionView(bridge, mission) {
  visibility.ensure(bridge.controlStore.db);
  const archived = visibility.isArchived(bridge.controlStore.db, mission.id);
  if(mission.envelope.kind==='work_request'){
-  const base={id:id(mission.id),task_id:null,state:enumValue(mission.state,STATES),revision:count(mission.revision),label:'Work Mission draft',workspace:'Scope required',runtime:null,worker_assigned:false,created_at:time(mission.created_at),started_at:null,finished_at:null,observed_at:Date.now(),authority:{status:'none; scope and registered checks required'},budget:{},memory:{selected_count:0,delivery:'not requested'},verification:{current:false,status:'not_observed',checks:[]},acceptance:{status:'not_applicable'},settlement:{status:'not_applicable'},termination:{verified:true,process_state:'not_started'},attempts:0,progress:progress({state:mission.state}),timeline:[],latest_activity:'Registered — execution not started',archived,actions:{cancel:mission.state!=='cancelled',dispatch:false,accept:false,archive:visibility.archiveEligible(mission,bridge),restore:archived}};
-  base.autonomous_managed=false;base.display=displayStatus(base.state,{archived});base.recovery=recoveryStatus(bridge,mission,base);base.outcome=outcomeSummary(base);base.next_action=nextActionFor(mission,base);base.actions.dispatch=false;return base;
+  const base={id:id(mission.id),kind:'work_request',task_id:null,state:enumValue(mission.state,STATES),revision:count(mission.revision),label:'Work Mission draft',workspace:'Scope required',runtime:null,worker_assigned:false,created_at:time(mission.created_at),started_at:null,finished_at:null,observed_at:Date.now(),authority:{status:'none; scope and registered checks required'},budget:{},memory:{selected_count:0,delivery:'not requested'},verification:{current:false,status:'not_observed',checks:[]},acceptance:{status:'not_applicable'},settlement:{status:'not_applicable'},termination:{verified:true,process_state:'not_started'},attempts:0,progress:progress({state:mission.state}),timeline:[],latest_activity:'Registered — execution not started',archived,actions:{cancel:mission.state!=='cancelled',dispatch:false,accept:false,archive:visibility.archiveEligible(mission,bridge),restore:archived}};
+  base.autonomous_managed=false;base.display=displayStatus(base.state,{archived,kind:base.kind});base.recovery=recoveryStatus(bridge,mission,base);base.outcome=outcomeSummary(base);base.next_action=nextActionFor(mission,base);base.actions.dispatch=false;return base;
  }
  const db=bridge.controlStore.db, runs=db.prepare('SELECT id,agent_id,state,created_at,updated_at,termination_verified,process_state FROM cp_runs WHERE mission_id=? ORDER BY created_at DESC LIMIT 200').all(mission.id);
  const worker=db.prepare('SELECT r.id,r.agent_id,r.state,r.created_at,r.updated_at,r.termination_verified,r.process_state FROM cp_runs r JOIN cp_dispatches d ON d.run_id=r.id WHERE d.mission_id=? ORDER BY r.created_at DESC LIMIT 1').get(mission.id), task=bridge.tasks.get(mission.task_id);
@@ -296,7 +307,7 @@ function missionView(bridge, mission) {
  const workerAssigned=!!worker?.agent_id;
  // Prefer an observed worker run; preferred_agent alone is not an assignment error on drafts.
  const runtime=workerAssigned?enumValue(worker.agent_id,['opencode','host','claude_code','codex','cursor']):(['draft','ready'].includes(state)?null:enumValue(mission.envelope.preferred_agent,['opencode','host','claude_code','codex','cursor'],null));
- const view={id:id(mission.id),task_id:id(mission.task_id),state,revision:count(mission.revision),label:mission.envelope.kind==='conversation'?'Bounded local conversation':mission.envelope.kind==='browser_research'?'Arecibo product research':'Scoped Mission',workspace:mission.envelope.kind==='conversation'?'Isolated workspace':'Registered workspace',runtime,worker_assigned:workerAssigned,created_at:time(mission.created_at),started_at:time(worker?.created_at),finished_at:worker?.termination_verified===1&&['completed','failed','cancelled','blocked'].includes(worker.state)?time(worker.updated_at):null,observed_at:Date.now(),
+ const view={id:id(mission.id),kind:enumValue(mission.envelope.kind,['conversation','coding','browser_research','work_request'],mission.envelope.kind||null),task_id:id(mission.task_id),state,revision:count(mission.revision),label:mission.envelope.kind==='conversation'?'Bounded local conversation':mission.envelope.kind==='browser_research'?'Arecibo product research':'Scoped Mission',workspace:mission.envelope.kind==='conversation'?'Isolated workspace':'Registered workspace',runtime,worker_assigned:workerAssigned,created_at:time(mission.created_at),started_at:time(worker?.created_at),finished_at:worker?.termination_verified===1&&['completed','failed','cancelled','blocked'].includes(worker.state)?time(worker.updated_at):null,observed_at:Date.now(),
   model:mission.envelope.worker_contract?{id:mission.envelope.model,provider:mission.envelope.model_provider,locality:'external',mode:mission.envelope.model_route_mode,declared_context_limit:null,effective_context_limit:null,context_usage:null,tokens:workerProvenance?.usage||null,cost:null,requested:mission.envelope.worker_contract.model,observed:workerProvenance?.observed_model||null}:mission.envelope.preferred_agent==='opencode'&&mission.envelope.model===require('./model-worker-router').MODEL?{id:mission.envelope.model,provider:'ollama',locality:'local',mode:mission.envelope.model_route_mode||'AUTO',declared_context_limit:null,effective_context_limit:null,context_usage:null,tokens:null,cost:null}:null,
   attempts:db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=? AND run_id IS NOT NULL').get(mission.id).n,authority:{status:task.mission?.authorityRevoked?'revoked':'registered; current admission checked by host',expires_at:time(mission.envelope.manifest?.expires_at)},
   ...(['coding','browser_research'].includes(mission.envelope.kind)&&bridge.missions._web?{web:bridge.missions.web.status(mission.id)}:{}),
@@ -321,7 +332,7 @@ function missionView(bridge, mission) {
   progress:progress({state}),timeline:history,history_truncated:ev.has_more,latest_activity:history.at(-1)?.label||(state==='draft'||state==='ready'?'Registered — execution not started':null),
   archived,actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent,archive:visibility.archiveEligible(mission,bridge)&&!archived,restore:archived}};
  view.autonomous_managed=autonomousManaged(bridge,mission.id);
- view.display=displayStatus(state,{started:!!view.started_at,settled:view.settlement.status==='settled',archived});
+ view.display=displayStatus(state,{started:!!view.started_at,settled:view.settlement.status==='settled',archived,kind:view.kind});
  view.recovery=recoveryStatus(bridge,mission,view);
  view.outcome=outcomeSummary(view);
  view.next_action=nextActionFor(mission,view);
@@ -400,15 +411,16 @@ function operatorTitle(bridge, mission) {
   return require('./event-ledger').redactPayload(projected).value.replace(/[\x00-\x1f\x7f]/g,' ').slice(0,180)||'Scoped Mission';
  }catch{return 'Title unavailable';}
 }
-const FILTERS=['All','Active','Needs Attention','Recent','History','Archived','Awaiting Review','Completed','Failed','Settled'];
+const FILTERS=['All','Active','Needs Attention','Recent','History','Archived','Awaiting Review','Unread Results','Completed','Failed','Settled'];
 const PAGE_SIZES=[10,15,25,50];
 const RECENT_MS=14*24*60*60*1000;
 function missionIndex(bridge){return bridge.controlStore.db.prepare('SELECT id FROM cp_missions ORDER BY created_at DESC,id DESC').all().map(row=>bridge.missions.require(row.id,'operator'));}
 function settledIds(bridge){return new Set(bridge.controlStore.db.prepare("SELECT mission_id FROM cp_mission_settlements WHERE state='settled'").all().map(r=>r.mission_id));}
 function filterView(bridge,m){
  const managed=autonomousManaged(bridge,m.id);
- const recovery=recoveryStatus(bridge,m,{autonomous_managed:managed,display:displayStatus(m.state),state:m.state});
- return {autonomous_managed:managed,recovery,actions:{accept:m.state==='awaiting_acceptance'},state:m.state,display:displayStatus(m.state)};
+ const kind=m.envelope?.kind||null;
+ const recovery=recoveryStatus(bridge,m,{autonomous_managed:managed,display:displayStatus(m.state,{kind}),state:m.state,kind});
+ return {autonomous_managed:managed,recovery,actions:{accept:m.state==='awaiting_acceptance'},state:m.state,display:displayStatus(m.state,{kind}),kind};
 }
 function matchesFilter(bridge,m,filter,settled,archived){
  const isArchived=archived.has(m.id);
@@ -416,16 +428,16 @@ function matchesFilter(bridge,m,filter,settled,archived){
  if(isArchived)return false;
  if(filter==='All')return true;
  const view=filterView(bridge,m);
+ const conversationUnread=m.envelope?.kind==='conversation'&&m.state==='awaiting_acceptance';
  if(filter==='Active')return autonomouslyCurrent(m,view);
- if(filter==='Needs Attention'||filter==='Awaiting Review'){
-  if(filter==='Awaiting Review')return ['awaiting_acceptance','waiting_for_operator'].includes(m.state);
-  return ownerAttentionRequired(m,view);
- }
+ if(filter==='Needs Attention')return ownerAttentionRequired(m,view);
+ if(filter==='Awaiting Review')return m.state==='waiting_for_operator'||(m.state==='awaiting_acceptance'&&!conversationUnread);
+ if(filter==='Unread Results')return conversationUnread;
  if(filter==='Failed')return ['blocked','needs_rework'].includes(m.state)&&!autonomouslyCurrent(m,view)&&!ownerAttentionRequired(m,view);
  if(filter==='Completed')return m.state==='completed';
  if(filter==='Settled')return settled.has(m.id);
- if(filter==='Recent')return !autonomouslyCurrent(m,view)&&!ownerAttentionRequired(m,view)&&(Date.now()-(m.created_at||0)<=RECENT_MS||['completed','cancelled'].includes(m.state));
- if(filter==='History')return ['completed','cancelled','draft','ready','paused','blocked','needs_rework'].includes(m.state)&&!ACTIVE.includes(m.state)&&!['awaiting_acceptance','waiting_for_operator'].includes(m.state);
+ if(filter==='Recent')return !autonomouslyCurrent(m,view)&&!ownerAttentionRequired(m,view)&&(Date.now()-(m.created_at||0)<=RECENT_MS||['completed','cancelled'].includes(m.state)||conversationUnread);
+ if(filter==='History')return conversationUnread||(['completed','cancelled','draft','ready','paused','blocked','needs_rework'].includes(m.state)&&!ACTIVE.includes(m.state)&&!['awaiting_acceptance','waiting_for_operator'].includes(m.state));
  return false;
 }
 function missionCounts(bridge,missions=missionIndex(bridge)){
@@ -491,7 +503,8 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  const mission_counts=includeMissions?missionCounts(bridge):null;
  // Prefer canonical Mission reads for Active/Review/Failed so stale storage cannot overstate live work.
  const activeCount=mission_counts?mission_counts.Active:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
- const reviewCount=mission_counts?mission_counts['Awaiting Review']:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n;
+ // Needs Attention excludes historical conversation unread results.
+ const reviewCount=mission_counts?mission_counts['Needs Attention']:db.prepare("SELECT count(*) n FROM cp_missions WHERE state='waiting_for_operator' OR (state='awaiting_acceptance' AND coalesce(json_extract(envelope,'$.kind'),'')!='conversation')").get().n;
  const failedCount=mission_counts?mission_counts.Failed:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n;
  const current=(includeMissions?db.prepare("SELECT id FROM cp_missions WHERE state NOT IN ('completed','cancelled') ORDER BY CASE WHEN state IN ('dispatching','running','verifying') THEN 0 ELSE 1 END,created_at DESC,id LIMIT 50 OFFSET ?").all(currentOffset):[]).map(m=>missionView(bridge,bridge.controlStore.requireMission(m.id)));
  const recent=(includeMissions?bridge.controlStore.listMissions({limit:50}):[]).map(m=>missionView(bridge,m));
@@ -532,8 +545,9 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  const overviewStatus=bridge.closed?'Unavailable':runtime.ready&&memoryReady&&ledger?.healthy===true&&!leases.some(l=>l.state==='quarantined')?'Ready':'Degraded';
  const connectivity=require('./connection-status').derive({authorized:true,reachable:true,overviewStatus,lastOkAt:Date.now(),maintenance:!!bridge.closed});
  const acceptanceConfig=(()=>{try{return bridge.missions.riskAcceptance.status();}catch{return{preference:{enabled:false},waits:require('./wait-presentation').status(bridge)};}})();
+ const workspace_watch=(()=>{try{return bridge.workspaceActivityWatch?.status?.()||{continuous_filesystem_watch:false};}catch{return{continuous_filesystem_watch:false};}})();
  return {epoch:bridge.runtimeFingerprint?.captured_at||null,observed_at:Date.now(),version:require('../package.json').version,release_state:'PRE-RELEASE',status:overviewStatus,connectivity,
-  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client / MCP not checked; does not imply service disconnect'},runtime,cursor,acceptance_config:acceptanceConfig,memory,
+  control:{state:bridge.closed?'Unavailable':'Ready',reason:'Local operator endpoint observation'},connection:{state:'Unavailable',reason:'Authenticated external client / MCP not checked; does not imply service disconnect'},runtime,cursor,workspace_watch,acceptance_config:acceptanceConfig,memory,
   assistant:await require('./model-worker-router').inspect(bridge),connectors:require('./assistant-service').connectors(bridge).status(),whatsapp_inbound:(()=>{try{return bridge.whatsappInbound?.status()||null;}catch{return null;}})(),whatsapp_conversations:(()=>{try{return bridge.whatsappConversations?.status()||null;}catch{return null;}})(),whatsapp_outbound:(()=>{try{return bridge.whatsappOutbound?.status()||null;}catch{return null;}})(),whatsapp_production_connection:(()=>{try{return require('./whatsapp-production-connection').productionConnectionStatus(bridge);}catch{return null;}})(),development_sessions:(()=>{try{return bridge.developmentSessions?.status()||null;}catch{return null;}})(),sensitive:{disclosure:'Operator-only reveal; no worker context',encryption:'No field-level encryption claim'},vault:{backend:'macOS Keychain host port',values_displayed:false,worker_access:false},
   projects:includeMissions?bridge.projects.listProjects({limit:50}).map(p=>({id:id(p.projectId),status:enumValue(p.status,['active','paused','completed','archived']),label:'Registered project',updated_at:time(p.updatedAt)})):[],
   provider:{state:runtime.ready?'Ready':ready?.provider_ready===false?'Unavailable':'Unavailable',reason:runtime.ready?'Qualified local provider observed':'Readiness unavailable'},
@@ -551,7 +565,9 @@ async function nativeStatus(bridge) {
  const live=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying') ORDER BY created_at DESC,id LIMIT 1").get();
  const m=live?missionView(bridge,bridge.controlStore.requireMission(live.id)):null;
  const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
- const reviewCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('awaiting_acceptance','waiting_for_operator')").get().n;
+ const counts=missionCounts(bridge);
+ const reviewCount=counts['Needs Attention'];
+ const unreadResults=counts['Unread Results']||0;
  const {derive,menuPresentation}=require('./connection-status');
  const connectivity=derive({authorized:true,reachable:true,overviewStatus:s.status,lastOkAt:Date.now(),maintenance:!!bridge.closed});
  const presentation=menuPresentation({bridgeState:bridge.closed?'Stopped':'Connected',productStatus:s.status,activeMissions:activeCount,approvals:s.approvals.waiting,reviewMissions:reviewCount,missionState:m?.state||null});
@@ -569,8 +585,9 @@ async function nativeStatus(bridge) {
   installation:s.installation_compatibility?{overall:s.installation_compatibility.overall,mutations_allowed:s.installation_compatibility.mutations_allowed,components:s.installation_compatibility.components.length}:null,
   mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode,worker:m.runtime||null,model:m.model?.id||null,elapsed_s,progress_value:m.progress.mode==='determinate'?m.progress.value:null,progress_maximum:m.progress.mode==='determinate'?m.progress.maximum:null}:null,
   review_missions:reviewCount,
-  failed_missions:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n,
-  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Conversation: '+(conversationNickname||'Airo')+' · '+(conversationModel||'Unavailable'),'Installation: '+(s.installation_compatibility?.overall||'Unavailable'),'Active Missions: '+activeCount,'Review Missions: '+reviewCount,'Waiting Approvals: '+s.approvals.waiting,'Menu: '+presentation.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
+  unread_results:unreadResults,
+  failed_missions:counts.Failed,
+  diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Conversation: '+(conversationNickname||'Airo')+' · '+(conversationModel||'Unavailable'),'Installation: '+(s.installation_compatibility?.overall||'Unavailable'),'Active Missions: '+activeCount,'Needs Attention: '+reviewCount,'Unread Results: '+unreadResults,'Waiting Approvals: '+s.approvals.waiting,'Menu: '+presentation.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
 }
 function events(bridge,url) {
  const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)throw Error('Invalid event cursor');

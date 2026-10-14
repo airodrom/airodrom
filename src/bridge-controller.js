@@ -386,6 +386,7 @@ class BridgeController extends EventEmitter {
       this.whatsappOutbound = new (require('./whatsapp-outbound').WhatsAppOutbound)(this, this.options.whatsappOutbound || {});
       this.whatsappConversations = new (require('./whatsapp-conversations').WhatsAppConversations)(this, this.options.whatsappConversations || {});
       this.developmentSessions = new (require('./development-session').DevelopmentSession)(this, this.options.developmentSessions || {});
+      this.workspaceActivityWatch = require('./workspace-activity-watch').createWorkspaceActivityWatch(this);
       this.missions = new MissionService(this);
       this.capabilityHost.missionWeb=this.missions.web;
       this.workExecution = new (require('./apps/work-execution-adapter').WorkExecutionAdapter)(this, this.options.workExecution || {});
@@ -422,6 +423,7 @@ class BridgeController extends EventEmitter {
         this.autonomousExecution?.tick().catch(() => {});
         this.slackRuntime?.tick().catch(() => {});
         this.controlStore?.outbox.dispatch().catch(() => {});
+        try { this.workspaceActivityWatch?.refresh(); } catch { /* Watcher refresh is best-effort. */ }
         try { this.reconcileExecution(); } catch { /* Reconciliation must not crash the host. */ }
         this.emit('change');
       }, 5000); this.monitor.unref();
@@ -429,6 +431,7 @@ class BridgeController extends EventEmitter {
       // recover() may have scheduled ticks that exited early while booting; kick
       // the Mission loop once admission is actually open.
       if(this.lifecycle.state()==='open')this.missions?.schedule();
+      try { this.workspaceActivityWatch?.start(); } catch { /* Watcher is best-effort observation only. */ }
       return this;
     } catch (e) { await this.shutdown(); throw e; }
   }
@@ -2530,7 +2533,9 @@ class BridgeController extends EventEmitter {
   }
   async shutdownOnce() {
     if(this.lifecycle && this.lifecycle.state()!=='stopping')this.lifecycle.drain();
-    this.closed = true; await this.workers?.shutdown(); this.codexRelay?.close(); this.supervisor?.close(); clearInterval(this.monitor);
+    this.closed = true;
+    try { this.workspaceActivityWatch?.stop(); } catch { /* ignore */ }
+    await this.workers?.shutdown(); this.codexRelay?.close(); this.supervisor?.close(); clearInterval(this.monitor);
     await this.missions?.close();
     await this.slackRuntime?.stop();
     this.capabilityHost?.shutdown();
