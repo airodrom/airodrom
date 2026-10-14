@@ -194,6 +194,7 @@
     "docs/images/mission-lifecycle-v2.png",
     "docs/images/terminal-v2.png",
     "macos/AirodromMenu.swift",
+    "package-lock.json",
     "public/app.js",
     "public/atmosphere.js",
     "public/brand/airodrom-3d-model-blue.svg",
