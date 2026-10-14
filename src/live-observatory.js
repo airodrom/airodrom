@@ -180,13 +180,20 @@ function projectEvent(event) {
 }
 
 function liveEvents(bridge, url) {
-  const after = Number(url.searchParams.get('after') || 0);
+  let after = Number(url.searchParams.get('after') || 0);
   if (!Number.isSafeInteger(after) || after < 0) throw Error('Invalid event cursor');
   const mission = url.searchParams.get('mission');
   if (mission && !id(mission)) throw Error('Invalid Mission ID');
   const category = url.searchParams.get('category');
   if (category && !OBSERVATORY_CATEGORIES.includes(category)) throw Error('Invalid category');
   const query = (url.searchParams.get('q') || '').trim().slice(0, 80).toLowerCase();
+  // after=0 means “catch up from a recent window”, not replay from ledger genesis.
+  if (after === 0) {
+    try {
+      const latest = bridge.controlStore.db.prepare('SELECT coalesce(max(seq),0) n FROM event_ledger_events').get().n;
+      after = Math.max(0, Number(latest) - 200);
+    } catch { /* fall through with after=0 */ }
+  }
   const batch = bridge.ledger.list({ afterSequence: after, limit: 200, ...(mission ? { missionId: mission } : {}) });
   const seen = new Set();
   const events = [];
