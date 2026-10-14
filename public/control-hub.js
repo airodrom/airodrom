@@ -17,8 +17,8 @@
   if(sessionStorage.getItem('airodromConversationPendingNew')==='1'){pendingNewConversation=true;conversationSessionId=null;}
  }catch{}
  const researchReports=new Map(),researchImages=new Map();
- let observatory=null,obsFollow=true,obsFilter='',obsQuery='',obsStream=null,obsCursor=0,diffCache=new Map(),expandedOutput=new Set();
- let liveBoard=null,liveTab='now',liveWindow='24h',liveTechOpen=false,liveBoardTimer=null,liveExpanded=new Set(),livePausedStale=false;
+ let obsConnection='disconnected',observatory=null,obsFollow=true,obsFilter='',obsQuery='',obsStream=null,obsCursor=0,diffCache=new Map(),expandedOutput=new Set(),openMissionPanels=new Map();
+ let liveBoard=null,liveTab='now',liveWindow='24h',liveTechOpen=false,liveBoardTimer=null,livePausedStale=false;
  let lastOkAt=null,connectionView=null,secondaryNotice='';
  let missionPage=null,missionFilter='Active',missionOffset=0,missionLimit=15,missionWorker='',missionSort='newest',searchTimer=null,missionTab='Active',missionDetailTab='Outcome',contentScroll=0,missionListContext=null;
  const deepLinkViews=new Set(['Conversation','Missions','Development Sessions','System Health']);
@@ -275,11 +275,8 @@
      for(const b of card.blockers.slice(0,3))block.append(node('p',b.reason+(b.required_decision?' — '+b.required_decision:'')));
      article.append(block);
    }
-   const tlKey='tl:'+card.id;
-   const tl=node('details',null,'la-timeline');
-   if(liveExpanded.has(tlKey))tl.open=true;
-   tl.ontoggle=()=>{if(tl.open)liveExpanded.add(tlKey);else liveExpanded.delete(tlKey);};
-   const sum=node('summary','Workflow timeline');tl.append(sum);
+   const tl=persistentMissionPanel(card.id,'timeline','Workflow timeline');
+   tl.className='la-timeline';
    const ol=node('ol',null,'la-stages');
    for(const step of card.timeline||[]){
      const li=node('li',null,'la-stage la-'+String(step.status||'').toLowerCase().replace(/\s+/g,'-'));
@@ -294,17 +291,15 @@
    }
    tl.append(ol);article.append(tl);
    if(card.changed_files?.length){
-     const files=node('details',null,'la-files');
-     const fk='files:'+card.id; if(liveExpanded.has(fk))files.open=true;
-     files.ontoggle=()=>{if(files.open)liveExpanded.add(fk);else liveExpanded.delete(fk);};
-     files.append(node('summary','Changed files ('+card.changed_file_count+')'));
+     const files=persistentMissionPanel(card.id,'files','Changed files ('+card.changed_file_count+')');
+     files.className='la-files';
      const ul=node('ul',null,'la-file-list');
      for(const f of card.changed_files.slice(0,12))ul.append(liveFileRow(f));
      files.append(ul);article.append(files);
    }
    const actions=node('div',null,'actions');
-   actions.append(button('View Mission',()=>selectMission(card.id),true));
-   if(card.changed_file_count)actions.append(button('View Files',()=>{liveExpanded.add('files:'+card.id);liveTab='now';render();}));
+   actions.append(button('View Live Logs',()=>selectMission(card.id,'Live Logs'),true),button('View Mission',()=>selectMission(card.id)));
+   if(card.changed_file_count)actions.append(button('View Files',()=>{const panel=[...$('content').querySelectorAll('[data-panel-key]')].find(p=>p.dataset.panelKey===card.id+':files');if(panel)panel.open=true;openMissionPanels.set(card.id+':files',true);render();}));
    article.append(actions);
    return article;
  }
@@ -325,10 +320,10 @@
    const root=node('div',null,'live-activity-v2');
    const head=node('div',null,'la-head');
    head.append(node('div',null,'la-title-block'));
-   head.firstChild.append(node('h2','Live Activity'),node('p','Mission-centered work monitoring. Progress is host-observed only. Unsaved typing is not observable. Cursor Agent is unqualified.','muted'));
+   head.firstChild.append(node('h2','Live Activity & Logs'),node('p','Mission-centered work monitoring. Progress is host-observed only. Unsaved typing is not observable. Cursor Agent is unqualified.','muted'));
    const status=node('div',null,'la-stream-status');
-   const connLabel=paused?'Paused — display may be stale':(obsStream?'Live':'Connecting…');
-   status.append(chip(paused?'waiting':obsStream?'Ready':'Degraded'),node('span',connLabel+(livePausedStale&&paused?' · stale':''),'muted'));
+   const connLabel=paused?'Paused — display may be stale':obsConnection==='connected'?'Live':obsConnection==='connecting'?'Connecting…':'Polling — stream reconnecting';
+   status.append(chip(paused?'waiting':obsConnection==='connected'?'Ready':'Degraded'),node('span',connLabel+(livePausedStale&&paused?' · stale':''),'muted'));
    if(liveBoard?.observation_boundary){
      status.append(node('small','FS watch: '+(liveBoard.observation_boundary.continuous_filesystem_watch?'on':'off')+' · OpenCode: host-observed events only','muted'));
    }
@@ -413,10 +408,8 @@
      if(!board.history.missions.length)list.append(empty(obsQuery?'No Missions match this search.':'No retained Mission records.'));
      for(const card of board.history.missions)list.append(liveMissionCard(card));
      root.append(list);
-     const tech=node('details',null,'glass la-technical');
-     tech.open=liveTechOpen;
-     tech.ontoggle=()=>{liveTechOpen=tech.open;if(tech.open)refreshLiveBoard();};
-     tech.append(node('summary','Technical events'));
+     const tech=persistentMissionPanel('live','technical','Technical events',null,open=>{liveTechOpen=open;if(open)refreshLiveBoard();});
+     tech.className='glass la-technical';
      tech.append(node('p','Full low-level host event stream. Capability chatter and run IDs live here — not in Now.','muted'));
      if(tech.open){
        const feedList=board.history.technical_events||[];
@@ -432,12 +425,13 @@
  }
  function connectGlobalLiveStream(){
    stopObsStream(); if(!authorized||paused||document.hidden||typeof ReadableStream==='undefined')return;
-   const controller=new AbortController(); obsStream=controller;
+   const controller=new AbortController(); obsStream=controller;obsConnection='connecting';
    const params=new URLSearchParams({after:String(obsCursor||cursor||0)});
    (async()=>{
      try{
        const response=await fetch('/api/product/live-stream?'+params,{headers:{Authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:controller.signal});
-       if(!response.ok||!response.body){obsStream=null;return;}
+       if(!response.ok||!response.body)throw Error('Stream unavailable');
+       if(controller.signal.aborted)return;obsConnection='connected';
        const reader=response.body.getReader(),decoder=new TextDecoder(); let buffer='';
        while(true){
          const {value,done}=await reader.read(); if(done)break;
@@ -462,7 +456,7 @@
            }
          }
        }
-     }catch(e){if(e.name!=='AbortError'){obsStream=null; setTimeout(()=>{if(view==='Live Activity'&&!paused)connectGlobalLiveStream();},2000);}}
+     }catch{}finally{if(obsStream===controller){obsStream=null;obsConnection='disconnected';setTimeout(()=>{if(view==='Live Activity'&&!paused&&!obsStream)connectGlobalLiveStream();},2000);}}
    })();
  }
  function overview(){
@@ -518,16 +512,17 @@
    right.append(health(),node('h2','Platform readiness'),node('p',`Control ${snapshot.control.state} · OpenCode ${snapshot.runtime.state} · Memory ${snapshot.memory.state}`,'muted'),node('p','Execution diagnostics stay under Missions → Audit. Success always requires independent verification; Acceptance is never skipped.','muted'));
    cols.append(left,right);f.append(cols);return f;
  }
- function stopObsStream(){try{obsStream?.abort();}catch{}obsStream=null;}
+ function stopObsStream(){try{obsStream?.abort();}catch{}obsStream=null;obsConnection='disconnected';}
  function connectObsStream(id){
    stopObsStream(); if(!authorized||paused||document.hidden||!id||typeof ReadableStream==='undefined')return;
-   const controller=new AbortController(); obsStream=controller;
+   const controller=new AbortController(); obsStream=controller;obsConnection='connecting';
    const params=new URLSearchParams({mission:id,after:String(obsCursor||0)});
-   if(obsFilter)params.set('category',obsFilter);
+   // Receive all categories so changing a display filter never loses live events.
    (async()=>{
      try{
        const response=await fetch('/api/product/live-stream?'+params,{headers:{Authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:controller.signal});
-       if(!response.ok||!response.body){obsStream=null;return;}
+       if(!response.ok||!response.body)throw Error('Stream unavailable');
+       if(controller.signal.aborted)return;obsConnection='connected';
        const reader=response.body.getReader(),decoder=new TextDecoder(); let buffer='';
        while(true){
          const {value,done}=await reader.read(); if(done)break;
@@ -551,18 +546,19 @@
            }
          }
        }
-     }catch(e){if(e.name!=='AbortError')obsStream=null;}
+     }catch{}finally{if(obsStream===controller){obsStream=null;obsConnection='disconnected';}}
    })();
  }
  async function loadDiff(id,file){
    try{const diff=await api('/api/product/observatory/diff?mission='+encodeURIComponent(id)+'&path='+encodeURIComponent(file));diffCache.set(id+':'+file,diff);render();}
    catch(e){$('notice').textContent=e.message;}
  }
- function observatoryFeed(list,limit=80){
+ function observatoryFeed(list,limit=80,chronological=false){
    const ol=node('ol',null,'obs-feed');
-   const items=[...(list||[])].filter(e=>!obsFilter||e.category===obsFilter).filter(e=>!obsQuery||(`${e.label} ${e.path||''} ${e.tool||''} ${e.job||''}`).toLowerCase().includes(obsQuery.toLowerCase())).slice(-limit).reverse();
+   const items=[...(list||[])].filter(e=>!obsFilter||e.category===obsFilter).filter(e=>!obsQuery||(`${e.label} ${e.path||''} ${e.tool||''} ${e.job||''}`).toLowerCase().includes(obsQuery.toLowerCase())).slice(-limit);if(!chronological)items.reverse();
    for(const e of items){
      const li=node('li',null,'obs-item entry'+(e.branch==='attention'?' attention':''));
+     li.dataset.eventId=e.event_id||String(e.sequence||e.timestamp_ms);
      const head=node('div',null,'obs-item-head');
      head.append(node('time',stamp(e.timestamp_ms)),node('span',e.category,'obs-cat'),node('strong',e.label));
      if(e.writer_class)head.append(node('span',e.writer_class.replaceAll('_',' '),'chip muted'));
@@ -575,7 +571,7 @@
      if(e.output){
        const key=e.event_id,open=expandedOutput.has(key);
        const toggle=button(open?'Hide output':'Expand output',()=>{if(open)expandedOutput.delete(key);else expandedOutput.add(key);render();});
-       li.append(toggle);
+       toggle.dataset.focusKey='event:'+key+':output';li.append(toggle);
        if(open){const pre=node('pre',e.output,'obs-output');li.append(pre);}
      }
      if(e.path&&(e.category==='File'||e.category==='Git'))li.append(button('View diff',()=>loadDiff(missionId,e.path)));
@@ -583,18 +579,35 @@
    }
    return ol.children.length?ol:empty('No observed events in this filter. Progress is never inferred.');
  }
+ // Keep open details panels stable across periodic polling and SSE updates.
+ function persistentMissionPanel(mission,key,label,content,onChange){
+   const identity=mission+':'+key,details=node('details');
+   details.dataset.panelKey=identity;
+   details.open=openMissionPanels.get(identity)===true;
+   const summary=node('summary',label);summary.dataset.focusKey='panel:'+identity;
+   details.append(summary);if(content)details.append(content);
+   let lastOpen=details.open;
+   details.addEventListener('toggle',()=>{
+     if(!details.isConnected||lastOpen===details.open)return;
+     lastOpen=details.open;openMissionPanels.set(identity,details.open);onChange?.(details.open);
+   });
+   return details;
+ }
  function missionDetail(m){
    const obs=observatory?.mission?.id===m.id?observatory:null;
    const activity=obs?.activity||{};
+   const workerObserved=ACTIVE_UI(m.state)&&m.worker_assigned&&m.termination?.process_state==='alive'&&!m.termination?.verified&&!failures&&!paused;
+   const recordedOnly=ACTIVE_UI(m.state)&&!workerObserved;
    const outcome=m.outcome||{headline:(m.display&&m.display.label)||stateText(m.state),detail:m.next_action,success:false};
    const root=node('div',null,'observatory mission-detail');
    const top=node('header',null,'obs-top');
    top.append(button('← Back to Missions',()=>{stopObsStream();missionId=null;observatory=null;diffCache.clear();missionDetailTab='Outcome';if(missionListContext){missionFilter=missionListContext.filter;missionTab=missionListContext.tab;missionOffset=missionListContext.offset;missionLimit=missionListContext.limit;missionWorker=missionListContext.worker;missionSort=missionListContext.sort;searchQuery=missionListContext.query;missionPage=null;}generation++;view='Missions';$('heading').textContent='Missions';render();refresh();}));
-   const title=node('div');title.append(node('span','OUTCOME','eyebrow'),node('h2',m.label),statusChip(m));
-   title.append(node('p',outcome.headline,'mission-next'));
+   const title=node('div');title.append(node('span','OUTCOME','eyebrow'),node('h2',m.label),recordedOnly?chip('Recorded: '+(m.display?.label||stateText(m.state)),'muted'):statusChip(m));
+   title.append(node('p',recordedOnly?'No live worker confirmed. '+outcome.headline:outcome.headline,'mission-next'));
    if(outcome.detail)title.append(node('p',outcome.detail,'muted'));
    top.append(title);
    const controls=node('div',null,'actions obs-controls');
+   controls.append(button('View Live Logs',()=>{missionDetailTab='Live Logs';render();}));
    if(m.actions.accept)controls.append(button('Review Acceptance',event=>openReview(m,event.currentTarget),true));
    if(m.actions.dispatch&&!m.autonomous_managed)controls.append(button('Run Mission',async()=>{try{await api('/api/assistant/mission',{action:'run',mission_id:m.id,request_id:crypto.randomUUID()});await refresh();}catch(e){$('notice').textContent=e.message;}}));
    if(m.autonomous_managed&&!m.actions.accept)controls.append(node('small','Autonomous execution authorized — no Continue / Retry / Next Mission required.','muted'));
@@ -611,7 +624,7 @@
    root.append(summary);
 
    const tabs=node('div',null,'mission-tabs detail-tabs');tabs.setAttribute('role','tablist');
-   const tabDefs=[['Outcome','Outcome'],['Activity','Activity'],['Worker','Worker'],['Files & Git','Files'],['Tests','Tests'],['Verification','Verification'],['Audit','Audit']];
+   const tabDefs=[['Outcome','Outcome'],['Live Logs','Live Logs'],['Worker','Worker'],['Files & Git','Files'],['Tests','Tests'],['Verification','Verification'],['Audit','Audit']];
    for(const [label] of tabDefs){
      const b=button(label,()=>{missionDetailTab=label;render();});b.setAttribute('role','tab');b.setAttribute('aria-selected',missionDetailTab===label?'true':'false');
      if(missionDetailTab===label)b.classList.add('active-tab');tabs.append(b);
@@ -628,11 +641,30 @@
      split.append(glass('Verification',readable(m.verification.status)||'Not observed',m.verification.current?'Current':'Not current'),glass('Acceptance',readable(m.acceptance.status)||'Not applicable',m.actions.accept?'Decision required':null),glass('Settlement',readable(m.settlement.status)||'Not observed',null));
      panel.append(split);
      if(m.next_action)panel.append(node('p','Required of you: '+m.next_action,'mission-next'));
-     const diag=node('details');diag.append(node('summary','Execution stages (secondary)'),lifecycle(m));panel.append(diag);
-   }else if(missionDetailTab==='Activity'){
+     panel.append(persistentMissionPanel(m.id,'stages','Execution stages',lifecycle(m)));
+   }else if(missionDetailTab==='Live Logs'||missionDetailTab==='Activity'){
      const events=obs?.events||m.timeline||[];
-     if(!events.length)panel.append(empty('No activity observed yet.'));
-     else panel.append(observatoryFeed(events,120));
+     const working=workerObserved;
+     panel.append(node('h3','Live Logs'));
+     panel.append(node('p',(paused?'Updates paused':failures?'Disconnected — retrying':obsConnection==='connected'?'Connected — live events':obsConnection==='connecting'?'Connecting — polling available':'Polling — stream reconnecting')+' · Last observation: '+stampKnown(obs?.observed_at||m.observed_at),'muted'));
+     panel.append(node('p',working?'Worker process observed alive for this Mission.':'No actively executing worker confirmed for this Mission.','muted'));
+     panel.append(node('p','This view contains timestamped Airodrom host observations, not a raw worker terminal. Command output is shown only when captured by the host.','muted'));
+     const filters=node('div',null,'filters');
+     const findLabel=node('label','Filter observed events'),find=node('input');
+     find.type='search';find.placeholder='File, tool, event…';find.value=obsQuery;find.dataset.focusKey='live-log-search';
+     find.oninput=()=>{obsQuery=find.value;render();};findLabel.append(find);filters.append(findLabel);
+     const categoryLabel=node('label','Event category'),categorySelect=node('select');
+     categorySelect.setAttribute('aria-label','Event category');categorySelect.dataset.focusKey='live-log-category';
+     for(const name of ['','Mission','Worker','Runtime','Command','File','Git','Test','Capability','Verification','Approval','Settlement','System']){
+       const option=node('option',name||'All events');option.value=name;categorySelect.append(option);
+     }
+     categorySelect.value=obsFilter;categorySelect.onchange=()=>{obsFilter=categorySelect.value;render();};
+     categoryLabel.append(categorySelect);filters.append(categoryLabel);panel.append(filters);
+     const follow=button(obsFollow?'Follow tail: On':'Follow tail: Off',()=>{obsFollow=!obsFollow;render();});follow.setAttribute('aria-pressed',String(obsFollow));follow.dataset.focusKey='live-log-follow';panel.append(follow);
+     const logs=node('div',null,'live-log-window');logs.dataset.logMission=m.id;logs.tabIndex=0;logs.setAttribute('role','region');logs.setAttribute('aria-label','Recorded host events');
+     logs.append(events.length?observatoryFeed(events,200,true):empty('No host events recorded for this Mission.'));
+     logs.onscroll=()=>{if(logs.isConnected&&obsFollow&&logs.scrollHeight-logs.clientHeight-logs.scrollTop>24){obsFollow=false;render();}};
+     logs.dataset.restoreScroll=obsFollow?String(Number.MAX_SAFE_INTEGER):'0';panel.append(logs,node('small','Showing up to 200 retained host events. Search and category filter apply to this window.','muted'));
    }else if(missionDetailTab==='Worker'){
      if(!m.worker_assigned&&!m.runtime)panel.append(empty('No worker assigned. Normal before execution starts.'));
      else{panel.append(node('p',(m.runtime||'Worker')+(m.model?.id?' · '+m.model.id:'')));panel.append((obs?.worker||[]).length?observatoryFeed(obs.worker,40):empty('No mid-run worker events observed yet.'));}
@@ -655,7 +687,7 @@
      if(trace){panel.append(node('p',trace.explanation),node('p',trace.next_safe_action));const list=node('ol');for(const e of trace.events||[])list.append(node('li',(stamp(e.timestamp)||'')+' · '+e.label+(e.policy_outcome?' · '+e.policy_outcome:'')));panel.append(list);}
      else if(m.timeline?.length)panel.append(observatoryFeed(m.timeline,80));
      else panel.append(empty('No audit timeline observed yet.'));
-     const tech=node('details');tech.append(node('summary','Technical diagnostics'),node('pre',JSON.stringify({id:m.id,state:m.state,revision:m.revision,termination:m.termination,budget:m.budget,authority:m.authority,autonomous_managed:m.autonomous_managed},null,2)));panel.append(tech);
+     panel.append(persistentMissionPanel(m.id,'technical','Technical diagnostics',node('pre',JSON.stringify({id:m.id,state:m.state,revision:m.revision,termination:m.termination,budget:m.budget,authority:m.authority,autonomous_managed:m.autonomous_managed},null,2))));
    }
    root.append(panel,node('p',(obs?.limitations||['Observatory shows sanitized host observations only.']).join(' '),'privacy'));
    return root;
@@ -980,9 +1012,14 @@
    const work=snapshot.missions.filter(m=>m.label!=='Bounded local conversation'&&!['completed','cancelled'].includes(m.state)).slice(0,10);if(work.length){for(const m of work)ops.append(lifecycle(m),missionCard(m));}else ops.append(empty('No active Work Missions.'));ops.append(routeControls());
    layout.append(chat,ops);return layout;
  }
- function render(){if(!authorized){applyConnection(deriveConnection({authorized:false}));authorizationView();return;}if(!snapshot){$('content').replaceChildren(empty(failures?'Local service unavailable. Retrying automatically…':'Loading canonical Mission activity…'));return;}const focused=document.activeElement,key=focused?.dataset?.focusKey;const content=$('content');let result;if(missionId){const m=(snapshot.selected_mission?.id===missionId?snapshot.selected_mission:null)||snapshot.missions.find(x=>x.id===missionId);result=m?missionDetail(m):empty('Mission is outside the current snapshot. Reopen it from the task workspace.');}else if(['AI & Workers','Automation & Permissions','Conversation','Models','Workers','WORK Templates','Google Connections','Connectors','WhatsApp Conversations','Sensitive & Vault','Development Sessions'].includes(view))result=assistantView();else if(view==='Overview'){result=overview();if(snapshot.orchestration?.preferences?.onboarded===false){const setup=node('section',null,'glass');setup.append(node('h2','Choose your primary assistant'),node('p','ChatGPT is preferred. Choose a supported client and a qualified worker to finish setup.'),button('Set up AI & Workers',()=>nav.get('AI & Workers').click()));result.prepend(setup);}}else if(view==='Missions'||view==='History'){if(view==='History'&&!['History','Archived','Unread Results','Completed','Settled','Recent'].includes(missionFilter)){missionFilter='History';missionTab='History';missionOffset=0;missionPage=null;}result=missionDashboard();}else if(view==='Live Activity'){result=liveActivityView();}else if(view==='System Health')result=health();else if(view==='Activity & Audit'){result=node('div');const filter=node('select');filter.setAttribute('aria-label','Event category');filter.dataset.focusKey='event-category';for(const name of ['','Mission','Runtime','Memory','Capability','Verification','Approval','Settlement','System']){const o=node('option',name||'All categories');o.value=name;filter.append(o);}filter.value=category;filter.onchange=()=>{generation++;inflight?.abort();category=filter.value;cursor=0;feed.clear();refresh();render();};const missionFilter=node('select');missionFilter.setAttribute('aria-label','Activity Mission');missionFilter.dataset.focusKey='activity-mission';const all=node('option','All Missions');all.value='';missionFilter.append(all);for(const m of snapshot.missions){const o=node('option',m.label+' · '+m.id.slice(0,8));o.value=m.id;missionFilter.append(o);}missionFilter.value=eventMission;missionFilter.onchange=()=>{generation++;inflight?.abort();eventMission=missionFilter.value;cursor=0;feed.clear();refresh();render();};result.append(filter,missionFilter,node('p','Timestamped host observations · retained window: 500 safe events','muted'),activity());}else if(view==='Runtime & OpenCode'){result=node('div');result.append(glass('OpenCode · Primary',snapshot.runtime.state,snapshot.runtime.reason||'Qualified local execution'),node('p','Requalification never trusts a version string. It requires exact OpenCode and Seatbelt artifacts plus a fresh confined probe.'),node('p','Run airodrom requalify from Terminal. The owned service must be stopped; current work and quarantined leases prevent repair.'),node('pre','airodrom doctor\nairodrom requalify\nairodrom start'));}else if(view==='Approvals'){result=node('div');result.append(glass('Protected Approvals waiting',snapshot.approvals.waiting,'Decisions and Acceptance are distinct'),node('p','Review the exact governed operation in the authorized workspace.'),node('a','Review protected Approvals ↗'));result.lastChild.href='/workspace';for(const a of snapshot.approvals.records){const card=glass(a.label,a.status,'Created '+stamp(a.created_at)+' · expires '+stamp(a.expires_at));if(a.task_id)card.append(workspaceLink('Review exact operation in task workspace ↗',a.task_id));else card.append(node('small','Task-specific review unavailable'));result.append(card);}result.append(node('p',snapshot.approvals.scope,'muted'));}else if(view==='Reliability'){result=reliabilityView();}else if(view==='Autonomous Goals'){result=goalsView();}else if(view==='MCP Diagnostics'){result=mcpView();}else if(view==='Memory'){result=memoryView();}else if(view==='Projects'){result=node('div');result.append(node('p','Up to 50 registered projects, priority ordered · private names and repository paths withheld','muted'));for(const p of snapshot.projects){const card=glass(p.label,p.status,'Updated '+stamp(p.updated_at));card.append(node('small',p.id));if(p.status!=='archived'){const archive=button('Archive project',()=>send('archive-project',{id:p.id}));archive.dataset.focusKey='project:'+p.id+':archive';card.append(archive);}result.append(card);}if(!snapshot.projects.length)result.append(empty('No registered projects.'));const a=node('a','Open task workspace ↗');a.href='/workspace';result.append(a);}else{result=node('div');result.append(node('img'));result.firstChild.src='/brand/airodrom-logo-horizontal-dark.svg';result.firstChild.alt='Airodrom';result.firstChild.className='about-logo';result.append(node('h2','Airodrom '+snapshot.version),chip('PRE-RELEASE'),node('p','OpenCode executes bounded work. Airodrom owns Mission authority, Memory V2, Capability Broker, independent verification, Acceptance, Settlement, leases, audit and erasure.'),node('p','Native service and launch-at-login settings use the separately reviewed macOS lifecycle. Quitting the menu helper leaves the control plane running.'));const waits=snapshot.acceptance_config?.waits||{};const pref=snapshot.acceptance_config?.preference||{};result.append(glass('Trusted Autonomy',pref.enabled?'On':'Off',(pref.privacy||'local_only')+' · '+(pref.data_class||'public')+' · OpenCode · toggle in Automation & Permissions'),glass('Wait classes','Presentation only','Execution '+(waits.execution_timeout_ms||'—')+'ms · Heartbeat '+(waits.worker_heartbeat_timeout_ms||'—')+'ms · Review display '+(waits.acceptance_review_presentation_ms||'—')+'ms · Approval TTL not adjustable here ('+(waits.approval_expiry_ms||'SafetyPolicy')+')'),node('a','Documentation ↗'));result.lastChild.href='https://github.com/airodrom/airodrom#readme';}
+ function render(){for(const panel of $('content').querySelectorAll('[data-panel-key]'))openMissionPanels.set(panel.dataset.panelKey,panel.open);if(!authorized){applyConnection(deriveConnection({authorized:false}));authorizationView();return;}if(!snapshot){$('content').replaceChildren(empty(failures?'Local service unavailable. Retrying automatically…':'Loading canonical Mission activity…'));return;}const focused=document.activeElement,key=focused?.dataset?.focusKey;const content=$('content');let result;if(missionId){const m=(snapshot.selected_mission?.id===missionId?snapshot.selected_mission:null)||snapshot.missions.find(x=>x.id===missionId);result=m?missionDetail(m):empty('Mission is outside the current snapshot. Reopen it from the task workspace.');}else if(['AI & Workers','Automation & Permissions','Conversation','Models','Workers','WORK Templates','Google Connections','Connectors','WhatsApp Conversations','Sensitive & Vault','Development Sessions'].includes(view))result=assistantView();else if(view==='Overview'){result=overview();if(snapshot.orchestration?.preferences?.onboarded===false){const setup=node('section',null,'glass');setup.append(node('h2','Choose your primary assistant'),node('p','ChatGPT is preferred. Choose a supported client and a qualified worker to finish setup.'),button('Set up AI & Workers',()=>nav.get('AI & Workers').click()));result.prepend(setup);}}else if(view==='Missions'||view==='History'){if(view==='History'&&!['History','Archived','Unread Results','Completed','Settled','Recent'].includes(missionFilter)){missionFilter='History';missionTab='History';missionOffset=0;missionPage=null;}result=missionDashboard();}else if(view==='Live Activity'){result=liveActivityView();}else if(view==='System Health')result=health();else if(view==='Activity & Audit'){result=node('div');const filter=node('select');filter.setAttribute('aria-label','Event category');filter.dataset.focusKey='event-category';for(const name of ['','Mission','Runtime','Memory','Capability','Verification','Approval','Settlement','System']){const o=node('option',name||'All categories');o.value=name;filter.append(o);}filter.value=category;filter.onchange=()=>{generation++;inflight?.abort();category=filter.value;cursor=0;feed.clear();refresh();render();};const missionFilter=node('select');missionFilter.setAttribute('aria-label','Activity Mission');missionFilter.dataset.focusKey='activity-mission';const all=node('option','All Missions');all.value='';missionFilter.append(all);for(const m of snapshot.missions){const o=node('option',m.label+' · '+m.id.slice(0,8));o.value=m.id;missionFilter.append(o);}missionFilter.value=eventMission;missionFilter.onchange=()=>{generation++;inflight?.abort();eventMission=missionFilter.value;cursor=0;feed.clear();refresh();render();};result.append(filter,missionFilter,node('p','Timestamped host observations · retained window: 500 safe events','muted'),activity());}else if(view==='Runtime & OpenCode'){result=node('div');result.append(glass('OpenCode · Primary',snapshot.runtime.state,snapshot.runtime.reason||'Qualified local execution'),node('p','Requalification never trusts a version string. It requires exact OpenCode and Seatbelt artifacts plus a fresh confined probe.'),node('p','Run airodrom requalify from Terminal. The owned service must be stopped; current work and quarantined leases prevent repair.'),node('pre','airodrom doctor\nairodrom requalify\nairodrom start'));}else if(view==='Approvals'){result=node('div');result.append(glass('Protected Approvals waiting',snapshot.approvals.waiting,'Decisions and Acceptance are distinct'),node('p','Review the exact governed operation in the authorized workspace.'),node('a','Review protected Approvals ↗'));result.lastChild.href='/workspace';for(const a of snapshot.approvals.records){const card=glass(a.label,a.status,'Created '+stamp(a.created_at)+' · expires '+stamp(a.expires_at));if(a.task_id)card.append(workspaceLink('Review exact operation in task workspace ↗',a.task_id));else card.append(node('small','Task-specific review unavailable'));result.append(card);}result.append(node('p',snapshot.approvals.scope,'muted'));}else if(view==='Reliability'){result=reliabilityView();}else if(view==='Autonomous Goals'){result=goalsView();}else if(view==='MCP Diagnostics'){result=mcpView();}else if(view==='Memory'){result=memoryView();}else if(view==='Projects'){result=node('div');result.append(node('p','Up to 50 registered projects, priority ordered · private names and repository paths withheld','muted'));for(const p of snapshot.projects){const card=glass(p.label,p.status,'Updated '+stamp(p.updated_at));card.append(node('small',p.id));if(p.status!=='archived'){const archive=button('Archive project',()=>send('archive-project',{id:p.id}));archive.dataset.focusKey='project:'+p.id+':archive';card.append(archive);}result.append(card);}if(!snapshot.projects.length)result.append(empty('No registered projects.'));const a=node('a','Open task workspace ↗');a.href='/workspace';result.append(a);}else{result=node('div');result.append(node('img'));result.firstChild.src='/brand/airodrom-logo-horizontal-dark.svg';result.firstChild.alt='Airodrom';result.firstChild.className='about-logo';result.append(node('h2','Airodrom '+snapshot.version),chip('PRE-RELEASE'),node('p','OpenCode executes bounded work. Airodrom owns Mission authority, Memory V2, Capability Broker, independent verification, Acceptance, Settlement, leases, audit and erasure.'),node('p','Native service and launch-at-login settings use the separately reviewed macOS lifecycle. Quitting the menu helper leaves the control plane running.'));const waits=snapshot.acceptance_config?.waits||{};const pref=snapshot.acceptance_config?.preference||{};result.append(glass('Trusted Autonomy',pref.enabled?'On':'Off',(pref.privacy||'local_only')+' · '+(pref.data_class||'public')+' · OpenCode · toggle in Automation & Permissions'),glass('Wait classes','Presentation only','Execution '+(waits.execution_timeout_ms||'—')+'ms · Heartbeat '+(waits.worker_heartbeat_timeout_ms||'—')+'ms · Review display '+(waits.acceptance_review_presentation_ms||'—')+'ms · Approval TTL not adjustable here ('+(waits.approval_expiry_ms||'SafetyPolicy')+')'),node('a','Documentation ↗'));result.lastChild.href='https://github.com/airodrom/airodrom#readme';}
   // Preserve focus and selection across an observed snapshot update.
- const selection=focused&&'selectionStart'in focused?[focused.selectionStart,focused.selectionEnd]:null;const renderKey=view+':'+(missionId||'')+':'+(view==='Missions'?missionFilter+':'+missionOffset+':'+missionDetailTab:'');const changed=content.dataset.renderKey!==renderKey;const prevScroll=changed?0:(contentScroll||content.scrollTop||0);content.dataset.renderKey=renderKey;content.replaceChildren(result);content.scrollTop=prevScroll;contentScroll=content.scrollTop;content.onscroll=()=>{contentScroll=content.scrollTop;};if(changed&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!document.hidden)content.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],{duration:300,easing:'ease-out'});if(key){const target=[...content.querySelectorAll('[data-focus-key]')].find(e=>e.dataset.focusKey===key);target?.focus({preventScroll:true});if(target&&selection&&target.setSelectionRange)try{target.setSelectionRange(...selection);}catch{}}
+ const selection=focused&&'selectionStart'in focused?[focused.selectionStart,focused.selectionEnd]:null;const renderKey=view+':'+(missionId||'')+':'+(view==='Missions'?missionFilter+':'+missionOffset+':'+missionDetailTab:'');const changed=content.dataset.renderKey!==renderKey;const prevScroll=changed?0:(contentScroll||content.scrollTop||0);content.dataset.renderKey=renderKey;
+ const existingPanels=new Map([...content.querySelectorAll('[data-panel-key]')].map(p=>[p.dataset.panelKey,p]));
+ for(const fresh of result.querySelectorAll('[data-panel-key]')){const previous=existingPanels.get(fresh.dataset.panelKey);if(!previous)continue;const summary=previous.firstElementChild;summary.textContent=fresh.firstElementChild.textContent;previous.replaceChildren(summary,...[...fresh.children].slice(1));fresh.replaceWith(previous);}
+ const freshLogs=result.querySelector('[data-log-mission]'),oldLogs=content.querySelector('[data-log-mission]');
+ if(freshLogs&&oldLogs?.dataset.logMission===freshLogs.dataset.logMission){const top=oldLogs.scrollTop,anchor=[...oldLogs.querySelectorAll('[data-event-id]')].find(e=>e.offsetTop+e.offsetHeight>oldLogs.scrollTop),offset=anchor?anchor.offsetTop-top:0;oldLogs.replaceChildren(...freshLogs.childNodes);freshLogs.replaceWith(oldLogs);oldLogs.dataset.restoreScroll=String(obsFollow?Number.MAX_SAFE_INTEGER:top);if(anchor&&!obsFollow){oldLogs.dataset.scrollAnchor=anchor.dataset.eventId;oldLogs.dataset.anchorOffset=String(offset);}}
+ content.replaceChildren(result);const logs=content.querySelector('[data-log-mission]');if(logs){const anchor=[...logs.querySelectorAll('[data-event-id]')].find(e=>e.dataset.eventId===logs.dataset.scrollAnchor);logs.scrollTop=anchor?anchor.offsetTop-Number(logs.dataset.anchorOffset):Number(logs.dataset.restoreScroll||0);delete logs.dataset.restoreScroll;delete logs.dataset.scrollAnchor;delete logs.dataset.anchorOffset;} content.scrollTop=prevScroll;contentScroll=content.scrollTop;content.onscroll=()=>{contentScroll=content.scrollTop;};if(changed&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!document.hidden)content.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],{duration:300,easing:'ease-out'});if(key){const target=[...content.querySelectorAll('[data-focus-key]')].find(e=>e.dataset.focusKey===key);target?.focus({preventScroll:true});if(target&&selection&&target.setSelectionRange)try{target.setSelectionRange(...selection);}catch{}}
  }
  function reliabilityView(){
    const root=node('div'),report=snapshot.reliability;
@@ -1080,8 +1117,8 @@
  function flightView(){const root=node('section',null,'glass'),trace=snapshot.flight_recorder;root.append(node('h2','Mission Flight Recorder'));if(!trace){root.append(empty('Trace unavailable.'));return root;}
   root.append(node('p',trace.explanation),node('p',trace.next_safe_action));const list=node('ol');for(const e of trace.events){const li=node('li',stamp(e.timestamp)+' · '+e.label+(e.policy_outcome?' · '+e.policy_outcome:'')+(e.error_class?' · '+e.error_class:''));list.append(li);}root.append(list);if(trace.has_more)root.append(node('p','First 100 canonical events shown; the API supports cursor pagination.'));return root;
  }
- function selectMission(id){missionListContext={filter:missionFilter,tab:missionTab,offset:missionOffset,limit:missionLimit,worker:missionWorker,sort:missionSort,query:searchQuery};clearMemory();stopObsStream();observatory=null;obsCursor=0;diffCache.clear();missionDetailTab='Outcome';generation++;missionId=id;view='Missions';$('heading').textContent='Mission';render();$('content').focus();refresh();}
- for(const name of primaryViews){const b=button(name,()=>{const keepSession=conversationSessionId;const keepPending=pendingNewConversation;const keepPrevious=previousConversationSessionId;clearMemory();conversationSessionId=keepSession;pendingNewConversation=keepPending;previousConversationSessionId=keepPrevious;view=name;missionId=null;generation++;for(const [n,item]of nav)item.setAttribute('aria-current',n===name?'page':'false');$('heading').textContent=name;if(name==='Live Activity')connectGlobalLiveStream();else if(name!=='Missions')stopObsStream();render();refresh();});nav.set(name,b);$('nav').append(b);}
+ function selectMission(id,tab='Outcome'){missionListContext={filter:missionFilter,tab:missionTab,offset:missionOffset,limit:missionLimit,worker:missionWorker,sort:missionSort,query:searchQuery};clearMemory();stopObsStream();observatory=null;obsCursor=0;diffCache.clear();missionDetailTab=tab;generation++;missionId=id;view='Missions';$('heading').textContent='Mission';render();$('content').focus();refresh();}
+ for(const name of primaryViews){const b=button(name==='Live Activity'?'Live Activity & Logs':name,()=>{const keepSession=conversationSessionId;const keepPending=pendingNewConversation;const keepPrevious=previousConversationSessionId;clearMemory();conversationSessionId=keepSession;pendingNewConversation=keepPending;previousConversationSessionId=keepPrevious;view=name;missionId=null;generation++;for(const [n,item]of nav)item.setAttribute('aria-current',n===name?'page':'false');$('heading').textContent=name;if(name==='Live Activity')connectGlobalLiveStream();else if(name!=='Missions')stopObsStream();render();refresh();});nav.set(name,b);$('nav').append(b);}
  const more=node('details');more.className='nav-more';const sum=node('summary','More');more.append(sum);const moreBox=node('div');
  for(const name of moreViews){if(primaryViews.includes(name)||name==='Settings & About')continue;const b=button(name,()=>{const keepSession=conversationSessionId;const keepPending=pendingNewConversation;const keepPrevious=previousConversationSessionId;clearMemory();conversationSessionId=keepSession;pendingNewConversation=keepPending;previousConversationSessionId=keepPrevious;view=name;missionId=null;generation++;for(const [n,item]of nav)item.setAttribute('aria-current',n===name?'page':'false');$('heading').textContent=name;stopObsStream();render();refresh();});nav.set(name,b);moreBox.append(b);}
  more.append(moreBox);$('nav').append(more);

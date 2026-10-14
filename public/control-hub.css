@@ -189,3 +189,9 @@ nav button{transition:color .15s ease,background-color .15s ease,border-color .1
 @media(max-width:900px){.la-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.la-stream-status{justify-items:start;text-align:left}}
 @media(max-width:760px){.la-facts{grid-template-columns:1fr}.la-card{padding:16px}.la-stage{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.la-card-live{background:var(--elevated)}}
+
+/* Live logs scroll independently of data updates. */
+.live-log-window{position:relative;max-height:28rem;overflow:auto;overflow-anchor:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:12px;min-width:0;scroll-behavior:auto}
+.live-log-window:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.live-log-window .obs-item{overflow-wrap:anywhere}
+.detail-tabs+section .filters label{display:flex;flex:1;flex-direction:column;gap:6px;min-width:0}
