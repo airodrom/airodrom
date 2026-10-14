@@ -46,19 +46,27 @@ function transportLossMessage(missionId) {
   const id = missionId ? ' Mission ' + missionId + ' remains in durable host records.' : '';
   return 'Lost contact with the managed Airodrom service.' + id + ' Run airodrom status. A Terminal disconnect does not cancel a registered Mission. The CLI is still open.';
 }
-async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
+async function waitResult(home, id, { signal, onProgress, timeoutMs=130000, cancelOnAbort=true } = {}) {
   const deadline = Date.now() + timeoutMs; let lastState=null; let transportLosses=0;
+  const detachMessage = () => Error(
+    cancelOnAbort
+      ? 'Task cancelled. The CLI is still open.'
+      : 'Terminal polling stopped.' + (id ? ' Mission ' + id + ' remains independently owned by the host.' : '') + ' Use /mission status or /research report. The CLI is still open.'
+  );
   while (Date.now() < deadline) {
     if (signal?.aborted) {
-      try { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); }
-      catch (error) { if (isTransportLoss(error)) throw Error(transportLossMessage(id)); throw error; }
-      throw Error('Task cancelled. The CLI is still open.');
+      // Host-owned research/browser Missions must not be cancelled by Terminal disconnect.
+      if (cancelOnAbort) {
+        try { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); }
+        catch (error) { if (isTransportLoss(error)) throw Error(transportLossMessage(id)); throw error; }
+      }
+      throw detachMessage();
     }
     let r;
     try {
       r = await local.request(home, '/api/interactive/task?mission_id=' + encodeURIComponent(id), undefined, { timeoutMs: 10000, signal });
     } catch (error) {
-      if (signal?.aborted) throw Error('Task cancelled. The CLI is still open.');
+      if (signal?.aborted) throw detachMessage();
       // Transient poll loss must not cancel durable Mission work or imply Mission failure.
       if (isTransportLoss(error)) {
         transportLosses++;
@@ -75,9 +83,12 @@ async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {
     if (['blocked', 'needs_rework', 'cancelled'].includes(r.state)) throw Error(r.reason || 'Mission stopped; inspect its status. The CLI is still open.');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  try { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); }
-  catch (error) { if (isTransportLoss(error)) throw Error(transportLossMessage(id)); throw error; }
-  throw Error('Bounded task timed out and cancellation was requested. Check /mission status; the CLI is still open.');
+  if (cancelOnAbort) {
+    try { await local.request(home, '/api/interactive/cancel', { mission_id: id, request_id: randomUUID() }); }
+    catch (error) { if (isTransportLoss(error)) throw Error(transportLossMessage(id)); throw error; }
+    throw Error('Bounded task timed out and cancellation was requested. Check /mission status; the CLI is still open.');
+  }
+  throw Error('Bounded research wait timed out without cancelling the host-owned Mission. Check /mission status or /research report; the CLI is still open.');
 }
 async function waitConversation(home, turn, { signal, onProgress, timeoutMs = 130000 } = {}) {
   const identity = { conversation_id: turn.conversation_id, turn_id: turn.turn_id };
@@ -356,19 +367,26 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     if (!conversationId) throw Error('Conversation session is unavailable.');
     return conversationId;
   };
+  const ensureActive=()=>{ if(!active) active=new AbortController(); return active; };
   const startAnswer=()=>{
+    const controller=ensureActive();
     output.write('\nAiro\n');
-    indicator=render.waiting(output,{env,signal:active.signal});
+    indicator=render.waiting(output,{env,signal:controller.signal});
   };
   const stopAnswer=()=>{indicator?.stop();indicator=null;};
   const answer=async (id,options={})=>{
+    const controller=ensureActive();
     if(!indicator)startAnswer();
-    try { return await waitResult(home,id,{signal:active.signal,...options}); }
+    try { return await waitResult(home,id,{signal:controller.signal,...options}); }
     finally { stopAnswer(); }
+  };
+  const showResearchReport=async (missionId, json=false)=>{
+    const report=await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(missionId));
+    show(output,report,render.researchReport,json);
   };
   const handleReceipt = async (receipt, json = false, message = null) => {
     if (receipt.kind === 'preference') assistantNickname=receipt.nickname;
-    if(receipt.kind==='public_web_offer'){stopAnswer();await detachReader();let next;try{next=await require('./mission-web-guide').guide({offer:receipt,input,output,home,signal:active?.signal});}finally{await attachReader();}await handleReceipt(next,json,message);return;}
+    if(receipt.kind==='public_web_offer'){stopAnswer();ensureActive();await detachReader();let next;try{next=await require('./mission-web-guide').guide({offer:receipt,input,output,home,signal:active?.signal});}finally{await attachReader();}await handleReceipt(next,json,message);return;}
     if(receipt.kind==='zero_setup'){stopAnswer();await detachReader();try{const done=await require('./zero-setup-terminal').guide({receipt,input,output,home,signal:active?.signal});if(done?.technical?.mission_id)lastMission=done.technical.mission_id;if(json)show(output,done,()=>'',true);}finally{await attachReader();}return;}
     if(receipt.kind==='research_session'){stopAnswer();await handleReceipt(await sessionGuide(receipt.entry_url),json,message);return;}
     if (receipt.kind === 'chat') {
@@ -391,16 +409,30 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       stopAnswer();
       if (receipt.mission_id || receipt.mission?.id) lastMission = receipt.mission_id || receipt.mission.id;
       show(output, receipt, missionReceipt, json);
-      if (receipt.kind === 'mission' && ['dispatching', 'running', 'verifying'].includes(receipt.state)) {
-        let result = await answer(lastMission,receipt.browser_research_available?{timeoutMs:200000}:{});
-        if(receipt.session_mode==='dedicated_manual'&&result.state==='waiting_for_operator'){
-          const status=await local.request(home,'/api/assistant/mission',{action:'status',mission_id:lastMission,request_id:randomUUID()});
-          if(status.mission?.research?.handoff_required&&await sessionReady(lastMission))result=await answer(lastMission,{timeoutMs:200000});
+      if (receipt.kind === 'mission' && receipt.browser_research_available) {
+        // Already settled before the Terminal finished registration display.
+        if (['awaiting_acceptance', 'completed'].includes(receipt.state)) {
+          await showResearchReport(lastMission, json);
+          return;
         }
-
-        if(receipt.browser_research_available&&['awaiting_acceptance','completed'].includes(result.state)){const report=await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(lastMission));show(output,report,render.researchReport,json);}
-        else if(receipt.browser_research_available)output.write('Research needs owner intervention. Use /mission status or Control Center to review the required action. No report has been qualified.\n');
-        else output.write(terminalText(result.summary || '') + '\n');
+        if (['dispatching', 'running', 'verifying', 'ready'].includes(receipt.state)) {
+          let result = await answer(lastMission, { timeoutMs: 200000, cancelOnAbort: false });
+          if (receipt.session_mode === 'dedicated_manual' && result.state === 'waiting_for_operator') {
+            const status = await local.request(home, '/api/assistant/mission', { action: 'status', mission_id: lastMission, request_id: randomUUID() });
+            if (status.mission?.research?.handoff_required && await sessionReady(lastMission)) {
+              result = await answer(lastMission, { timeoutMs: 200000, cancelOnAbort: false });
+            }
+          }
+          if (['awaiting_acceptance', 'completed'].includes(result.state)) await showResearchReport(lastMission, json);
+          else output.write('Research needs owner intervention. Use /mission status or Control Center to review the required action. No report has been qualified.\n');
+          return;
+        }
+        output.write('Research Mission is ' + terminalText(receipt.state || 'unknown') + '. Use /mission status or /research report.\n');
+        return;
+      }
+      if (receipt.kind === 'mission' && ['dispatching', 'running', 'verifying'].includes(receipt.state)) {
+        const result = await answer(lastMission);
+        output.write(terminalText(result.summary || '') + '\n');
       }
     } else {
       stopAnswer();
@@ -549,7 +581,12 @@ async function interactive(home, { input = process.stdin, output = process.stdou
             show(output,await local.request(home,'/api/assistant/research/report?mission_id='+encodeURIComponent(id)),render.researchReport,json);
             active=null;readerLocked=false;showPrompt();continue;
           }
-          if(/^(search|explore)\s+/i.test(arg)){await handleReceipt(require('./mission-web-guide').parse(arg.replace(/^search\s+/i,'search the web for ')),false,arg);active=null;readerLocked=false;showPrompt();continue;}
+          if(/^(search|explore)\s+/i.test(arg)){
+            active=new AbortController();
+            try{await handleReceipt(require('./mission-web-guide').parse(arg.replace(/^search\s+/i,'search the web for ')),false,arg);}
+            finally{active=null;}
+            readerLocked=false;showPrompt();continue;
+          }
           if(json)throw Error('Use /research report [mission-id] --json for verified developer evidence.');
           if(!/^(?:login|account)\s+https:\/\/\S+$/i.test(arg))throw Error('Use /research login <HTTPS URL> for dedicated manual login, or /research account <HTTPS login URL> for stored Vault credentials.');
           active=new AbortController();const receipt=await (/^login\s/i.test(arg)?sessionGuide(arg.replace(/^login\s+/i,'')):accountGuide(arg.replace(/^account\s+/i,'')));await handleReceipt(receipt,json);active=null;
@@ -574,7 +611,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
               if(mode==='off'){const receipt=await local.request(home,'/api/assistant/mission/web',{mission_id:id,mode,request_id:randomUUID()});output.write(receipt.message+'\n');active=null;readerLocked=false;showPrompt();continue;}
               const status=await local.request(home,'/api/assistant/mission',{action:'status',mission_id:id,request_id:randomUUID()}),proposal=require('./mission-web-policy').proposal(status.mission.objective);
               const offer={mode,entries:parts.length?parts:proposal.entries,...(!parts.length&&!proposal.entries.length?{query:status.mission.objective}:{})};
-              await detachReader();let receipt;try{receipt=await require('./mission-web-guide').guide({offer,mission_id:id,input,output,home});}finally{await attachReader();}output.write(receipt.message+'\n');active=null;readerLocked=false;showPrompt();continue;
+              active=new AbortController();
+              await detachReader();let receipt;try{receipt=await require('./mission-web-guide').guide({offer,mission_id:id,input,output,home,signal:active.signal});}finally{await attachReader();active=null;}
+              if(receipt?.kind==='mission'||receipt?.browser_research_available){await handleReceipt(receipt);}
+              else output.write((receipt?.message||'Public web authorization updated.')+'\n');
+              readerLocked=false;showPrompt();continue;
             }
             if (!['new','list','status','cancel','run'].includes(action) || action==='list'&&parts.length || ['status','cancel','run'].includes(action)&&parts.length>1) throw Error('Use /mission new [objective], list, status [id], or cancel [id].');
             active=new AbortController();
