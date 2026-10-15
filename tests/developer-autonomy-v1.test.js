@@ -532,6 +532,14 @@ test('owner Acceptance still works if authority expiry incorrectly blocked after
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
   const auth = routine(da,policy,{criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   const m = b.missions.create(auth.mission_input,'operator');
+  // Live DA asks bind Missions into goal plans; Accept must survive that assert path too.
+  b.missions.goalPlanner.create({
+    request_id: randomUUID(),
+    goal_id: m.goal_id,
+    stages: [{ id: 'work', depends_on: [], mission_id: m.id, objective: 'o', acceptance_criteria: ['a'], verification_requirements: ['v'], human_checkpoint: false }],
+    max_runtime_hours: 1,
+    max_attempts: 3
+  });
   b.missions.dispatch(m.id,{request_id:randomUUID()});
   const done = await f.settle(m.id);
   assert.equal(done.state,'awaiting_acceptance');
@@ -541,6 +549,8 @@ test('owner Acceptance still works if authority expiry incorrectly blocked after
   assert.ok(b.controlStore.requireMission(m.id).revision > verifiedRevision);
   b.controlStore.db.prepare('UPDATE cp_developer_autonomy_grants SET expires_at=? WHERE grant_id=?')
     .run(Date.now() - 1, auth.grant.grant_id);
+  assert.doesNotThrow(() => b.missions.goalPlanner.assertMission(b.controlStore.requireMission(m.id)));
+  assert.doesNotThrow(() => b.missions.program.assertAcceptance(b.controlStore.requireMission(m.id), done.verifications[0].id));
   b.missions.accept(m.id,{
     request_id:randomUUID(),
     decision:'accept',

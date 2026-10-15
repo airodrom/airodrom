@@ -102,7 +102,7 @@ class AirodromGoalPlanner {
       else if (s.depends_on.some(d => states.get(d).state !== 'verified')) { state = 'blocked'; reason = 'dependency_unverified'; }
       else if (s.human_checkpoint && !row.plan.checkpoints.includes(id)) { state = 'waiting_approval'; reason = 'operator_checkpoint'; }
       else if (!mission) { state = 'blocked'; reason = 'bounded_mission_required'; }
-      else if (mission.state === 'awaiting_acceptance') { state = 'waiting_approval'; reason = 'acceptance_required'; }
+      else if (mission.state === 'awaiting_acceptance' || (mission.state === 'blocked' && mission.reason === 'Mission authority expired')) { state = 'waiting_approval'; reason = 'acceptance_required'; }
       else if (['dispatching', 'running', 'verifying'].includes(mission.state)) state = 'active';
       else if (mission.state === 'waiting_for_operator') { state = 'waiting_approval'; reason = 'mission_decision'; }
       else if (mission.state !== 'ready') { state = 'blocked'; reason = 'explicit_mission_recovery_required'; }
@@ -127,6 +127,8 @@ class AirodromGoalPlanner {
   assertMission(mission) {
     const row = this.db.prepare('SELECT p.id FROM cp_mission_programs p JOIN cp_mission_program_nodes n ON p.id=n.program_id WHERE n.mission_id=? AND p.goal_plan IS NOT NULL').get(mission.id);
     if (!row) return;
+    // Owner Acceptance of already-verified work may proceed after execution-grant TTL expiry.
+    if (mission.state === 'awaiting_acceptance' || (mission.state === 'blocked' && mission.reason === 'Mission authority expired')) return;
     const view = this.inspect(row.id, mission.owner), stage = view.stages.find(s => s.mission_id === mission.id);
     if (view.state === 'cancelled' || this.store.now() >= view.expires_at || !['ready', 'active', 'waiting_approval', 'verified'].includes(stage.state) || stage.reason === 'operator_checkpoint') throw Error('Goal dependency, authority, checkpoint or recovery boundary halted');
   }
