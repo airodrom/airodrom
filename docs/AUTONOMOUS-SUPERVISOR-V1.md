@@ -26,7 +26,9 @@ Now shows only live execution or authorized non-terminal recovery. Obsolete bloc
 
 Execution states: `QUEUED`, `RUNNING`, `VERIFYING`, `REPAIRING`, `BLOCKED`, `AWAITING_ACCEPTANCE`, `COMPLETED`, `FAILED`, `CANCELLED`.
 
-A worker is shown active only when an advancing `cp_runs` row exists. Cursor IDE saved-file observations are never Cursor Agent execution.
+A worker is shown active only when an advancing `cp_runs` row exists **and** process evidence is trustworthy (`alive` / `starting` / pre-alive `not_started`). Interrupted, `termination_unverified`, and `process_state=unknown` Runs are labeled for recovery (`run_ownership`) and never increment `active_agent_runs`. Cursor IDE saved-file observations are never Cursor Agent execution.
+
+Continuous filesystem observation (when enabled) is limited to independently authorized active Mission or WORK-template allowlists. Sensitive paths (`.env`, keys/pem, credentials/secrets trees), idle projects, host roots, symlink escapes, and Mission-null global observations outside that allowlist are refused.
 
 ## AUTO worker selection
 

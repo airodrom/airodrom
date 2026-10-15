@@ -106,20 +106,49 @@ function repairBudget(bridge, mission, view) {
   }
 }
 
+// Positive advancing worker states only. Interrupted / termination_unverified never count.
+const ADVANCING_RUN_STATES = Object.freeze(['running', 'starting', 'queued', 'dispatching']);
+// Process evidence that may accompany a still-advancing Run. `unknown` is never advancing.
+const TRUSTED_PROCESS_STATES = Object.freeze(['alive', 'starting', 'not_started']);
+
+function runOwnership(row) {
+  if (!row) return 'none';
+  const verified = row.termination_verified === 1;
+  const state = row.state;
+  const process = row.process_state || 'unknown';
+  if (verified && ['completed', 'failed', 'cancelled', 'interrupted'].includes(state)) return 'stopped';
+  if (process === 'unknown') return 'unknown';
+  if (state === 'interrupted' || state === 'termination_unverified') return 'unverified';
+  if (!verified && !ADVANCING_RUN_STATES.includes(state) && !['completed', 'failed', 'cancelled'].includes(state)) {
+    return 'unverified';
+  }
+  if (!verified && ADVANCING_RUN_STATES.includes(state) && !TRUSTED_PROCESS_STATES.includes(process)) {
+    return 'unverified';
+  }
+  if (ADVANCING_RUN_STATES.includes(state) && !verified && TRUSTED_PROCESS_STATES.includes(process)) {
+    // running requires live process evidence; pre-alive states may be not_started/starting.
+    if (state === 'running' && process !== 'alive' && process !== 'starting') return 'unverified';
+    return 'advancing';
+  }
+  return 'stopped';
+}
+
 function activeRun(bridge, mission) {
   const row = bridge.controlStore.db.prepare(`
     SELECT r.id, r.agent_id, r.state, r.process_state, r.termination_verified, r.created_at, r.updated_at
     FROM cp_runs r JOIN cp_dispatches d ON d.run_id=r.id
     WHERE d.mission_id=? ORDER BY r.created_at DESC LIMIT 1`).get(mission.id);
   if (!row) return null;
-  const advancing = ['running', 'starting', 'queued', 'dispatching'].includes(row.state)
-    || (row.termination_verified !== 1 && !['completed', 'failed', 'cancelled'].includes(row.state));
+  const ownership = runOwnership(row);
+  const advancing = ownership === 'advancing';
   return {
     run_id: row.id,
     worker: row.agent_id || null,
     state: row.state,
     process_state: row.process_state,
-    advancing: !!advancing && row.termination_verified !== 1,
+    termination_verified: row.termination_verified === 1,
+    ownership,
+    advancing,
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -245,6 +274,15 @@ function enrichMissionCard(bridge, mission, card, view) {
     execution_states: EXEC_STATES,
     active_run: run && run.advancing ? { run_id: run.run_id, worker: run.worker, state: run.state } : null,
     worker_active: !!(run && run.advancing),
+    // Uncertain ownership is surfaced for recovery; never counted as an advancing worker.
+    run_ownership: run ? {
+      ownership: run.ownership,
+      run_id: run.run_id,
+      worker: run.worker,
+      state: run.state,
+      process_state: run.process_state,
+      termination_verified: run.termination_verified
+    } : null,
     repair: budget,
     recovery: view.recovery ? {
       kind: view.recovery.kind,
@@ -316,6 +354,8 @@ function executionSessions(bridge) {
   const missions = display.missionIndex(bridge);
   const sessions = [];
   let activeRuns = 0;
+  let unverifiedRuns = 0;
+  let unknownOwnership = 0;
   let liveWork = 0;
   let obsolete = 0;
   let ownerGates = 0;
@@ -329,12 +369,14 @@ function executionSessions(bridge) {
     const view = display.missionView(bridge, m);
     const run = activeRun(bridge, m);
     if (run?.advancing) activeRuns++;
+    if (run?.ownership === 'unverified') unverifiedRuns++;
+    if (run?.ownership === 'unknown') unknownOwnership++;
     const live = isLiveWork(m, view);
     if (live) liveWork++;
     const obs = obsoleteRework(m, view, bridge);
     if (obs) obsolete++;
     if (display.ownerAttentionRequired(m, view)) ownerGates++;
-    if (!live && !obs && !display.ownerAttentionRequired(m, view) && !['awaiting_acceptance', 'waiting_for_operator', 'needs_rework', 'blocked'].includes(m.state)) continue;
+    if (!live && !obs && !display.ownerAttentionRequired(m, view) && !['awaiting_acceptance', 'waiting_for_operator', 'needs_rework', 'blocked'].includes(m.state) && !run) continue;
     sessions.push({
       mission_id: m.id,
       title: display.operatorTitle(bridge, m).slice(0, 160),
@@ -344,6 +386,7 @@ function executionSessions(bridge) {
       obsolete_rework: obs,
       owner_attention: display.ownerAttentionRequired(m, view),
       active_run: run?.advancing ? run.run_id : null,
+      run_ownership: run?.ownership || null,
       worker: view.runtime || null,
       recovery: view.recovery?.kind || null,
       archive_eligible: obs && visibility.archiveEligible(m, bridge)
@@ -353,10 +396,12 @@ function executionSessions(bridge) {
     version: 1,
     summary: {
       active_agent_runs: activeRuns,
+      unverified_runs: unverifiedRuns,
+      unknown_ownership_runs: unknownOwnership,
       live_work: liveWork,
       obsolete_rework: obsolete,
       owner_gates: ownerGates,
-      note: 'Active agent Runs count advancing cp_runs only. Idle Terminal/MCP client sessions are not Runs.'
+      note: 'Active agent Runs count only positively advancing cp_runs with trustworthy process evidence. Interrupted, termination_unverified, and unknown process ownership are not active Runs.'
     },
     sessions: sessions.slice(0, 100),
     workers: workerAdmission(bridge, observed),
@@ -368,10 +413,13 @@ function executionSessions(bridge) {
 
 module.exports = {
   EXEC_STATES,
+  ADVANCING_RUN_STATES,
+  TRUSTED_PROCESS_STATES,
   executionState,
   isLiveWork,
   obsoleteRework,
   repairBudget,
+  runOwnership,
   activeRun,
   workerAdmission,
   standingAuthorization,

@@ -37,7 +37,7 @@ test('obsolete needs_rework stays out of Now and is session-classified', async t
   const sessions = supervisor.executionSessions(b);
   assert.ok(sessions.summary.obsolete_rework >= 1 || sessions.sessions.some(s => s.mission_id === m.id));
   assert.equal(sessions.summary.active_agent_runs, 0);
-  assert.match(sessions.summary.note, /not Runs/);
+  assert.match(sessions.summary.note, /not active Runs|trustworthy process evidence/i);
 });
 
 test('AUTO worker admission prefers qualified local OpenCode and never invents Cursor Agent', async t => {

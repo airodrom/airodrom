@@ -3,8 +3,10 @@
 - Project Mission V2 / CAE execution into Live Activity with explicit states, active Run honesty, multi-generation repair-budget lineage, and AUTO worker admission (no second scheduler).
 - Now excludes obsolete blocked `needs_rework`; Control Center can presentation-archive eligible obsolete rework while preserving evidence.
 - CLI: `airodrom logs follow` and interactive `/logs` stream redacted host-observed live events; `GET /api/product/execution-sessions` exposes session classification and standing WORK-template status.
+- Active-Run reporting counts only positively advancing Runs with trustworthy process evidence; interrupted, `termination_unverified`, and unknown process ownership are surfaced separately and never inflate `active_agent_runs`.
+- Filesystem watch is restricted to active Mission / WORK-template allowlists; sensitive paths, idle projects, host roots, symlink escapes, and Mission-null global observations outside approved scope are refused.
 - Scope isolation: Trusted Autonomy default-on / standing public-research Acceptance, bridge-invocation recovery, and Mission-web navigation remain on preserve branches and are not part of this change.
-- Docs: `docs/AUTONOMOUS-SUPERVISOR-V1.md`, ADR 0052. Focused tests: `tests/autonomous-supervisor-v1.test.js`.
+- Docs: `docs/AUTONOMOUS-SUPERVISOR-V1.md`, ADR 0052. Focused tests: `tests/autonomous-supervisor-v1.test.js`, `tests/supervisor-boundary-adversarial.test.js`.
 
 ## Unreleased — Bridge invocation ownership and packaging
 

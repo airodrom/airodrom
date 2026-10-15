@@ -71,25 +71,28 @@ test('workspace watcher records saved-file changes without inventing authorship'
   const f = await fixture(t), b = f.bridge;
   const watchRoot = f.repo;
   const mission = f.create({ objective: 'Watch boundary fixture' });
+  // Watcher requires an active authorized Mission scope — idle host roots are not watched.
+  b.controlStore.db.prepare("UPDATE cp_missions SET state='running' WHERE id=?").run(mission.id);
   const watch = createWorkspaceActivityWatch(b);
   t.after(() => watch.stop());
-  b.hostRepoRoot = watchRoot;
   watch.start();
   assert.equal(safeRel('../escape'), null);
   assert.equal(safeRel('fixture.txt'), 'fixture.txt');
+  assert.equal(safeRel('.env'), null);
   const writer = classifyWriter(b, watchRoot, 'fixture.txt');
   assert.equal(writer.writer_class, 'SAVED_FILE_CHANGE');
   observatory.record(b, {
     eventType: 'fs.file_modified',
-    missionId: null,
-    metadata: { path: 'docs/watch-demo.md', writer_class: 'SAVED_FILE_CHANGE', project: 'repo', branch: 'main', lines_added: 1, lines_removed: 0 }
+    missionId: mission.id,
+    metadata: { path: 'fixture.txt', writer_class: 'SAVED_FILE_CHANGE', project: 'repo', branch: 'main', lines_added: 1, lines_removed: 0 }
   });
   const batch = observatory.liveEvents(b, new URL('http://local/api/product/live-events?after=0&category=File'));
-  assert.ok(batch.events.some(e => e.path === 'docs/watch-demo.md' && e.writer_class === 'SAVED_FILE_CHANGE'));
+  assert.ok(batch.events.some(e => e.path === 'fixture.txt' && e.writer_class === 'SAVED_FILE_CHANGE'));
   const snap = observatory.snapshot(b, mission.id);
   assert.equal(snap.observation_boundary.unsaved_typing_observable, false);
   assert.equal(snap.observation_boundary.authorship_without_evidence, false);
-  assert.equal(typeof watch.status().watched_roots, 'number');
+  assert.ok(watch.status().watched_roots >= 1);
+  assert.equal(watch.status().scope, 'active_mission_or_work_template_allowlist');
 });
 
 test('OpenCode file observations mark OPENCODE_WRITE', async t => {

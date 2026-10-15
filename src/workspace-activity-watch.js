@@ -1,7 +1,7 @@
 'use strict';
-// Lightweight native FS watcher for authorized workspaces.
-// Observes saved-file changes only. Never claims unsaved editor typing.
-// Never invents process authorship without evidence.
+// Lightweight native FS watcher for independently authorized workspace scopes.
+// Observes saved-file changes only inside active Mission / WORK-template allowlists.
+// Never invents process authorship without evidence. Never watches idle projects or host roots.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -9,15 +9,22 @@ const { createHash } = require('node:crypto');
 
 const IGNORE_DIRS = new Set(['.git', 'node_modules', '.runtime', 'dist', 'coverage', '.cursor', '.turbo', 'vendor']);
 const IGNORE_FILES = /^\.(DS_Store|.*\.swp|.*~$)|^(package-lock\.json)$/;
+// Align with control-context SECRET_PATH — never observe credential-looking relative paths.
+const SECRET_PATH = /(^|\/)(\.git|node_modules|\.env(?:\.[^/]*)?|\.ssh|\.aws|\.codex|\.pi|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|[^/]+\.(pem|key|p12|pfx))($|\/)/i;
 const DEBOUNCE_MS = 350;
 const MAX_WATCHES = 8;
 const REL_FILE = /^(?!\/)(?!\.\.(?:\/|$))[A-Za-z0-9._@+,-]+(?:\/[A-Za-z0-9._@+,-]+)*$/;
+// Active execution only — awaiting_acceptance is review, not authorized watch scope.
+const ACTIVE_MISSION_STATES = Object.freeze(['dispatching', 'running', 'verifying']);
 
 function safeRel(file) {
   if (typeof file !== 'string' || !REL_FILE.test(file) || file.length > 240) return null;
   if (IGNORE_FILES.test(path.basename(file))) return null;
+  if (SECRET_PATH.test(file)) return null;
+  // Dotfiles and dot-directories (except known ignore already handled) stay out of observation.
   const parts = file.split('/');
   if (parts.some(p => IGNORE_DIRS.has(p))) return null;
+  if (parts.some(p => p.startsWith('.'))) return null;
   return file;
 }
 
@@ -90,42 +97,68 @@ function classifyWriter(bridge, workspace, relPath) {
     }
   } catch { /* best-effort */ }
 
-  // Cursor editor may be the visible editor; Airodrom does not qualify Cursor Agent.
-  // A saved filesystem event alone is never proof of Cursor authorship.
   return { writer_class: 'SAVED_FILE_CHANGE', mission_id: null, run_id: null, agent_id: null, authorship: 'unknown' };
 }
 
-function collectWatchRoots(bridge) {
-  const roots = new Set();
-  try {
-    if (bridge.hostRepoRoot) roots.add(fs.realpathSync(bridge.hostRepoRoot));
-  } catch { /* ignore */ }
-  try {
-    for (const p of bridge.projects?.listProjects?.({ limit: 20 }) || []) {
-      const ws = p.workspace || p.root || p.path;
-      if (typeof ws === 'string' && path.isAbsolute(ws)) {
-        try { roots.add(fs.realpathSync(ws)); } catch { /* ignore */ }
-      }
+/** Independently authorized watch scopes: active Missions and active WORK templates only. */
+function authorizedScopes(bridge) {
+  const byRoot = new Map();
+  const add = (workspace, allowedFiles, missionId, source) => {
+    if (typeof workspace !== 'string' || !path.isAbsolute(workspace)) return;
+    let root;
+    try { root = fs.realpathSync(workspace); } catch { return; }
+    try {
+      if (!fs.statSync(root).isDirectory()) return;
+    } catch { return; }
+    const allowed = new Set(Array.isArray(allowedFiles) ? allowedFiles.filter(f => typeof f === 'string' && safeRel(f)) : []);
+    const prev = byRoot.get(root);
+    if (!prev) {
+      byRoot.set(root, { workspace: root, allowed_files: allowed, mission_ids: missionId ? [missionId] : [], sources: [source] });
+      return;
     }
-  } catch { /* ignore */ }
+    for (const f of allowed) prev.allowed_files.add(f);
+    if (missionId) prev.mission_ids.push(missionId);
+    if (!prev.sources.includes(source)) prev.sources.push(source);
+  };
+
   try {
     const rows = bridge.controlStore.db.prepare(`
-      SELECT DISTINCT json_extract(envelope,'$.workspace') AS workspace
-      FROM cp_missions
-      WHERE state IN ('dispatching','running','verifying','awaiting_acceptance')
+      SELECT id, envelope FROM cp_missions
+      WHERE state IN ('dispatching','running','verifying')
         AND json_extract(envelope,'$.workspace') IS NOT NULL
       ORDER BY created_at DESC LIMIT 12`).all();
     for (const row of rows) {
-      if (typeof row.workspace === 'string' && path.isAbsolute(row.workspace)) {
-        try { roots.add(fs.realpathSync(row.workspace)); } catch { /* ignore */ }
-      }
+      let envelope;
+      try { envelope = typeof row.envelope === 'string' ? JSON.parse(row.envelope) : row.envelope; } catch { continue; }
+      add(envelope.workspace, envelope.allowed_files || [], row.id, 'active_mission');
     }
   } catch { /* ignore */ }
-  return [...roots].filter(root => {
-    try {
-      return fs.statSync(root).isDirectory();
-    } catch { return false; }
-  }).slice(0, MAX_WATCHES);
+
+  try {
+    for (const t of bridge.workTemplates?.list?.('operator') || []) {
+      if (t.state !== 'active') continue;
+      if (Number.isSafeInteger(t.expires_at) && t.expires_at <= Date.now()) continue;
+      add(t.workspace, t.allowed_files || [], null, 'work_template');
+    }
+  } catch { /* ignore */ }
+
+  return [...byRoot.values()].slice(0, MAX_WATCHES);
+}
+
+function collectWatchRoots(bridge) {
+  // Deliberately omits hostRepoRoot and idle project listings.
+  return authorizedScopes(bridge).map(s => s.workspace);
+}
+
+function pathAuthorized(scopes, workspace, relPath) {
+  const file = safeRel(relPath);
+  if (!file) return null;
+  const scope = scopes.find(s => s.workspace === workspace);
+  if (!scope) return null;
+  // Empty allowlist means the authorizing record had no approved files — deny all.
+  if (!scope.allowed_files.size) return null;
+  if (!scope.allowed_files.has(file)) return null;
+  return { file, scope };
 }
 
 function createWorkspaceActivityWatch(bridge) {
@@ -133,19 +166,40 @@ function createWorkspaceActivityWatch(bridge) {
   const pending = new Map();
   let stopped = false;
   let active = false;
+  let scopes = [];
 
   function emit(workspace, relPath) {
-    const file = safeRel(relPath);
-    if (!file) return;
-    let st;
-    try { st = fs.statSync(path.join(workspace, file)); } catch { return; }
-    if (!st.isFile() || st.size > 2_000_000) return;
+    scopes = authorizedScopes(bridge);
+    const auth = pathAuthorized(scopes, workspace, relPath);
+    if (!auth) return;
+    const { file, scope } = auth;
+    let lst;
+    try { lst = fs.lstatSync(path.join(workspace, file)); } catch { return; }
+    if (lst.isSymbolicLink() || !lst.isFile() || lst.size > 2_000_000) return;
+    // Re-resolve to catch symlink races after lstat.
+    let realFile;
+    try {
+      realFile = fs.realpathSync(path.join(workspace, file));
+      if (realFile !== path.join(workspace, file) && !realFile.startsWith(workspace + path.sep)) return;
+    } catch { return; }
+    const writer = classifyWriter(bridge, workspace, file);
+    // Mission-null unknown writers are only recorded when an approved WORK-template
+    // scope covers the path (standing local auth). Never for idle/global roots.
+    if (!writer.mission_id && writer.authorship === 'unknown' && !scope.sources.includes('work_template') && !scope.mission_ids.length) {
+      return;
+    }
+    if (!writer.mission_id && writer.authorship === 'unknown' && !scope.sources.includes('work_template')) {
+      // Active mission scope without a bound mission_id from classifyWriter: attach primary mission.
+      writer.mission_id = scope.mission_ids[0] || null;
+    }
+    // Refuse global Mission-null observations outside an approved template/mission scope.
+    if (!writer.mission_id && !scope.sources.includes('work_template')) return;
+
     const meta = gitMeta(workspace);
     const stats = gitNumstat(workspace, file);
-    const writer = classifyWriter(bridge, workspace, file);
     const observatory = require('./live-observatory');
     const eventType = 'fs.file_modified';
-    const digest = createHash('sha256').update([workspace, file, st.mtimeMs, st.size].join('\0')).digest('hex');
+    const digest = createHash('sha256').update([workspace, file, lst.mtimeMs, lst.size].join('\0')).digest('hex');
     try {
       observatory.record(bridge, {
         eventType,
@@ -161,9 +215,10 @@ function createWorkspaceActivityWatch(bridge) {
           lines_added: stats.lines_added,
           lines_removed: stats.lines_removed,
           untracked: stats.untracked === true,
-          mtime_ms: Math.trunc(st.mtimeMs),
+          mtime_ms: Math.trunc(lst.mtimeMs),
           observation: 'saved_filesystem_change',
-          continuous_filesystem_watch: true
+          continuous_filesystem_watch: true,
+          scope_source: scope.sources[0] || null
         },
         idempotencyKey: `ws-watch:${digest}`
       });
@@ -223,7 +278,8 @@ function createWorkspaceActivityWatch(bridge) {
 
   function refresh() {
     if (stopped) return;
-    const roots = collectWatchRoots(bridge);
+    scopes = authorizedScopes(bridge);
+    const roots = scopes.map(s => s.workspace);
     for (const root of roots) attach(root);
     for (const [root, watcher] of watchers) {
       if (!roots.includes(root)) {
@@ -255,13 +311,15 @@ function createWorkspaceActivityWatch(bridge) {
     return {
       continuous_filesystem_watch: active,
       watched_roots: watchers.size,
+      authorized_scopes: scopes.length,
       observation: 'saved_filesystem_change_only',
       authorship_claim: 'never_without_evidence',
-      unsaved_typing_observable: false
+      unsaved_typing_observable: false,
+      scope: 'active_mission_or_work_template_allowlist'
     };
   }
 
-  return { start, stop, refresh, status };
+  return { start, stop, refresh, status, emitForTest: emit };
 }
 
 module.exports = {
@@ -269,5 +327,9 @@ module.exports = {
   safeRel,
   classifyWriter,
   gitNumstat,
-  collectWatchRoots
+  collectWatchRoots,
+  authorizedScopes,
+  pathAuthorized,
+  ACTIVE_MISSION_STATES,
+  SECRET_PATH
 };
