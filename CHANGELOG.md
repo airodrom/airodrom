@@ -2,8 +2,9 @@
 
 - Host capability plans for vague Gmail/Drive/Calendar/Excel/Notes/job-search asks (`AVAILABLE` / `AUTH_REQUIRED` / `NOT_SUPPORTED`); never treat connector `configured` as live access.
 - Actionable conversation `safe_error_class` reporting (timeout, content policy, empty response, etc.) instead of a single opaque model-failure string.
-- Gmail connector states: configured → connected → live_qualified; job_categorize read; OAuth revoke; standing automation never auto-sends or expands scope.
-- Local Job Search Manager (CSV tracker, evidence-required upserts, digest, recruiter categorization from selected mail only). Calendar/Drive/Sheets remain honestly NOT_SUPPORTED.
+- Gmail connector states: configured → connected → live_qualified; repeated `metadataHeaders` query params; categorical OAuth refresh failure classes; OAuth revoke; standing automation exact booleans + bounded expiry fail-closed.
+- Local Job Search Manager: CSV formula-injection neutralization, typed evidence, path/symlink bounds, status preservation, local-timezone digests. Calendar/Drive/Sheets remain honestly NOT_SUPPORTED.
+- Recall: “What do you remember about my job search?” uses bounded compound-query normalization without weakening Memory privacy.
 - Docs: `docs/PERSONAL-OPS-JOB-SEARCH-V1.md`. Focused tests: `tests/personal-ops-job-search-v1.test.js`.
 
 ## Unreleased — Autonomous Supervisor V1 (Issue #108)

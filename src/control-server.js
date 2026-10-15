@@ -327,7 +327,19 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup')return this.json(res,200,{items:this.bridge.zeroSetupWork.listPending('operator'),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup/status'){const id=url.searchParams.get('request_id');return this.json(res,200,this.bridge.zeroSetupWork.refreshState(id)||{error:'Prepared ask request unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
-      if(req.method==='GET'&&url.pathname==='/api/assistant/connectors')return this.json(res,200,require('./assistant-service').connectors(this.bridge).status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/connectors'){
+        const status=require('./assistant-service').connectors(this.bridge).status();
+        if(this.gmailOAuth){
+          const oauth=this.gmailOAuth.status();
+          const gmail=status.items.find(i=>i.id==='gmail');
+          if(gmail){
+            gmail.last_safe_error_class=oauth.last_safe_error_class||null;
+            gmail.last_failure_phase=oauth.last_failure_phase||null;
+            gmail.oauth_connected=!!oauth.connected;
+          }
+        }
+        return this.json(res,200,status);
+      }
       if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbound')return this.json(res,200,this.bridge.whatsappInbound.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/live-connection')return this.json(res,200,this.bridge.whatsappInbound.liveConnectionReadiness());
@@ -523,18 +535,19 @@ class ControlServer {
       }
       if(url.pathname==='/api/assistant/personal-ops/automation'){
         require('./control-plane-store').object(body,['standing_gmail_readonly','standing_local_tracker_updates','expires_at','confirmed']);
-        if(body.confirmed!==true)throw Error('Explicit operator confirmation required for standing personal-ops automation');
         const saved=require('./personal-ops-automation').save(this.bridge.dataDir,body,'operator');
         this.bridge.personalOpsAutomation=saved;
-        if(saved.standing_local_tracker_updates&&this.bridge.jobSearchManager)this.bridge.jobSearchManager.setStandingLocalUpdates(true);
-        return this.json(res,200,{...saved,message:'Standing personal-ops preferences saved. Send/apply/invite/share/delete remain separately gated.',authority:false});
+        if(saved.active&&saved.standing_local_tracker_updates===true&&this.bridge.jobSearchManager)this.bridge.jobSearchManager.setStandingLocalUpdates(true);
+        else if(this.bridge.jobSearchManager)this.bridge.jobSearchManager.setStandingLocalUpdates(false);
+        return this.json(res,200,{...saved,message:'Standing personal-ops preferences saved. Send/apply/invite/share/delete remain separately gated. Grants expire fail-closed.',authority:false});
       }
       if(url.pathname==='/api/assistant/job-search'){
-        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source']);
+        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone']);
         const manager=require('./assistant-service').jobSearchManager(this);
-        if(body.action==='create_tracker')return this.json(res,200,manager.createTracker({standingLocalUpdates:!!this.bridge.personalOpsAutomation?.standing_local_tracker_updates}));
+        const standing=require('./personal-ops-automation').allows(this.bridge.dataDir,'local_tracker_updates');
+        if(body.action==='create_tracker')return this.json(res,200,manager.createTracker({standingLocalUpdates:standing}));
         if(body.action==='list')return this.json(res,200,manager.list());
-        if(body.action==='digest')return this.json(res,200,manager.dailyDigest());
+        if(body.action==='digest')return this.json(res,200,manager.dailyDigest({timezone:body.timezone||'local'}));
         if(body.action==='upsert')return this.json(res,200,manager.upsertApplication(body));
         if(body.action==='follow_up')return this.json(res,200,manager.recordFollowUp(body));
         if(body.action==='status')return this.json(res,200,manager.status());

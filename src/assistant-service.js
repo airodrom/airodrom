@@ -77,7 +77,7 @@ async function submit(server,input){
  if(parsed.kind==='remember'){const item=server.rememberInteractive(parsed.content);return {kind:'remembered',memoryId:item.memoryId,message:'Remembered.'};}
  if(parsed.kind==='sensitive')return {kind:'clarify',message:'Use /remember-sensitive to explicitly save this as operator-only Sensitive Memory.'};
  if(parsed.kind==='forget')return forget(server,parsed.selection);
- if(parsed.kind==='recall')return {kind:'memory',items:server.interactiveMemory(parsed.query).items,memory_generation:require('./product-observability').memoryStatus(server.bridge).generation};
+ if(parsed.kind==='recall')return require('./memory-recall').recall(server,parsed.query);
  if(parsed.kind==='connector')return connectorInput(server,{connector:parsed.connector,action:parsed.action,input:parsed.query?{query:parsed.query}:{},conversation_id:input.conversation_id,model:/^(?:codex|claude_code):/.test(input.model||'')?'auto':input.model});
  if(parsed.kind==='personal_ops'){
   const plan=require('./personal-ops').plan(server,parsed.message);
@@ -114,8 +114,8 @@ function jobSearchManager(server){
 function jobSearchInput(server,parsed){
  const manager=jobSearchManager(server);
  if(parsed.action==='create_tracker'){
-  const standing=!!server.bridge.personalOpsAutomation?.standing_local_tracker_updates;
-  return {kind:'job_search',route:'JOB_SEARCH',action:'create_tracker',...manager.createTracker({standingLocalUpdates:standing}),message:'Local job-search tracker ready (CSV, Excel-openable). Updates require identifiable evidence. Cloud Sheets/Drive remain NOT_SUPPORTED until separately enrolled.',authority:false};
+  const standing=require('./personal-ops-automation').allows(server.bridge.dataDir,'local_tracker_updates');
+  return {kind:'job_search',route:'JOB_SEARCH',action:'create_tracker',...manager.createTracker({standingLocalUpdates:standing}),message:'Local job-search tracker ready (CSV, Excel-openable — not an .xlsx workbook). Updates require typed identifiable evidence. Cloud Sheets/Drive remain NOT_SUPPORTED until separately enrolled.',authority:false};
  }
  if(parsed.action==='list'){
   const listed=manager.list();
@@ -139,7 +139,15 @@ async function connectorInput(server,{connector,action,input={},conversation_id,
  // configured = OAuth client present; connected = token; live_qualified = successful read.
  if(!['configured','connected','live_qualified'].includes(current.state)&&action!=='status'&&action!=='draft')return authorizationOffer(server,connector);
  if(current.state==='configured'&&!current.connected&&action!=='status'&&action!=='draft')return authorizationOffer(server,connector);
- const read=async(readAction)=>{try{return await adapter.read(connector,readAction,input);}catch(error){if(connector==='gmail'&&['Gmail OAuth authorization required','Gmail OAuth renewal requires operator authorization','Secret reference is invalid or revoked','Current secret disposition unavailable','Secret reference revoked'].includes(error?.message))return authorizationOffer(server,connector);throw error;}};
+ const read=async(readAction)=>{try{return await adapter.read(connector,readAction,input);}catch(error){
+  if(connector==='gmail'&&(error?.safe_error_class||['Gmail OAuth authorization required','Gmail OAuth renewal requires operator authorization','Secret reference is invalid or revoked','Current secret disposition unavailable','Secret reference revoked'].includes(error?.message)||/^gmail_oauth_/.test(error?.code||''))){
+   const offer=authorizationOffer(server,connector);
+   if(error?.safe_error_class||error?.code)offer.safe_error_class=error.safe_error_class||error.code;
+   if(error?.message&&!/token|Bearer|refresh_token|access_token/i.test(error.message))offer.failure_message=error.message;
+   return offer;
+  }
+  throw error;
+ }};
  if(!['summarize','attention','draft_reply'].includes(action))return {kind:'connector',route:'CONNECTOR',...await read(action)};
  const data=await read(action==='draft_reply'?(input.id?'read':'search'):action);
  if(data.kind==='connect_required')return data;

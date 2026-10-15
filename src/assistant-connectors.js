@@ -51,11 +51,19 @@ class AssistantConnectors {
   if(this.#gmail.scope!=='https://www.googleapis.com/auth/gmail.readonly')throw Error('Gmail requires the exact read-only OAuth scope.');
   const token=await this.#secret.resolve(this.#gmail.reference,'gmail');
   const url=new URL('https://gmail.googleapis.com/gmail/v1/users/me/'+resource);
-  for(const [k,v]of Object.entries(query))url.searchParams.set(k,String(v));
+  for(const [k,v]of Object.entries(query)){
+   // Gmail users.messages.get expects repeated metadataHeaders params, not a CSV.
+   if(k==='metadataHeaders'&&Array.isArray(v)){for(const header of v)url.searchParams.append(k,String(header));}
+   else if(Array.isArray(v)){for(const item of v)url.searchParams.append(k,String(item));}
+   else url.searchParams.set(k,String(v));
+  }
   try{
    const response=await this.#request(url,{method:'GET',headers:{Authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(10000)});
    if(!response.ok)throw Error();const raw=await response.text();if(Buffer.byteLength(raw)>512000)throw Error();return JSON.parse(raw);
-  }catch{throw Error('Gmail read unavailable; credentials and provider diagnostics withheld.');}
+  }catch(error){
+   if(error?.safe_error_class||error?.code?.startsWith?.('gmail_oauth_'))throw error;
+   throw Error('Gmail read unavailable; credentials and provider diagnostics withheld.');
+  }
  }
  async read(connector,action,input={}) {
   if(!['gmail','whatsapp'].includes(connector))throw Error('Unknown connector');
@@ -79,7 +87,7 @@ class AssistantConnectors {
     items=[];
     for(const m of (list.messages||[]).slice(0,limit)){
      if(!ID.test(m.id))throw Error('Invalid Gmail reference');
-     items.push(this.#mail(await this.#get('messages/'+encodeURIComponent(m.id),{format:'metadata',metadataHeaders:'From,Subject,Date'})));
+     items.push(this.#mail(await this.#get('messages/'+encodeURIComponent(m.id),{format:'metadata',metadataHeaders:['From','Subject','Date']})));
     }
    }
    this.#liveGmail=true;

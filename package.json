@@ -408,6 +408,7 @@
     "src/orchestrator.js",
     "src/personal-memory.js",
     "src/personal-ops.js",
+    "src/memory-recall.js",
     "src/personal-ops-automation.js",
     "src/personal-storage-guide.js",
     "src/personal-storage-intent.js",

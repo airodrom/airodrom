@@ -30,21 +30,22 @@ There is no automatic external provider fallback for private conversation.
 
 ## Job Search Manager
 
-Local tracker path: `<dataDir>/job-search/applications.csv` (CSV, Excel-openable).
+Local tracker path: `<dataDir>/job-search/applications.csv` (**CSV**, Excel-openable — **not** an `.xlsx` workbook). Paths are confined to that directory; symlinks are refused.
 
 Schema: `id, company, role, source, status, applied_at, recruiter_email, posting_url, evidence, follow_up_at, notes, updated_at`.
 
 Rules:
 
-- Every create/update requires identifiable evidence (message id, posting URL, or operator confirmation).
-- Duplicate company+role+posting merges instead of inventing a second row.
-- Daily digests report only tracked rows; empty means empty — never fabricate jobs or outcomes.
-- Recruiter categorization uses only fields present on selected messages.
+- Every create/update requires **typed** evidence: `{kind: message_id|thread_id|url|operator_confirmation, value}` (operator_confirmation also requires `explicit:true`). Arbitrary text is not evidence.
+- Spreadsheet formula injection (`=`, `+`, `-`, `@`) is neutralized on write and restored literally on read.
+- Duplicate company+role+posting merges; existing higher-progress status is preserved unless an explicit status is supplied. `applied` requires an explicit `applied_at` (never invented).
+- Daily digests use the operator-local calendar date (or an explicit IANA timezone); empty means empty — never fabricate jobs or outcomes.
+- Recruiter categorization uses only fields present on selected messages (Gmail metadata headers are repeated query params).
 - Material prep and calendar suggestions are drafts/suggestions; send and invite remain gated.
 
 ## Bounded automation
 
-Owner may grant standing **read-only Gmail organization** and **selected local tracker updates** (`/api/assistant/personal-ops/automation` with `confirmed:true`). Never standing-authorized without separate confirmation:
+Owner may grant standing **read-only Gmail organization** and **selected local tracker updates** (`/api/assistant/personal-ops/automation` with exact boolean fields, ISO-8601 `expires_at` within 30 days, and `confirmed:true`). Malformed, stringy, or expired grants fail closed to inactive. Never standing-authorized without separate confirmation:
 
 `send_email`, `submit_job_application`, `invite_attendees`, `share_documents`, `delete_records`, `expand_drive_scope`, `credential_changes`, `paid_external_services`, `account_deletion`, `unrestricted_memory_disclosure`.
 
@@ -75,4 +76,7 @@ Owner may grant standing **read-only Gmail organization** and **selected local t
 - Calendar, Drive, and Sheets cloud connectors are not live-qualified in this revision.
 - No remote Gmail draft/send/archive/label.
 - Job discovery does not scrape or invent postings; only evidence-backed tracker rows and host categorization of selected mail.
+- Tracker is CSV (Excel-openable), not a native `.xlsx` workbook.
+- Gmail OAuth refresh failures surface categorical `safe_error_class` values only (timeout/network/consent/http/schema/scope); live inbox reads remain an owner-only gate.
 - Live Ollama conversation success was verified with synthetic prompts against the qualified local model; private inbox content was not read.
+- Compatibility: rebase/retest if still-open PR #113 (Developer Autonomy) merges first; grants from #113 never imply personal-ops authority.
