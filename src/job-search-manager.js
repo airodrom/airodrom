@@ -262,10 +262,20 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
     return false;
   }
 
+  function currentTrackerPath() {
+    try {
+      const st = loadState();
+      return assertInsideRoot(st.path || defaultPath);
+    } catch (e) {
+      if (e.code === 'state_hold' || e.code === 'invalid_path') throw e;
+      return defaultPath;
+    }
+  }
+
   function authorizeMutation(action, input = {}) {
     const standing = liveStanding();
     const approvalId = input.host_approval_id != null ? String(input.host_approval_id).trim() : '';
-    // operator_confirmation is never self-authorizing; bind before consuming a one-shot approval.
+    // operator_confirmation is never self-authorizing; bind to standing or approved proposal id.
     let confirmation = null;
     try {
       confirmation = input.evidence != null ? parseEvidence(input.evidence) : null;
@@ -281,21 +291,45 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
         throw err;
       }
     }
-    let approval = null;
-    if (!standing) {
-      if (!approvalId || typeof policy?.consumeApproval !== 'function') {
-        const err = Error('Tracker mutation requires current standing authorization or host per-action approval');
-        err.code = 'mutation_authorization_required';
-        throw err;
-      }
-      approval = policy.consumeApproval(approvalId, action);
-      if (!approval || approval.ok !== true) {
-        const err = Error('Host per-action approval missing, expired, or already consumed');
-        err.code = 'mutation_authorization_required';
-        throw err;
-      }
+    if (standing) return { mode: 'standing', standing: true, approval_id: null, commit: null, fail: null };
+    if (!approvalId || typeof policy?.prepareApproval !== 'function' || typeof policy?.buildMutationPayload !== 'function') {
+      const err = Error('Tracker mutation requires current standing authorization or an approved host proposal');
+      err.code = 'mutation_authorization_required';
+      throw err;
     }
-    return { mode: standing ? 'standing' : 'host_approval', standing, approval_id: approval?.approval_id || null };
+    const trackerPath = currentTrackerPath();
+    const built = policy.buildMutationPayload(action, input, trackerPath);
+    const prepared = policy.prepareApproval(approvalId, action, {
+      digest: built.digest,
+      trackerPath,
+      requestId: built.payload.request_id,
+      payload: built.payload
+    });
+    if (!prepared || prepared.ok !== true) {
+      const err = Error('Host per-action approval missing, expired, or not approved');
+      err.code = 'mutation_authorization_required';
+      throw err;
+    }
+    return {
+      mode: 'host_approval',
+      standing: false,
+      approval_id: prepared.approval_id,
+      payload_digest: prepared.payload_digest,
+      commit: () => policy.commitApproval(prepared.approval_id),
+      fail: (reason) => policy.failApproval(prepared.approval_id, reason)
+    };
+  }
+
+  function withMutationAuth(action, input, run) {
+    const auth = authorizeMutation(action, input);
+    try {
+      const result = run(auth);
+      if (typeof auth.commit === 'function') auth.commit();
+      return result;
+    } catch (e) {
+      if (typeof auth.fail === 'function') auth.fail(e.code || e.message || 'mutation_failed');
+      throw e;
+    }
   }
 
   function assertInsideRoot(candidate) {
@@ -326,19 +360,55 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
   }
 
   function loadState() {
+    if (!fs.existsSync(statePath)) return { path: defaultPath, created_at: null };
+    assertNotSymlink(statePath, 'manager.json');
+    let raw;
     try {
-      const st = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-      st.path = assertInsideRoot(st.path || defaultPath);
-      return st;
+      const fd = fs.openSync(statePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const opened = fs.fstatSync(fd);
+        if (!opened.isFile() || opened.nlink !== 1) pathError('manager.json identity refused');
+        raw = JSON.parse(fs.readFileSync(fd, 'utf8'));
+      } finally {
+        fs.closeSync(fd);
+      }
     } catch (e) {
       if (e.code === 'invalid_path') throw e;
-      return { path: defaultPath, created_at: null };
+      const err = Error('job-search manager state is HOLD — unreadable or tampered manager.json');
+      err.code = 'state_hold';
+      throw err;
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      const err = Error('job-search manager state is HOLD — malformed manager.json');
+      err.code = 'state_hold';
+      throw err;
+    }
+    try {
+      raw.path = assertInsideRoot(raw.path || defaultPath);
+      return raw;
+    } catch (e) {
+      if (e.code === 'invalid_path') {
+        const err = Error('job-search manager state is HOLD — tracker path refused');
+        err.code = 'state_hold';
+        throw err;
+      }
+      throw e;
     }
   }
 
   function saveState(st) {
     st.path = assertInsideRoot(st.path || defaultPath);
-    fs.writeFileSync(statePath, JSON.stringify(st, null, 2) + '\n', { mode: 0o600 });
+    if (fs.existsSync(statePath)) assertNotSymlink(statePath, 'manager.json');
+    const bytes = Buffer.from(JSON.stringify(st, null, 2) + '\n', 'utf8');
+    const tmp = exclusiveWrite(root, 'manager.json', bytes);
+    try {
+      if (fs.existsSync(statePath)) assertNotSymlink(statePath, 'manager.json');
+      fs.renameSync(tmp, statePath);
+      try { fs.chmodSync(statePath, 0o600); } catch { /* */ }
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch { /* */ }
+      throw e;
+    }
   }
 
   function ensureWorkbook(st) {
@@ -393,7 +463,7 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
       'utf8'
     );
 
-    // Safe backup: exclusive random temp + rename over .bak (rename replaces symlink inode, never follows).
+    // Safe backup under an unpredictable name only. Never touch fixed .bak/.tmp paths or delete unexpected links.
     let srcFd;
     try {
       srcFd = fs.openSync(st.path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
@@ -401,21 +471,13 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
       if (!srcStat.isFile()) pathError('Tracker path must be a regular file');
       if (srcStat.size > 0) {
         const prior = fs.readFileSync(srcFd);
-        const bakFinal = st.path + '.bak';
-        // Remove a substituted .bak symlink inode without following it; never write through.
-        try {
-          if (fs.lstatSync(bakFinal).isSymbolicLink()) fs.unlinkSync(bakFinal);
-          else assertNotSymlink(bakFinal, 'Tracker backup');
-        } catch (e) {
-          if (e.code !== 'ENOENT') throw e;
-        }
         const bakTmp = exclusiveWrite(dirReal, path.basename(st.path) + '.bak', prior);
+        const bakFinal = path.join(dirReal, `.${path.basename(st.path)}.${crypto.randomBytes(10).toString('hex')}.bak`);
+        if (!bakFinal.startsWith(dirReal + path.sep)) {
+          try { fs.unlinkSync(bakTmp); } catch { /* */ }
+          pathError('backup path escaped job-search root');
+        }
         try {
-          try {
-            if (fs.lstatSync(bakFinal).isSymbolicLink()) fs.unlinkSync(bakFinal);
-          } catch (e) {
-            if (e.code !== 'ENOENT') throw e;
-          }
           fs.renameSync(bakTmp, bakFinal);
           try { fs.chmodSync(bakFinal, 0o600); } catch { /* */ }
         } catch (e) {
@@ -431,13 +493,6 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
     try {
       st.path = assertInsideRoot(st.path);
       if (fs.existsSync(st.path)) assertNotSymlink(st.path, 'Tracker path');
-      // Fixed legacy .tmp names are unused; drop a substituted symlink inode if present.
-      const legacyTmp = st.path + '.tmp';
-      try {
-        if (fs.lstatSync(legacyTmp).isSymbolicLink()) fs.unlinkSync(legacyTmp);
-      } catch (e) {
-        if (e.code !== 'ENOENT') throw e;
-      }
       fs.renameSync(tmp, st.path);
       try { fs.chmodSync(st.path, 0o600); } catch { /* */ }
     } catch (e) {
@@ -491,7 +546,7 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
     },
 
     upsertApplication(input = {}) {
-      const auth = authorizeMutation('upsert', input);
+      // Validate before reserving a one-shot approval so rejected inputs do not burn consent.
       const evidence = normalizeEvidence(input.evidence);
       const company = String(input.company || '').trim();
       const role = String(input.role || '').trim();
@@ -510,66 +565,72 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
         throw err;
       }
       const recruiter = String(input.recruiter_email || '').trim().toLowerCase();
-      let existing = rows.find(r =>
+      const existing = rows.find(r =>
         (input.id && r.id === input.id) ||
         (posting && r.posting_url === posting) ||
         (r.company.toLowerCase() === company.toLowerCase() && r.role.toLowerCase() === role.toLowerCase() && (!recruiter || r.recruiter_email === recruiter))
       );
-      const now = new Date().toISOString();
-      if (existing) {
-        // Preserve higher-progress status unless the caller supplies an explicit valid status.
-        const nextStatus = STATUSES.includes(input.status) ? input.status : existing.status;
-        existing.company = company;
-        existing.role = role;
-        existing.source = String(input.source || existing.source || 'operator').trim();
-        existing.status = nextStatus;
-        if (input.applied_at != null && String(input.applied_at).trim()) existing.applied_at = String(input.applied_at).trim();
-        if (recruiter) existing.recruiter_email = recruiter;
-        if (posting) existing.posting_url = posting;
-        existing.evidence = evidence;
-        if (input.follow_up_at) existing.follow_up_at = String(input.follow_up_at);
-        if (input.notes) existing.notes = String(input.notes).slice(0, 2000);
-        existing.updated_at = now;
-        writeRows(st, rows);
-        log('job_search.application_updated', { id: existing.id, company, role, status: existing.status, auth_mode: auth.mode });
-        return { ok: true, duplicate: true, application: existing, status: this.status(), mutation_gate: auth };
-      }
-      const status = STATUSES.includes(input.status) ? input.status : 'discovered';
-      // Do not invent applied_at; require explicit date when applying.
+      const status = existing
+        ? (STATUSES.includes(input.status) ? input.status : existing.status)
+        : (STATUSES.includes(input.status) ? input.status : 'discovered');
       const applied_at = input.applied_at != null && String(input.applied_at).trim() ? String(input.applied_at).trim() : '';
-      if (status === 'applied' && !applied_at) {
+      if (!existing && status === 'applied' && !applied_at) {
         const err = Error('applied status requires explicit applied_at date');
         err.code = 'invalid_application';
         throw err;
       }
-      const app = {
-        id: crypto.randomBytes(6).toString('hex'),
-        company, role,
-        source: String(input.source || 'operator').trim(),
-        status,
-        applied_at,
-        recruiter_email: recruiter,
-        posting_url: posting,
-        evidence,
-        follow_up_at: String(input.follow_up_at || ''),
-        notes: String(input.notes || '').slice(0, 2000),
-        updated_at: now
-      };
-      rows.push(app);
-      writeRows(st, rows);
-      log('job_search.application_created', { id: app.id, company, role, status, auth_mode: auth.mode });
-      return { ok: true, duplicate: false, application: app, status: this.status(), mutation_gate: auth };
+      return withMutationAuth('upsert', input, (auth) => {
+        const now = new Date().toISOString();
+        const gate = { mode: auth.mode, standing: auth.standing, approval_id: auth.approval_id || null, payload_digest: auth.payload_digest || null };
+        if (existing) {
+          existing.company = company;
+          existing.role = role;
+          existing.source = String(input.source || existing.source || 'operator').trim();
+          existing.status = status;
+          if (applied_at) existing.applied_at = applied_at;
+          if (recruiter) existing.recruiter_email = recruiter;
+          if (posting) existing.posting_url = posting;
+          existing.evidence = evidence;
+          if (input.follow_up_at) existing.follow_up_at = String(input.follow_up_at);
+          if (input.notes) existing.notes = String(input.notes).slice(0, 2000);
+          existing.updated_at = now;
+          writeRows(st, rows);
+          log('job_search.application_updated', { id: existing.id, company, role, status: existing.status, auth_mode: auth.mode });
+          return { ok: true, duplicate: true, application: existing, status: this.status(), mutation_gate: gate };
+        }
+        const app = {
+          id: crypto.randomBytes(6).toString('hex'),
+          company, role,
+          source: String(input.source || 'operator').trim(),
+          status,
+          applied_at,
+          recruiter_email: recruiter,
+          posting_url: posting,
+          evidence,
+          follow_up_at: String(input.follow_up_at || ''),
+          notes: String(input.notes || '').slice(0, 2000),
+          updated_at: now
+        };
+        rows.push(app);
+        writeRows(st, rows);
+        log('job_search.application_created', { id: app.id, company, role, status, auth_mode: auth.mode });
+        return { ok: true, duplicate: false, application: app, status: this.status(), mutation_gate: gate };
+      });
     },
 
     recordFollowUp(input = {}) {
       const { id, company, role, follow_up_at, notes, evidence } = input;
-      const auth = authorizeMutation('follow_up', input);
       if (evidence == null) {
         const err = Error('Typed evidence required for follow-up (no automatic operator_confirmation)');
         err.code = 'evidence_required';
         throw err;
       }
       const e = normalizeEvidence(evidence);
+      if (!String(follow_up_at || '').trim()) {
+        const err = Error('follow_up_at required');
+        err.code = 'invalid_application';
+        throw err;
+      }
       const st = loadState();
       const rows = readRows(st);
       const row = rows.find(r =>
@@ -581,20 +642,20 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
         err.code = 'not_found';
         throw err;
       }
-      row.follow_up_at = String(follow_up_at || '');
-      if (!row.follow_up_at) {
-        const err = Error('follow_up_at required');
-        err.code = 'invalid_application';
-        throw err;
-      }
-      // Preserve applied/interview/etc.; only promote discovered → follow_up.
-      if (row.status === 'discovered') row.status = 'follow_up';
-      if (notes) row.notes = (row.notes ? row.notes + ' | ' : '') + String(notes).slice(0, 500);
-      row.evidence = e;
-      row.updated_at = new Date().toISOString();
-      writeRows(st, rows);
-      log('job_search.follow_up', { id: row.id, follow_up_at: row.follow_up_at, auth_mode: auth.mode });
-      return { ok: true, application: row, mutation_gate: auth };
+      return withMutationAuth('follow_up', input, (auth) => {
+        row.follow_up_at = String(follow_up_at);
+        if (row.status === 'discovered') row.status = 'follow_up';
+        if (notes) row.notes = (row.notes ? row.notes + ' | ' : '') + String(notes).slice(0, 500);
+        row.evidence = e;
+        row.updated_at = new Date().toISOString();
+        writeRows(st, rows);
+        log('job_search.follow_up', { id: row.id, follow_up_at: row.follow_up_at, auth_mode: auth.mode });
+        return {
+          ok: true,
+          application: row,
+          mutation_gate: { mode: auth.mode, standing: auth.standing, approval_id: auth.approval_id || null, payload_digest: auth.payload_digest || null }
+        };
+      });
     },
 
     dailyDigest({ timezone = 'local' } = {}) {

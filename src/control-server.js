@@ -543,24 +543,54 @@ class ControlServer {
         return this.json(res,200,{...saved,message:'Standing personal-ops preferences saved. Send/apply/invite/share/delete remain separately gated. Grants expire fail-closed.',authority:false});
       }
       if(url.pathname==='/api/assistant/job-search'){
-        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone','host_approval_id','approval_action']);
+        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone','host_approval_id','proposal_id','confirmed','request_id','mutation_action']);
         const automation=require('./personal-ops-automation');
         const manager=require('./assistant-service').jobSearchManager(this);
         if(body.action==='create_tracker')return this.json(res,200,manager.createTracker());
         if(body.action==='list')return this.json(res,200,manager.list());
         if(body.action==='digest')return this.json(res,200,manager.dailyDigest({timezone:body.timezone||'local'}));
         if(body.action==='status')return this.json(res,200,manager.status());
-        if(body.action==='request_approval'){
-          return this.json(res,200,automation.issueApproval(this.bridge.dataDir,{action:body.approval_action,actor:'operator'}));
+        if(body.action==='propose'){
+          const mutationAction=body.mutation_action;
+          const proposal=automation.proposeMutation(this.bridge.dataDir,{
+            action:mutationAction,
+            body,
+            trackerPath:manager.status().path,
+            actor:'operator'
+          });
+          return this.json(res,200,{...proposal,authority:false});
+        }
+        if(body.action==='approve_proposal'){
+          return this.json(res,200,automation.approveProposal(this.bridge.dataDir,{
+            proposal_id:body.proposal_id,
+            confirmed:body.confirmed,
+            actor:'operator'
+          }));
         }
         if(body.action==='upsert'||body.action==='follow_up'){
           const standing=automation.allows(this.bridge.dataDir,'local_tracker_updates');
           if(!standing&&!body.host_approval_id){
-            const pending=automation.issueApproval(this.bridge.dataDir,{action:body.action,actor:'operator'});
+            const pending=automation.proposeMutation(this.bridge.dataDir,{
+              action:body.action,
+              body,
+              trackerPath:manager.status().path,
+              actor:'operator'
+            });
             return this.json(res,403,{
-              error:'Tracker mutation requires current standing authorization or host per-action approval',
+              error:'Tracker mutation requires current standing authorization or an approved host proposal',
               code:'mutation_authorization_required',
-              pending_approval:pending,
+              pending_proposal:{
+                proposal_id:pending.proposal_id,
+                status:pending.status,
+                action:pending.action,
+                payload_digest:pending.payload_digest,
+                tracker_path:pending.tracker_path,
+                request_id:pending.request_id,
+                expires_at:pending.expires_at,
+                executable:false,
+                authority:false,
+                message:'Review the exact proposal, then POST action=approve_proposal with proposal_id and confirmed:true. Denied responses never return an executable approval token.'
+              },
               authority:false
             });
           }

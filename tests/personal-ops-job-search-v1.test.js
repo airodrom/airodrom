@@ -339,14 +339,13 @@ test('personal-ops matrix stays host-owned with no authority grant', () => {
   assert.ok(plan.never_auto.includes('send_email'));
 });
 
-test('adversarial: .tmp/.bak symlinks and symlinked job-search root cannot redirect writes', t => {
+test('adversarial: legacy .tmp/.bak symlinks remain untouched and cannot redirect writes', t => {
   const root = tempRoot(t, 'airo-job-sym-');
   const outside = path.join(root, 'outside-target.txt');
   fs.writeFileSync(outside, 'untouched-sentinel\n', { mode: 0o600 });
   const manager = standingManager(root);
   manager.createTracker();
   const csv = manager.status().path;
-  const jobDir = path.dirname(csv);
 
   fs.symlinkSync(outside, csv + '.tmp');
   fs.symlinkSync(outside, csv + '.bak');
@@ -356,74 +355,126 @@ test('adversarial: .tmp/.bak symlinks and symlinked job-search root cannot redir
   assert.equal(wrote.ok, true);
   assert.equal(fs.readFileSync(outside, 'utf8'), 'untouched-sentinel\n');
   assert.ok(!fs.lstatSync(csv).isSymbolicLink());
-  assert.ok(fs.existsSync(csv + '.bak'));
-  assert.equal(fs.lstatSync(csv + '.bak').isSymbolicLink(), false);
-  assert.equal(fs.readFileSync(outside, 'utf8'), 'untouched-sentinel\n');
-  // Legacy .tmp symlink inode is dropped without following; outside remains intact.
-  if (fs.existsSync(csv + '.tmp')) assert.equal(fs.lstatSync(csv + '.tmp').isSymbolicLink(), false);
+  // Unexpected legacy links must remain unchanged (no destructive cleanup).
+  assert.equal(fs.lstatSync(csv + '.tmp').isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(csv + '.bak').isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(csv + '.tmp'), outside);
+  assert.equal(fs.readlinkSync(csv + '.bak'), outside);
 
-  // Symlinked job-search directory refused on manager construction.
   const root2 = tempRoot(t, 'airo-job-rootlink-');
   const realJob = path.join(root2, 'real-job');
   fs.mkdirSync(realJob, { mode: 0o700 });
   fs.symlinkSync(realJob, path.join(root2, 'job-search'));
   assert.throws(() => createJobSearchManager({ dataDir: root2, policy: automation.trackerPolicy(root2) }), /symlink|invalid_path/i);
-  void jobDir;
 });
 
-test('mutations require standing grant or host per-action approval; forged confirmations fail', async t => {
+test('adversarial: manager.json symlink and corruption fail closed without overwriting outside files', t => {
+  const root = tempRoot(t, 'airo-job-mgr-');
+  const outside = path.join(root, 'outside-manager-target.txt');
+  fs.writeFileSync(outside, 'manager-sentinel\n', { mode: 0o600 });
+  const manager = standingManager(root);
+  manager.createTracker();
+  const statePath = path.join(root, 'job-search', 'manager.json');
+  fs.unlinkSync(statePath);
+  fs.symlinkSync(outside, statePath);
+  assert.throws(() => manager.status(), /HOLD|symlink|invalid_path/i);
+  assert.throws(() => manager.createTracker(), /HOLD|symlink|invalid_path/i);
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'manager-sentinel\n');
+  assert.equal(fs.lstatSync(statePath).isSymbolicLink(), true);
+
+  const root2 = tempRoot(t, 'airo-job-mgr-bad-');
+  const manager2 = standingManager(root2);
+  manager2.createTracker();
+  const bad = path.join(root2, 'job-search', 'manager.json');
+  fs.writeFileSync(bad, '{not-json', { mode: 0o600 });
+  assert.throws(() => manager2.status(), /HOLD|unreadable|tampered/i);
+  assert.throws(() => manager2.upsertApplication({ company: 'X', role: 'Y', evidence: evidenceUrl }), /HOLD|unreadable|tampered/i);
+});
+
+test('two-stage proposal approval binds payload digest; denied responses are non-executable', async t => {
   const f = await fixture(t);
   const server = new ControlServer(f.bridge, { port: 0, conversationOptions: conversationOptions() });
   await server.start();
   t.after(() => server.close());
 
   await api(server, '/api/assistant/job-search', { body: { action: 'create_tracker' } });
+  const requestId = id();
+  const mutation = {
+    action: 'upsert',
+    company: 'Acme',
+    role: 'Eng',
+    evidence: evidenceUrl,
+    request_id: requestId
+  };
 
-  const denied = await api(server, '/api/assistant/job-search', {
-    body: { action: 'upsert', company: 'Acme', role: 'Eng', evidence: evidenceUrl }
-  });
+  const denied = await api(server, '/api/assistant/job-search', { body: mutation });
   assert.equal(denied.status, 403);
   assert.equal(denied.body.code, 'mutation_authorization_required');
-  assert.ok(denied.body.pending_approval?.approval_id);
+  assert.equal(denied.body.pending_proposal?.status, 'pending_review');
+  assert.equal(denied.body.pending_proposal?.executable, false);
+  assert.equal(denied.body.pending_approval, undefined);
+  assert.equal(denied.body.pending_proposal?.approval_id, undefined);
+  const proposalId = denied.body.pending_proposal.proposal_id;
+  assert.ok(proposalId);
+  assert.ok(denied.body.pending_proposal.payload_digest);
 
+  // Unreviewed proposal cannot execute.
+  const premature = await api(server, '/api/assistant/job-search', {
+    body: { ...mutation, host_approval_id: proposalId }
+  });
+  assert.ok(premature.status === 400 || premature.status === 403);
+  assert.match(String(premature.body.error || ''), /pending|review|approved|authorization/i);
+
+  // Forged operator_confirmation still refused.
   const forged = await api(server, '/api/assistant/job-search', {
-    body: {
-      action: 'upsert', company: 'Acme', role: 'Eng',
-      evidence: evidenceConfirm,
-      host_approval_id: denied.body.pending_approval.approval_id
-    }
+    body: { ...mutation, evidence: evidenceConfirm, host_approval_id: proposalId }
   });
   assert.equal(forged.status, 400);
   assert.match(String(forged.body.error || ''), /operator_confirmation|authenticated|host_approval/i);
 
-  const issued = await api(server, '/api/assistant/job-search', {
-    body: { action: 'request_approval', approval_action: 'upsert' }
+  const approved = await api(server, '/api/assistant/job-search', {
+    body: { action: 'approve_proposal', proposal_id: proposalId, confirmed: true }
   });
-  assert.equal(issued.status, 200);
-  const approvalId = issued.body.approval_id;
-  assert.ok(approvalId);
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.status, 'approved');
+  assert.equal(approved.body.approval_id, proposalId);
+  assert.equal(approved.body.executable, true);
+
+  // Substituted payload after approval must fail.
+  const substituted = await api(server, '/api/assistant/job-search', {
+    body: { ...mutation, company: 'OtherCo', host_approval_id: proposalId }
+  });
+  assert.ok(substituted.status === 400 || substituted.status === 403);
+  assert.match(String(substituted.body.error || ''), /digest|mismatch|payload|authorization/i);
 
   const ok = await api(server, '/api/assistant/job-search', {
     body: {
-      action: 'upsert', company: 'Acme', role: 'Eng',
-      evidence: { kind: 'operator_confirmation', value: approvalId, explicit: true },
-      host_approval_id: approvalId
+      ...mutation,
+      evidence: { kind: 'operator_confirmation', value: proposalId, explicit: true },
+      host_approval_id: proposalId
     }
   });
-  assert.equal(ok.status, 200);
-  assert.equal(ok.body.ok, true);
-  assert.equal(ok.body.mutation_gate.mode, 'host_approval');
+  // Evidence change alters digest vs original proposal — must re-propose with matching body.
+  assert.ok(ok.status === 400 || ok.status === 403);
 
-  // Consumed approval cannot be reused.
+  // Fresh propose → approve → execute with exact body.
+  const denied2 = await api(server, '/api/assistant/job-search', { body: mutation });
+  const proposal2 = denied2.body.pending_proposal.proposal_id;
+  await api(server, '/api/assistant/job-search', {
+    body: { action: 'approve_proposal', proposal_id: proposal2, confirmed: true }
+  });
+  const executed = await api(server, '/api/assistant/job-search', {
+    body: { ...mutation, host_approval_id: proposal2 }
+  });
+  assert.equal(executed.status, 200);
+  assert.equal(executed.body.ok, true);
+  assert.equal(executed.body.mutation_gate.mode, 'host_approval');
+
   const reuse = await api(server, '/api/assistant/job-search', {
-    body: {
-      action: 'upsert', company: 'Beta', role: 'PM',
-      evidence: evidenceUrl, host_approval_id: approvalId
-    }
+    body: { ...mutation, company: 'Beta', host_approval_id: proposal2 }
   });
   assert.ok(reuse.status === 403 || reuse.status === 400);
 
-  // Standing grant authorizes without host_approval_id.
   grantStanding(f.bridge.dataDir);
   const standing = await api(server, '/api/assistant/job-search', {
     body: { action: 'upsert', company: 'Gamma', role: 'Designer', evidence: evidenceUrl }
