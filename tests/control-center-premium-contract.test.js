@@ -13,6 +13,13 @@ const REQUIRED_VIEWS = [
   'System Health', 'Settings & About'
 ];
 
+test('Control Center boot script parses before loading dashboard data', () => {
+  const script = fs.readFileSync(path.join(__dirname, '../public/control-hub.js'), 'utf8');
+  assert.doesNotThrow(() => new (require('node:vm').Script)(script, { filename: 'public/control-hub.js' }));
+  assert.match(script, /Job Search tracker proposals/);
+  assert.match(script, /action:'review_proposal'/);
+});
+
 test('premium Control Center keeps atmosphere mounts reconciled with live product APIs', async t => {
   const html = fs.readFileSync(path.join(__dirname, '../public/control-hub.html'), 'utf8');
   const js = fs.readFileSync(path.join(__dirname, '../public/control-hub.js'), 'utf8');
