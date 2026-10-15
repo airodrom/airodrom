@@ -238,12 +238,16 @@ function standingAuthorization(bridge) {
   const active = templates.filter(t => t.active);
   let autonomy = null;
   try { autonomy = bridge.developerAutonomy?.status?.('operator') || null; } catch { autonomy = null; }
+  let autopilot = null;
+  try { autopilot = bridge.globalAutopilot?.status?.('operator') || null; } catch { autopilot = null; }
   const daActive = autonomy?.active_count || 0;
+  const autopilotOn = autopilot?.enabled === true;
   return {
-    mechanism: daActive ? 'developer_autonomy' : 'work_templates',
-    active_count: daActive || active.length,
+    mechanism: autopilotOn ? 'global_autopilot' : (daActive ? 'developer_autonomy' : 'work_templates'),
+    active_count: autopilotOn ? Math.max(daActive, 1) : (daActive || active.length),
     templates: templates.slice(0, 40),
     developer_autonomy: autonomy,
+    global_autopilot: autopilot,
     routine_within_scope: [
       'repository_inspection',
       'approved_file_edits',
@@ -265,7 +269,9 @@ function standingAuthorization(bridge) {
       'protected_branch_merge',
       'paid_external_usage'
     ],
-    note: daActive
+    note: autopilotOn
+      ? 'Global Autopilot is ON. Owner-delegated routine work may proceed across registered projects without per-task enrollment. OFF/STOP revokes immediately.'
+      : daActive
       ? 'Active Developer Autonomy policies authorize routine local work inside enrolled repositories. Short-lived Mission grants are validated at dispatch. WORK templates remain available for exact-file scopes.'
       : (active.length
         ? 'Active owner-registered WORK templates authorize routine local work inside their exact scope until expiry or revocation.'

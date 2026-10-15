@@ -7,7 +7,25 @@ const { PassThrough } = require('node:stream');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
 const render = require('./assistant-render');
-const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','compat','compatibility','memory','runtime','sensitive','vault','secret','gmail','whatsapp','research']);
+const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','compat','compatibility','memory','runtime','sensitive','vault','secret','gmail','whatsapp','research','autopilot']);
+function formatAutopilot(s) {
+  const on = s.enabled === true;
+  const lines = [
+    'Autopilot  ' + (on ? '● ON · owner delegation active' : '○ OFF · governed defaults'),
+    s.note || '',
+    'Projects   ' + ((s.projects || []).length) + ' registered with repositories',
+    'Stops      ' + (s.stop_count || 0),
+  ];
+  if (s.cancelled_missions != null) lines.push('Cancelled  ' + s.cancelled_missions + ' Autopilot Missions');
+  return lines.filter(Boolean).join('\n');
+}
+async function autopilotControl(home, action) {
+  if (action === 'status') return local.request(home, '/api/assistant/autopilot');
+  if (action === 'on') return local.request(home, '/api/assistant/autopilot/enable', { confirmed: true, request_id: randomUUID() });
+  if (action === 'off') return local.request(home, '/api/assistant/autopilot/disable', { confirmed: true, request_id: randomUUID() });
+  if (action === 'stop') return local.request(home, '/api/assistant/autopilot/stop', { confirmed: true, request_id: randomUUID() });
+  throw Error('Use /autopilot on|off|status|stop.');
+}
 function parseLine(line) {
  const raw=line.trim().replace(/^(?:You\s*[›>]|>)\s*(?=\/|--help|--version)/,'');
  const value=({'--version':'/version','--help':'/help','-h':'/help'}[raw])||raw;
@@ -19,7 +37,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -35,7 +53,7 @@ Connectors ${p?.connectors||'Unavailable'}
 Privacy    Local inference · scoped Memory · credentials stay private
 `;
 }
-function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) / chat   Attach to the managed service and open conversation\n  status                Show live service health (client; never starts a supervisor)\n  doctor                Safe readiness, pins, and CLI install alignment\n  help                  Show this guidance\n  open                  Open Control Center through private discovery\n  logs follow           Stream host-observed Live Activity events (redacted)\n  memory [query]        List/search Personal Memory V2\n  service start         Start the managed local service when stopped\n  service stop          Gracefully stop the owned local service\n  service restart       Stop then start the owned local service\n  service status        Same as airodrom status\n  start|stop|restart    Legacy aliases for service start|stop|restart\n  menu                  Open the native macOS menu helper\n  requalify             Fresh confined qualification while stopped\n  browser options       Show browser connection availability\n  task <file>           Register and dispatch a scoped Mission JSON\n  whatsapp              bind | status | discover | use-test | rotate-verify-token | commit-verify-token | rollback-verify-token | prepare-callback <https://host/webhooks/whatsapp>\n  secret                prepare | put [operator|gmail|whatsapp] | forget <ref> | status\n  mcp                   Existing MCP stdio transport\n  --version             Show version\n\nClient commands discover the existing managed service and never launch a second supervisor.\nUse airodrom service start only when the service is stopped.\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nWhatsApp credentials use hidden Terminal input only (airodrom whatsapp bind). Public ingress stays OFF.\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
+function help() { return `${branding.name} — ${branding.tagline}\n\nSHELL COMMANDS · run in Terminal\nUsage: airodrom [command]\n\n  (no command) / chat   Attach to the managed service and open conversation\n  status                Show live service health (client; never starts a supervisor)\n  autopilot on|off|status|stop\n                        Global Autopilot owner controls (defaults OFF; emergency STOP)\n  doctor                Safe readiness, pins, and CLI install alignment\n  help                  Show this guidance\n  open                  Open Control Center through private discovery\n  logs follow           Stream host-observed Live Activity events (redacted)\n  memory [query]        List/search Personal Memory V2\n  service start         Start the managed local service when stopped\n  service stop          Gracefully stop the owned local service\n  service restart       Stop then start the owned local service\n  service status        Same as airodrom status\n  start|stop|restart    Legacy aliases for service start|stop|restart\n  menu                  Open the native macOS menu helper\n  requalify             Fresh confined qualification while stopped\n  browser options       Show browser connection availability\n  task <file>           Register and dispatch a scoped Mission JSON\n  whatsapp              bind | status | discover | use-test | rotate-verify-token | commit-verify-token | rollback-verify-token | prepare-callback <https://host/webhooks/whatsapp>\n  secret                prepare | put [operator|gmail|whatsapp] | forget <ref> | status\n  mcp                   Existing MCP stdio transport\n  --version             Show version\n\nClient commands discover the existing managed service and never launch a second supervisor.\nUse airodrom service start only when the service is stopped.\n\nINTERACTIVE COMMANDS · type inside Airodrom\n${COMMANDS}\n\nWhatsApp credentials use hidden Terminal input only (airodrom whatsapp bind). Public ingress stays OFF.\nRead-only commands accept --json for developer output.\n/mcp explains the separate shell transport.\n\n${branding.website}\n`; }
 async function waitResult(home, id, { signal, onProgress, timeoutMs=130000 } = {}) {
   const deadline = Date.now() + timeoutMs; let lastState=null;
   while (Date.now() < deadline) {
@@ -436,6 +454,11 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         if (command === 'help') output.write(help());
         else if (command === 'about'||command==='version') output.write(branding.name+' '+require('../package.json').version+' · PRE-RELEASE\n');
         else if (command==='mcp') output.write('MCP is a shell transport: run airodrom mcp from a separate terminal. submit_mission/get_mission_handoff/cancel_mission_handoff use canonical Airodrom authority.\n');
+        else if (command === 'autopilot') {
+          const action = (arg || 'status').trim().split(/\s+/)[0] || 'status';
+          if (!['on', 'off', 'status', 'stop'].includes(action)) throw Error('Use /autopilot on|off|status|stop.');
+          show(output, await autopilotControl(home, action), formatAutopilot, json);
+        }
         else if (['models','workers','model','worker'].includes(command)) {
           if(command==='workers'&&arg&&arg!=='status'){
             const parts=arg.split(/\s+/),action=parts.shift(),id=parts.shift();
@@ -666,6 +689,15 @@ async function main(args = process.argv.slice(2)) {
   }
   if (command === '--version') { process.stdout.write(branding.name + ' ' + require('../package.json').version + '\n'); return; }
   if (command === 'status') return showStatus(home, rest.includes('--json'));
+  if (command === 'autopilot') {
+    await local.attach(home);
+    const action = rest[0] || 'status';
+    if (!['on', 'off', 'status', 'stop'].includes(action) || rest.length > 1 && !(rest.length === 2 && rest[1] === '--json')) {
+      throw Error('Use airodrom autopilot on|off|status|stop.');
+    }
+    show(process.stdout, await autopilotControl(home, action), formatAutopilot, rest.includes('--json'));
+    return;
+  }
   if (command === 'logs') {
     await local.attach(home);
     return require('../scripts/live-logs.cjs').main(rest.length ? rest : ['follow']);
@@ -693,4 +725,4 @@ async function main(args = process.argv.slice(2)) {
   throw Error('Unknown command. Use airodrom --help.');
 }
 if (require.main === module) main().catch(error => { console.error('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message))); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
-module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, sanitizePaste, pastePreview, secureIngressLine, missionReceipt, interactive, main, showStatus, serviceCommand };
+module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, sanitizePaste, pastePreview, secureIngressLine, missionReceipt, interactive, main, showStatus, serviceCommand, formatAutopilot, autopilotControl };

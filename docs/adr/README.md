@@ -3,6 +3,7 @@
 - [0052 Autonomous Supervisor V1](0052-autonomous-supervisor.md): Proposed; Live Activity / CLI projection over Mission V2 + CAE without a second scheduler; AUTO admission honesty; obsolete rework presentation archive; standing WORK templates.
 
 - [0053 Developer Autonomy V1](0053-developer-autonomy.md): Proposed; standing per-repository enrollment, short-lived Mission grants, disposable worktrees, draft-PR prep; never merge/deploy.
+- [0054 Global Autopilot V1](0054-global-autopilot.md): Accepted; authenticated owner delegation across registered projects; defaults OFF; emergency STOP; reuses Developer Autonomy.
 - [0051 Unified Autonomous Development V1](0051-unified-autonomous-development.md): Proposed; derived recovery phases, canonical Mission contract with immutable scope fingerprint, one owner approval, idempotent transactional repair, governed sandboxed Cursor worker (live UNQUALIFIED pending file credential), empirical containment, verifier test integrity, ChatGPT coordinator tools.
 - [0013 governed browser product research](0013-governed-browser-product-research.md): Proposed; replaces ADR 0012's unavailable browser gate with a scoped host research capability, preserving its Vault boundaries.
 
