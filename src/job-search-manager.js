@@ -275,7 +275,8 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
   function authorizeMutation(action, input = {}) {
     const standing = liveStanding();
     const approvalId = input.host_approval_id != null ? String(input.host_approval_id).trim() : '';
-    // operator_confirmation is never self-authorizing; bind to standing or approved proposal id.
+    // operator_confirmation is typed manual evidence (a claim), never an approval token.
+    // Authorization is standing grant or a separately reviewed host_approval_id.
     let confirmation = null;
     try {
       confirmation = input.evidence != null ? parseEvidence(input.evidence) : null;
@@ -283,10 +284,10 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = n
     if (confirmation && confirmation.kind === 'operator_confirmation') {
       if (standing) {
         confirmation.verification = 'standing_manual_claim';
-      } else if (approvalId && confirmation.value === approvalId) {
-        confirmation.verification = 'host_approval_bound';
+      } else if (approvalId) {
+        confirmation.verification = 'host_reviewed_manual_claim';
       } else {
-        const err = Error('operator_confirmation is not independently authenticated; provide host_approval_id binding or standing grant');
+        const err = Error('operator_confirmation evidence requires standing authorization or a reviewed host_approval_id');
         err.code = 'forged_operator_confirmation';
         throw err;
       }

@@ -391,7 +391,7 @@ test('adversarial: manager.json symlink and corruption fail closed without overw
   assert.throws(() => manager2.upsertApplication({ company: 'X', role: 'Y', evidence: evidenceUrl }), /HOLD|unreadable|tampered/i);
 });
 
-test('two-stage proposal approval binds payload digest; denied responses are non-executable', async t => {
+test('two-stage proposal requires human-readable review before approve; digest binds payload', async t => {
   const f = await fixture(t);
   const server = new ControlServer(f.bridge, { port: 0, conversationOptions: conversationOptions() });
   await server.start();
@@ -409,71 +409,52 @@ test('two-stage proposal approval binds payload digest; denied responses are non
 
   const denied = await api(server, '/api/assistant/job-search', { body: mutation });
   assert.equal(denied.status, 403);
-  assert.equal(denied.body.code, 'mutation_authorization_required');
   assert.equal(denied.body.pending_proposal?.status, 'pending_review');
   assert.equal(denied.body.pending_proposal?.executable, false);
+  assert.equal(denied.body.pending_proposal?.conversational_auto_approve, false);
+  assert.ok(denied.body.pending_proposal?.summary?.company === 'Acme');
   assert.equal(denied.body.pending_approval, undefined);
-  assert.equal(denied.body.pending_proposal?.approval_id, undefined);
   const proposalId = denied.body.pending_proposal.proposal_id;
-  assert.ok(proposalId);
-  assert.ok(denied.body.pending_proposal.payload_digest);
 
-  // Unreviewed proposal cannot execute.
-  const premature = await api(server, '/api/assistant/job-search', {
-    body: { ...mutation, host_approval_id: proposalId }
+  const prematureApprove = await api(server, '/api/assistant/job-search', {
+    body: { action: 'approve_proposal', proposal_id: proposalId, confirmed: true }
   });
-  assert.ok(premature.status === 400 || premature.status === 403);
-  assert.match(String(premature.body.error || ''), /pending|review|approved|authorization/i);
+  assert.equal(prematureApprove.status, 400);
+  assert.match(String(prematureApprove.body.error || ''), /review_proposal|Review the exact/i);
 
-  // Forged operator_confirmation still refused.
-  const forged = await api(server, '/api/assistant/job-search', {
-    body: { ...mutation, evidence: evidenceConfirm, host_approval_id: proposalId }
+  const reviewed = await api(server, '/api/assistant/job-search', {
+    body: { action: 'review_proposal', proposal_id: proposalId }
   });
-  assert.equal(forged.status, 400);
-  assert.match(String(forged.body.error || ''), /operator_confirmation|authenticated|host_approval/i);
+  assert.equal(reviewed.status, 200);
+  assert.equal(reviewed.body.proposed.company, 'Acme');
+  assert.equal(reviewed.body.proposed.role, 'Eng');
+  assert.match(String(reviewed.body.proposed.evidence_display || ''), /https:\/\/jobs\.example\.com/);
+  assert.equal(reviewed.body.reviewed, true);
+  assert.equal(reviewed.body.conversational_auto_approve, false);
 
   const approved = await api(server, '/api/assistant/job-search', {
     body: { action: 'approve_proposal', proposal_id: proposalId, confirmed: true }
   });
   assert.equal(approved.status, 200);
   assert.equal(approved.body.status, 'approved');
-  assert.equal(approved.body.approval_id, proposalId);
-  assert.equal(approved.body.executable, true);
 
-  // Substituted payload after approval must fail.
   const substituted = await api(server, '/api/assistant/job-search', {
     body: { ...mutation, company: 'OtherCo', host_approval_id: proposalId }
   });
   assert.ok(substituted.status === 400 || substituted.status === 403);
-  assert.match(String(substituted.body.error || ''), /digest|mismatch|payload|authorization/i);
 
-  const ok = await api(server, '/api/assistant/job-search', {
-    body: {
-      ...mutation,
-      evidence: { kind: 'operator_confirmation', value: proposalId, explicit: true },
-      host_approval_id: proposalId
-    }
-  });
-  // Evidence change alters digest vs original proposal — must re-propose with matching body.
-  assert.ok(ok.status === 400 || ok.status === 403);
-
-  // Fresh propose → approve → execute with exact body.
-  const denied2 = await api(server, '/api/assistant/job-search', { body: mutation });
-  const proposal2 = denied2.body.pending_proposal.proposal_id;
-  await api(server, '/api/assistant/job-search', {
-    body: { action: 'approve_proposal', proposal_id: proposal2, confirmed: true }
-  });
   const executed = await api(server, '/api/assistant/job-search', {
-    body: { ...mutation, host_approval_id: proposal2 }
+    body: { ...mutation, host_approval_id: proposalId }
   });
   assert.equal(executed.status, 200);
-  assert.equal(executed.body.ok, true);
   assert.equal(executed.body.mutation_gate.mode, 'host_approval');
 
-  const reuse = await api(server, '/api/assistant/job-search', {
-    body: { ...mutation, company: 'Beta', host_approval_id: proposal2 }
+  const chat = await service.submit(server, {
+    message: 'Approve job search proposal ' + proposalId,
+    request_id: id()
   });
-  assert.ok(reuse.status === 403 || reuse.status === 400);
+  assert.notEqual(chat.kind, 'job_search');
+  assert.notEqual(chat.status, 'approved');
 
   grantStanding(f.bridge.dataDir);
   const standing = await api(server, '/api/assistant/job-search', {
@@ -481,6 +462,66 @@ test('two-stage proposal approval binds payload digest; denied responses are non
   });
   assert.equal(standing.status, 200);
   assert.equal(standing.body.mutation_gate.mode, 'standing');
+});
+
+test('e2e: manually confirmed application without Gmail, URL, or standing permission', async t => {
+  const f = await fixture(t);
+  const server = new ControlServer(f.bridge, { port: 0, conversationOptions: conversationOptions() });
+  await server.start();
+  t.after(() => server.close());
+
+  await api(server, '/api/assistant/job-search', { body: { action: 'create_tracker' } });
+  assert.equal(automation.allows(f.bridge.dataDir, 'local_tracker_updates'), false);
+
+  const manual = {
+    action: 'upsert',
+    company: 'Northwind Labs',
+    role: 'Staff Engineer',
+    status: 'applied',
+    applied_at: '2026-10-14',
+    source: 'owner_manual',
+    notes: 'Logged from paper notes after phone screen',
+    evidence: { kind: 'operator_confirmation', value: 'owner-logged-northwind-staff-eng', explicit: true },
+    request_id: id()
+  };
+
+  const denied = await api(server, '/api/assistant/job-search', { body: manual });
+  assert.equal(denied.status, 403);
+  const proposalId = denied.body.pending_proposal.proposal_id;
+  assert.ok(proposalId);
+  assert.equal(denied.body.pending_proposal.summary.evidence_kind, 'operator_confirmation');
+  assert.match(denied.body.pending_proposal.summary.evidence_display, /owner-logged-northwind/);
+  assert.doesNotMatch(JSON.stringify(denied.body), /gmail|message_id|https?:\/\//i);
+
+  const reviewed = await api(server, '/api/assistant/job-search', {
+    body: { action: 'review_proposal', proposal_id: proposalId }
+  });
+  assert.equal(reviewed.status, 200);
+  assert.equal(reviewed.body.proposed.company, 'Northwind Labs');
+  assert.equal(reviewed.body.proposed.role, 'Staff Engineer');
+  assert.equal(reviewed.body.diff.mode, 'create');
+  assert.ok(reviewed.body.diff.changes.some(c => c.field === 'company' && c.to === 'Northwind Labs'));
+
+  const approved = await api(server, '/api/assistant/job-search', {
+    body: { action: 'approve_proposal', proposal_id: proposalId, confirmed: true }
+  });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.approval_id, proposalId);
+
+  const executed = await api(server, '/api/assistant/job-search', {
+    body: { ...manual, host_approval_id: proposalId }
+  });
+  assert.equal(executed.status, 200);
+  assert.equal(executed.body.ok, true);
+  assert.equal(executed.body.mutation_gate.mode, 'host_approval');
+  assert.equal(executed.body.application.company, 'Northwind Labs');
+  assert.equal(executed.body.application.status, 'applied');
+  assert.match(String(executed.body.application.evidence), /operator_confirmation=owner-logged-northwind/);
+
+  const listed = await api(server, '/api/assistant/job-search', { body: { action: 'list' } });
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.applications.length, 1);
+  assert.equal(listed.body.applications[0].role, 'Staff Engineer');
 });
 
 test('permission status fails closed immediately on expiry, ceiling, and stale manager flag', t => {

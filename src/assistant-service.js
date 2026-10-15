@@ -130,7 +130,7 @@ function jobSearchInput(server,parsed){
   return {kind:'clarify',route:'JOB_SEARCH',message:'To identify recruiters, first authorize Gmail read-only (/connect gmail), then search with a job-related query (for example: subject:(recruiter OR interview OR application)). Host categorization uses only returned message fields — it never invents emails.',authority:false};
  }
  if(parsed.action==='upsert'){
-  return {kind:'clarify',route:'JOB_SEARCH',message:'To log an application, provide company, role, and identifiable evidence (posting URL, Gmail message id, or explicit operator confirmation). Fabricated jobs are refused.',authority:false};
+  return {kind:'clarify',route:'JOB_SEARCH',message:'To log an application without standing permission: submit company, role, and typed evidence via Control Center or the job-search API (manual operator_confirmation claim is allowed). Review the exact proposal under Approvals, approve it, then re-submit with host_approval_id. Conversation cannot auto-approve tracker writes. Fabricated jobs are refused.',authority:false,conversational_auto_approve:false};
  }
  return {kind:'clarify',route:'JOB_SEARCH',message:'Supported job-search actions: create tracker, list applications, daily digest, or personal-ops capability plan.',authority:false};
 }

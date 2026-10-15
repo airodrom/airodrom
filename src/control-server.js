@@ -543,13 +543,30 @@ class ControlServer {
         return this.json(res,200,{...saved,message:'Standing personal-ops preferences saved. Send/apply/invite/share/delete remain separately gated. Grants expire fail-closed.',authority:false});
       }
       if(url.pathname==='/api/assistant/job-search'){
-        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone','host_approval_id','proposal_id','confirmed','request_id','mutation_action']);
+        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone','host_approval_id','proposal_id','confirmed','request_id','mutation_action','status_filter','limit']);
         const automation=require('./personal-ops-automation');
         const manager=require('./assistant-service').jobSearchManager(this);
+        const currentRowFor=(proposal)=>{
+          try{
+            const listed=manager.list().applications||[];
+            const p=proposal.summary||proposal.proposed||{};
+            return listed.find(r=>
+              (p.application_id&&r.id===p.application_id)||
+              (p.company&&p.role&&String(r.company).toLowerCase()===String(p.company).toLowerCase()&&String(r.role).toLowerCase()===String(p.role).toLowerCase())
+            )||null;
+          }catch{return null;}
+        };
         if(body.action==='create_tracker')return this.json(res,200,manager.createTracker());
         if(body.action==='list')return this.json(res,200,manager.list());
         if(body.action==='digest')return this.json(res,200,manager.dailyDigest({timezone:body.timezone||'local'}));
         if(body.action==='status')return this.json(res,200,manager.status());
+        if(body.action==='list_proposals'){
+          return this.json(res,200,{
+            proposals:automation.listProposals(this.bridge.dataDir,{status:body.status_filter||null,limit:body.limit||20}),
+            authority:false,
+            conversational_auto_approve:false
+          });
+        }
         if(body.action==='propose'){
           const mutationAction=body.mutation_action;
           const proposal=automation.proposeMutation(this.bridge.dataDir,{
@@ -559,6 +576,15 @@ class ControlServer {
             actor:'operator'
           });
           return this.json(res,200,{...proposal,authority:false});
+        }
+        if(body.action==='review_proposal'){
+          const draft=automation.listProposals(this.bridge.dataDir).find(p=>p.proposal_id===body.proposal_id)||{summary:{}};
+          const reviewed=automation.reviewProposal(this.bridge.dataDir,{
+            proposal_id:body.proposal_id,
+            current_row:currentRowFor(draft),
+            actor:'operator'
+          });
+          return this.json(res,200,{...reviewed,authority:false});
         }
         if(body.action==='approve_proposal'){
           return this.json(res,200,automation.approveProposal(this.bridge.dataDir,{
@@ -580,16 +606,11 @@ class ControlServer {
               error:'Tracker mutation requires current standing authorization or an approved host proposal',
               code:'mutation_authorization_required',
               pending_proposal:{
-                proposal_id:pending.proposal_id,
-                status:pending.status,
-                action:pending.action,
-                payload_digest:pending.payload_digest,
-                tracker_path:pending.tracker_path,
-                request_id:pending.request_id,
-                expires_at:pending.expires_at,
+                ...pending,
                 executable:false,
                 authority:false,
-                message:'Review the exact proposal, then POST action=approve_proposal with proposal_id and confirmed:true. Denied responses never return an executable approval token.'
+                conversational_auto_approve:false,
+                message:'Open Control Center → Approvals (or review_proposal) to inspect company/role/evidence, then approve_proposal with confirmed:true. Denied responses never return an executable approval token.'
               },
               authority:false
             });

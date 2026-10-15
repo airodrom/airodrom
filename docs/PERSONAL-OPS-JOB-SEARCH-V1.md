@@ -37,7 +37,7 @@ Schema: `id, company, role, source, status, applied_at, recruiter_email, posting
 Rules:
 
 - Every create/update requires **typed** evidence: `{kind: message_id|thread_id|url|operator_confirmation, value}` (operator_confirmation also requires `explicit:true`). Arbitrary text is not evidence.
-- Tracker **mutations** (`upsert`, `follow_up`) additionally require either a **current** standing local-tracker grant or a **two-stage host proposal**: `propose` (or a denied mutation returns a non-executable `pending_proposal`) → `approve_proposal` with `confirmed:true` → execute once with `host_approval_id` bound to the exact payload digest, tracker path, action, expiry and request id. Denied responses never return an executable approval token. Caller-supplied `operator_confirmation` is never self-authorizing; without standing it must equal the approved proposal id.
+- Tracker **mutations** (`upsert`, `follow_up`) additionally require either a **current** standing local-tracker grant or a **reviewed host proposal**: `propose` / denied non-executable `pending_proposal` → authenticated `review_proposal` (human-readable company/role/evidence/before→after) in Control Center Approvals or Terminal → `approve_proposal` with `confirmed:true` → execute once with `host_approval_id` bound to the exact payload digest, tracker path, action, expiry and request id. Conversation cannot auto-approve. `operator_confirmation` is typed manual evidence (a claim phrase), never the approval token; authorization is standing or the reviewed `host_approval_id`.
 - `manager.json` uses the same exclusive nofollow temp + atomic rename protections as the CSV tracker; symlink/tamper states fail closed as HOLD without deleting unexpected legacy `.tmp`/`.bak` links.
 - Spreadsheet formula injection (`=`, `+`, `-`, `@`) is neutralized on write with a reversible apostrophe policy (literal leading `'=` round-trips losslessly) and restored on read.
 - Duplicate company+role+posting merges; existing higher-progress status is preserved unless an explicit status is supplied. `applied` requires an explicit `applied_at` (never invented).
@@ -63,6 +63,7 @@ Owner may grant standing **read-only Gmail organization** and **selected local t
 3. Job tracker (local, no cloud required):
    - Ask: “Create a local job-search tracker”
    - Log applications only with evidence; ask for a “daily digest”.
+   - Manual entries without Gmail, a posting URL, or standing permission: submit `operator_confirmation` claim evidence → open Control Center → Approvals → Review exact fields → Approve → re-submit the exact body with `host_approval_id`. Conversation cannot auto-approve.
 4. Calendar / Drive / Sheets remain WAIT until separately enrolled with least-privilege OAuth. Do not infer them from Gmail consent.
 5. Standing local tracker updates (optional): confirm via personal-ops automation API; never grants send/apply/invite.
 

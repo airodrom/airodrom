@@ -240,6 +240,44 @@ function payloadDigest(payload) {
   return crypto.createHash('sha256').update(JSON.stringify(stableValue(payload))).digest('hex');
 }
 
+// operator_confirmation is typed manual evidence (a human claim), never the approval token.
+// Keep the claim in the digest; host_approval_id stays outside business-data evidence.
+function normalizeEvidenceForDigest(evidence) {
+  if (evidence == null) return null;
+  if (typeof evidence === 'string') {
+    const m = /^(message_id|thread_id|url|operator_confirmation)=(.+)$/i.exec(evidence.trim());
+    if (m && m[1].toLowerCase() === 'operator_confirmation') {
+      return { kind: 'operator_confirmation', explicit: true, claim: m[2].trim().slice(0, 200) };
+    }
+    return evidence.trim();
+  }
+  if (typeof evidence === 'object' && !Array.isArray(evidence)) {
+    const kind = String(evidence.kind || '').trim().toLowerCase();
+    const claim = evidence.value != null ? String(evidence.value).trim()
+      : evidence.operator_confirmation != null ? String(evidence.operator_confirmation).trim()
+      : evidence.claim != null ? String(evidence.claim).trim()
+      : '';
+    if (kind === 'operator_confirmation' || evidence.operator_confirmation != null) {
+      return { kind: 'operator_confirmation', explicit: true, claim: claim.slice(0, 200) };
+    }
+  }
+  return stableValue(evidence);
+}
+
+function evidenceSummary(evidence) {
+  const normalized = normalizeEvidenceForDigest(evidence);
+  if (!normalized) return { kind: null, display: 'none' };
+  if (typeof normalized === 'string') return { kind: 'raw', display: normalized.slice(0, 120) };
+  if (normalized.kind === 'operator_confirmation') {
+    return { kind: 'operator_confirmation', display: 'Manual owner confirmation: ' + (normalized.claim || '').slice(0, 120) };
+  }
+  if (normalized.kind === 'url') return { kind: 'url', display: String(normalized.value || '').slice(0, 160) };
+  if (normalized.kind === 'message_id' || normalized.kind === 'thread_id') {
+    return { kind: normalized.kind, display: String(normalized.value || '').slice(0, 80) };
+  }
+  return { kind: normalized.kind || 'evidence', display: JSON.stringify(normalized).slice(0, 160) };
+}
+
 function buildMutationPayload(action, body = {}, trackerPath) {
   if (!APPROVAL_ACTIONS.includes(action)) {
     const err = Error('Unsupported tracker approval action');
@@ -264,7 +302,7 @@ function buildMutationPayload(action, body = {}, trackerPath) {
     company: body.company == null ? null : String(body.company),
     role: body.role == null ? null : String(body.role),
     status: body.status == null ? null : String(body.status),
-    evidence: body.evidence == null ? null : stableValue(body.evidence),
+    evidence: normalizeEvidenceForDigest(body.evidence),
     posting_url: body.posting_url == null ? null : String(body.posting_url),
     recruiter_email: body.recruiter_email == null ? null : String(body.recruiter_email),
     applied_at: body.applied_at == null ? null : String(body.applied_at),
@@ -310,7 +348,59 @@ function writeProposal(dataDir, record) {
   atomicWriteJson(proposalPath(dataDir, record.id), record);
 }
 
+function proposedFields(payload = {}) {
+  const evidence = evidenceSummary(payload.evidence);
+  return {
+    company: payload.company || null,
+    role: payload.role || null,
+    status: payload.status || null,
+    source: payload.source || null,
+    posting_url: payload.posting_url || null,
+    recruiter_email: payload.recruiter_email || null,
+    applied_at: payload.applied_at || null,
+    follow_up_at: payload.follow_up_at || null,
+    notes: payload.notes == null ? null : String(payload.notes).slice(0, 500),
+    application_id: payload.id || null,
+    evidence_kind: evidence.kind,
+    evidence_display: evidence.display
+  };
+}
+
+function beforeAfterDiff(payload = {}, currentRow = null) {
+  const proposed = proposedFields(payload);
+  if (!currentRow) {
+    return {
+      mode: 'create',
+      before: null,
+      after: proposed,
+      changes: Object.entries(proposed).filter(([, v]) => v != null && v !== '').map(([k, v]) => ({ field: k, from: null, to: v }))
+    };
+  }
+  const before = {
+    company: currentRow.company || null,
+    role: currentRow.role || null,
+    status: currentRow.status || null,
+    source: currentRow.source || null,
+    posting_url: currentRow.posting_url || null,
+    recruiter_email: currentRow.recruiter_email || null,
+    applied_at: currentRow.applied_at || null,
+    follow_up_at: currentRow.follow_up_at || null,
+    notes: currentRow.notes == null ? null : String(currentRow.notes).slice(0, 500),
+    application_id: currentRow.id || null,
+    evidence_kind: evidenceSummary(currentRow.evidence).kind,
+    evidence_display: evidenceSummary(currentRow.evidence).display
+  };
+  const changes = [];
+  for (const key of Object.keys(proposed)) {
+    const from = before[key] == null ? null : String(before[key]);
+    const to = proposed[key] == null ? null : String(proposed[key]);
+    if (from !== to && to != null && to !== '') changes.push({ field: key, from, to });
+  }
+  return { mode: 'update', before, after: proposed, changes };
+}
+
 function publicProposalView(record, extra = {}) {
+  const fields = proposedFields(record.payload || {});
   return {
     proposal_id: record.id,
     status: record.status,
@@ -319,9 +409,26 @@ function publicProposalView(record, extra = {}) {
     tracker_path: record.tracker_path,
     request_id: record.request_id,
     expires_at: record.expires_at,
+    reviewed: !!(record.reviewed_at && record.reviewed_digest === record.payload_digest),
+    reviewed_at: record.reviewed_at || null,
     executable: record.status === 'approved',
     authority: false,
+    summary: fields,
     ...extra
+  };
+}
+
+function reviewPacket(record, currentRow = null) {
+  const diff = beforeAfterDiff(record.payload || {}, currentRow);
+  return {
+    ...publicProposalView(record, {
+      message: 'Read-only proposal review. Approve only after inspecting these exact fields in Control Center or Terminal.'
+    }),
+    proposed: diff.after,
+    before: diff.before,
+    diff,
+    review_required_before_approve: true,
+    conversational_auto_approve: false
   };
 }
 
@@ -352,10 +459,56 @@ function proposeMutation(dataDir, { action, body = {}, trackerPath, actor = 'ope
   writeProposal(dataDir, record);
   return {
     ...publicProposalView(record, {
-      message: 'Pending mutation proposal recorded. It is not executable until approve_proposal with confirmed:true.'
+      message: 'Pending mutation proposal recorded. Open Control Center → Approvals or POST review_proposal, inspect the exact fields, then approve_proposal with confirmed:true. Not executable yet.'
     }),
     standing_active: allows(dataDir, 'local_tracker_updates')
   };
+}
+
+function listProposals(dataDir, { status = null, limit = 20 } = {}) {
+  if (!dataDir) return [];
+  const dir = approvalsDir(dataDir);
+  if (!fs.existsSync(dir) || fs.lstatSync(dir).isSymbolicLink()) return [];
+  const out = [];
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.json') || name.startsWith('.')) continue;
+    const id = name.slice(0, -5);
+    if (!UUID_RE.test(id)) continue;
+    try {
+      const record = readProposal(dataDir, id);
+      if (status && record.status !== status) continue;
+      out.push(publicProposalView(record));
+    } catch { /* skip unreadable */ }
+  }
+  out.sort((a, b) => String(b.expires_at || '').localeCompare(String(a.expires_at || '')));
+  return out.slice(0, Math.max(1, Math.min(50, limit | 0 || 20)));
+}
+
+function reviewProposal(dataDir, { proposal_id, current_row = null, actor = 'operator' } = {}) {
+  const record = readProposal(dataDir, proposal_id);
+  if (record.version !== 1 || record.id !== proposal_id) {
+    const err = Error('Mutation proposal invalid');
+    err.code = 'mutation_authorization_required';
+    throw err;
+  }
+  const exp = Date.parse(record.expires_at);
+  if (!Number.isFinite(exp) || exp < Date.now()) {
+    record.status = 'expired';
+    writeProposal(dataDir, record);
+    const err = Error('Mutation proposal expired');
+    err.code = 'mutation_authorization_required';
+    throw err;
+  }
+  if (!['pending_review', 'approved'].includes(record.status)) {
+    const err = Error('Mutation proposal is not reviewable');
+    err.code = 'mutation_authorization_required';
+    throw err;
+  }
+  record.reviewed_at = new Date().toISOString();
+  record.reviewed_digest = record.payload_digest;
+  record.reviewed_by = actor;
+  writeProposal(dataDir, record);
+  return reviewPacket(record, current_row);
 }
 
 function approveProposal(dataDir, { proposal_id, confirmed, actor = 'operator' } = {}) {
@@ -383,6 +536,11 @@ function approveProposal(dataDir, { proposal_id, confirmed, actor = 'operator' }
     err.code = 'mutation_authorization_required';
     throw err;
   }
+  if (!record.reviewed_at || record.reviewed_digest !== record.payload_digest) {
+    const err = Error('Review the exact proposal first (review_proposal) before approve_proposal');
+    err.code = 'review_required';
+    throw err;
+  }
   if (record.status === 'approved') {
     return {
       ...publicProposalView(record, {
@@ -404,7 +562,7 @@ function approveProposal(dataDir, { proposal_id, confirmed, actor = 'operator' }
   return {
     ...publicProposalView(record, {
       approval_id: record.id,
-      message: 'Proposal approved. Execute once with the exact approved payload and host_approval_id.'
+      message: 'Proposal approved after operator review. Execute once with the exact approved payload and host_approval_id.'
     })
   };
 }
@@ -484,6 +642,8 @@ function trackerPolicy(dataDir) {
     failApproval: (approvalId, reason) => failApproval(dataDir, approvalId, reason),
     proposeMutation: (args) => proposeMutation(dataDir, args),
     approveProposal: (args) => approveProposal(dataDir, args),
+    reviewProposal: (args) => reviewProposal(dataDir, args),
+    listProposals: (args) => listProposals(dataDir, args),
     buildMutationPayload: (action, body, trackerPath) => buildMutationPayload(action, body, trackerPath)
   };
 }
@@ -495,11 +655,15 @@ module.exports = {
   allows,
   proposeMutation,
   approveProposal,
+  reviewProposal,
+  listProposals,
   prepareApproval,
   commitApproval,
   failApproval,
   buildMutationPayload,
+  normalizeEvidenceForDigest,
   payloadDigest,
+  reviewPacket,
   trackerPolicy,
   DEFAULTS,
   NEVER_AUTO,
