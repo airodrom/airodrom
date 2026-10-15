@@ -97,16 +97,28 @@ test('authorized Gmail uses only canonical read-only GETs; previews get minimum 
  const wrong=new AssistantConnectors({gmail:{scope:'https://www.googleapis.com/auth/gmail.modify',reference:'opaque'},secrets:{resolve:async()=>{throw Error('must not resolve');}}});await assert.rejects(wrong.read('gmail','recent'),/exact read-only/);
 });
 
-test('private ingress and invalid research scope return no model authority or execution',async t=>{
+function assertUnapprovedResearch(r) {
+ assert.equal(r.kind,'public_web_offer');assert.equal(r.route,'WORK');assert.equal(r.authority,false);
+ assert.equal(r.mode,'on');assert.deepEqual(r.entries,['https://example.invalid/']);assert.equal(Object.hasOwn(r,'mission_id'),false);
+ const policy=require('../src/mission-web-policy');
+ assert.throws(()=>policy.normalize({mode:r.mode,entries:r.entries,confirmed:false}),/operator_web_consent_required/);
+ assert.throws(()=>policy.normalize({mode:r.mode,entries:r.entries,confirmed:true}),/invalid_origin/);
+}
+function assertNoResearchExecution(bridge) {
+ for(const table of ['cp_missions','cp_mission_tasks','cp_dispatches','cp_runs','cp_leases','cp_acceptances'])assert.equal(bridge.controlStore.db.prepare('SELECT count(*) n FROM '+table).get().n,0,table);
+}
+test('private ingress and unapproved public research return no model authority or execution',async t=>{
  const f=await fixture(t),server={bridge:f.bridge,conversationEngine:{start(){throw Error('No model allowed');}}};
  for(const [message,kind] of [['Save my mailbox number 818','private_storage'],['Save my mailbox number 818\nThanks','clarify'],["What's my mailbox number?",'private_storage']]){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,kind);assert.doesNotMatch(JSON.stringify(r),/\b818\b/);}
- for(const message of ['Research https://example.invalid','Could you please research https://example.invalid','I would like you to research https://example.invalid']){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,'mission');assert.equal(r.state,'draft');assert.equal(r.browser_research_available,false);assert.deepEqual(r.evidence,[]);assert.deepEqual(f.bridge.missions.require(r.mission_id).envelope.capability_scopes,[]);assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);}
+ for(const message of ['Research https://example.invalid','Could you please research https://example.invalid','I would like you to research https://example.invalid'])assertUnapprovedResearch(await service.submit(server,{message,request_id:id()}));
+ assertNoResearchExecution(f.bridge);
 });
-test('invalid explicit and direct research scopes cannot dispatch even with a matching web template',async t=>{
+test('explicit and direct public research require consent even with a matching web template',async t=>{
  const f=await fixture(t),server={bridge:f.bridge};f.bridge.options.externalMissionTemplates={fixture:{all:{workspace:f.repo,capability_scopes:['web_read','repo','developer_environment']}}};
- for(const message of ['Create a Mission to research https://example.invalid','/mission new Research https://example.invalid']){const r=await service.submit(server,{message,request_id:id(),workspace:f.repo});assert.equal(r.route,'EXPLICIT MISSION');assert.equal(r.state,'draft');assert.equal(r.browser_research_available,false);assert.deepEqual(r.evidence,[]);assert.deepEqual(f.bridge.missions.require(r.mission_id).envelope.capability_scopes,[]);}
- const direct=await missions.newMission(server,{objective:'Could you please research https://example.invalid',request_id:id(),workspace:f.repo});assert.equal(direct.browser_research_available,false);assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
+ for(const message of ['Create a Mission to research https://example.invalid','/mission new Research https://example.invalid'])assertUnapprovedResearch(await service.submit(server,{message,request_id:id(),workspace:f.repo}));
+ assertUnapprovedResearch(await missions.newMission(server,{objective:'Could you please research https://example.invalid',request_id:id(),workspace:f.repo}));
  await assert.rejects(missions.newMission(server,{objective:'Save my mailbox number 818',request_id:id(),workspace:f.repo}),/Private identifiers/);
+ assertNoResearchExecution(f.bridge);
 });
 
 test('ordinary Memory ingress refuses private identifiers with alternate whitespace',async t=>{

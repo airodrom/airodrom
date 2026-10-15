@@ -98,6 +98,9 @@ class ControlServer {
     });
   }
   #wirePersonalOps() {
+    // Personal Ops requires a durable dataDir. Fixtures that construct ControlServer
+    // without one must still exercise Memory/MCP privacy controls.
+    if (!this.bridge?.dataDir) return;
     if (!this.bridge.jobSearchManager) {
       const automation = require('./personal-ops-automation');
       this.bridge.jobSearchManager = require('./job-search-manager').createJobSearchManager({
