@@ -31,7 +31,9 @@ class RiskAcceptance {
       updated_at INTEGER NOT NULL,
       updated_by TEXT NOT NULL
     );
-    INSERT OR IGNORE INTO cp_risk_acceptance_preference VALUES(1,0,'local_only','public','["opencode"]',0,'system');`);
+    INSERT OR IGNORE INTO cp_risk_acceptance_preference
+      (id,enabled,privacy,data_class,workers,updated_at,updated_by)
+      VALUES(1,0,'local_only','public','["opencode"]',0,'system');`);
   }
 
   preference() {
