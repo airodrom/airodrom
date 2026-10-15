@@ -21,11 +21,42 @@ function safeRel(file) {
   if (typeof file !== 'string' || !REL_FILE.test(file) || file.length > 240) return null;
   if (IGNORE_FILES.test(path.basename(file))) return null;
   if (SECRET_PATH.test(file)) return null;
-  // Dotfiles and dot-directories (except known ignore already handled) stay out of observation.
   const parts = file.split('/');
   if (parts.some(p => IGNORE_DIRS.has(p))) return null;
   if (parts.some(p => p.startsWith('.'))) return null;
   return file;
+}
+
+function realWorkspace(workspace) {
+  if (typeof workspace !== 'string' || !path.isAbsolute(workspace)) return null;
+  try {
+    const root = fs.realpathSync(workspace);
+    if (!fs.statSync(root).isDirectory()) return null;
+    return root;
+  } catch { return null; }
+}
+
+/** Reject any symlink component on the relative path; require lexical path == realpath. */
+function canonicalAuthorizedFile(workspace, relPath) {
+  const file = safeRel(relPath);
+  if (!file) return null;
+  const root = realWorkspace(workspace);
+  if (!root) return null;
+  let cur = root;
+  for (const part of file.split('/')) {
+    cur = path.join(cur, part);
+    let st;
+    try { st = fs.lstatSync(cur); } catch { return null; }
+    if (st.isSymbolicLink()) return null;
+  }
+  let realFile;
+  try { realFile = fs.realpathSync(path.join(root, file)); } catch { return null; }
+  const lexical = path.join(root, file);
+  if (realFile !== lexical) return null;
+  let st;
+  try { st = fs.lstatSync(lexical); } catch { return null; }
+  if (!st.isFile() || st.isSymbolicLink() || st.size > 2_000_000) return null;
+  return { root, file, lexical, stat: st };
 }
 
 function gitMeta(workspace) {
@@ -68,69 +99,109 @@ function gitNumstat(workspace, relPath) {
   };
 }
 
-function classifyWriter(bridge, workspace, relPath) {
-  // Prefer OpenCode evidence from a recent observatory event for this path.
+function missionAllowsPath(envelope, workspaceRoot, relPath) {
+  if (!envelope || typeof envelope.workspace !== 'string') return false;
+  const root = realWorkspace(envelope.workspace);
+  if (!root || root !== workspaceRoot) return false;
+  if (!Array.isArray(envelope.allowed_files) || !envelope.allowed_files.includes(relPath)) return false;
+  return true;
+}
+
+function loadMissionEnvelope(bridge, missionId) {
+  if (!missionId) return null;
+  try {
+    const row = bridge.controlStore.db.prepare('SELECT envelope FROM cp_missions WHERE id=?').get(missionId);
+    if (!row) return null;
+    return typeof row.envelope === 'string' ? JSON.parse(row.envelope) : row.envelope;
+  } catch { return null; }
+}
+
+/**
+ * Bind writer evidence to exact canonical workspace + authorized path + Mission/Run.
+ * Never attribute by relative basename alone across workspaces or allowlists.
+ */
+function classifyWriter(bridge, workspace, relPath, authorizingMissionIds = null) {
+  const root = realWorkspace(workspace);
+  const file = safeRel(relPath);
+  if (!root || !file) {
+    return { writer_class: 'SAVED_FILE_CHANGE', mission_id: null, run_id: null, agent_id: null, authorship: 'unknown' };
+  }
+  const allow = Array.isArray(authorizingMissionIds) && authorizingMissionIds.length
+    ? new Set(authorizingMissionIds)
+    : null;
+
+  // Prefer recent OpenCode FS evidence only when Mission workspace + allowlist match.
   try {
     const recent = bridge.ledger.list({ limit: 80, order: 'desc' });
     for (const event of recent.events || []) {
       if (!String(event.event_type || '').startsWith('fs.file_')) continue;
-      if (event.metadata?.path !== relPath) continue;
-      if (event.metadata?.agent_id === 'opencode' && Date.now() - (event.timestamp_ms || 0) < 15_000) {
-        return { writer_class: 'OPENCODE_WRITE', mission_id: event.mission_id || null, run_id: event.run_id || null, agent_id: 'opencode' };
-      }
+      if (event.metadata?.path !== file) continue;
+      if (event.metadata?.agent_id !== 'opencode') continue;
+      if (Date.now() - (event.timestamp_ms || 0) >= 15_000) continue;
+      if (!event.mission_id) continue;
+      if (allow && !allow.has(event.mission_id)) continue;
+      const envelope = loadMissionEnvelope(bridge, event.mission_id);
+      if (!missionAllowsPath(envelope, root, file)) continue;
+      return {
+        writer_class: 'OPENCODE_WRITE',
+        mission_id: event.mission_id,
+        run_id: event.run_id || null,
+        agent_id: 'opencode',
+        authorship: 'proven'
+      };
     }
   } catch { /* best-effort */ }
 
-  // Active OpenCode Mission in this workspace is evidence of a candidate worker,
-  // but without a matching tool/fs event we must not claim authorship.
+  // Fallback: latest active OpenCode Mission in THIS workspace that explicitly allows THIS file.
   try {
-    const row = bridge.controlStore.db.prepare(`
-      SELECT m.id AS mission_id, r.id AS run_id, r.agent_id
+    const rows = bridge.controlStore.db.prepare(`
+      SELECT m.id AS mission_id, r.id AS run_id, m.envelope
       FROM cp_missions m
       JOIN cp_runs r ON r.mission_id = m.id
       WHERE m.state IN ('dispatching','running','verifying')
-        AND json_extract(m.envelope,'$.workspace') = ?
         AND r.agent_id = 'opencode'
-      ORDER BY r.created_at DESC LIMIT 1`).get(workspace);
-    if (row) {
-      return { writer_class: 'SAVED_FILE_CHANGE', mission_id: row.mission_id, run_id: row.run_id, agent_id: 'opencode', authorship: 'unproven' };
+      ORDER BY r.created_at DESC LIMIT 24`).all();
+    for (const row of rows) {
+      if (allow && !allow.has(row.mission_id)) continue;
+      let envelope;
+      try { envelope = typeof row.envelope === 'string' ? JSON.parse(row.envelope) : row.envelope; } catch { continue; }
+      if (!missionAllowsPath(envelope, root, file)) continue;
+      return {
+        writer_class: 'SAVED_FILE_CHANGE',
+        mission_id: row.mission_id,
+        run_id: row.run_id,
+        agent_id: 'opencode',
+        authorship: 'unproven'
+      };
     }
   } catch { /* best-effort */ }
 
   return { writer_class: 'SAVED_FILE_CHANGE', mission_id: null, run_id: null, agent_id: null, authorship: 'unknown' };
 }
 
-/** Independently authorized watch scopes: active Missions and active WORK templates only. */
+/** One scope per authorizing Mission or WORK template — allowlists are never merged for attribution. */
 function authorizedScopes(bridge) {
-  const byRoot = new Map();
-  const add = (workspace, allowedFiles, missionId, source) => {
-    if (typeof workspace !== 'string' || !path.isAbsolute(workspace)) return;
-    let root;
-    try { root = fs.realpathSync(workspace); } catch { return; }
-    try {
-      if (!fs.statSync(root).isDirectory()) return;
-    } catch { return; }
-    const allowed = new Set(Array.isArray(allowedFiles) ? allowedFiles.filter(f => typeof f === 'string' && safeRel(f)) : []);
-    const prev = byRoot.get(root);
-    if (!prev) {
-      byRoot.set(root, { workspace: root, allowed_files: allowed, mission_ids: missionId ? [missionId] : [], sources: [source] });
-      return;
-    }
-    for (const f of allowed) prev.allowed_files.add(f);
-    if (missionId) prev.mission_ids.push(missionId);
-    if (!prev.sources.includes(source)) prev.sources.push(source);
-  };
-
+  const scopes = [];
   try {
     const rows = bridge.controlStore.db.prepare(`
       SELECT id, envelope FROM cp_missions
       WHERE state IN ('dispatching','running','verifying')
         AND json_extract(envelope,'$.workspace') IS NOT NULL
-      ORDER BY created_at DESC LIMIT 12`).all();
+      ORDER BY created_at DESC LIMIT 24`).all();
     for (const row of rows) {
       let envelope;
       try { envelope = typeof row.envelope === 'string' ? JSON.parse(row.envelope) : row.envelope; } catch { continue; }
-      add(envelope.workspace, envelope.allowed_files || [], row.id, 'active_mission');
+      const root = realWorkspace(envelope.workspace);
+      if (!root) continue;
+      const allowed = new Set((envelope.allowed_files || []).filter(f => typeof f === 'string' && safeRel(f)));
+      if (!allowed.size) continue;
+      scopes.push({
+        workspace: root,
+        allowed_files: allowed,
+        mission_id: row.id,
+        mission_ids: [row.id],
+        sources: ['active_mission']
+      });
     }
   } catch { /* ignore */ }
 
@@ -138,27 +209,43 @@ function authorizedScopes(bridge) {
     for (const t of bridge.workTemplates?.list?.('operator') || []) {
       if (t.state !== 'active') continue;
       if (Number.isSafeInteger(t.expires_at) && t.expires_at <= Date.now()) continue;
-      add(t.workspace, t.allowed_files || [], null, 'work_template');
+      const root = realWorkspace(t.workspace);
+      if (!root) continue;
+      const allowed = new Set((t.allowed_files || []).filter(f => typeof f === 'string' && safeRel(f)));
+      if (!allowed.size) continue;
+      scopes.push({
+        workspace: root,
+        allowed_files: allowed,
+        mission_id: null,
+        mission_ids: [],
+        sources: ['work_template']
+      });
     }
   } catch { /* ignore */ }
 
-  return [...byRoot.values()].slice(0, MAX_WATCHES);
+  return scopes.slice(0, MAX_WATCHES * 3);
 }
 
 function collectWatchRoots(bridge) {
-  // Deliberately omits hostRepoRoot and idle project listings.
-  return authorizedScopes(bridge).map(s => s.workspace);
+  const roots = [];
+  const seen = new Set();
+  for (const scope of authorizedScopes(bridge)) {
+    if (seen.has(scope.workspace)) continue;
+    seen.add(scope.workspace);
+    roots.push(scope.workspace);
+    if (roots.length >= MAX_WATCHES) break;
+  }
+  return roots;
 }
 
 function pathAuthorized(scopes, workspace, relPath) {
   const file = safeRel(relPath);
   if (!file) return null;
-  const scope = scopes.find(s => s.workspace === workspace);
-  if (!scope) return null;
-  // Empty allowlist means the authorizing record had no approved files — deny all.
-  if (!scope.allowed_files.size) return null;
-  if (!scope.allowed_files.has(file)) return null;
-  return { file, scope };
+  const root = realWorkspace(workspace);
+  if (!root) return null;
+  const matching = scopes.filter(s => s.workspace === root && s.allowed_files.has(file));
+  if (!matching.length) return null;
+  return { file, root, matching };
 }
 
 function createWorkspaceActivityWatch(bridge) {
@@ -172,37 +259,36 @@ function createWorkspaceActivityWatch(bridge) {
     scopes = authorizedScopes(bridge);
     const auth = pathAuthorized(scopes, workspace, relPath);
     if (!auth) return;
-    const { file, scope } = auth;
-    let lst;
-    try { lst = fs.lstatSync(path.join(workspace, file)); } catch { return; }
-    if (lst.isSymbolicLink() || !lst.isFile() || lst.size > 2_000_000) return;
-    // Re-resolve to catch symlink races after lstat.
-    let realFile;
-    try {
-      realFile = fs.realpathSync(path.join(workspace, file));
-      if (realFile !== path.join(workspace, file) && !realFile.startsWith(workspace + path.sep)) return;
-    } catch { return; }
-    const writer = classifyWriter(bridge, workspace, file);
-    // Mission-null unknown writers are only recorded when an approved WORK-template
-    // scope covers the path (standing local auth). Never for idle/global roots.
-    if (!writer.mission_id && writer.authorship === 'unknown' && !scope.sources.includes('work_template') && !scope.mission_ids.length) {
-      return;
-    }
-    if (!writer.mission_id && writer.authorship === 'unknown' && !scope.sources.includes('work_template')) {
-      // Active mission scope without a bound mission_id from classifyWriter: attach primary mission.
-      writer.mission_id = scope.mission_ids[0] || null;
-    }
-    // Refuse global Mission-null observations outside an approved template/mission scope.
-    if (!writer.mission_id && !scope.sources.includes('work_template')) return;
+    const canonical = canonicalAuthorizedFile(auth.root, auth.file);
+    if (!canonical) return;
+    const { file, root, lexical, stat } = canonical;
+    const authorizingMissionIds = [...new Set(auth.matching.flatMap(s => s.mission_ids || []).filter(Boolean))];
+    const hasTemplate = auth.matching.some(s => s.sources.includes('work_template'));
+    const writer = classifyWriter(bridge, root, file, authorizingMissionIds.length ? authorizingMissionIds : null);
 
-    const meta = gitMeta(workspace);
-    const stats = gitNumstat(workspace, file);
+    // Never invent a Mission ID. Unknown authorship stays unattributed inside the boundary.
+    if (writer.mission_id && authorizingMissionIds.length && !authorizingMissionIds.includes(writer.mission_id)) {
+      writer.mission_id = null;
+      writer.run_id = null;
+      writer.agent_id = null;
+      writer.authorship = 'unknown';
+      writer.writer_class = 'SAVED_FILE_CHANGE';
+    }
+    if (!writer.mission_id && !hasTemplate && !authorizingMissionIds.length) return;
+    // Mission-null observations only when a WORK template authorizes the path, or authorship is proven.
+    if (!writer.mission_id && !hasTemplate && writer.authorship === 'unknown') {
+      // Observation remains inside an active Mission allowlist but unattributed — record without Mission stamp.
+      // Still permitted as boundary-local observation (no cross-Mission ID).
+    }
+
+    const meta = gitMeta(root);
+    const stats = gitNumstat(root, file);
     const observatory = require('./live-observatory');
-    const eventType = 'fs.file_modified';
-    const digest = createHash('sha256').update([workspace, file, lst.mtimeMs, lst.size].join('\0')).digest('hex');
+    const digest = createHash('sha256').update([root, file, stat.mtimeMs, stat.size].join('\0')).digest('hex');
+    const scopeSource = hasTemplate ? 'work_template' : 'active_mission';
     try {
       observatory.record(bridge, {
-        eventType,
+        eventType: 'fs.file_modified',
         missionId: writer.mission_id,
         runId: writer.run_id,
         metadata: {
@@ -215,10 +301,11 @@ function createWorkspaceActivityWatch(bridge) {
           lines_added: stats.lines_added,
           lines_removed: stats.lines_removed,
           untracked: stats.untracked === true,
-          mtime_ms: Math.trunc(lst.mtimeMs),
+          mtime_ms: Math.trunc(stat.mtimeMs),
           observation: 'saved_filesystem_change',
           continuous_filesystem_watch: true,
-          scope_source: scope.sources[0] || null
+          scope_source: scopeSource,
+          workspace_bound: true
         },
         idempotencyKey: `ws-watch:${digest}`
       });
@@ -236,13 +323,15 @@ function createWorkspaceActivityWatch(bridge) {
             lines_added: stats.lines_added,
             lines_removed: stats.lines_removed,
             untracked: stats.untracked === true,
-            files_changed: 1
+            files_changed: 1,
+            workspace_bound: true
           },
           idempotencyKey: `ws-git:${digest}`
         });
       }
       bridge.emit?.('change');
     } catch { /* observatory must never abort the watcher */ }
+    void lexical;
   }
 
   function schedule(workspace, relPath) {
@@ -279,7 +368,7 @@ function createWorkspaceActivityWatch(bridge) {
   function refresh() {
     if (stopped) return;
     scopes = authorizedScopes(bridge);
-    const roots = scopes.map(s => s.workspace);
+    const roots = collectWatchRoots(bridge);
     for (const root of roots) attach(root);
     for (const [root, watcher] of watchers) {
       if (!roots.includes(root)) {
@@ -330,6 +419,8 @@ module.exports = {
   collectWatchRoots,
   authorizedScopes,
   pathAuthorized,
+  canonicalAuthorizedFile,
+  missionAllowsPath,
   ACTIVE_MISSION_STATES,
   SECRET_PATH
 };

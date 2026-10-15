@@ -257,7 +257,12 @@
    const facts=node('div',null,'la-facts');
    const repair=card.repair;
    const repairText=repair&&Number.isFinite(repair.remaining)?String(repair.remaining)+(repair.max_repairs!=null?' / '+repair.max_repairs:'')+(repair.phase_label?' · '+repair.phase_label:''):(repair?.phase_label||'Unavailable');
-   const runText=card.active_run?String(card.active_run.worker||'worker')+' · '+String(card.active_run.state||'')+(card.active_run.run_id?' · '+card.active_run.run_id.slice(0,8):''):(card.worker_active?'Active run':'No active Run');
+   const ownership=card.run_ownership?.ownership;
+   const runText=card.active_run
+     ?String(card.active_run.worker||'worker')+' · '+String(card.active_run.state||'')+(card.active_run.run_id?' · '+card.active_run.run_id.slice(0,8):'')
+     :(ownership==='unverified'||ownership==='unknown'
+       ?'Ownership unverified — review required'
+       :(card.worker_active?'Active run':'No active Run'));
    for(const [label,value] of [
      ['Project',liveUnavailable(card.project)],
      ['Worker',liveUnavailable(card.worker)],
@@ -267,6 +272,7 @@
      ['Stage',liveUnavailable(card.current_stage)],
      ['Execution',liveUnavailable(card.execution_state)],
      ['Agent Run',runText],
+     ['Run ownership',ownership==='advancing'?'Advancing':ownership==='unverified'?'Unverified — review required':ownership==='unknown'?'Unknown — review required':ownership==='stopped'?'Stopped':(ownership||'None')],
      ['Repair budget',repairText],
      ['Files',String(card.changed_file_count??0)],
      ['Verification',liveUnavailable(card.verification_state)],
@@ -371,8 +377,8 @@
      if(board.supervisor?.summary){
        const sum=board.supervisor.summary;
        const strip=node('section',null,'glass la-supervisor-strip');
-       strip.append(node('h3','Execution sessions'),node('p','Active agent Runs: '+(sum.active_agent_runs??0)+' · Live work: '+(sum.live_work??0)+' · Obsolete rework: '+(sum.obsolete_rework??0)+' · Owner gates: '+(sum.owner_gates??0),'muted'));
-       strip.append(node('p','Terminal/MCP client sessions are not agent Runs. Cursor IDE edits appear only as saved-file observations.','muted'));
+       strip.append(node('h3','Execution sessions'),node('p','Active agent Runs: '+(sum.active_agent_runs??0)+' · Unverified ownership: '+(sum.unverified_runs??0)+' · Unknown ownership: '+(sum.unknown_ownership_runs??0)+' · Live work: '+(sum.live_work??0)+' · Obsolete rework: '+(sum.obsolete_rework??0)+' · Owner gates: '+(sum.owner_gates??0),'muted'));
+       strip.append(node('p','Terminal/MCP client sessions are not agent Runs. Unverified or unknown ownership requires review and is never counted as an active agent Run. Cursor IDE edits appear only as saved-file observations.','muted'));
        if((board.supervisor.obsolete_rework||[]).length){
          const cleanup=button('Archive obsolete rework…',async()=>{
            try{

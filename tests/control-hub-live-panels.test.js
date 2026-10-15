@@ -42,3 +42,11 @@ test('live logs expose recorded observations, not invented worker stdout',()=>{
   assert.match(source,/dataset\.focusKey='live-log-search'/);
   assert.match(source,/dataset\.focusKey='live-log-category'/);
 });
+test('Live Activity surfaces uncertain Run ownership for review',()=>{
+  assert.match(source,/Ownership unverified — review required/);
+  assert.match(source,/Unverified ownership/);
+  assert.match(source,/Unknown ownership/);
+  assert.match(source,/run_ownership/);
+  assert.match(source,/unverified_runs/);
+  assert.match(source,/unknown_ownership_runs/);
+});
