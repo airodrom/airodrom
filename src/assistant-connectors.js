@@ -5,12 +5,42 @@ const {secret}=require('./assistant-intent');
 const ID=/^[A-Za-z0-9_.:-]{1,200}$/;
 const clean=value=>{const raw=String(value||'');if(secret(raw))return '[Sensitive content withheld]';return require('./secret-observation').redactText(require('node:util').stripVTControlCharacters(raw).slice(0,4000));};
 class AssistantConnectors {
- #gmail; #whatsapp; #secret; #request;
- constructor({gmail=null,whatsapp=null,secrets=null,request=fetch}={}){this.#gmail=gmail;this.#whatsapp=whatsapp;this.#secret=secrets;this.#request=request;}
- status(){return {items:[{id:'gmail',protocol:'Google Gmail API / OAuth 2.0',state:this.#gmail&&this.#secret?'configured':'unavailable',read_only:true,live_qualified:false,setup:'Requires owner-configured OAuth gmail.readonly credential reference. No account connected by qualification.',mutations:'Remote draft/send/archive/delete/label/mark-read require separate canonical capabilities; unavailable in this read-only adapter.'},this.#whatsappItem()],authority:false};}
+ #gmail; #whatsapp; #secret; #request; #liveGmail=false; #connectedProbe=null;
+ constructor({gmail=null,whatsapp=null,secrets=null,request=fetch,connected=null}={}){
+  this.#gmail=gmail;this.#whatsapp=whatsapp;this.#secret=secrets;this.#request=request;this.#connectedProbe=connected;
+ }
+ status(){
+  const oauthClient=!!(this.#gmail&&this.#secret);
+  const connected=oauthClient&&(typeof this.#connectedProbe==='function'?!!this.#connectedProbe():true);
+  // configured = OAuth client wiring present. connected = token/reference present.
+  // live_qualified = at least one successful bounded read in this process.
+  let state='unavailable';
+  if(oauthClient&&this.#liveGmail&&connected)state='live_qualified';
+  else if(oauthClient&&connected)state='connected';
+  else if(oauthClient)state='configured';
+  return {items:[{
+   id:'gmail',
+   protocol:'Google Gmail API / OAuth 2.0',
+   state,
+   configured:oauthClient,
+   connected:!!connected,
+   read_only:true,
+   live_qualified:this.#liveGmail&&connected,
+   setup:connected
+    ?(this.#liveGmail
+      ?'Read-only Gmail is live-qualified for bounded list/search/read in this process.'
+      :'OAuth token is present. Run a bounded Gmail search/read to live-qualify. No send/archive/label.')
+    :(oauthClient
+      ?'OAuth client is configured. Account consent still required via /connect gmail. “Configured” is not live access.'
+      :'Requires owner-configured OAuth gmail.readonly credential reference. No account connected by qualification.'),
+   mutations:'Remote draft/send/archive/delete/label/mark-read require separate canonical capabilities; unavailable in this read-only adapter.'
+  },this.#whatsappItem()],authority:false};
+ }
  ensureWhatsapp(whatsapp){if(whatsapp)this.#whatsapp=whatsapp;return this;}
+ markLive(connector){if(connector==='gmail')this.#liveGmail=true;return this;}
+ clearLive(connector){if(connector==='gmail')this.#liveGmail=false;return this;}
  #whatsappItem(){
-  const base={id:'whatsapp',protocol:'WhatsApp Business Cloud API',read_only:true,live_qualified:false,mutations:'Outbound messaging unavailable until a separately governed official adapter is qualified. Sending is not available through this connector.'};
+  const base={id:'whatsapp',protocol:'WhatsApp Business Cloud API',read_only:true,live_qualified:false,connected:false,configured:!!this.#whatsapp,mutations:'Outbound messaging unavailable until a separately governed official adapter is qualified. Sending is not available through this connector.'};
   if(!this.#whatsapp)return {...base,state:'unavailable',setup:'Official inbound webhook source only. Personal WhatsApp history is unavailable through this adapter. No WhatsApp Web automation.',capabilities:{graph:'Unavailable',binding_state:'Unbound',callback:'Not prepared',messages:'Not subscribed',inbound_delivery:'Not yet verified',outbound:'Unavailable'},outbound:'Unavailable'};
   let inbound=null;try{inbound=typeof this.#whatsapp.inboundStatus==='function'?this.#whatsapp.inboundStatus():null;}catch{}
   if(inbound?.capabilities)return {...base,state:inbound.state||'configured',state_label:inbound.state_label,setup:inbound.setup||base.mutations,capabilities:inbound.capabilities,detail:inbound.detail||null,outbound:inbound.outbound||'Unavailable',inbound_delivery:inbound.inbound_delivery||'Not yet verified',mutations:inbound.mutations||base.mutations};
@@ -32,7 +62,7 @@ class AssistantConnectors {
   object(input,['query','id','limit','body']);
   if(action==='status')return this.status().items.find(m=>m.id===connector);
   if(action==='draft') {text(input.body,'draft body',4000);if(secret(input.body))throw Error('Secret-like draft refused.');return {draft:clean(input.body),local_only:true,sent:false,untrusted:true,authority:false};}
-  if(!['unread','recent','search','read','thread','attention','summarize'].includes(action))throw Error('Mutation unavailable; an independently governed capability is required.');
+  if(!['unread','recent','search','read','thread','attention','summarize','job_categorize'].includes(action))throw Error('Mutation unavailable; an independently governed capability is required.');
   const limit=input.limit??10;if(!Number.isInteger(limit)||limit<1||limit>20)throw Error('Bounded connector limit required.');
   if(input.query!==undefined){text(input.query,'query',1000);if(secret(input.query))throw Error('Secret query refused.');}
   let items;
@@ -41,15 +71,44 @@ class AssistantConnectors {
    if(selected&&(!ID.test(input.id||'')))throw Error('Explicit message or thread ID required.');
    if(action==='thread') {const thread=await this.#get('threads/'+encodeURIComponent(input.id),{format:'full'});items=(thread.messages||[]).slice(0,limit).map(m=>this.#mail(m));}
    else if(selected)items=[this.#mail(await this.#get('messages/'+encodeURIComponent(input.id),{format:'full'}))];
-   else {const list=await this.#get('messages',{maxResults:limit,q:['unread','attention'].includes(action)?'is:unread':action==='search'?input.query||'': 'newer_than:7d'});items=[];for(const m of (list.messages||[]).slice(0,limit)){if(!ID.test(m.id))throw Error('Invalid Gmail reference');items.push(this.#mail(await this.#get('messages/'+encodeURIComponent(m.id),{format:'metadata',metadataHeaders:'Subject'})));}}
+   else {
+    const q=action==='job_categorize'
+     ?(input.query||'newer_than:30d (subject:(application OR interview OR recruiter OR hiring OR opportunity) OR from:(recruiter OR talent OR careers))')
+     :(['unread','attention'].includes(action)?'is:unread':action==='search'?input.query||'': 'newer_than:7d');
+    const list=await this.#get('messages',{maxResults:limit,q});
+    items=[];
+    for(const m of (list.messages||[]).slice(0,limit)){
+     if(!ID.test(m.id))throw Error('Invalid Gmail reference');
+     items.push(this.#mail(await this.#get('messages/'+encodeURIComponent(m.id),{format:'metadata',metadataHeaders:'From,Subject,Date'})));
+    }
+   }
+   this.#liveGmail=true;
   }else {
    if(!this.#whatsapp||typeof this.#whatsapp.read!=='function')throw Error('Official WhatsApp inbound source unavailable. Personal WhatsApp history is not supported.');
    const rows=await this.#whatsapp.read({id:input.id,query:input.query,limit});if(!Array.isArray(rows)||rows.length>limit)throw Error('Invalid bounded inbound data');
    items=rows.map(m=>({id:ID.test(m.id||'')?m.id:null,subject:'Official inbound WhatsApp text',content:clean(m.text),untrusted:true,authority:false}));
   }
-  return {items,analysis:['attention','summarize'].includes(action)?items.map(m=>({id:m.id,summary:m.content.slice(0,300),basis:'Bounded selected text excerpt; importance and factual accuracy need operator review.'})):[],untrusted:true,authority:false,worker_context:false};
+  const base={items,analysis:['attention','summarize'].includes(action)?items.map(m=>({id:m.id,summary:m.content.slice(0,300),basis:'Bounded selected text excerpt; importance and factual accuracy need operator review.'})):[],untrusted:true,authority:false,worker_context:false};
+  if(action==='job_categorize'&&connector==='gmail'){
+   const categorized=require('./job-search-manager').categorizeRecruiters(items.map(m=>({
+    id:m.id,from:m.from,subject:m.subject,snippet:m.content,thread_id:m.thread_id
+   })));
+   return {...base,...categorized,live_qualified:true};
+  }
+  return base;
  }
- #mail(m){if(!ID.test(m.id||''))throw Error('Invalid Gmail message reference');const subject=(m.payload?.headers||[]).find(h=>h.name?.toLowerCase()==='subject')?.value;let content=m.snippet||'';const parts=[m.payload,...(m.payload?.parts||[])];const plain=parts.find(p=>p?.mimeType==='text/plain'&&p.body?.data);if(plain)content=Buffer.from(plain.body.data,'base64url').toString('utf8');return {id:m.id,thread_id:ID.test(m.threadId||'')?m.threadId:null,subject:clean(subject),content:clean(content),untrusted:true,authority:false};}
+ #mail(m){
+  if(!ID.test(m.id||''))throw Error('Invalid Gmail message reference');
+  const headers=m.payload?.headers||[];
+  const subject=headers.find(h=>h.name?.toLowerCase()==='subject')?.value;
+  const from=headers.find(h=>h.name?.toLowerCase()==='from')?.value;
+  const date=headers.find(h=>h.name?.toLowerCase()==='date')?.value;
+  let content=m.snippet||'';
+  const parts=[m.payload,...(m.payload?.parts||[])];
+  const plain=parts.find(p=>p?.mimeType==='text/plain'&&p.body?.data);
+  if(plain)content=Buffer.from(plain.body.data,'base64url').toString('utf8');
+  return {id:m.id,thread_id:ID.test(m.threadId||'')?m.threadId:null,from:clean(from),date:clean(date),subject:clean(subject),content:clean(content),untrusted:true,authority:false};
+ }
 }
 // Called by an already authenticated host webhook transport, never by worker text.
 function officialInbound(raw,signature,appSecret){

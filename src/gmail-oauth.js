@@ -35,6 +35,13 @@ class GmailOAuth {
   })();try{return await this.#refresh;}finally{this.#refresh=null;}
  }
  configuration(){return {scope:SCOPE,reference:'host-oauth'};}
- status(){return {configured:!!this.#reference,pending:!!this.#pending,scope:SCOPE,values_displayed:false};}
+ // Opaque account binding marker for host race checks — never an email address.
+ binding(){return this.#reference?('gmail-ref:'+require('node:crypto').createHash('sha256').update(this.#reference).digest('hex').slice(0,16)):null;}
+ status(){return {configured:!!this.#reference,connected:!!this.#reference,pending:!!this.#pending,scope:SCOPE,read_only:true,values_displayed:false,live_qualified:false};}
+ revoke(){
+  const ref=this.#reference;this.#pending=null;this.#reference=null;this.#refresh=null;
+  if(ref){try{this.#vault.forget(ref);}catch{/* already revoked */}this.onReference(null);}
+  return {revoked:true,read_only:true,values_displayed:false};
+ }
 }
 module.exports={GmailOAuth,SCOPE};

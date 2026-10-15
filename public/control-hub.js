@@ -807,6 +807,7 @@
      return;
    }
    if(receipt.kind==='connect_required'&&receipt.can_start_oauth)notice+=' Use /connect '+receipt.connector+' in Terminal to authorize access in your browser.';
+   if(receipt.kind==='personal_ops'||receipt.kind==='job_search')notice=receipt.message||notice;
    if(receipt.kind==='google_form')notice='Open /'+receipt.operation.replace('.', ' ')+' in Terminal for the exact private review form and local confirmation.';
    if(receipt.kind==='vault')notice='Open /vault in the Airodrom terminal for secure entry.';
    if(receipt.kind==='memory'){
