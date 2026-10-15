@@ -4068,5 +4068,63 @@
       "created_at": "A",
       "updated_at": "A"
     }
+  },
+  "cp_global_autopilot": {
+    "fields": [
+      "id",
+      "enabled",
+      "enabled_at",
+      "enabled_by",
+      "enable_request_id",
+      "disabled_at",
+      "disabled_by",
+      "disable_request_id",
+      "stop_count",
+      "updated_at"
+    ],
+    "source": "src/global-autopilot.js",
+    "classification": {
+      "id": "A",
+      "enabled": "A",
+      "enabled_at": "A",
+      "enabled_by": "A",
+      "enable_request_id": "A",
+      "disabled_at": "A",
+      "disabled_by": "A",
+      "disable_request_id": "A",
+      "stop_count": "A",
+      "updated_at": "A"
+    }
+  },
+  "cp_autopilot_activity": {
+    "fields": [
+      "id",
+      "at",
+      "kind",
+      "mission_id",
+      "project_id",
+      "repository",
+      "tool",
+      "summary",
+      "verification",
+      "recovery",
+      "request_id",
+      "actor"
+    ],
+    "source": "src/global-autopilot.js",
+    "classification": {
+      "id": "A",
+      "at": "A",
+      "kind": "A",
+      "mission_id": "A",
+      "project_id": "A",
+      "repository": "B",
+      "tool": "B",
+      "summary": "B",
+      "verification": "B",
+      "recovery": "B",
+      "request_id": "A",
+      "actor": "A"
+    }
   }
 }

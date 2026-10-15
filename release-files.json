@@ -822,5 +822,9 @@
   "docs/DEVELOPER-AUTONOMY-V1.md",
   "docs/adr/0053-developer-autonomy.md",
   "src/developer-autonomy.js",
-  "tests/developer-autonomy-v1.test.js"
+  "tests/developer-autonomy-v1.test.js",
+  "tests/global-autopilot-v1.test.js",
+  "src/global-autopilot.js",
+  "docs/GLOBAL-AUTOPILOT-V1.md",
+  "docs/adr/0054-global-autopilot.md"
 ]

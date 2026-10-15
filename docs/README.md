@@ -56,3 +56,4 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Continuous Autonomous Execution V1](CONTINUOUS-AUTONOMOUS-EXECUTION-V1.md): durable authorized goal continuation without ChatGPT/Cursor ownership; extends Goal Planner.
 
 - [Developer Autonomy V1](DEVELOPER-AUTONOMY-V1.md)
+- [Global Autopilot V1](GLOBAL-AUTOPILOT-V1.md)

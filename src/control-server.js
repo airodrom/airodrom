@@ -329,6 +329,8 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/provider')return this.json(res,200,await require('./assistant-service').providerStatus(this));
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/work-templates')return this.json(res,200,{items:this.bridge.workTemplates.list('operator'),authority:false});
+      if(req.method==='GET'&&url.pathname==='/api/assistant/autopilot')return this.json(res,200,this.bridge.globalAutopilot.status('operator'));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/autopilot/activity')return this.json(res,200,{items:this.bridge.globalAutopilot.activity(Number(url.searchParams.get('limit')||50)||50),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy')return this.json(res,200,this.bridge.developerAutonomy.status('operator'));
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/policy'){const id=url.searchParams.get('policy_id');return this.json(res,200,this.bridge.developerAutonomy.inspect(id)||{error:'Policy unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/grant'){const id=url.searchParams.get('grant_id');return this.json(res,200,this.bridge.developerAutonomy.inspectGrant(id)||{error:'Grant unavailable',authority:false});}
@@ -454,6 +456,9 @@ class ControlServer {
       if(url.pathname==='/api/assistant/development-sessions/close')return this.json(res,200,this.bridge.developmentSessions.close(body,'operator'));
       if(url.pathname==='/api/assistant/work-templates/register')return this.json(res,201,this.bridge.workTemplates.register(body,'operator'));
       if(url.pathname==='/api/assistant/work-templates/revoke')return this.json(res,200,this.bridge.workTemplates.revoke(body,'operator'));
+      if(url.pathname==='/api/assistant/autopilot/enable')return this.json(res,200,this.bridge.globalAutopilot.enable(body,'operator'));
+      if(url.pathname==='/api/assistant/autopilot/disable')return this.json(res,200,this.bridge.globalAutopilot.disable(body,'operator'));
+      if(url.pathname==='/api/assistant/autopilot/stop')return this.json(res,200,this.bridge.globalAutopilot.stop(body,'operator'));
       if(url.pathname==='/api/assistant/developer-autonomy/enroll')return this.json(res,201,this.bridge.developerAutonomy.enroll(body,'operator'));
       if(url.pathname==='/api/assistant/developer-autonomy/revoke')return this.json(res,200,this.bridge.developerAutonomy.revoke(body,'operator'));
       if(url.pathname==='/api/assistant/developer-autonomy/prepare-workspace')return this.json(res,201,this.bridge.developerAutonomy.prepareWorkspace(body,'operator'));

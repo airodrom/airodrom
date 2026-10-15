@@ -248,6 +248,26 @@ class ZeroSetupWork {
       return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
     }
     const { project, workspace } = scope;
+    // Global Autopilot ON: ensure a standing policy for the resolved repo (owner-delegated).
+    if (principal === 'operator' && this.bridge.globalAutopilot?.enabled?.()) {
+      try {
+        this.bridge.globalAutopilot.ensureRepositoryPolicy(project, workspace);
+        this.bridge.globalAutopilot.record({
+          kind: 'task_routed', summary: 'Autopilot routed owner ask to repository',
+          project_id: project.projectId, repository: workspace, actor: 'operator'
+        });
+      } catch (error) {
+        const record = { version: 1, instruction, intent, clarify: true, autopilot: true, authority: false, error: error.message };
+        this.write(request_id, principal, record, 'clarify');
+        return {
+          state: 'CLARIFY',
+          message: 'Autopilot could not prepare this repository: ' + error.message,
+          authority: false,
+          execution_authorized: false,
+          next_action: 'fix_verification_tasks_or_pick_another_repository'
+        };
+      }
+    }
     const policies = this.bridge.developerAutonomy.activePolicyForRepository(workspace);
     const standing = scope.developer_autonomy_policy_id
       ? policies.find(policy => policy.policy_id === scope.developer_autonomy_policy_id)
@@ -444,6 +464,13 @@ class ZeroSetupWork {
       ...(live.intent?.kind === 'exact_file' ? { criteria: [{ id: 'expected-file', type: 'exact_file', path: live.intent.file, content: live.intent.to }] } : {})
     }, 'operator');
     const mission = this.bridge.missions.create(prepared.mission_input, 'operator');
+    if (this.bridge.globalAutopilot?.enabled?.()) {
+      this.bridge.globalAutopilot.record({
+        kind: 'mission_authorized', summary: 'Autopilot authorized standing Mission',
+        mission_id: mission.id, project_id: policy.project_id, repository: policy.repository,
+        tool: 'developer_autonomy.authorizeRoutine', actor: 'operator', request_id: live.request_id
+      });
+    }
     const plan = this.bridge.missions.goalPlanner.create({
       request_id: 'zero-setup-da-plan:' + live.request_id, goal_id: policy.goal_id,
       stages: [{ id: 'work', depends_on: [], mission_id: mission.id, objective: objective.slice(0, 1000),

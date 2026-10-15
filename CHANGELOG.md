@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Added
+- Global Autopilot V1: owner ON/OFF/status/STOP across registered projects; Control Center switch; defaults OFF ([ADR 0054](docs/adr/0054-global-autopilot.md)).
 - Developer Autonomy V1 (Issue #111): standing per-repository owner enrollment, short-lived Mission grants, automatic disposable local clones, bounded repair budgets, draft-PR preparation, and fail-closed revocation/expiry. Never auto-merges or deploys.
 
 ## Unreleased — Personal Operations & Job Search V1 (Issue #112)
