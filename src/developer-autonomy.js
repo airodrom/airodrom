@@ -964,10 +964,12 @@ class DeveloperAutonomy {
 
   /**
    * Mission ceilings derived from an active grant — analogous to WorkTemplates.template().
+   * allowExpired: owner Acceptance of an already-verified Mission may proceed after grant TTL
+   * expiry; dispatch, repair, and new authorization still require an active grant.
    */
-  grantScope(grantId) {
+  grantScope(grantId, { allowExpired = false } = {}) {
     const g = this.inspectGrant(grantId);
-    if (!g || g.state !== 'active') return null;
+    if (!g || (g.state !== 'active' && !(allowExpired && g.state === 'expired'))) return null;
     const policy = this.inspect(g.policy_id);
     if (!policy || policy.state !== 'active') return null;
     this.assertPolicyBoundaries(policy);
@@ -1037,13 +1039,15 @@ class DeveloperAutonomy {
     }
   }
 
-  assertMission(m) {
+  assertMission(m, { allowExpiredGrant = false } = {}) {
     const ref = m.envelope?.developer_autonomy;
     if (!ref) return;
     if (!m.envelope.contract) throw Error('Developer Autonomy contract required');
-    const t = this.grantScope(ref.grant_id);
+    const t = this.grantScope(ref.grant_id, { allowExpired: allowExpiredGrant });
     if (!t || fingerprint(t.developer_autonomy) !== fingerprint(ref)) {
-      throw Error('Developer Autonomy grant expired, revoked or changed');
+      throw Error(allowExpiredGrant
+        ? 'Developer Autonomy grant revoked or changed'
+        : 'Developer Autonomy grant expired, revoked or changed');
     }
   }
 

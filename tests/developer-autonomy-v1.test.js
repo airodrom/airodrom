@@ -498,6 +498,58 @@ test('permitted repair preserves limits, completes, and releases its reservation
   assert.ok(routine(da,policy).grant.grant_id);
 });
 
+test('owner Acceptance remains available after Developer Autonomy grant TTL expiry', async t => {
+  const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
+  const auth = routine(da,policy,{criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
+  const m = b.missions.create(auth.mission_input,'operator');
+  b.missions.dispatch(m.id,{request_id:randomUUID()});
+  const done = await f.settle(m.id);
+  assert.equal(done.state,'awaiting_acceptance');
+  da.assertMission(b.controlStore.requireMission(m.id));
+  b.controlStore.db.prepare('UPDATE cp_developer_autonomy_grants SET expires_at=? WHERE grant_id=?')
+    .run(Date.now() - 1, auth.grant.grant_id);
+  assert.equal(da.inspectGrant(auth.grant.grant_id).state,'expired');
+  assert.throws(()=>da.assertMission(b.controlStore.requireMission(m.id)),/expired|revoked|changed/);
+  assert.throws(()=>da.assertDispatch(b.controlStore.requireMission(m.id)),/expired|revoked|changed|not active/);
+  da.assertMission(b.controlStore.requireMission(m.id),{allowExpiredGrant:true});
+  // Supervisor must not convert verified awaiting_acceptance into blocked on TTL expiry.
+  const task = b.tasks.get(m.task_id);
+  const expiredAuthority = { ...task.mission.authority, expiresAt: Date.now() - 1 };
+  task.mission = { ...task.mission, authority: expiredAuthority };
+  b.tasks.save(task);
+  await b.supervisor.tick(Date.now());
+  assert.equal(b.controlStore.requireMission(m.id).state,'awaiting_acceptance');
+  b.missions.accept(m.id,{
+    request_id:randomUUID(),
+    decision:'accept',
+    verification_id:done.verifications[0].id,
+    rationale:'Independent verification already passed; grant TTL must not block owner Acceptance.'
+  },'operator');
+  assert.equal(b.controlStore.requireMission(m.id).state,'completed');
+});
+
+test('owner Acceptance still works if authority expiry incorrectly blocked after verification', async t => {
+  const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
+  const auth = routine(da,policy,{criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
+  const m = b.missions.create(auth.mission_input,'operator');
+  b.missions.dispatch(m.id,{request_id:randomUUID()});
+  const done = await f.settle(m.id);
+  assert.equal(done.state,'awaiting_acceptance');
+  const verifiedRevision = b.controlStore.requireMission(m.id).revision;
+  b.controlStore.state(m.id,'blocked','Mission authority expired');
+  assert.equal(b.controlStore.requireMission(m.id).state,'blocked');
+  assert.ok(b.controlStore.requireMission(m.id).revision > verifiedRevision);
+  b.controlStore.db.prepare('UPDATE cp_developer_autonomy_grants SET expires_at=? WHERE grant_id=?')
+    .run(Date.now() - 1, auth.grant.grant_id);
+  b.missions.accept(m.id,{
+    request_id:randomUUID(),
+    decision:'accept',
+    verification_id:done.verifications[0].id,
+    rationale:'Verified work remains Acceptable after mistaken authority-expiry block.'
+  },'operator');
+  assert.equal(b.controlStore.requireMission(m.id).state,'completed');
+});
+
 test('unused revoked grant can clean only its proven idle disposable clone', async t => {
   const f = await setup(t), da = f.bridge.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
   const auth = routine(da,policy);

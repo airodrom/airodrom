@@ -482,11 +482,14 @@ class MissionService {
   accept(id,input,owner='operator'){
     const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
     return this.store.request(owner,input.request_id,{op:'accept',id,...input},()=>{
-      if(m.state!=='awaiting_acceptance')throw Error('Mission is not awaiting acceptance');
-      if(input.decision==='accept'){this.bridge.workTemplates.assertMission(m);this.bridge.developerAutonomy.assertMission(m);}
+      const authorityExpiredBlock=m.state==='blocked'&&m.reason==='Mission authority expired';
+      if(m.state!=='awaiting_acceptance'&&!authorityExpiredBlock)throw Error('Mission is not awaiting acceptance');
+      if(input.decision==='accept'){this.bridge.workTemplates.assertMission(m);this.bridge.developerAutonomy.assertMission(m,{allowExpiredGrant:true});}
       if(input.decision==='accept')this.program.assertAcceptance(m,input.verification_id);
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
-      if(!v||v.revision!==m.revision||(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
+      const workspaceHash=(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash;
+      const revisionOk=v&&(v.revision===m.revision||(authorityExpiredBlock&&v.revision<m.revision&&['passed','operator_review'].includes(v.result)));
+      if(!v||!revisionOk||workspaceHash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
       if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this.bridge.workers?.assertEvidence(this.store.run(v.run_id));this.bridge.cursorWorker?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');
