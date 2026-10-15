@@ -2768,7 +2768,8 @@
       "data_class",
       "workers",
       "updated_at",
-      "updated_by"
+      "updated_by",
+      "owner_set"
     ],
     "source": "src/risk-acceptance.js",
     "classification": {
@@ -2778,7 +2779,25 @@
       "data_class": "A",
       "workers": "B",
       "updated_at": "A",
-      "updated_by": "B"
+      "updated_by": "B",
+      "owner_set": "A"
+    }
+  },
+  "cp_trusted_autonomy_origins": {
+    "fields": [
+      "origin",
+      "approved_at",
+      "approved_by",
+      "source",
+      "revoked_at"
+    ],
+    "source": "src/risk-acceptance.js",
+    "classification": {
+      "origin": "B",
+      "approved_at": "A",
+      "approved_by": "B",
+      "source": "B",
+      "revoked_at": "A"
     }
   },
   "project_orchestrator_meta": {
