@@ -14,7 +14,8 @@ const TRANSITIONS = Object.freeze({
   verifying: ['awaiting_acceptance', 'needs_rework', 'blocked', 'cancelled'],
   awaiting_acceptance: ['completed', 'verifying', 'needs_rework', 'blocked', 'cancelled'],
   needs_rework: ['ready', 'verifying', 'cancelled'],
-  blocked: ['ready', 'cancelled', 'paused'],
+  // awaiting_acceptance/completed: restore or Accept after mistaken authority-TTL block of verified work
+  blocked: ['ready', 'cancelled', 'paused', 'awaiting_acceptance', 'completed'],
   paused: ['ready', 'blocked', 'cancelled'],
   cancelled: [],
   completed: []

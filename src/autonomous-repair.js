@@ -162,6 +162,7 @@ function repairInput(parent, diagnosis, { request_id } = {}) {
     // approval reference; only the per-Mission identity (request_id, repair_of) differs.
     ...(env.contract ? { contract: env.contract } : {}),
     ...(env.approval_id ? { approval_id: env.approval_id } : {}),
+    ...(env.developer_autonomy ? { developer_autonomy: { ...env.developer_autonomy } } : {}),
     repair_of: parent.id,
   };
 }
@@ -218,6 +219,8 @@ class AutonomousRepair {
     }
     const pending = autonomous.repair_pending?.[stage.id];
     if (pending && this.store.now() - pending.since >= PENDING_TIMEOUT_MS) return { ok: false, reason: 'repair_pending_timeout' };
+    try { this.bridge.developerAutonomy.assertRepair(failed); }
+    catch { return { ok: false, reason: 'developer_autonomy_repair_denied' }; }
     const classified = require('./failure-classifier').classifyMission(failed, this.store);
     if (classified.policy !== 'repair') return { ok: false, reason: classified.reason || 'failure_not_repairable' };
     const diagnosis = diagnose(failed, this.store, { attempt: repairs + 1, maxAttempts: autonomous.max_repairs, previous: (autonomous.repair_history || []).filter(h => h.stage_id === stage.id) });

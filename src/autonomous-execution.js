@@ -149,7 +149,7 @@ class AutonomousExecution {
       throw Error('Authorized worker allowlist required');
     }
     for (const key of ['max_concurrent_missions', 'max_dispatches', 'max_repairs']) {
-      if (!Number.isSafeInteger(input[key]) || input[key] < 1) throw Error('Invalid autonomous budget');
+      if (!Number.isSafeInteger(input[key]) || input[key] < (key === 'max_repairs' ? 0 : 1)) throw Error('Invalid autonomous budget');
     }
     if (input.max_concurrent_missions > 3 || input.max_dispatches > 100 || input.max_repairs > 10) throw Error('Autonomous budget exceeds V1 ceiling');
     return this.store.request(owner, input.request_id, { op: 'autonomous_authorize', id, workers: input.workers }, () => {
@@ -276,7 +276,13 @@ class AutonomousExecution {
       return { ok: false, reason: 'unverified_execution' };
     }
     const repairs = autonomous.repair_counts[stage.id] || 0;
-    if (repairs >= autonomous.max_repairs) return { ok: false, reason: 'repair_budget' };
+    // The initial dispatch consumes no repair allowance; an admitted correction
+    // may use the final reserved repair slot. Creation enforces the ceiling.
+    if (repairs > autonomous.max_repairs) return { ok: false, reason: 'repair_budget' };
+    const lineage = autonomous.repair_lineage?.[stage.id];
+    if (repairs > 0 && (!mission.envelope.repair_of || lineage?.repair_mission_id !== mission.id || lineage.parent_mission_id !== mission.envelope.repair_of)) {
+      return { ok: false, reason: 'repair_lineage_mismatch' };
+    }
     const prior = this.db.prepare('SELECT state FROM cp_autonomous_claims WHERE plan_id=? AND stage_id=? AND mission_id=?').get(view.id, stage.id, mission.id);
     if (prior && prior.state !== 'abandoned' && prior.state !== 'settled') return { ok: false, reason: 'already_claimed' };
     return { ok: true, mission };

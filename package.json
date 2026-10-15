@@ -363,6 +363,7 @@
     "scripts/live-logs.cjs",
     "docs/AUTONOMOUS-SUPERVISOR-V1.md",
     "docs/adr/0052-autonomous-supervisor.md",
+    "docs/adr/0053-developer-autonomy.md",
     "src/local-bootstrap.js",
     "src/local-model-capability.js",
     "src/local-ollama-broker.js",
@@ -494,6 +495,7 @@
     "src/work-execution-adapter.js",
     "src/worker-registry.js",
     "src/work-templates.js",
+    "src/developer-autonomy.js",
     "src/exact-file-prompt.js",
     "tests/conversation-grounding-v1.test.js",
     "tests/install-hotfix-v101.test.js",
@@ -518,6 +520,8 @@
     "tests/reliability-opencode-live.cjs",
     "src/zero-setup-work.js",
     "docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md",
-    "src/self-repair-fixture.js"
+    "src/self-repair-fixture.js",
+    "tests/developer-autonomy-v1.test.js",
+    "docs/DEVELOPER-AUTONOMY-V1.md"
   ]
 }

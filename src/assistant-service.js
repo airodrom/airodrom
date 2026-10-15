@@ -95,7 +95,7 @@ async function submit(server,input){
   // Terminal/Chat natural-language WORK uses ZeroSetupWork. Never create a draft-only Mission that demands UUID template forms.
   if(!server.bridge.zeroSetupWork)return require('./assistant-missions').newMission(server,{objective:parsed.objective,capability_classes:parsed.capability_classes,request_id:input.request_id,workspace:input.workspace,model:input.model,worker:input.worker,explicit:false});
   const view=await server.bridge.zeroSetupWork.ask({instruction:parsed.objective,request_id:input.request_id},'operator');
-  return {kind:'zero_setup',route:'WORK',...view,authority:false,execution_authorized:false};
+  return {kind:'zero_setup',route:'WORK',...view,authority:false,execution_authorized:!!view.execution_authorized};
  }
  if(parsed.kind!=='conversation')return parsed;
  return server.conversationEngine.start({message:parsed.message,request_id:input.request_id,conversation_id:input.conversation_id,include_memory:input.include_memory!==false,model:/^(?:codex|claude_code):/.test(input.model||'')?'auto':input.model});

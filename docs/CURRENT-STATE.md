@@ -197,3 +197,7 @@ No new feature milestone was invented for this consolidation. Live status observ
 ## WhatsApp verify-token staged rotation — see SHIPPED + INSTALLED above
 
 Owner Meta test callback verification remains pending: stage in owner TTY → Meta Verify/Save → explicit `commit-verify-token` (or `rollback-verify-token`).
+
+## Developer Autonomy V1 (in progress on feature branch)
+
+Standing per-repository enrollment and short-lived Mission grants are implemented on `feat/developer-autonomy-v1`. Not installed on the live service until an owner-accepted revision.

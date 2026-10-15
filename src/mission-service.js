@@ -19,14 +19,16 @@ class MissionService {
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
   createResearch(input,owner='operator'){return this.research.create(input,owner);}
   create(input,owner='operator'){
-    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','data_class','model','worker','development_session_id','repair_of','contract','approval_id']);
+    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','developer_autonomy','data_class','model','worker','development_session_id','repair_of','contract','approval_id']);
     if((input.contract!==undefined||input.approval_id!==undefined)&&owner!=='operator')throw Error('Only operator may register a Mission contract or approval');
     if(input.approval_id!==undefined)identifier(input.approval_id);
     if(input.continuity!==undefined&&!['prior_context','current_prompt'].includes(input.continuity))throw Error('Invalid continuity mode');
     for(const key of ['target_domains','required_memory_keys'])if(input[key]!==undefined&&(!Array.isArray(input[key])||input[key].length>20||input[key].some(v=>typeof v!=='string'||!v||v.length>120)))throw Error('Invalid typed memory requirement');
     if(input.required_assurance!==undefined&&(!Number.isInteger(input.required_assurance)||input.required_assurance<0||input.required_assurance>3))throw Error('Invalid required assurance');
     if(input.maxCostUsdBoundary!==undefined&&(!Number.isFinite(input.maxCostUsdBoundary)||input.maxCostUsdBoundary<0))throw Error('Invalid cost boundary');
+    if(input.work_template&&input.developer_autonomy)throw Error('WORK template and Developer Autonomy grants are mutually exclusive');
     if(input.work_template){if(owner!=='operator')throw Error('Operator template binding required');this.bridge.workTemplates.assertInput(input);}
+    if(input.developer_autonomy){if(owner!=='operator')throw Error('Operator Developer Autonomy binding required');this.bridge.developerAutonomy.assertInput(input);}
     text(input.objective,'Mission objective',4000);identifier(input.request_id);
     const goal=this.bridge.projects.getGoal(input.goal_id);if(goal.projectId!==input.project_id)throw Error('Goal and Project do not match');
     const workspace=repositoryRoot(text(input.workspace,'workspace',1000));if(workspace!==fs.realpathSync(input.workspace))throw Error('Mission workspace must be repository root');
@@ -84,6 +86,7 @@ class MissionService {
       if(owner!=='operator')throw Error('Only operator may register a corrective Mission');
       identifier(input.repair_of);
       const parent=this.store.requireMission(input.repair_of);
+      if(parent.envelope.developer_autonomy&&fingerprint(input.developer_autonomy||null)!==fingerprint(parent.envelope.developer_autonomy))throw Error('Corrective Mission must retain Developer Autonomy grant');
       if(parent.state!=='needs_rework')throw Error('Corrective Mission requires a failed parent Mission');
       if(parent.project_id!==input.project_id||parent.goal_id!==input.goal_id)throw Error('Corrective Mission Goal scope mismatch');
       if(parent.envelope.workspace!==workspace)throw Error('Corrective Mission workspace mismatch');
@@ -103,14 +106,15 @@ class MissionService {
     // ADR 0051 canonical Mission contract. Mandatory for Cursor and for any governed
     // (zero-setup / handoff / corrective) Mission; legacy direct creates without a
     // contract keep their existing authority/manifest/dispatch-policy ceilings.
-    const contractRequired=input.contract!==undefined||!!repairOf&&!!this.store.requireMission(input.repair_of).envelope.contract;
+    if(input.developer_autonomy&&!repairOf&&input.contract!==undefined)throw Error('Developer Autonomy contract is host-derived');
+    const contractRequired=!!input.developer_autonomy||input.contract!==undefined||!!repairOf&&!!this.store.requireMission(input.repair_of).envelope.contract;
     let contract=null;
     if(contractRequired){
       const parentContract=repairOf?this.store.requireMission(input.repair_of).envelope.contract:null;
-      contract=require('./mission-contract').normalizeContract(input.contract??parentContract??{},{
+      contract=require('./mission-contract').normalizeContract(input.contract??parentContract??(input.developer_autonomy?this.bridge.developerAutonomy.contractFor(input):{}),{
         request_id:input.request_id,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,
         dispatch_policy:dispatchPolicy,objective:input.objective,project_id:input.project_id,goal_id:input.goal_id,base_commit_sha:baseline.head||null,branch:baseline.branch||null,
-        repair_of:repairOf,operator:owner==='operator',approval_id:input.approval_id||(parentContract?.audit?.approval_id)||null,fixture:!!fixturePolicy,
+        repair_of:repairOf,operator:owner==='operator',...(input.developer_autonomy?{expires_at:this.bridge.developerAutonomy.inspectGrant(input.developer_autonomy.grant_id).expires_at}:{}),approval_id:input.approval_id||(parentContract?.audit?.approval_id)||null,fixture:!!fixturePolicy,
       });
       if(parentContract&&parentContract.scope_fingerprint!==contract.scope_fingerprint)throw Error('repair_scope_mismatch');
       // Verifier-owned inputs are hashed outside worker write authority (test-tampering
@@ -121,11 +125,13 @@ class MissionService {
     const approvalId=input.approval_id||contract?.audit?.approval_id||null;
     if(approvalId&&this.bridge.missionApprovals)this.bridge.missionApprovals.assertBindable(approvalId,{contract,workspace,repair_of:repairOf});
     return this.store.request(owner,input.request_id,{op:'create_mission',...input},()=>{
-      const projectMission=this.bridge.projects.createMission({goalId:goal.goalId,name:input.objective.slice(0,180),description:input.objective,acceptanceCriteria:criteria.map(c=>c.description||`Verify ${c.id}`)});
-      const envelope={control_version:2,...(contract?{contract}:{}),...(approvalId?{approval_id:approvalId}:{}),...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),...(developmentSessionId?{development_session_id:developmentSessionId}:{}),...(repairOf?{repair_of:repairOf}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
+      this.bridge.developerAutonomy.assertCreation(input);
+      const projectMission=this.bridge.projects.createMission({goalId:goal.goalId,name:input.developer_autonomy?'['+fingerprint(input.request_id).slice(0,8)+'] '+input.objective.slice(0,160):input.objective.slice(0,180),description:input.objective,acceptanceCriteria:criteria.map(c=>c.description||`Verify ${c.id}`)});
+      const envelope={control_version:2,...(contract?{contract}:{}),...(approvalId?{approval_id:approvalId}:{}),...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(input.developer_autonomy?{developer_autonomy:input.developer_autonomy}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),...(developmentSessionId?{development_session_id:developmentSessionId}:{}),...(repairOf?{repair_of:repairOf}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
       const task=this.newTask(projectMission.missionId,goal.projectId,envelope,owner,1);
       const m=this.store.registerMission({id:projectMission.missionId,projectId:goal.projectId,goalId:goal.goalId,taskId:task.id,owner,envelope,ceiling:{...(authority?{mission_authority:authority}:{}),capability_scopes:scopes,authority:'existing SafetyPolicy and signed authority only',policy_version:this.bridge.capabilityHost.policy.policyVersion}});
       this.db.prepare('INSERT INTO cp_mission_tasks VALUES(?,?,1,NULL,NULL,?)').run(task.id,m.id,Date.now());
+      this.bridge.developerAutonomy.bindMission(m);
       this.program.register(m);this.acceptanceEngine.register(m);this.riskAcceptance.register(m,riskPolicy);
       if(developmentSessionId)this.bridge.developmentSessions.attach({session_id:developmentSessionId,mission_id:m.id,confirmed:true},owner);
       if(fixturePolicy)this.store.event('fixture.auto_acceptance.authorized',m.id,{policy:fixturePolicy});
@@ -155,6 +161,7 @@ class MissionService {
   }
   assertAuthority(mission, requirements={}){
     this.bridge.workTemplates.assertMission(mission);
+    this.bridge.developerAutonomy.assertDispatch(mission);
     if(mission.envelope.kind==='work_request')throw Error('Work request draft requires registered scope and verification before execution');
     require('./removed-runtime').assertExecutable(mission);
     // ADR 0051: approval-bound Missions dispatch only while the approval is active and the
@@ -336,6 +343,7 @@ class MissionService {
         this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
         const file=path.join(m.envelope.workspace,change.path);
         if(!m.envelope.allowed_files.includes(change.path)||require('./qualified-coding-adapter').digest(file)!==change.preimage_sha256)throw Error('opencode_preimage_changed');
+        this.bridge.developerAutonomy.assertChanges(this.store.requireMission(m.id),output.changes);
         const applied=await this.bridge.invokeCapability(task.id,{name:'file_write',input:{path:file,content:change.content},requestId:`opencode-apply:${runId}:${i}`});
         if(applied.status!=='completed')throw Error('opencode_apply_not_completed');
       }
@@ -474,11 +482,14 @@ class MissionService {
   accept(id,input,owner='operator'){
     const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
     return this.store.request(owner,input.request_id,{op:'accept',id,...input},()=>{
-      if(m.state!=='awaiting_acceptance')throw Error('Mission is not awaiting acceptance');
-      if(input.decision==='accept')this.bridge.workTemplates.assertMission(m);
+      const authorityExpiredBlock=m.state==='blocked'&&m.reason==='Mission authority expired';
+      if(m.state!=='awaiting_acceptance'&&!authorityExpiredBlock)throw Error('Mission is not awaiting acceptance');
+      if(input.decision==='accept'){this.bridge.workTemplates.assertMission(m);this.bridge.developerAutonomy.assertMission(m,{allowExpiredGrant:true});}
       if(input.decision==='accept')this.program.assertAcceptance(m,input.verification_id);
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
-      if(!v||v.revision!==m.revision||(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
+      const workspaceHash=(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash;
+      const revisionOk=v&&(v.revision===m.revision||(authorityExpiredBlock&&v.revision<m.revision&&['passed','operator_review'].includes(v.result)));
+      if(!v||!revisionOk||workspaceHash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
       if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this.bridge.workers?.assertEvidence(this.store.run(v.run_id));this.bridge.cursorWorker?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');

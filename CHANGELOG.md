@@ -1,3 +1,8 @@
+## Unreleased
+
+### Added
+- Developer Autonomy V1 (Issue #111): standing per-repository owner enrollment, short-lived Mission grants, automatic disposable local clones, bounded repair budgets, draft-PR preparation, and fail-closed revocation/expiry. Never auto-merges or deploys.
+
 ## Unreleased — Personal Operations & Job Search V1 (Issue #112)
 
 - Host capability plans for vague Gmail/Drive/Calendar/Excel/Notes/job-search asks (`AVAILABLE` / `AUTH_REQUIRED` / `NOT_SUPPORTED`); never treat connector `configured` as live access.

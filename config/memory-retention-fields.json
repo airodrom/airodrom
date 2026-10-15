@@ -3993,5 +3993,80 @@
       "bound_missions": "A",
       "summary": "B"
     }
+  },
+  "cp_developer_autonomy_policies": {
+    "fields": [
+      "policy_id",
+      "alias",
+      "repository",
+      "record",
+      "state",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/developer-autonomy.js",
+    "classification": {
+      "policy_id": "A",
+      "alias": "B",
+      "repository": "B",
+      "record": "B",
+      "state": "A",
+      "created_at": "A",
+      "updated_at": "A"
+    }
+  },
+  "cp_developer_autonomy_grants": {
+    "fields": [
+      "grant_id",
+      "policy_id",
+      "request_id",
+      "record",
+      "state",
+      "created_at",
+      "expires_at"
+    ],
+    "source": "src/developer-autonomy.js",
+    "classification": {
+      "grant_id": "A",
+      "policy_id": "A",
+      "request_id": "A",
+      "record": "B",
+      "state": "A",
+      "created_at": "A",
+      "expires_at": "A"
+    }
+  },
+  "cp_developer_autonomy_workspaces": {
+    "fields": [
+      "workspace_id",
+      "policy_id",
+      "grant_id",
+      "mission_id",
+      "path",
+      "repository",
+      "branch",
+      "base_sha",
+      "disposable",
+      "state",
+      "record",
+      "created_at",
+      "updated_at"
+    ],
+    "source": "src/developer-autonomy.js",
+    "classification": {
+      "workspace_id": "A",
+      "policy_id": "A",
+      "grant_id": "A",
+      "mission_id": "A",
+      "path": "B",
+      "repository": "B",
+      "branch": "B",
+      "base_sha": "A",
+      "disposable": "A",
+      "state": "A",
+      "record": "B",
+      "created_at": "A",
+      "updated_at": "A"
+    }
   }
 }

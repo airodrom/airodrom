@@ -236,17 +236,23 @@ function standingAuthorization(bridge) {
     }));
   } catch { /* unavailable */ }
   const active = templates.filter(t => t.active);
+  let autonomy = null;
+  try { autonomy = bridge.developerAutonomy?.status?.('operator') || null; } catch { autonomy = null; }
+  const daActive = autonomy?.active_count || 0;
   return {
-    mechanism: 'work_templates',
-    active_count: active.length,
+    mechanism: daActive ? 'developer_autonomy' : 'work_templates',
+    active_count: daActive || active.length,
     templates: templates.slice(0, 40),
+    developer_autonomy: autonomy,
     routine_within_scope: [
       'repository_inspection',
       'approved_file_edits',
       'local_tests',
       'build_verification',
       'safe_repair_attempts',
-      'approved_worker_execution'
+      'approved_worker_execution',
+      'isolated_worktree_preparation',
+      'draft_pr_preparation'
     ],
     never_auto: [
       'production_deployments',
@@ -255,11 +261,15 @@ function standingAuthorization(bridge) {
       'destructive_operations',
       'unauthorized_disclosure',
       'scope_expansion',
-      'privileged_system_mutations'
+      'privileged_system_mutations',
+      'protected_branch_merge',
+      'paid_external_usage'
     ],
-    note: active.length
-      ? 'Active owner-registered WORK templates authorize routine local work inside their exact scope until expiry or revocation.'
-      : 'No active WORK template. Owner enrollment through authenticated Control Center or /workspace is required for standing local development authorization.',
+    note: daActive
+      ? 'Active Developer Autonomy policies authorize routine local work inside enrolled repositories. Short-lived Mission grants are validated at dispatch. WORK templates remain available for exact-file scopes.'
+      : (active.length
+        ? 'Active owner-registered WORK templates authorize routine local work inside their exact scope until expiry or revocation.'
+        : 'No active Developer Autonomy policy or WORK template. Owner enrollment through authenticated Control Center is required for standing local development authorization.'),
     authority: false
   };
 }

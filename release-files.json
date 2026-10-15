@@ -818,5 +818,9 @@
   "tests/public-web-website-only.test.js",
   "tests/supervisor-boundary-adversarial.test.js",
   "tests/terminal-paste-timeout.test.js",
-  "tests/terminal-paste-tty-smoke.cjs"
+  "tests/terminal-paste-tty-smoke.cjs",
+  "docs/DEVELOPER-AUTONOMY-V1.md",
+  "docs/adr/0053-developer-autonomy.md",
+  "src/developer-autonomy.js",
+  "tests/developer-autonomy-v1.test.js"
 ]
