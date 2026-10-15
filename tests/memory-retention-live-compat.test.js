@@ -84,7 +84,8 @@ test('eight-column table on first startup retains default-off and default owner_
   const acceptance = new RiskAcceptance({ bridge: {}, store: { db } });
   assert.equal(acceptance.preference().enabled, false);
   const row = db.prepare('SELECT enabled,owner_set FROM cp_risk_acceptance_preference WHERE id=1').get();
-  assert.deepEqual(row, { enabled: 0, owner_set: 0 });
+  assert.equal(row.enabled, 0);
+  assert.equal(row.owner_set, 0);
   assert.doesNotThrow(() => identity.assertReadable(db));
 });
 
