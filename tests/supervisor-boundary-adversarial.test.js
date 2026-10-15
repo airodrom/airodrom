@@ -181,6 +181,7 @@ test('safeRel denies sensitive, dotfile and escape paths', () => {
   assert.equal(safeRel('config/private.pem'), null);
   assert.equal(safeRel('secrets/token.txt'), null);
   assert.equal(safeRel('.ssh/id_rsa'), null);
+  assert.equal(safeRel('.pi/credentials.json'), null);
   assert.equal(safeRel('id_rsa.key'), null);
   assert.equal(safeRel('../escape'), null);
   assert.equal(safeRel('.hidden'), null);

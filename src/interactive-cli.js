@@ -110,9 +110,17 @@ async function admitConversation(home, body, { signal, timeoutMs = 15000 } = {})
 function secureIngressLine(line) {
   const value = String(line || '').trim();
   if (!value) return false;
-  if (/^\/(?:vault|secret|quit|exit|help|status|mission|connect|remember|forget|provider|workspace|task|google|gmail|calendar|drive)\b/i.test(value)) return true;
+  if (/^\/(?:vault|secret|quit|exit|help|status|mission|connect|remember|forget|provider|workspace|task|google|gmail|calendar|drive|browser|research)\b/i.test(value)) return true;
   try {
     if (require('./assistant-intent').secret(value)) return true;
+    // ADR 0015/0017: browser consent owns a detached input reader. Discard
+    // trailing paste before opening it, just as for the private-storage guides.
+    // Oversized ordinary paste must still preview and wait for Enter; its
+    // validation error must not turn it into an automatically submitted line.
+    if (Buffer.byteLength(value) <= 4000 && !value.includes('\0')) {
+      const parsed = require('./assistant-intent').parse(value);
+      if (parsed.kind === 'research_session' || parsed.pending_research === 'session') return true;
+    }
     if (require('./private-vault-intent').parse(value) || require('./private-vault-intent').containsPrivate(value)) return true;
     if (require('./personal-storage-intent').containsPrivate(value) || require('./personal-storage-intent').parse(require('./personal-storage-intent').normalize(value))) return true;
   } catch { return true; }

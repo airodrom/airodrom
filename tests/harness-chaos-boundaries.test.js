@@ -5,9 +5,15 @@ const {BoundedNextAction}=require('../src/bounded-next-action');
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 test('expired writer lease remains quarantined on restart until termination is independently reconciled',async t=>{
  const f=await fixture(t),m=f.create(),h=f.bridge.codexAdapter.startTask(m.id,'stale-lease');
- f.bridge.memory.db.prepare('UPDATE cp_leases SET expires_at=1 WHERE run_id=?').run(h.run_id);await f.reopen();
+ f.bridge.memory.db.prepare('UPDATE cp_leases SET expires_at=1 WHERE run_id=?').run(h.run_id);
+ assert.throws(()=>f.bridge.controlStore.acquireLease({resource:f.repo,runId:'replacement'}),/writer/);
+ await f.reopen();
  assert.equal(f.bridge.memory.db.prepare('SELECT state FROM cp_leases WHERE run_id=?').get(h.run_id).state,'quarantined');
- assert.throws(()=>f.bridge.controlStore.acquireLease({resource:f.repo,runId:'replacement'}),/writer/);assert.equal(f.calls(),0);
+ const status=f.bridge.lifecycle.status();assert.equal(status.state,'booting');assert.equal(status.idle,false);assert.ok(status.blockers.leases>=1);
+ assert.throws(()=>f.bridge.controlStore.acquireLease({resource:f.repo,runId:'replacement'}),/admission is closed for maintenance/);
+ assert.throws(()=>f.bridge.lifecycle.resume(status.epoch),/unresolved/);
+ assert.equal(f.bridge.memory.db.prepare('SELECT count(*) n FROM cp_leases WHERE run_id=?').get('replacement').n,0);
+ assert.equal(f.bridge.memory.db.prepare('SELECT state FROM cp_leases WHERE run_id=?').get(h.run_id).state,'quarantined');assert.equal(f.calls(),0);
 });
 test('auth or quota loss after selection blocks before process start and pauses without hidden fallback',async t=>{
  for(const reason of ['auth_required','quota']){
