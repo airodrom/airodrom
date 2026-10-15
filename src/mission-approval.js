@@ -171,6 +171,15 @@ class MissionApprovals {
   allowRepair(failed, { repairs = 0 } = {}) {
     const approvalId = failed.envelope.approval_id;
     const contract = failed.envelope.contract;
+    if (!approvalId && failed.envelope.developer_autonomy) {
+      try {
+        if (!contract) throw Error('Developer Autonomy contract required');
+        require('./mission-contract').assertIntact(contract);
+        this.bridge.developerAutonomy.assertRepair(failed);
+        if (repairs >= contract.budget.max_repair_attempts) return { ok: false, reason: 'contract_budget' };
+        return { ok: true, approval: { approval_id: null } };
+      } catch { return { ok: false, reason: 'developer_autonomy_repair_denied' }; }
+    }
     if (!approvalId) return contract ? { ok: false, reason: 'approval_unavailable' } : { ok: true, approval: { approval_id: null } };
     const r = this.row(approvalId);
     if (!r) return { ok: false, reason: 'approval_unavailable' };

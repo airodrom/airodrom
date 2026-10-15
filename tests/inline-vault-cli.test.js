@@ -30,7 +30,7 @@ function fixture(t,{credentialRefusal=false,nickname}={}){
   output.on('data',chunk=>text+=chunk);
   const until=(expected,offset=0)=>new Promise((resolve,reject)=>{
    const timer=setTimeout(()=>{output.off('data',check);reject(Error('Terminal did not reach expected prompt'));},2000);
-   const check=()=>{if(text.slice(offset).includes(expected)){clearTimeout(timer);output.off('data',check);resolve();}};
+   const check=()=>{if(expected instanceof RegExp?expected.test(text.slice(offset)):text.slice(offset).includes(expected)){clearTimeout(timer);output.off('data',check);resolve();}};
    output.on('data',check);check();
   });
   const send=(value,expected)=>{const ready=until(expected,text.length);input.write(value);return ready;};
@@ -118,7 +118,7 @@ test('visible credential typing and edited paste are refused before service disp
  cli.input.write('Hi Airo, save my pass');cli.input.write('word ');
  const offset=cli.text().length;await cli.send('synthetic-secret-canary\r','You › ');
  assert.match(cli.text().slice(offset),/Credentials typed in chat/);assert.match(cli.text(),/synthetic-secret-canary/);assert.match(cli.text(),/Already echoed text may remain in terminal scrollback/);
- await cli.send('save my password synthetic-edited-canary'+'\x7f'.repeat(5)+'\r','You › ');
+ await cli.send('save my password synthetic-edited-canary'+'\x7f'.repeat(5)+'\r',/Credentials typed in chat[\s\S]*You › /);
  assert.match(cli.text(),/synthetic-edited-canary/);assert.deepEqual(f.serviceCalls,[]);assert.deepEqual(f.calls,[]);
  await cli.send('/quit\r','Local service remains available');await cli.running;
 });

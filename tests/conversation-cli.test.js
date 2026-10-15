@@ -109,6 +109,24 @@ test('multiline bracketed paste shows preview, preserves exact text, and submits
   assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 1);
 });
 
+test('oversized ordinary paste still waits for Enter before input validation', async t => {
+  const f = fixture(t, () => { throw Error('Oversized input must not reach the service'); });
+  const input = ttyInput(f.output);
+  t.after(() => input.end());
+  const running = interactive('synthetic', { input, output: f.output, env: { NO_COLOR: '1', TERM: 'dumb' } });
+  await waitText(f, 'You › ');
+  input.write('\x1b[200~' + 'a'.repeat(4001) + '\nsecond line\x1b[201~');
+  await waitText(f, 'Paste · 2 lines · Enter to send');
+  assert.deepEqual(f.calls, []);
+  assert.doesNotMatch(f.text(), /Invalid assistant input/);
+  input.write('\r');
+  await waitText(f, 'Invalid assistant input');
+  await pause();
+  input.write('/quit\r');
+  await running;
+  assert.deepEqual(f.calls, []);
+});
+
 test('Ctrl+C clears staged multiline paste without submitting', async t => {
   const previousTerm = process.env.TERM; process.env.TERM = 'xterm';
   t.after(() => { if (previousTerm === undefined) delete process.env.TERM; else process.env.TERM = previousTerm; });

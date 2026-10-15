@@ -313,6 +313,12 @@
       "sha256": "8c191481f02b9cb741161109d11af2175087f5cebcf92efd1fb6b9c954181b8f",
       "count": 1,
       "classification": "documented pi_bridge capability alias denial"
+    },
+    {
+      "file": "src/workspace-activity-watch.js",
+      "sha256": "b53f1bacef7e0c704493cfff07a2be1a673db8ee6cd67c0b6f06fed8458ece66",
+      "count": 1,
+      "classification": "historical credential directory denial"
     }
   ]
 }

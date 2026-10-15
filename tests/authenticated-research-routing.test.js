@@ -51,12 +51,18 @@ function cliFixture(t,request){
  const wait=needle=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{output.off('data',check);reject(Error('Synthetic terminal output unavailable'));},3000);const check=()=>{if(text.includes(needle)){clearTimeout(timer);output.off('data',check);resolve();}};output.on('data',check);check();});
  return {input,output,calls,text:()=>text,wait};
 }
-test('exact natural terminal request opens detached visible consent and cancel performs no browser operation',async t=>{
+for (const [label,message] of [['exact',EXACT],['follow-up','I will sign in manually.']])
+for (const pasteMode of ['coalesced', 'bracketed']) test(`${label} natural terminal request opens detached consent and drops ${pasteMode} trailing paste`,async t=>{
+ const conversation_id=randomUUID();
  const server={conversationEngine:{requireSession:id=>({id}),start(){throw Error('No model');}}};
- const f=cliFixture(t,(route,body)=>{if(route==='/api/assistant/conversation/session')return {conversation_id:randomUUID()};assert.equal(route,'/api/assistant/input');return service.submit(server,body);});
+ if(label==='follow-up')await service.submit(server,{message:EXACT,conversation_id,request_id:randomUUID()});
+ const f=cliFixture(t,(route,body)=>{if(route==='/api/assistant/conversation/session')return {conversation_id};assert.equal(route,'/api/assistant/input');return service.submit(server,body);});
  f.input.isTTY=true;f.input.isRaw=false;f.input.setRawMode=v=>f.input.isRaw=v;f.output.isTTY=true;
  const running=interactive('synthetic',{input:f.input,output:f.output,env:{NO_COLOR:'1',TERM:'dumb'}});
- await f.wait('You › ');f.input.write(EXACT+'\npasted-private-canary\n');await f.wait('Choose [1–7]');assert.equal(f.input.listenerCount('data'),1,'Only native consent reader owns input');
+ await f.wait('You › ');
+ const pasted=message+'\npasted-private-canary\n';
+ f.input.write(pasteMode==='bracketed'?'\x1b[200~'+pasted+'\x1b[201~':pasted);
+ await f.wait('Choose [1–7]');assert.equal(f.input.listenerCount('data'),1,'Only native consent reader owns input');
  f.input.write('7\n');await f.wait('authorization cancelled');await new Promise(resolve=>setImmediate(resolve));f.input.write('/quit\n');await running;
  assert.match(f.text(),/AIRODROM · BROWSER ACCESS\nWebsite: https:\/\/app.monarch.com/);assert.doesNotMatch(f.text(),/Credentials typed|pasted-private-canary|Mission .*dispatching/);
  assert.equal(f.calls.filter(c=>c.route==='/api/assistant/input').length,1);assert.equal(f.calls.some(c=>c.route==='/api/assistant/research/session'),false);assert.equal(f.input.isRaw,false);assert.equal(f.input.listenerCount('data'),0);

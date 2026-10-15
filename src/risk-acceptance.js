@@ -94,6 +94,10 @@ class RiskAcceptance {
   }
 
   validateCreation(input, owner) {
+    if (input.developer_autonomy) {
+      if (input.risk_auto_acceptance === true) throw Error('Developer Autonomy requires explicit Acceptance');
+      return null;
+    }
     // A signed owner-registered WORK template never inherits the standing preference.
     // Only one explicit, already owner-approved exact-file Mission may opt in.
     if (input.work_template && input.risk_auto_acceptance !== true) return null;
@@ -145,6 +149,7 @@ class RiskAcceptance {
     // Bind policy inside the request; attempt Acceptance outside so missions.accept is not nested.
     this.store.request(actor, input.request_id, { op: 'risk_authorize_existing', id }, () => {
       const m = this.store.requireMission(id);
+      if (m.envelope.developer_autonomy) throw Error('Developer Autonomy requires explicit Acceptance');
       if (m.state !== 'awaiting_acceptance') throw Error('Mission must be awaiting acceptance for fresh risk authorization');
       const policy = this.validateCreation({
         risk_auto_acceptance: true,
@@ -185,6 +190,7 @@ class RiskAcceptance {
   evaluate(id) {
     const m = this.store.requireMission(id);
     const deny = reason => ({ accepted: false, reason });
+    if (m.envelope.developer_autonomy) return deny('developer_autonomy_requires_owner_acceptance');
     const row = this.db.prepare('SELECT * FROM cp_risk_acceptance WHERE mission_id=?').get(id);
     const policy = m.envelope.risk_auto_acceptance;
     if (!row || !policy?.authorized) return deny('not_preauthorized_risk');

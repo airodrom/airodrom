@@ -18,7 +18,7 @@ function fixture(t, request) {
   return { calls, output, text: () => text };
 }
 
-test('TTY bracketed multiline paste keeps ordinary chat intact with extended admission budget', async t => {
+test('TTY bracketed multiline paste keeps ordinary chat intact with a separate admission budget', async t => {
   const previousTerm = process.env.TERM; process.env.TERM = 'xterm';
   t.after(() => { if (previousTerm === undefined) delete process.env.TERM; else process.env.TERM = previousTerm; });
   const f = fixture(t, (route, body) => {
@@ -43,6 +43,9 @@ test('TTY bracketed multiline paste keeps ordinary chat intact with extended adm
   input.write('\r');
   await new Promise(resolve => setImmediate(resolve));
   input.write('\x1b[200~Line one\nLine two\nLine three\x1b[201~');
+  await wait('Paste · 3 lines · Enter to send');
+  assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 0);
+  input.write('\r');
   await wait('Multiline received.');
   await new Promise(resolve => setImmediate(resolve));
   input.write('/quit\r');
@@ -50,7 +53,7 @@ test('TTY bracketed multiline paste keeps ordinary chat intact with extended adm
   const chat = f.calls.filter(c => c.route === '/api/assistant/input');
   assert.equal(chat.length, 1);
   assert.equal(chat[0].body.message, 'Line one\nLine two\nLine three');
-  assert.equal(chat[0].options.timeoutMs, 35000);
+  assert.equal(chat[0].options.timeoutMs, 15000);
   assert.equal(input.listenerCount('data'), 0);
 });
 
@@ -79,6 +82,9 @@ test('coalesced multiline paste without bracketed mode still admits ordinary cha
   input.write('\r');
   await new Promise(resolve => setImmediate(resolve));
   input.write('alpha\nbeta\n');
+  await wait('Paste · 2 lines · Enter to send');
+  assert.equal(f.calls.filter(c => c.route === '/api/assistant/input').length, 0);
+  input.write('\r');
   await wait('ok');
   await new Promise(resolve => setImmediate(resolve));
   input.write('/quit\r');

@@ -212,6 +212,7 @@ class ZeroSetupWork {
     const prior = this.read(request_id);
     if (prior) {
       if (prior.principal !== principal) throw Error('Resume the original authenticated handoff session; duplicate execution denied');
+      if (principal === 'operator' && prior.developer_autonomy_policy_id && prior.state === 'awaiting_approval') return this.activateAutonomy(prior);
       return this.statusView(prior);
     }
     // ask_airodrom / prepare_mission prepare WORK only. Ordinary chat and public-research
@@ -239,7 +240,7 @@ class ZeroSetupWork {
         next_action: 'use_terminal_public_web_or_research_consent',
       };
     }
-    const intent = parseExactFileIntent(instruction) || { kind: 'general', objective: instruction.trim().slice(0, 1000) };
+    const intent = parseExactFileIntent(instruction) || { kind: 'general', objective: instruction.trim() };
     const scope = this.resolveScope(instruction, intent);
     if (!scope.ok) {
       const record = { version: 1, instruction, intent, clarify: scope, authority: false };
@@ -247,6 +248,29 @@ class ZeroSetupWork {
       return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
     }
     const { project, workspace } = scope;
+    const policies = this.bridge.developerAutonomy.activePolicyForRepository(workspace);
+    const standing = scope.developer_autonomy_policy_id
+      ? policies.find(policy => policy.policy_id === scope.developer_autonomy_policy_id)
+      : policies.length === 1 ? policies[0] : null;
+    if (standing) {
+      const files = this.bridge.developerAutonomy.routineFiles(standing, instruction, intent.file);
+      if (!files.length) return { state: 'CLARIFY', message: 'Name the exact repository file or files to change within this enrollment.', authority: false, execution_authorized: false, next_action: 'identify_files' };
+      const record = {
+        version: 1, instruction, intent, project_id: standing.project_id, goal_id: standing.goal_id,
+        project_name: project.name, workspace, developer_autonomy_policy_id: standing.policy_id,
+        developer_autonomy_policy_hash: standing.policy_hash, allowed_files: files,
+        mission_id: null, plan_id: null, execution_enabled: false, authority: false,
+        presentation: { brand: 'AIRODROM', goal: intent.objective, project_name: project.name,
+          workspace_label: readablePath(workspace), files, worker: 'Local OpenCode',
+          verification: 'Enrolled independent verification', completion_policy: 'Owner Acceptance remains required.',
+          repair_budget: standing.workflows.includes('repair') ? standing.budgets.max_repairs : 0,
+          status: 'Prepared within standing enrollment' }
+      };
+      this.write(request_id, principal, record, 'awaiting_approval');
+      // Only authenticated local owner intake may use existing standing consent.
+      // MCP, model, and connector text remain proposals requiring owner approval.
+      return principal === 'operator' ? this.activateAutonomy(this.read(request_id)) : this.statusView(this.read(request_id));
+    }
     const existing = this.existingTemplate(workspace, project.projectId);
     const goal = existing?.template
       ? this.bridge.projects.getGoal(existing.template.goal_id)
@@ -408,6 +432,37 @@ class ZeroSetupWork {
       });
   }
 
+  activateAutonomy(live) {
+    const da = this.bridge.developerAutonomy;
+    const policy = da.inspect(live.developer_autonomy_policy_id);
+    if (!policy || policy.state !== 'active' || policy.policy_hash !== live.developer_autonomy_policy_hash) throw Error('Standing enrollment changed; prepare a new request');
+    const objective = String(live.intent?.objective || live.instruction);
+    const repairBudget = policy.workflows.includes('repair') ? policy.budgets.max_repairs : 0;
+    const prepared = da.authorizeRoutine({
+      policy_id: policy.policy_id, request_id: 'zero-setup-da:' + live.request_id,
+      objective, allowed_files: live.allowed_files, workflow: 'routine_edit', repair_budget: repairBudget,
+      ...(live.intent?.kind === 'exact_file' ? { criteria: [{ id: 'expected-file', type: 'exact_file', path: live.intent.file, content: live.intent.to }] } : {})
+    }, 'operator');
+    const mission = this.bridge.missions.create(prepared.mission_input, 'operator');
+    const plan = this.bridge.missions.goalPlanner.create({
+      request_id: 'zero-setup-da-plan:' + live.request_id, goal_id: policy.goal_id,
+      stages: [{ id: 'work', depends_on: [], mission_id: mission.id, objective: objective.slice(0, 1000),
+        acceptance_criteria: ['Independent host verification passed', 'Owner Acceptance remains required'],
+        verification_requirements: ['registered_tests', 'git_diff_check'], human_checkpoint: false }],
+      max_runtime_hours: policy.budgets.max_runtime_hours, max_attempts: repairBudget + 1
+    }, 'operator');
+    this.bridge.autonomousExecution.authorize(plan.id, {
+      request_id: 'zero-setup-da-schedule:' + live.request_id, workers: ['opencode'],
+      max_concurrent_missions: 1, max_dispatches: repairBudget + 1, max_repairs: repairBudget, confirmed: true
+    }, 'operator');
+    Object.assign(live, { mission_id: mission.id, plan_id: plan.id, workspace: prepared.workspace.path,
+      execution_enabled: true, state: 'approved', max_repairs: repairBudget,
+      presentation: { ...live.presentation, status: 'Working within standing enrollment' } });
+    this.write(live.request_id, live.principal, live, 'approved');
+    try { this.bridge.autonomousExecution.tick(); } catch { /* scheduler records admission blockers */ }
+    return this.statusView(live);
+  }
+
   async approve(input, owner = 'operator') {
     if (owner !== 'operator') throw Error('Authenticated local operator required');
     object(input, ['request_id', 'confirmed', 'channel']);
@@ -418,6 +473,7 @@ class ZeroSetupWork {
     if (!live) throw Error('Prepared task unavailable');
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
+    if (live.developer_autonomy_policy_id) return this.activateAutonomy(live);
     // Distinct security decisions, presented as one coherent approval experience.
     if (!live.template_ready) {
       if (!live.proposal) throw Error('Template proposal missing');

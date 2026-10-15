@@ -79,17 +79,19 @@ test('current Mission pagination and native summaries remain truthful beyond ret
 });
 test('native menu status features live Missions only; review backlog stays healthy until protected Approvals arrive',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge;
- const review=b.missions.createConversation({request_id:randomUUID(),message:'Synthetic review work'});
- b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance',created_at=2 WHERE id=?").run(review.mission_id);
+ const review=f.create({objective:'Synthetic review work'});
+ const unread=b.missions.createConversation({request_id:randomUUID(),message:'Synthetic unread conversation'});
+ b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance',created_at=1 WHERE id=?").run(unread.mission_id);
+ b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance',created_at=2 WHERE id=?").run(review.id);
  let native=await display.nativeStatus(b);
- assert.equal(native.active_missions,0);assert.equal(native.review_missions,1);assert.equal(native.mission,null);
+ assert.equal(native.active_missions,0);assert.equal(native.review_missions,1);assert.equal(native.unread_results,1);assert.equal(native.mission,null);
  assert.equal(native.menu_tone,'healthy');assert.equal(native.connection_label,'CONNECTED');
  const live=b.missions.createConversation({request_id:randomUUID(),message:'Synthetic live work'});
  b.controlStore.db.prepare("UPDATE cp_missions SET state='running',created_at=3 WHERE id=?").run(live.mission_id);
  native=await display.nativeStatus(b);
  assert.equal(native.active_missions,1);assert.equal(native.mission.id,live.mission_id);assert.equal(native.mission.state,'running');
- assert.equal(native.review_missions,1);assert.equal(native.menu_tone,'working');assert.equal(native.connection_label,'CONNECTED');
- assert.doesNotMatch(JSON.stringify(native),/Synthetic review work|Synthetic live work/);
+ assert.equal(native.review_missions,1);assert.equal(native.unread_results,1);assert.equal(native.menu_tone,'working');assert.equal(native.connection_label,'CONNECTED');
+ assert.doesNotMatch(JSON.stringify(native),/Synthetic review work|Synthetic live work|Synthetic unread conversation/);
 });
 test('safe mutation receipts withhold Acceptance rationale, content and bound envelopes',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,server=new ControlServer(b,{port:0});await server.start();t.after(()=>server.close());

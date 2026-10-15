@@ -9,6 +9,7 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { randomUUID, createHash } = require('node:crypto');
 const { object, identifier, text, fingerprint } = require('./control-plane-store');
+const { transaction } = require('./control-transaction');
 const POLICY = require('./default-runtime').LOCAL_POLICY;
 
 const WORKFLOWS = Object.freeze([
@@ -51,11 +52,11 @@ function file(root, name) {
 }
 
 function git(cwd, args, opts = {}) {
-  return execFileSync('/usr/bin/git', ['-C', cwd, ...args], {
+  return execFileSync('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', cwd, ...args], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: opts.timeout || 30000,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env || {}) }
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', ...(opts.env || {}) }
   }).trim();
 }
 
@@ -67,6 +68,47 @@ function safeGit(cwd, args) {
 function workspaceDirty(root) {
   const snap = require('./control-context').workspaceSnapshot(root);
   return Array.isArray(snap.dirty) ? snap.dirty : [];
+}
+
+function directoryIdentity(name, owned = false) {
+  const st = fs.lstatSync(name);
+  if (!st.isDirectory() || st.isSymbolicLink() || fs.realpathSync(name) !== name
+    || (owned && ((typeof process.getuid === 'function' && st.uid !== process.getuid()) || (st.mode & 0o022)))) {
+    throw Error('Workspace identity or ownership is unsafe');
+  }
+  return { path: name, dev: st.dev, ino: st.ino };
+}
+function identityChain(name) {
+  const result = [];
+  for (let current = name;; current = path.dirname(current)) {
+    result.push(directoryIdentity(current));
+    if (current === path.dirname(current)) break;
+  }
+  return result;
+}
+function assertIdentities(identities) {
+  if (!Array.isArray(identities) || !identities.length) throw Error('Workspace identity unavailable');
+  for (const expected of identities) {
+    const actual = directoryIdentity(expected.path);
+    if (actual.dev !== expected.dev || actual.ino !== expected.ino) throw Error('Workspace identity changed');
+  }
+}
+function privateDirectory(name) {
+  if (!fs.existsSync(name)) fs.mkdirSync(name, { mode: 0o700 });
+  directoryIdentity(name, true);
+  return name;
+}
+function diskBytes(root, ceiling = Infinity) {
+  let bytes = 0, entries = 0;
+  function walk(name) {
+    const st = fs.lstatSync(name);
+    if (++entries > 200000) throw Error('Workspace disk inventory exceeds bounded inspection');
+    bytes += st.size;
+    if (bytes > ceiling) throw Error('Developer Autonomy disk budget exhausted');
+    if (st.isDirectory() && !st.isSymbolicLink()) for (const child of fs.readdirSync(name)) walk(path.join(name, child));
+  }
+  walk(root);
+  return bytes;
 }
 
 class DeveloperAutonomy {
@@ -120,19 +162,143 @@ class DeveloperAutonomy {
   }
 
   dataRoot(repository) {
-    // Prefer a sibling of the enrolled repository so filesystem scopes, HostExecutor
-    // allowlists, and SafetyPolicy all treat the disposable tree as ordinary project
-    // workspace — never under bridge dataDir/runtime roots.
     const parent = path.dirname(fs.realpathSync(repository));
-    const root = path.join(parent, '.airodrom-da-worktrees');
+    let root = path.join(parent, '.airodrom-da-worktrees');
     if (root === this.bridge.dataDir || root.startsWith(this.bridge.dataDir + path.sep)) {
       const token = createHash('sha256').update(String(this.bridge.dataDir || '')).digest('hex').slice(0, 16);
-      const fallback = path.join(os.tmpdir(), 'airodrom-da', token);
-      fs.mkdirSync(path.join(fallback, 'worktrees'), { recursive: true, mode: 0o700 });
-      return fallback;
+      const base = privateDirectory(path.join(fs.realpathSync(os.tmpdir()), 'airodrom-da'));
+      root = path.join(base, token);
     }
-    fs.mkdirSync(path.join(root, 'worktrees'), { recursive: true, mode: 0o700 });
+    privateDirectory(root);
+    privateDirectory(path.join(root, 'worktrees'));
     return root;
+  }
+
+  assertWorkspace(workspace) {
+    if (!workspace || !['ready', 'bound', 'held'].includes(workspace.state)) throw Error('Workspace not usable');
+    assertIdentities(workspace.identities);
+    directoryIdentity(workspace.path, true);
+    if (path.dirname(workspace.path) !== workspace.container) throw Error('Workspace containment changed');
+    if (require('./control-execution').repositoryRoot(workspace.path) !== workspace.path) throw Error('Workspace repository changed');
+  }
+
+  assertVerifiers(policy, workspace, allowed = []) {
+    const taskFile = path.join(workspace, '.vscode/tasks.json');
+    const st = fs.lstatSync(taskFile);
+    if (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1 || fs.realpathSync(taskFile) !== taskFile
+      || st.size > 65536 || fingerprint(fs.readFileSync(taskFile, 'utf8')) !== policy.verifier_hash) {
+      throw Error('Registered verification definitions changed');
+    }
+    const snapshot = require('./control-context').workspaceSnapshot(workspace);
+    const trusted = policy.verifier_baseline;
+    if (!trusted || !Array.isArray(trusted.files)) throw Error('Enrolled verifier baseline unavailable');
+    const expected = new Map(trusted.files.map(entry => [entry.path, entry.sha256]));
+    if (allowed.some(name => expected.has(name)) || trusted.files.some(entry => snapshot.files[entry.path] !== entry.sha256)
+      || Object.keys(snapshot.files).some(name => require('./verifier-baseline').isVerifierOwned(name) && !expected.has(name))) {
+      throw Error('Enrolled verifier inputs changed or overlap writable scope');
+    }
+    for (const entry of trusted.files) {
+      const target = path.join(workspace, entry.path), stat = fs.lstatSync(target);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || fs.realpathSync(target) !== target) throw Error('Verifier path must be canonical');
+    }
+  }
+
+  assertDiskBudget(policy, additional = 0) {
+    const ceiling = policy.budgets.max_disk_mb * 1024 * 1024;
+    const used = diskBytes(path.join(this.dataRoot(policy.repository), 'worktrees'), ceiling);
+    if (used + additional > ceiling) throw Error('Developer Autonomy disk budget exhausted');
+    return used;
+  }
+
+  grantMissions(grantId) {
+    return this.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.developer_autonomy.grant_id')=?")
+      .all(grantId).map(row => this.bridge.controlStore.requireMission(row.id));
+  }
+
+  workspaceIdle(workspace) {
+    const missions = this.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.workspace')=?").all(workspace);
+    if (this.db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND state IN ('held','quarantined')").get(workspace)) return false;
+    for (const { id } of missions) {
+      if (this.db.prepare("SELECT 1 FROM cp_runs WHERE mission_id=? AND (termination_verified<>1 OR state NOT IN ('completed','failed','cancelled','interrupted'))").get(id)) return false;
+      if (this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state NOT IN ('settled','cancelled','blocked')").get(id)) return false;
+      if (this.db.prepare("SELECT 1 FROM cp_invocations i JOIN cp_mission_tasks t ON t.task_id=i.task_id WHERE t.mission_id=? AND i.state<>'settled'").get(id)) return false;
+    }
+    return true;
+  }
+
+  lineageSettled(missions) {
+    if (!missions.length) return false;
+    const parents = new Set(missions.map(m => m.envelope.repair_of).filter(Boolean));
+    return missions.filter(m => !parents.has(m.id)).every(m => ['completed', 'cancelled'].includes(m.state));
+  }
+
+  reservations(policyId) {
+    let count = 0;
+    for (const row of this.db.prepare('SELECT * FROM cp_developer_autonomy_grants WHERE policy_id=?').all(policyId)) {
+      const grant = JSON.parse(row.record).record, missions = this.grantMissions(row.grant_id);
+      const settled = this.lineageSettled(missions) && this.workspaceIdle(grant.scope.workspace);
+      if (settled && row.state === 'active') this.db.prepare("UPDATE cp_developer_autonomy_grants SET state='consumed' WHERE grant_id=?").run(row.grant_id);
+      if (missions.length ? !settled : row.state === 'active' && row.expires_at > Date.now()) count++;
+    }
+    return count;
+  }
+
+  assertRepair(parent) {
+    const ref = parent.envelope.developer_autonomy;
+    if (!ref) return;
+    this.assertMission(parent);
+    const grant = this.inspectGrant(ref.grant_id), policy = this.inspect(ref.policy_id);
+    if (!policy.workflows.includes('repair') || this.grantMissions(ref.grant_id).filter(m => m.envelope.repair_of).length >= grant.repair_budget) {
+      throw Error('Developer Autonomy repair budget exhausted');
+    }
+    if (!this.workspaceIdle(parent.envelope.workspace)) throw Error('Developer Autonomy repair termination unverified');
+    if (this.grantMissions(ref.grant_id).some(m => m.envelope.repair_of === parent.id)) throw Error('Developer Autonomy repair already exists');
+  }
+
+  contractFor(input) {
+    const grant = this.inspectGrant(input.developer_autonomy.grant_id);
+    if (!grant || grant.state !== 'active') throw Error('Developer Autonomy grant unavailable');
+    return { identity: { expires_at: grant.expires_at },
+      objective: { original_instruction: input.objective },
+      budget: { risk_class: 'normal', max_repair_attempts: grant.repair_budget,
+        max_wall_clock_ms: Math.min(grant.expires_at - grant.created_at, grant.manifest.mission.budget.max_runtime_hours * 3600000),
+        max_worker_invocations: grant.repair_budget + 1 } };
+  }
+
+  assertCreation(input) {
+    const parent = input.repair_of ? this.bridge.controlStore.requireMission(input.repair_of) : null;
+    if (parent?.envelope.developer_autonomy) {
+      if (fingerprint(input.developer_autonomy || null) !== fingerprint(parent.envelope.developer_autonomy)) throw Error('Corrective Mission must retain Developer Autonomy grant');
+      this.assertRepair(parent);
+    }
+    if (!input.developer_autonomy) return;
+    this.assertInput(input);
+    const missions = this.grantMissions(input.developer_autonomy.grant_id);
+    if (missions.length && !parent?.envelope.developer_autonomy) throw Error('Developer Autonomy grant already bound to a Mission');
+    if (parent && !missions.some(m => m.id === parent.id)) throw Error('Corrective Mission grant lineage mismatch');
+  }
+
+  bindMission(mission) {
+    const ref = mission.envelope.developer_autonomy;
+    if (!ref?.workspace_id) return;
+    const ws = this.inspectWorkspace(ref.workspace_id);
+    this.assertWorkspace(ws);
+    if (ws.grant_id !== ref.grant_id) throw Error('Workspace grant mismatch');
+    this.db.prepare('UPDATE cp_developer_autonomy_workspaces SET mission_id=?,updated_at=? WHERE workspace_id=?')
+      .run(mission.id, Date.now(), ws.workspace_id);
+  }
+
+  assertChanges(mission, changes) {
+    const ref = mission.envelope.developer_autonomy;
+    if (!ref) return;
+    this.assertMission(mission);
+    const policy = this.inspect(ref.policy_id);
+    let growth = 0;
+    for (const change of changes) {
+      const name = file(mission.envelope.workspace, change.path);
+      growth += Math.max(0, Buffer.byteLength(change.content || '') - fs.statSync(name).size);
+    }
+    this.assertDiskBudget(policy, growth);
   }
 
   // --- Standing policy -------------------------------------------------------
@@ -212,7 +378,7 @@ class DeveloperAutonomy {
         throw Error('Invalid budget field ' + k);
       }
     }
-    if (budgets.max_repairs > 8 || budgets.max_concurrent_missions > 2 || budgets.grant_ttl_minutes < 5
+    if (budgets.max_repairs > require('./mission-contract').ABSOLUTE_MAX_REPAIRS || budgets.max_concurrent_missions > 2 || budgets.grant_ttl_minutes < 5
       || budgets.grant_ttl_minutes > 1440 || budgets.max_files < 1 || budgets.max_files > 16
       || budgets.max_worktrees < 1 || budgets.max_worktrees > 8 || budgets.max_runtime_hours < 1
       || budgets.max_runtime_hours > 24 || budgets.max_disk_mb < 64 || budgets.max_disk_mb > 8192) {
@@ -239,6 +405,7 @@ class DeveloperAutonomy {
         syntax: []
       },
       verifier_hash: fingerprint(raw),
+      verifier_baseline: require('./verifier-baseline').capture(repository, { verification: { diff_check: input.diff_check, tests: input.default_tests }, baseline: require('./control-context').workspaceSnapshot(repository) }),
       never_auto: [...NEVER_AUTO],
       enrolled_at: now,
       expires_at: now + input.duration_days * 86400000,
@@ -271,10 +438,7 @@ class DeveloperAutonomy {
     if (p.status === 'archived' || g.projectId !== p.projectId || !p.repositories.includes(t.repository)) {
       throw Error('Project, goal and repository boundary mismatch');
     }
-    const taskFile = path.join(t.repository, '.vscode/tasks.json');
-    if (fs.realpathSync(taskFile) !== taskFile || fingerprint(fs.readFileSync(taskFile, 'utf8')) !== t.verifier_hash) {
-      throw Error('Registered verification definitions changed');
-    }
+    this.assertVerifiers(t, t.repository);
   }
 
   readPolicy(policyId) {
@@ -369,7 +533,19 @@ class DeveloperAutonomy {
     if (!policy || policy.state !== 'active') throw Error('Active Developer Autonomy policy required');
     this.assertPolicyBoundaries(policy);
 
-    const open = this.db.prepare("SELECT count(*) n FROM cp_developer_autonomy_workspaces WHERE policy_id=? AND state IN ('ready','bound','held')")
+    const prior = this.db.prepare("SELECT workspace_id FROM cp_developer_autonomy_workspaces WHERE json_extract(record,'$.request_id')=?").get(input.request_id);
+    const requestHash = fingerprint({ policy_id: input.policy_id, prefer_disposable: input.prefer_disposable === true, branch_prefix: input.branch_prefix || 'airodrom/da' });
+    if (prior) {
+      const ws = this.inspectWorkspace(prior.workspace_id);
+      if (ws.request_hash !== requestHash) throw Error('Workspace request replay scope mismatch');
+      this.assertWorkspace(ws);
+      return ws;
+    }
+    this.assertDiskBudget(policy);
+    const objectRoot = fs.realpathSync(path.resolve(policy.repository, git(policy.repository, ['rev-parse', '--git-path', 'objects'])));
+    const tracked = git(policy.repository, ['ls-tree', '-rl', 'HEAD']).split('\n').reduce((sum, line) => sum + (Number(line.split(/\s+/)[3]) || 0), 0);
+    this.assertDiskBudget(policy, tracked + diskBytes(objectRoot) + 1024 * 1024);
+    const open = this.db.prepare("SELECT count(*) n FROM cp_developer_autonomy_workspaces WHERE policy_id=? AND state IN ('ready','bound','held','invalid')")
       .get(policy.policy_id).n;
     if (open >= policy.budgets.max_worktrees) throw Error('Worktree budget exhausted');
 
@@ -401,6 +577,7 @@ class DeveloperAutonomy {
         ? 'Unable to prepare disposable workspace while preserving dirty work: '
         : 'Unable to prepare isolated workspace: ') + clone.err);
     }
+    directoryIdentity(workPath, true);
     const branched = safeGit(workPath, ['checkout', '-b', branch]);
     if (!branched.ok) {
       fs.rmSync(workPath, { recursive: true, force: true });
@@ -423,7 +600,7 @@ class DeveloperAutonomy {
         });
       }
     } catch (e) {
-      safeGit(policy.repository, ['worktree', 'remove', '--force', workPath]);
+      // Preserve the clone if registration fails; no source checkout is changed.
       throw e;
     }
 
@@ -431,6 +608,9 @@ class DeveloperAutonomy {
       workspace_id: workspaceId,
       policy_id: policy.policy_id,
       request_id: input.request_id,
+      request_hash: requestHash,
+      container: trees,
+      identities: identityChain(workPath),
       path: workPath,
       repository: policy.repository,
       branch,
@@ -446,6 +626,7 @@ class DeveloperAutonomy {
     this.bridge.controlStore.event('developer_autonomy.workspace_prepared', null, {
       workspace_id: workspaceId, policy_id: policy.policy_id, path: workPath, disposable, reason, authority: false
     });
+    this.assertDiskBudget(policy);
     return { ...record, state: 'ready', authority: false };
   }
 
@@ -480,6 +661,10 @@ class DeveloperAutonomy {
   }
 
   cleanupWorkspace(input, owner) {
+    return transaction(this.db, () => this.cleanupOwnedWorkspace(input, owner));
+  }
+
+  cleanupOwnedWorkspace(input, owner) {
     this.owner(owner);
     object(input, ['workspace_id', 'confirmed']);
     if (input.confirmed !== true) throw Error('Explicit cleanup confirmation required');
@@ -500,7 +685,13 @@ class DeveloperAutonomy {
     }
     // Remove only the disposable clone directory. Never touch the source repository.
     try {
-      if (fs.existsSync(row.path)) fs.rmSync(row.path, { recursive: true, force: true });
+      this.assertWorkspace({ ...record, state: row.state });
+      const quarantine = path.join(record.container, '.cleanup-' + randomUUID());
+      fs.renameSync(row.path, quarantine);
+      const moved = directoryIdentity(quarantine, true), expected = record.identities[0];
+      if (moved.dev !== expected.dev || moved.ino !== expected.ino) throw Error('Workspace identity changed during cleanup; preserved for review');
+      assertIdentities(record.identities.slice(1));
+      fs.rmSync(quarantine, { recursive: true });
     } catch (e) {
       const held = { ...record, cleanup: { action: 'hold', reason: 'workspace_remove_failed', detail: String(e.message || e).slice(0, 200) } };
       this.db.prepare("UPDATE cp_developer_autonomy_workspaces SET state='held', record=?, updated_at=? WHERE workspace_id=?")
@@ -530,9 +721,17 @@ class DeveloperAutonomy {
     if (row.disposable !== 1) {
       return { action: 'hold', reason: 'not_disposable', note: 'Only task-owned disposable workspaces may be removed automatically.' };
     }
-    if (!record.path || !fs.existsSync(record.path)) {
-      return { action: 'clean', reason: 'path_already_absent' };
-    }
+    try { this.assertWorkspace({ ...record, state: row.state }); }
+    catch { return { action: 'hold', reason: 'workspace_identity_or_containment_changed' }; }
+    const missions = this.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.workspace')=?").all(row.path)
+      .map(item => this.bridge.controlStore.requireMission(item.id));
+    if (!this.workspaceIdle(row.path)) return { action: 'hold', reason: 'active_or_unverified_writer' };
+    if (missions.length && !this.lineageSettled(missions)) return { action: 'hold', reason: 'mission_not_settled' };
+    if (row.grant_id && !missions.length && this.inspectGrant(row.grant_id)?.state === 'active') return { action: 'hold', reason: 'grant_not_settled' };
+    const flags = safeGit(row.path, ['ls-files', '-v', '-z']);
+    if (!flags.ok || flags.out.split('\0').some(entry => entry && (/^[a-z]/.test(entry) || entry[0] === 'S'))) return { action: 'hold', reason: 'hidden_index_content_retained' };
+    const ignored = safeGit(row.path, ['ls-files', '--others', '--ignored', '--exclude-standard']);
+    if (!ignored.ok || ignored.out) return { action: 'hold', reason: 'ignored_or_unknown_content_retained' };
     let dirty = [];
     try { dirty = workspaceDirty(record.path); }
     catch {
@@ -542,7 +741,7 @@ class DeveloperAutonomy {
       return { action: 'hold', reason: 'uncommitted_or_unique_content', dirty: dirty.slice(0, 20) };
     }
     // Unique commits on the task branch beyond base are evidence — HOLD unless empty of unique content.
-    const ahead = safeGit(record.path, ['rev-list', '--count', (record.base_sha || 'HEAD') + '..HEAD']);
+    const ahead = safeGit(record.path, ['rev-list', '--count', '--all', '--reflog', '--not', record.base_sha || 'HEAD']);
     if (!ahead.ok) return { action: 'hold', reason: 'history_unknown' };
     const count = Number(ahead.out || 0);
     if (Number.isFinite(count) && count > 0) {
@@ -554,6 +753,10 @@ class DeveloperAutonomy {
   // --- Short-lived grants ----------------------------------------------------
 
   issueGrant(input, owner) {
+    return transaction(this.db, () => this.issueGrantRecord(input, owner));
+  }
+
+  issueGrantRecord(input, owner) {
     this.owner(owner);
     object(input, [
       'policy_id', 'request_id', 'workspace', 'workspace_id', 'allowed_files',
@@ -571,17 +774,14 @@ class DeveloperAutonomy {
     }
     const existing = this.db.prepare('SELECT * FROM cp_developer_autonomy_grants WHERE request_id=?').get(input.request_id);
     if (existing) {
-      const prev = JSON.parse(existing.record);
-      if (fingerprint(prev.scope) !== fingerprint(this.grantScopePayload(input, policy))) {
+      const prev = JSON.parse(existing.record).record;
+      if (prev.policy_id !== input.policy_id || prev.workspace_id !== (input.workspace_id || null) || fingerprint(prev.scope) !== fingerprint(this.grantScopePayload(input, policy))) {
         throw Error('Grant request_id replay with different scope denied');
       }
       return this.inspectGrant(existing.grant_id);
     }
 
-    const concurrent = this.db.prepare(`
-      SELECT count(*) n FROM cp_developer_autonomy_grants g
-      JOIN cp_developer_autonomy_policies p ON p.policy_id=g.policy_id
-      WHERE g.policy_id=? AND g.state='active' AND g.expires_at>?`).get(policy.policy_id, Date.now()).n;
+    const concurrent = this.reservations(policy.policy_id);
     if (concurrent >= policy.budgets.max_concurrent_missions) throw Error('Concurrent Mission budget exhausted');
 
     const workspace = fs.realpathSync(input.workspace);
@@ -596,7 +796,8 @@ class DeveloperAutonomy {
       if (!ws || ws.policy_id !== policy.policy_id || fs.realpathSync(ws.path) !== workspace) {
         throw Error('Workspace binding mismatch');
       }
-      if (!['ready', 'bound'].includes(ws.state)) throw Error('Workspace not usable');
+      this.assertWorkspace(ws);
+      if (ws.grant_id) throw Error('Workspace already bound to a grant');
     } else if (workspace !== policy.repository) {
       throw Error('Unregistered disposable workspace; prepareWorkspace first');
     }
@@ -607,12 +808,15 @@ class DeveloperAutonomy {
       throw Error('Exact allowed files within policy budget required');
     }
     for (const f of input.allowed_files) file(workspace, f);
+    this.assertVerifiers(policy, workspace, input.allowed_files);
+    this.assertDiskBudget(policy);
 
     const diffCheck = input.diff_check || policy.verification_defaults.diff_check;
     const tests = input.tests || policy.verification_defaults.tests;
     text(diffCheck, 'diff-check', 100);
     if (!Array.isArray(tests) || !tests.length || tests.length > 4) throw Error('Focused tests required');
     for (const label of [diffCheck, ...tests]) text(label, 'registered task label', 100);
+    if (diffCheck !== policy.verification_defaults.diff_check || fingerprint([...tests].sort()) !== fingerprint([...policy.verification_defaults.tests].sort())) throw Error('Verification must use enrolled tasks');
     const raw = fs.readFileSync(path.join(workspace, '.vscode/tasks.json'), 'utf8');
     const tasks = JSON.parse(raw).tasks;
     for (const label of [diffCheck, ...tests]) {
@@ -746,7 +950,8 @@ class DeveloperAutonomy {
   inspectGrant(grantId) {
     const r = this.readGrant(grantId);
     if (!r) return null;
-    let state = r.state;
+    this.reservations(r.record.policy_id);
+    let state = this.db.prepare('SELECT state FROM cp_developer_autonomy_grants WHERE grant_id=?').get(grantId).state;
     if (state === 'active' && r.expires_at <= Date.now()) state = 'expired';
     if (state === 'active') {
       try {
@@ -767,6 +972,9 @@ class DeveloperAutonomy {
     if (!policy || policy.state !== 'active') return null;
     this.assertPolicyBoundaries(policy);
     const workspace = g.scope.workspace;
+    if (g.workspace_id) this.assertWorkspace(this.inspectWorkspace(g.workspace_id));
+    this.assertVerifiers(policy, workspace, g.scope.allowed_files);
+    this.assertDiskBudget(policy);
     for (const f of g.scope.allowed_files) file(workspace, f);
     return {
       project_id: g.project_id,
@@ -808,11 +1016,12 @@ class DeveloperAutonomy {
     const ref = input.developer_autonomy;
     object(ref, ['policy_id', 'grant_id', 'hash', 'workspace_id', 'repair_budget']);
     const t = this.grantScope(ref.grant_id);
-    if (!t || ref.hash !== t.developer_autonomy.hash || ref.policy_id !== t.developer_autonomy.policy_id) {
+    if (!t || fingerprint(ref) !== fingerprint(t.developer_autonomy)) {
       throw Error('Developer Autonomy grant expired, revoked or changed');
     }
     for (const key of ['project_id', 'goal_id', 'workspace', 'allowed_files', 'verification', 'capability_scopes', 'authority', 'dispatch_policy', 'fallback_agents', 'manifest']) {
-      if (fingerprint(input[key]) !== fingerprint(t[key])) throw Error('Immutable grant ceiling mismatch');
+      const canonical = value => key === 'dispatch_policy' ? require('./agent-dispatch').dispatchPolicy(value) : value;
+      if (fingerprint(canonical(input[key])) !== fingerprint(canonical(t[key]))) throw Error('Immutable grant ceiling mismatch');
     }
     if (input.preferred_agent !== 'opencode' && !(t.workers || []).includes(input.preferred_agent)) {
       throw Error('Worker not permitted by Developer Autonomy grant');
@@ -820,7 +1029,7 @@ class DeveloperAutonomy {
     if (input.preferred_agent !== 'opencode') {
       // External workers require independent qualification at dispatch; deny automatic Acceptance.
     }
-    if (input.automatic_acceptance || input.fixture_auto_acceptance) {
+    if (input.automatic_acceptance || input.fixture_auto_acceptance || input.risk_auto_acceptance) {
       throw Error('Developer Autonomy requires OpenCode-local defaults and explicit Acceptance');
     }
     if (input.preferred_agent === 'opencode' && (input.fallback_agents || []).length) {
@@ -831,8 +1040,9 @@ class DeveloperAutonomy {
   assertMission(m) {
     const ref = m.envelope?.developer_autonomy;
     if (!ref) return;
+    if (!m.envelope.contract) throw Error('Developer Autonomy contract required');
     const t = this.grantScope(ref.grant_id);
-    if (!t || t.developer_autonomy.hash !== ref.hash || t.developer_autonomy.policy_id !== ref.policy_id) {
+    if (!t || fingerprint(t.developer_autonomy) !== fingerprint(ref)) {
       throw Error('Developer Autonomy grant expired, revoked or changed');
     }
   }
@@ -895,6 +1105,17 @@ class DeveloperAutonomy {
 
   // --- Routine authorization helper (enroll once, then Fix this) -------------
 
+  routineFiles(policy, instruction, exactFile) {
+    const trusted = new Set(policy.verifier_baseline.files.map(item => item.path));
+    const eligible = git(policy.repository, ['ls-files', '-z']).split('\0').filter(Boolean).filter(name => {
+      try { file(policy.repository, name); return !trusted.has(name); } catch { return false; }
+    });
+    const named = exactFile ? eligible.filter(name => name === exactFile)
+      : eligible.filter(name => instruction.split(/[\s`"'(),;:]+/).includes(name));
+    const files = named.length ? named : eligible.length === 1 ? eligible : [];
+    return files.length && files.length <= policy.budgets.max_files ? files : [];
+  }
+
   authorizeRoutine(input, owner) {
     this.owner(owner);
     object(input, [
@@ -905,6 +1126,8 @@ class DeveloperAutonomy {
     identifier(input.request_id);
     const policy = this.inspect(input.policy_id);
     if (!policy || policy.state !== 'active') throw Error('Active Developer Autonomy policy required');
+    const previous = this.db.prepare('SELECT grant_id FROM cp_developer_autonomy_grants WHERE request_id=?').get(input.request_id);
+    if (!previous && this.reservations(policy.policy_id) >= policy.budgets.max_concurrent_missions) throw Error('Concurrent Mission budget exhausted');
     const workspace = this.prepareWorkspace({
       policy_id: policy.policy_id,
       request_id: input.request_id + ':workspace',
