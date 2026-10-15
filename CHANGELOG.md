@@ -1,3 +1,12 @@
+## Unreleased — Personal Operations & Job Search V1 (Issue #112)
+
+- Host capability plans for vague Gmail/Drive/Calendar/Excel/Notes/job-search asks (`AVAILABLE` / `AUTH_REQUIRED` / `NOT_SUPPORTED`); never treat connector `configured` as live access.
+- Actionable conversation `safe_error_class` reporting (timeout, content policy, empty response, etc.) instead of a single opaque model-failure string.
+- Gmail connector states: configured → connected → live_qualified; repeated `metadataHeaders` query params; categorical OAuth refresh failure classes; OAuth revoke; standing automation exact booleans + bounded expiry fail-closed.
+- Local Job Search Manager: CSV formula-injection neutralization with lossless apostrophe round-trip, typed evidence, path/symlink bounds (exclusive `O_EXCL|O_NOFOLLOW` temps/backups for CSV and `manager.json`), authenticated propose→`review_proposal` (human-readable company/role/evidence/before→after in Control Center Approvals)→`approve_proposal`→consume mutation gate bound to payload digest, status preservation, local-timezone digests. `operator_confirmation` is a manual claim (not the approval id); authorization is standing or reviewed `host_approval_id`. Conversation cannot auto-approve. Calendar/Drive/Sheets remain honestly NOT_SUPPORTED.
+- Recall: “What do you remember about my job search?” uses bounded compound-query normalization without weakening Memory privacy.
+- Docs: `docs/PERSONAL-OPS-JOB-SEARCH-V1.md` (includes f968 conversation-routing release-gate note). Focused tests: `tests/personal-ops-job-search-v1.test.js`.
+
 ## Unreleased — Autonomous Supervisor V1 (Issue #108)
 
 - Project Mission V2 / CAE execution into Live Activity with explicit states, active Run honesty, multi-generation repair-budget lineage, and AUTO worker admission (no second scheduler).

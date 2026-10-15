@@ -48,6 +48,7 @@ class ControlServer {
       }});
       if(config.reference)this.#wireAssistantConnectors();
     }
+    this.#wirePersonalOps();
     this.conversationEngine=bridge.conversationEngine ||= new(require('./conversation-engine').ConversationEngine)(bridge,conversationOptions);
     this.conversationEngine.developmentFacts=()=>{
       try{
@@ -92,8 +93,25 @@ class ControlServer {
     this.bridge.assistantConnectors = new (require('./assistant-connectors').AssistantConnectors)({
       gmail: this.gmailOAuth.configuration(),
       secrets: { resolve: () => this.gmailOAuth.resolve() },
+      connected: () => !!this.gmailOAuth.status().configured,
       ...whatsappSource(this.bridge)
     });
+  }
+  #wirePersonalOps() {
+    if (!this.bridge.jobSearchManager) {
+      const automation = require('./personal-ops-automation');
+      this.bridge.jobSearchManager = require('./job-search-manager').createJobSearchManager({
+        dataDir: this.bridge.dataDir,
+        policy: automation.trackerPolicy(this.bridge.dataDir),
+        audit: {
+          append: (type, detail) => this.bridge.ledger?.record?.({
+            eventType: type, agent: 'bridge', direction: 'internal',
+            metadata: { version: 1, ...detail, execution_authority: false }
+          })
+        }
+      });
+    }
+    this.bridge.personalOpsAutomation ||= require('./personal-ops-automation').load(this.bridge.dataDir);
   }
   assertCanRun(id) {
     const task = this.bridge.tasks.get(id);
@@ -311,7 +329,19 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup')return this.json(res,200,{items:this.bridge.zeroSetupWork.listPending('operator'),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup/status'){const id=url.searchParams.get('request_id');return this.json(res,200,this.bridge.zeroSetupWork.refreshState(id)||{error:'Prepared ask request unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
-      if(req.method==='GET'&&url.pathname==='/api/assistant/connectors')return this.json(res,200,require('./assistant-service').connectors(this.bridge).status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/connectors'){
+        const status=require('./assistant-service').connectors(this.bridge).status();
+        if(this.gmailOAuth){
+          const oauth=this.gmailOAuth.status();
+          const gmail=status.items.find(i=>i.id==='gmail');
+          if(gmail){
+            gmail.last_safe_error_class=oauth.last_safe_error_class||null;
+            gmail.last_failure_phase=oauth.last_failure_phase||null;
+            gmail.oauth_connected=!!oauth.connected;
+          }
+        }
+        return this.json(res,200,status);
+      }
       if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbound')return this.json(res,200,this.bridge.whatsappInbound.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/live-connection')return this.json(res,200,this.bridge.whatsappInbound.liveConnectionReadiness());
@@ -484,6 +514,111 @@ class ControlServer {
       if(url.pathname==='/api/assistant/connect'){
         require('./control-plane-store').object(body,['connector']);if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport.'});
         return this.json(res,200,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback'));
+      }
+      if(url.pathname==='/api/assistant/disconnect'){
+        require('./control-plane-store').object(body,['connector','confirmed']);
+        if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Gmail OAuth is not configured.'});
+        if(body.confirmed!==true)throw Error('Explicit operator confirmation required to revoke Gmail OAuth');
+        const revoked=this.gmailOAuth.revoke();
+        try{this.bridge.assistantConnectors?.clearLive?.('gmail');}catch{/* */}
+        this.#wireAssistantConnectors();
+        const gmailFile=path.join(this.bridge.dataDir,'gmail-oauth-config.json');
+        if(require('./private-json').privateFileExists(gmailFile)){
+          const config=require('./private-json').readPrivateJSON(gmailFile);
+          const next={clientId:config.clientId,reference:null};
+          if(config.clientSecretReference)next.clientSecretReference=config.clientSecretReference;
+          require('./local-bootstrap').writePrivate(gmailFile,next);
+        }
+        return this.json(res,200,{...revoked,connector:'gmail',message:'Gmail OAuth revoked. Re-authorize with /connect gmail when needed.',authority:false});
+      }
+      if(url.pathname==='/api/assistant/personal-ops'){
+        require('./control-plane-store').object(body,['request']);
+        return this.json(res,200,require('./personal-ops').plan(this,body.request||''));
+      }
+      if(url.pathname==='/api/assistant/personal-ops/automation'){
+        require('./control-plane-store').object(body,['standing_gmail_readonly','standing_local_tracker_updates','expires_at','confirmed']);
+        const saved=require('./personal-ops-automation').save(this.bridge.dataDir,body,'operator');
+        this.bridge.personalOpsAutomation=saved;
+        if(this.bridge.jobSearchManager)this.bridge.jobSearchManager.setStandingLocalUpdates(saved.active&&saved.standing_local_tracker_updates===true);
+        return this.json(res,200,{...saved,message:'Standing personal-ops preferences saved. Send/apply/invite/share/delete remain separately gated. Grants expire fail-closed.',authority:false});
+      }
+      if(url.pathname==='/api/assistant/job-search'){
+        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone','host_approval_id','proposal_id','confirmed','request_id','mutation_action','status_filter','limit']);
+        const automation=require('./personal-ops-automation');
+        const manager=require('./assistant-service').jobSearchManager(this);
+        const currentRowFor=(proposal)=>{
+          try{
+            const listed=manager.list().applications||[];
+            const p=proposal.summary||proposal.proposed||{};
+            return listed.find(r=>
+              (p.application_id&&r.id===p.application_id)||
+              (p.company&&p.role&&String(r.company).toLowerCase()===String(p.company).toLowerCase()&&String(r.role).toLowerCase()===String(p.role).toLowerCase())
+            )||null;
+          }catch{return null;}
+        };
+        if(body.action==='create_tracker')return this.json(res,200,manager.createTracker());
+        if(body.action==='list')return this.json(res,200,manager.list());
+        if(body.action==='digest')return this.json(res,200,manager.dailyDigest({timezone:body.timezone||'local'}));
+        if(body.action==='status')return this.json(res,200,manager.status());
+        if(body.action==='list_proposals'){
+          return this.json(res,200,{
+            proposals:automation.listProposals(this.bridge.dataDir,{status:body.status_filter||null,limit:body.limit||20}),
+            authority:false,
+            conversational_auto_approve:false
+          });
+        }
+        if(body.action==='propose'){
+          const mutationAction=body.mutation_action;
+          const proposal=automation.proposeMutation(this.bridge.dataDir,{
+            action:mutationAction,
+            body,
+            trackerPath:manager.status().path,
+            actor:'operator'
+          });
+          return this.json(res,200,{...proposal,authority:false});
+        }
+        if(body.action==='review_proposal'){
+          const draft=automation.listProposals(this.bridge.dataDir).find(p=>p.proposal_id===body.proposal_id)||{summary:{}};
+          const reviewed=automation.reviewProposal(this.bridge.dataDir,{
+            proposal_id:body.proposal_id,
+            current_row:currentRowFor(draft),
+            actor:'operator'
+          });
+          return this.json(res,200,{...reviewed,authority:false});
+        }
+        if(body.action==='approve_proposal'){
+          return this.json(res,200,automation.approveProposal(this.bridge.dataDir,{
+            proposal_id:body.proposal_id,
+            confirmed:body.confirmed,
+            actor:'operator'
+          }));
+        }
+        if(body.action==='upsert'||body.action==='follow_up'){
+          const standing=automation.allows(this.bridge.dataDir,'local_tracker_updates');
+          if(!standing&&!body.host_approval_id){
+            const pending=automation.proposeMutation(this.bridge.dataDir,{
+              action:body.action,
+              body,
+              trackerPath:manager.status().path,
+              actor:'operator'
+            });
+            return this.json(res,403,{
+              error:'Tracker mutation requires current standing authorization or an approved host proposal',
+              code:'mutation_authorization_required',
+              pending_proposal:{
+                ...pending,
+                executable:false,
+                authority:false,
+                conversational_auto_approve:false,
+                message:'Open Control Center → Approvals (or review_proposal) to inspect company/role/evidence, then approve_proposal with confirmed:true. Denied responses never return an executable approval token.'
+              },
+              authority:false
+            });
+          }
+          if(body.action==='upsert')return this.json(res,200,manager.upsertApplication(body));
+          return this.json(res,200,manager.recordFollowUp(body));
+        }
+        throw Error('Unsupported job-search action');
       }
       if(url.pathname==='/api/assistant/provider'){const saved=require('./conversation-provider').save(this.bridge.dataDir,body,'operator');for(const entry of this.conversationEngine.active.values())entry.controller.abort();this.bridge.controlStore.event('conversation.provider_preference_saved',null,{revision:saved.revision,provider:saved.provider,authority:false});return this.json(res,200,await require('./assistant-service').providerStatus(this));}
       if(url.pathname==='/api/assistant/conversation/session')return this.json(res,201,this.conversationEngine.session(body));

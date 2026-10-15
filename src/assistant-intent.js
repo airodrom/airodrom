@@ -82,6 +82,14 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
  if(/^(?:show|check|read)\s+(?:my\s+)?whatsapp(?: messages(?: needing attention)?)?$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'whatsapp',action:'attention'});
+ // Personal ops / job search — host capability plan before model denial.
+ const personalOps=require('./personal-ops');
+ if(personalOps.isPersonalOpsRequest(request))return route('PERSONAL_OPS',{kind:'personal_ops',message:request});
+ if(/^(?:create|start|open)\s+(?:a\s+)?(?:local\s+)?(?:job[- ]search\s+)?tracker(?:\s+workbook)?$/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'create_tracker'});
+ if(/^(?:job[- ]search\s+)?(?:daily\s+)?digest$/i.test(request)||/^(?:show|give)\s+(?:me\s+)?(?:a\s+)?(?:job[- ]search\s+)?(?:daily\s+)?digest$/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'digest'});
+ if(/^(?:list|show)\s+(?:my\s+)?(?:job\s+)?applications$/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'list'});
+ if(/^(?:log|record|track)\s+(?:a\s+)?(?:job\s+)?application\b/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'upsert',raw:request});
+ if(/^(?:find|identify)\s+(?:recruiter|recruiters)\b/i.test(request)||/^categorize\s+(?:job\s+)?(?:mail|email|gmail)\b/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'recruiters'});
  if(isWorkRequest(request))return route('WORK',{kind:'work',objective:request,capability_classes:workCapabilities(request)});
  if(/^(?:do|handle|take care of)\s+(?:it|this|that)$/i.test(request))return {kind:'clarify',message:'Do you want to talk it through or create a Work Mission?'};
  if(/^(?:check|read|show|open)\s+(?:my\s+)?(?:inbox|messages|email|emails|mail)$/i.test(request))return route('CONNECTOR',{kind:'clarify',message:'Should I check Gmail or the official WhatsApp connector?'});

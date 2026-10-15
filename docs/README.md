@@ -44,6 +44,7 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Coding Reliability & Auto-Acceptance V1](CODING-RELIABILITY-AUTO-ACCEPTANCE-V1.md)
 - [Autonomous Self-Development V1](AUTONOMOUS-SELF-DEVELOPMENT-V1.md)
 - [Self-Development Reliability V1.1](SELF-DEVELOPMENT-RELIABILITY-V1.1.md)
+- [Personal Operations & Job Search V1](PERSONAL-OPS-JOB-SEARCH-V1.md) (Issue #112 — draft; not installed)
 - [Everyday Personal AI UX V1](EVERYDAY-PERSONAL-AI-UX-V1.md) (SHIPPED + INSTALLED)
 - [Grounded Assistant Accuracy V1](GROUNDED-ASSISTANT-ACCURACY-V1.md) (SHIPPED + INSTALLED)
 - [Conversation UX Bugfix V1](CONVERSATION-UX-BUGFIX-V1.md) (SHIPPED + INSTALLED)
