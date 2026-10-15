@@ -34,6 +34,11 @@ function id(value) {
   return typeof value === 'string' && UUID.test(value) ? value : null;
 }
 
+/** Conversation turns awaiting Acceptance are historical unread results, not urgent owner decisions. */
+function isHistoricalConversationResult(mission) {
+  return !!mission && mission.envelope?.kind === 'conversation' && mission.state === 'awaiting_acceptance';
+}
+
 function isArchived(db, missionId) {
   ensure(db);
   const row = db.prepare('SELECT archived FROM cp_mission_visibility WHERE mission_id=?').get(missionId);
@@ -58,8 +63,9 @@ function archiveBlockers(bridge, mission) {
   const db = bridge.controlStore.db;
   const reasons = [];
   if (!mission) return ['mission_missing'];
+  const historicalConversation = isHistoricalConversationResult(mission);
   if (UNCERTAIN.has(mission.state) || ACTIVE.has(mission.state)) reasons.push('active_or_uncertain_state');
-  if (ATTENTION.has(mission.state)) reasons.push('unresolved_owner_decision');
+  if (ATTENTION.has(mission.state) && !historicalConversation) reasons.push('unresolved_owner_decision');
   if (db.prepare("SELECT 1 FROM cp_runs WHERE mission_id=? AND process_state='unknown' LIMIT 1").get(mission.id)) {
     reasons.push('unknown_process_state');
   }
@@ -84,11 +90,12 @@ function archiveBlockers(bridge, mission) {
     reasons.push('unresolved_settlement');
   }
   // Pending Acceptance that still requires an owner decision cannot be archived away.
-  if (mission.state === 'awaiting_acceptance' || mission.state === 'waiting_for_operator') {
+  // Historical conversation results may be presentation-archived without Acceptance.
+  if ((mission.state === 'awaiting_acceptance' || mission.state === 'waiting_for_operator') && !historicalConversation) {
     reasons.push('pending_acceptance');
   }
   const verification = db.prepare('SELECT id,result FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC LIMIT 1').get(mission.id);
-  if (verification && mission.state === 'awaiting_acceptance') reasons.push('pending_acceptance');
+  if (verification && mission.state === 'awaiting_acceptance' && !historicalConversation) reasons.push('pending_acceptance');
   return reasons;
 }
 
@@ -102,9 +109,10 @@ function archiveEligible(mission, bridgeOrOpts = {}, maybeOpts) {
   } else {
     opts = bridgeOrOpts || {};
   }
-  if (!mission || UNCERTAIN.has(mission.state) || ATTENTION.has(mission.state) || ACTIVE.has(mission.state)) return false;
+  if (!mission || UNCERTAIN.has(mission.state) || ACTIVE.has(mission.state)) return false;
+  if (ATTENTION.has(mission.state) && !isHistoricalConversationResult(mission)) return false;
   if (opts.processUnknown) return false;
-  if (!['completed', 'cancelled', 'blocked', 'needs_rework', 'draft', 'ready'].includes(mission.state)) return false;
+  if (!isHistoricalConversationResult(mission) && !['completed', 'cancelled', 'blocked', 'needs_rework', 'draft', 'ready'].includes(mission.state)) return false;
   if (bridge) return archiveBlockers(bridge, mission).length === 0;
   return true;
 }
@@ -218,7 +226,9 @@ function archiveMissions(bridge, body = {}) {
     for (const missionId of ids) {
       const mission = bridge.missions.require(missionId, 'operator');
       const blockers = archiveBlockers(bridge, mission);
-      if (blockers.length || isArchived(bridge.controlStore.db, mission.id) || !['completed', 'cancelled', 'blocked', 'needs_rework', 'draft', 'ready'].includes(mission.state)) {
+      const eligibleState = isHistoricalConversationResult(mission)
+        || ['completed', 'cancelled', 'blocked', 'needs_rework', 'draft', 'ready'].includes(mission.state);
+      if (blockers.length || isArchived(bridge.controlStore.db, mission.id) || !eligibleState) {
         refused.push({ id: missionId, reason: blockers[0] || 'not_eligible' });
         continue;
       }
@@ -258,6 +268,7 @@ function restoreMission(bridge, { id: missionId, request_id, confirmed } = {}) {
 }
 
 function organizeEligible(mission, bridge, { settled = false } = {}) {
+  if (isHistoricalConversationResult(mission)) return archiveEligible(mission, bridge);
   if (!archiveEligible(mission, bridge)) return false;
   if (mission.state === 'completed') return settled === true;
   return ['cancelled', 'draft', 'ready'].includes(mission.state);
@@ -303,6 +314,7 @@ module.exports = {
   ensure,
   isArchived,
   archivedSet,
+  isHistoricalConversationResult,
   archiveEligible,
   archiveBlockers,
   organizeEligible,
