@@ -308,6 +308,10 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/provider')return this.json(res,200,await require('./assistant-service').providerStatus(this));
       if(req.method==='GET'&&url.pathname==='/api/assistant/registry')return this.json(res,200,await require('./model-worker-router').inspect(this.bridge));
       if(req.method==='GET'&&url.pathname==='/api/assistant/work-templates')return this.json(res,200,{items:this.bridge.workTemplates.list('operator'),authority:false});
+      if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy')return this.json(res,200,this.bridge.developerAutonomy.status('operator'));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/policy'){const id=url.searchParams.get('policy_id');return this.json(res,200,this.bridge.developerAutonomy.inspect(id)||{error:'Policy unavailable',authority:false});}
+      if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/grant'){const id=url.searchParams.get('grant_id');return this.json(res,200,this.bridge.developerAutonomy.inspectGrant(id)||{error:'Grant unavailable',authority:false});}
+      if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/workspace'){const id=url.searchParams.get('workspace_id');return this.json(res,200,this.bridge.developerAutonomy.inspectWorkspace(id)||{error:'Workspace unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup')return this.json(res,200,{items:this.bridge.zeroSetupWork.listPending('operator'),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/zero-setup/status'){const id=url.searchParams.get('request_id');return this.json(res,200,this.bridge.zeroSetupWork.refreshState(id)||{error:'Prepared ask request unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/workspaces')return this.json(res,200,{items:this.bridge.workers.templates(),authority:false});
@@ -417,6 +421,13 @@ class ControlServer {
       if(url.pathname==='/api/assistant/development-sessions/close')return this.json(res,200,this.bridge.developmentSessions.close(body,'operator'));
       if(url.pathname==='/api/assistant/work-templates/register')return this.json(res,201,this.bridge.workTemplates.register(body,'operator'));
       if(url.pathname==='/api/assistant/work-templates/revoke')return this.json(res,200,this.bridge.workTemplates.revoke(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/enroll')return this.json(res,201,this.bridge.developerAutonomy.enroll(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/revoke')return this.json(res,200,this.bridge.developerAutonomy.revoke(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/prepare-workspace')return this.json(res,201,this.bridge.developerAutonomy.prepareWorkspace(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/issue-grant')return this.json(res,201,this.bridge.developerAutonomy.issueGrant(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/authorize')return this.json(res,201,this.bridge.developerAutonomy.authorizeRoutine(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/prepare-draft-pr')return this.json(res,200,this.bridge.developerAutonomy.prepareDraftPr(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/cleanup')return this.json(res,200,this.bridge.developerAutonomy.cleanupWorkspace(body,'operator'));
       if(url.pathname==='/api/assistant/zero-setup/approve')return this.json(res,200,await this.bridge.zeroSetupWork.approve(body,'operator'));
       if(url.pathname==='/api/assistant/zero-setup/reject')return this.json(res,200,this.bridge.zeroSetupWork.reject(body,'operator'));
       if(url.pathname==='/api/assistant/workspaces/register')return this.json(res,201,this.bridge.workers.registerTemplate(body,'operator'));

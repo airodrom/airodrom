@@ -86,9 +86,18 @@ class ZeroSetupWork {
       const root = fs.realpathSync(named[0].repositories[0]);
       if (require('./control-execution').repositoryRoot(root) === root) return { ok: true, project: named[0], workspace: root };
     }
-    // For general instructions, reuse only a UNIQUE already signed and active
-    // host-registered WORK scope. An MCP message cannot register new authority.
+    // For general instructions, prefer a UNIQUE active Developer Autonomy policy
+    // (standing per-repo enrollment). Fall back to a unique WORK template.
+    // An MCP message cannot register new authority.
     if (intent?.kind === 'general') {
+      try {
+        const da = (this.bridge.developerAutonomy?.list?.('operator') || [])
+          .filter(p => p.state === 'active' && projects.some(proj => proj.projectId === p.project_id));
+        if (da.length === 1) {
+          const project = projects.find(p => p.projectId === da[0].project_id);
+          return { ok: true, project, workspace: da[0].repository, developer_autonomy_policy_id: da[0].policy_id };
+        }
+      } catch { /* DA unavailable */ }
       const active = this.bridge.workTemplates.list('operator')
         .filter(t => t.state === 'active' && projects.some(p => p.projectId === t.project_id &&
           p.repositories.some(w => { try { return fs.realpathSync(w) === t.workspace; } catch { return false; } })));

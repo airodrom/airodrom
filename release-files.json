@@ -535,6 +535,7 @@
   "src/whatsapp-production-connection.js",
   "src/work-execution-adapter.js",
   "src/work-templates.js",
+  "src/developer-autonomy.js",
   "src/worker-registry.js",
   "src/zero-setup-terminal.js",
   "src/zero-setup-work.js",
@@ -788,6 +789,7 @@
   "tests/whatsapp-production-connection-v1.test.js",
   "tests/work-execution-adapter.test.js",
   "tests/work-templates.test.js",
+  "tests/developer-autonomy-v1.test.js",
   "tests/worker-preflight.test.js",
   "tests/zero-click-routing.test.js",
   "tests/zero-setup-terminal.test.js",
@@ -800,5 +802,7 @@
   "docs/RUNTIME-RECOVERY-CONSOLIDATED-CUTOVER-V1.md",
   "docs/owner-approval/RUNTIME-RECOVERY-CONSOLIDATED-OWNER-APPROVAL.json",
   "src/bridge-invocation-recovery.js",
-  "tests/bridge-invocation-recovery.test.js"
+  "tests/bridge-invocation-recovery.test.js",
+  "docs/DEVELOPER-AUTONOMY-V1.md",
+  "docs/adr/0053-developer-autonomy.md"
 ]

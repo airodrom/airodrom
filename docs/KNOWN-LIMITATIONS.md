@@ -137,3 +137,7 @@ Secret patterns and dependency advisory databases cannot prove the absence of ev
 
 Host records may retain quarantined Runs, leases, or invocations after a prior supervisor hard-exit (see historical Mission `cc7337b9-58b9-4cad-82a9-54478eca6a54`). Autonomous Supervisor V1 is a display/admission projection only: it does **not** reconcile ownership, clear quarantine, or authorize cutover. Resolve each held record through governed recovery with independent per-run evidence. Do not clear a record merely to make Live Activity green.
 
+
+## Developer Autonomy V1
+
+Standing enrollment authorizes routine work inside exact repositories only. Disposable workspaces are local clones (not linked git worktrees) so capability verification can run. Live OpenCode/Qwen acceptance and owner-budgeted repair demos remain separately authorized; fixture OpenCode never implies live qualification. Merge, deploy, secrets, and external paid disclosure remain separately gated.

@@ -1,3 +1,8 @@
+## Unreleased
+
+### Added
+- Developer Autonomy V1 (Issue #111): standing per-repository owner enrollment, short-lived Mission grants, automatic disposable worktrees, bounded repair budgets, draft-PR preparation, and fail-closed revocation/expiry. Never auto-merges or deploys.
+
 ## Unreleased — Autonomous Supervisor V1 (Issue #108)
 
 - Project Mission V2 / CAE execution into Live Activity with explicit states, active Run honesty, multi-generation repair-budget lineage, and AUTO worker admission (no second scheduler).

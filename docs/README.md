@@ -53,3 +53,5 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Autonomous Supervisor V1](AUTONOMOUS-SUPERVISOR-V1.md): Live Activity execution projection, CLI `logs follow`, AUTO admission honesty, obsolete rework cleanup, standing WORK-template authorization (Issue #108).
 - [Unified Autonomous Development V1](UNIFIED-AUTONOMOUS-DEVELOPMENT-V1.md): ChatGPT proposal → one owner approval → sandboxed worker → independent verification → bounded idempotent repair → durable evidence; Cursor governed worker and honest qualification.
 - [Continuous Autonomous Execution V1](CONTINUOUS-AUTONOMOUS-EXECUTION-V1.md): durable authorized goal continuation without ChatGPT/Cursor ownership; extends Goal Planner.
+
+- [Developer Autonomy V1](DEVELOPER-AUTONOMY-V1.md)
