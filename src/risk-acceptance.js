@@ -31,7 +31,9 @@ class RiskAcceptance {
       updated_at INTEGER NOT NULL,
       updated_by TEXT NOT NULL
     );
-    INSERT OR IGNORE INTO cp_risk_acceptance_preference VALUES(1,0,'local_only','public','["opencode"]',0,'system');`);
+    INSERT OR IGNORE INTO cp_risk_acceptance_preference
+      (id,enabled,privacy,data_class,workers,updated_at,updated_by)
+      VALUES(1,0,'local_only','public','["opencode"]',0,'system');`);
   }
 
   preference() {
@@ -54,12 +56,23 @@ class RiskAcceptance {
     object(input, ['enabled', 'confirmed']);
     if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
     if (typeof input.enabled !== 'boolean') throw Error('enabled must be boolean');
-    this.db.prepare('UPDATE cp_risk_acceptance_preference SET enabled=?, privacy=?, data_class=?, workers=?, updated_at=?, updated_by=? WHERE id=1')
-      .run(input.enabled ? 1 : 0, 'local_only', 'public', JSON.stringify(['opencode']), Date.now(), actor);
+    // Explicit operator writes must stamp owner_set when the live eight-column
+    // schema is present so a later rollback to 3680b0e cannot re-apply the
+    // system default onto an owner-chosen preference.
+    const hasOwnerSet = this.db.prepare('PRAGMA table_info(cp_risk_acceptance_preference)').all()
+      .some(column => column.name === 'owner_set');
+    if (hasOwnerSet) {
+      this.db.prepare('UPDATE cp_risk_acceptance_preference SET enabled=?, privacy=?, data_class=?, workers=?, updated_at=?, updated_by=?, owner_set=1 WHERE id=1')
+        .run(input.enabled ? 1 : 0, 'local_only', 'public', JSON.stringify(['opencode']), Date.now(), actor);
+    } else {
+      this.db.prepare('UPDATE cp_risk_acceptance_preference SET enabled=?, privacy=?, data_class=?, workers=?, updated_at=?, updated_by=? WHERE id=1')
+        .run(input.enabled ? 1 : 0, 'local_only', 'public', JSON.stringify(['opencode']), Date.now(), actor);
+    }
     this.store.event(input.enabled ? 'risk.auto_acceptance.preference_enabled' : 'risk.auto_acceptance.preference_disabled', null, {
       enabled: input.enabled,
       privacy: 'local_only',
-      data_class: 'public'
+      data_class: 'public',
+      ...(hasOwnerSet ? { owner_set: true } : {})
     });
     return this.preference();
   }
