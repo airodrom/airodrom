@@ -17,18 +17,28 @@ const STATUSES = Object.freeze([
 const EVIDENCE_KINDS = Object.freeze(['message_id', 'thread_id', 'url', 'operator_confirmation']);
 const TRACKER_NAME = 'applications.csv';
 
-// Neutralize spreadsheet formula injection while keeping the literal value on read.
+// Formula-like after optional leading whitespace/control chars (Excel/Sheets injection).
+const FORMULA_LIKE = /^[\s\u0000-\u001f\u007f]*[=+\-@]/;
+
+// Reversible escape: neutralize spreadsheet formula injection without losing literal apostrophes.
+// - formula-like values get one leading apostrophe on disk
+// - values that already start with "'" get a second apostrophe so unescape can restore them
 function esc(v) {
   let s = String(v == null ? '' : v);
-  // Strip formula-triggering prefixes after leading whitespace/control chars.
-  if (/^[\s\u0000-\u001f\u007f]*[=+\-@]/.test(s)) s = "'" + s;
+  if (FORMULA_LIKE.test(s) || s.startsWith("'")) s = "'" + s;
   if (/[",\n\r]/.test(s) || s.startsWith("'")) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
 
 function unescapeCell(v) {
   const s = String(v == null ? '' : v);
-  return s.startsWith("'") && /^'?[\s\u0000-\u001f\u007f]*[=+\-@]/.test(s.slice(1)) ? s.slice(1) : s;
+  if (!s.startsWith("'")) return s;
+  const rest = s.slice(1);
+  // Double leading apostrophe: first was our escape for a literal apostrophe value.
+  if (rest.startsWith("'")) return rest;
+  // Single apostrophe before formula-like content: restore the literal formula text.
+  if (FORMULA_LIKE.test(rest)) return rest;
+  return s;
 }
 
 function parseCsv(text) {
@@ -181,56 +191,136 @@ function categorizeRecruiters(messages = []) {
   return { recruiters: out, fabricated: false };
 }
 
-function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
+function pathError(message, code = 'invalid_path') {
+  const err = Error(message);
+  err.code = code;
+  throw err;
+}
+
+function assertNotSymlink(candidate, label = 'path') {
+  try {
+    if (fs.lstatSync(candidate).isSymbolicLink()) pathError(`${label} must not be a symlink`);
+  } catch (e) {
+    if (e.code === 'invalid_path') throw e;
+    if (e.code !== 'ENOENT') pathError(`${label} refused`);
+  }
+}
+
+function pinJobSearchRoot(dataDir) {
+  const dataResolved = path.resolve(dataDir);
+  assertNotSymlink(dataResolved, 'dataDir');
+  if (!fs.existsSync(dataResolved) || !fs.lstatSync(dataResolved).isDirectory()) {
+    pathError('dataDir must be an existing directory');
+  }
+  const dataReal = fs.realpathSync(dataResolved);
+  const root = path.join(dataReal, 'job-search');
+  if (fs.existsSync(root)) {
+    assertNotSymlink(root, 'job-search root');
+    const st = fs.lstatSync(root);
+    if (!st.isDirectory()) pathError('job-search root must be a directory');
+  } else {
+    fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  }
+  assertNotSymlink(root, 'job-search root');
+  const rootReal = fs.realpathSync(root);
+  if (rootReal !== root && rootReal !== path.join(dataReal, 'job-search')) {
+    pathError('job-search root realpath escaped dataDir');
+  }
+  if (!rootReal.startsWith(dataReal + path.sep)) pathError('job-search root must remain inside dataDir');
+  return rootReal;
+}
+
+function exclusiveWrite(dirReal, basenameHint, bytes) {
+  const safeBase = String(basenameHint).replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'tracker';
+  const name = `.${safeBase}.${crypto.randomBytes(12).toString('hex')}.tmp`;
+  const full = path.join(dirReal, name);
+  if (!full.startsWith(dirReal + path.sep)) pathError('temporary path escaped job-search root');
+  if (fs.existsSync(full)) pathError('temporary path collision');
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW;
+  const fd = fs.openSync(full, flags, 0o600);
+  try {
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.nlink !== 1) pathError('temporary file identity refused');
+    fs.writeFileSync(fd, bytes);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return full;
+}
+
+function createJobSearchManager({ dataDir, audit, actor = 'operator', policy = null } = {}) {
   if (!dataDir) throw Error('dataDir required');
-  const root = path.resolve(dataDir, 'job-search');
+  const root = pinJobSearchRoot(dataDir);
   const statePath = path.join(root, 'manager.json');
   const defaultPath = path.join(root, TRACKER_NAME);
-  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+
+  function liveStanding() {
+    try {
+      if (typeof policy?.allowsLocalTrackerUpdates === 'function') return policy.allowsLocalTrackerUpdates() === true;
+    } catch { /* fail closed */ }
+    return false;
+  }
+
+  function authorizeMutation(action, input = {}) {
+    const standing = liveStanding();
+    const approvalId = input.host_approval_id != null ? String(input.host_approval_id).trim() : '';
+    // operator_confirmation is never self-authorizing; bind before consuming a one-shot approval.
+    let confirmation = null;
+    try {
+      confirmation = input.evidence != null ? parseEvidence(input.evidence) : null;
+    } catch { confirmation = null; }
+    if (confirmation && confirmation.kind === 'operator_confirmation') {
+      if (standing) {
+        confirmation.verification = 'standing_manual_claim';
+      } else if (approvalId && confirmation.value === approvalId) {
+        confirmation.verification = 'host_approval_bound';
+      } else {
+        const err = Error('operator_confirmation is not independently authenticated; provide host_approval_id binding or standing grant');
+        err.code = 'forged_operator_confirmation';
+        throw err;
+      }
+    }
+    let approval = null;
+    if (!standing) {
+      if (!approvalId || typeof policy?.consumeApproval !== 'function') {
+        const err = Error('Tracker mutation requires current standing authorization or host per-action approval');
+        err.code = 'mutation_authorization_required';
+        throw err;
+      }
+      approval = policy.consumeApproval(approvalId, action);
+      if (!approval || approval.ok !== true) {
+        const err = Error('Host per-action approval missing, expired, or already consumed');
+        err.code = 'mutation_authorization_required';
+        throw err;
+      }
+    }
+    return { mode: standing ? 'standing' : 'host_approval', standing, approval_id: approval?.approval_id || null };
+  }
 
   function assertInsideRoot(candidate) {
     const resolved = path.resolve(candidate);
-    const rootReal = fs.realpathSync(root);
+    const rootReal = root;
     let targetReal;
     try {
       if (fs.existsSync(resolved)) {
-        const st = fs.lstatSync(resolved);
-        if (st.isSymbolicLink()) {
-          const err = Error('Tracker path must not be a symlink');
-          err.code = 'invalid_path';
-          throw err;
-        }
+        assertNotSymlink(resolved, 'Tracker path');
         targetReal = fs.realpathSync(resolved);
       } else {
         const parent = path.dirname(resolved);
-        if (!fs.existsSync(parent)) {
-          const err = Error('Tracker parent directory must exist inside job-search root');
-          err.code = 'invalid_path';
-          throw err;
-        }
-        const parentSt = fs.lstatSync(parent);
-        if (parentSt.isSymbolicLink()) {
-          const err = Error('Tracker parent must not be a symlink');
-          err.code = 'invalid_path';
-          throw err;
-        }
+        if (!fs.existsSync(parent)) pathError('Tracker parent directory must exist inside job-search root');
+        assertNotSymlink(parent, 'Tracker parent');
         targetReal = path.join(fs.realpathSync(parent), path.basename(resolved));
       }
     } catch (e) {
       if (e.code === 'invalid_path') throw e;
-      const err = Error('Tracker path refused');
-      err.code = 'invalid_path';
-      throw err;
+      pathError('Tracker path refused');
     }
     if (targetReal !== path.join(rootReal, TRACKER_NAME) && !targetReal.startsWith(rootReal + path.sep)) {
-      const err = Error('Tracker path must remain inside the selected job-search directory');
-      err.code = 'invalid_path';
-      throw err;
+      pathError('Tracker path must remain inside the selected job-search directory');
     }
     if (path.basename(targetReal) !== TRACKER_NAME && path.extname(targetReal) !== '.csv') {
-      const err = Error('Tracker file must be applications.csv (CSV, Excel-openable)');
-      err.code = 'invalid_path';
-      throw err;
+      pathError('Tracker file must be applications.csv (CSV, Excel-openable)');
     }
     return targetReal;
   }
@@ -253,22 +343,40 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
 
   function ensureWorkbook(st) {
     st.path = assertInsideRoot(st.path || defaultPath);
+    const parent = path.dirname(st.path);
+    if (!fs.existsSync(parent)) {
+      fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+    }
+    assertNotSymlink(parent, 'Tracker parent');
     if (!fs.existsSync(st.path)) {
-      fs.mkdirSync(path.dirname(st.path), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(st.path, HEADERS.join(',') + '\n', { mode: 0o600 });
-    } else {
-      const stStat = fs.lstatSync(st.path);
-      if (stStat.isSymbolicLink()) {
-        const err = Error('Tracker path must not be a symlink');
-        err.code = 'invalid_path';
-        throw err;
+      const body = Buffer.from(HEADERS.join(',') + '\n', 'utf8');
+      const tmp = exclusiveWrite(root, TRACKER_NAME, body);
+      try {
+        st.path = assertInsideRoot(st.path);
+        assertNotSymlink(st.path, 'Tracker path');
+        fs.renameSync(tmp, st.path);
+      } catch (e) {
+        try { fs.unlinkSync(tmp); } catch { /* */ }
+        throw e;
       }
+      try { fs.chmodSync(st.path, 0o600); } catch { /* */ }
+    } else {
+      assertNotSymlink(st.path, 'Tracker path');
     }
   }
 
   function readRows(st) {
     ensureWorkbook(st);
-    const text = fs.readFileSync(st.path, 'utf8');
+    assertNotSymlink(st.path, 'Tracker path');
+    const fd = fs.openSync(st.path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    let text;
+    try {
+      const opened = fs.fstatSync(fd);
+      if (!opened.isFile()) pathError('Tracker path must be a regular file');
+      text = fs.readFileSync(fd, 'utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
     const rows = parseCsv(text);
     if (!rows.length) return [];
     const headers = rows[0].map(h => String(h).trim());
@@ -278,16 +386,64 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
   function writeRows(st, rows) {
     st.path = assertInsideRoot(st.path);
     ensureWorkbook(st);
-    // Preserve prior content as a same-directory backup before replace.
-    if (fs.existsSync(st.path) && fs.statSync(st.path).size > 0) {
-      const backup = st.path + '.bak';
-      fs.copyFileSync(st.path, backup);
-      try { fs.chmodSync(backup, 0o600); } catch { /* */ }
+    assertNotSymlink(st.path, 'Tracker path');
+    const dirReal = root;
+    const body = Buffer.from(
+      [HEADERS.join(',')].concat(rows.map(r => objToRow(r).join(','))).join('\n') + '\n',
+      'utf8'
+    );
+
+    // Safe backup: exclusive random temp + rename over .bak (rename replaces symlink inode, never follows).
+    let srcFd;
+    try {
+      srcFd = fs.openSync(st.path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      const srcStat = fs.fstatSync(srcFd);
+      if (!srcStat.isFile()) pathError('Tracker path must be a regular file');
+      if (srcStat.size > 0) {
+        const prior = fs.readFileSync(srcFd);
+        const bakFinal = st.path + '.bak';
+        // Remove a substituted .bak symlink inode without following it; never write through.
+        try {
+          if (fs.lstatSync(bakFinal).isSymbolicLink()) fs.unlinkSync(bakFinal);
+          else assertNotSymlink(bakFinal, 'Tracker backup');
+        } catch (e) {
+          if (e.code !== 'ENOENT') throw e;
+        }
+        const bakTmp = exclusiveWrite(dirReal, path.basename(st.path) + '.bak', prior);
+        try {
+          try {
+            if (fs.lstatSync(bakFinal).isSymbolicLink()) fs.unlinkSync(bakFinal);
+          } catch (e) {
+            if (e.code !== 'ENOENT') throw e;
+          }
+          fs.renameSync(bakTmp, bakFinal);
+          try { fs.chmodSync(bakFinal, 0o600); } catch { /* */ }
+        } catch (e) {
+          try { fs.unlinkSync(bakTmp); } catch { /* */ }
+          throw e;
+        }
+      }
+    } finally {
+      if (srcFd != null) try { fs.closeSync(srcFd); } catch { /* */ }
     }
-    const body = [HEADERS.join(',')].concat(rows.map(r => objToRow(r).join(','))).join('\n') + '\n';
-    const tmp = st.path + '.tmp';
-    fs.writeFileSync(tmp, body, { mode: 0o600 });
-    fs.renameSync(tmp, st.path);
+
+    const tmp = exclusiveWrite(dirReal, path.basename(st.path), body);
+    try {
+      st.path = assertInsideRoot(st.path);
+      if (fs.existsSync(st.path)) assertNotSymlink(st.path, 'Tracker path');
+      // Fixed legacy .tmp names are unused; drop a substituted symlink inode if present.
+      const legacyTmp = st.path + '.tmp';
+      try {
+        if (fs.lstatSync(legacyTmp).isSymbolicLink()) fs.unlinkSync(legacyTmp);
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e;
+      }
+      fs.renameSync(tmp, st.path);
+      try { fs.chmodSync(st.path, 0o600); } catch { /* */ }
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch { /* */ }
+      throw e;
+    }
   }
 
   function log(type, detail) {
@@ -300,23 +456,29 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
       const active = !!st.created_at && fs.existsSync(st.path);
       let count = 0;
       try { if (active) count = readRows(st).length; } catch { /* */ }
+      // Effective standing always derives from current host policy (fail closed on expiry).
+      const standing = liveStanding();
+      if (st.standing_local_updates !== standing) {
+        st.standing_local_updates = standing;
+        try { saveState(st); } catch { /* best effort sync */ }
+      }
       return {
         active,
         path: st.path,
         format: 'csv_excel_openable_not_xlsx',
         applications: count,
-        standing_local_updates: !!st.standing_local_updates,
+        standing_local_updates: standing,
         actor: who
       };
     },
 
-    createTracker({ trackerPath, standingLocalUpdates = false } = {}) {
+    createTracker({ trackerPath } = {}) {
       const st = loadState();
       if (trackerPath) st.path = assertInsideRoot(trackerPath);
       else st.path = defaultPath;
       ensureWorkbook(st);
       st.created_at = st.created_at || new Date().toISOString();
-      st.standing_local_updates = standingLocalUpdates === true;
+      st.standing_local_updates = liveStanding();
       saveState(st);
       log('job_search.tracker_created', { path: st.path, standing: st.standing_local_updates });
       return { ok: true, ...this.status() };
@@ -329,6 +491,7 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
     },
 
     upsertApplication(input = {}) {
+      const auth = authorizeMutation('upsert', input);
       const evidence = normalizeEvidence(input.evidence);
       const company = String(input.company || '').trim();
       const role = String(input.role || '').trim();
@@ -368,8 +531,8 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
         if (input.notes) existing.notes = String(input.notes).slice(0, 2000);
         existing.updated_at = now;
         writeRows(st, rows);
-        log('job_search.application_updated', { id: existing.id, company, role, status: existing.status });
-        return { ok: true, duplicate: true, application: existing, status: this.status() };
+        log('job_search.application_updated', { id: existing.id, company, role, status: existing.status, auth_mode: auth.mode });
+        return { ok: true, duplicate: true, application: existing, status: this.status(), mutation_gate: auth };
       }
       const status = STATUSES.includes(input.status) ? input.status : 'discovered';
       // Do not invent applied_at; require explicit date when applying.
@@ -394,11 +557,13 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
       };
       rows.push(app);
       writeRows(st, rows);
-      log('job_search.application_created', { id: app.id, company, role, status });
-      return { ok: true, duplicate: false, application: app, status: this.status() };
+      log('job_search.application_created', { id: app.id, company, role, status, auth_mode: auth.mode });
+      return { ok: true, duplicate: false, application: app, status: this.status(), mutation_gate: auth };
     },
 
-    recordFollowUp({ id, company, role, follow_up_at, notes, evidence } = {}) {
+    recordFollowUp(input = {}) {
+      const { id, company, role, follow_up_at, notes, evidence } = input;
+      const auth = authorizeMutation('follow_up', input);
       if (evidence == null) {
         const err = Error('Typed evidence required for follow-up (no automatic operator_confirmation)');
         err.code = 'evidence_required';
@@ -428,8 +593,8 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
       row.evidence = e;
       row.updated_at = new Date().toISOString();
       writeRows(st, rows);
-      log('job_search.follow_up', { id: row.id, follow_up_at: row.follow_up_at });
-      return { ok: true, application: row };
+      log('job_search.follow_up', { id: row.id, follow_up_at: row.follow_up_at, auth_mode: auth.mode });
+      return { ok: true, application: row, mutation_gate: auth };
     },
 
     dailyDigest({ timezone = 'local' } = {}) {
@@ -526,10 +691,14 @@ function createJobSearchManager({ dataDir, audit, actor = 'operator' } = {}) {
     },
 
     setStandingLocalUpdates(enabled) {
+      // Informational sync only — effective authority always comes from liveStanding().
       const st = loadState();
-      st.standing_local_updates = enabled === true;
+      st.standing_local_updates = liveStanding();
+      if (enabled === true && !st.standing_local_updates) {
+        st.standing_local_updates = false;
+      }
       saveState(st);
-      log('job_search.standing_local_updates', { enabled: enabled === true });
+      log('job_search.standing_local_updates', { enabled: st.standing_local_updates, requested: enabled === true });
       return this.status();
     },
 

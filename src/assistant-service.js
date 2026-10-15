@@ -104,8 +104,10 @@ function authorizationOffer(server,connector){return {kind:'connect_required',ro
 function jobSearchManager(server){
  const bridge=server.bridge;
  if(!bridge.jobSearchManager){
+  const automation=require('./personal-ops-automation');
   bridge.jobSearchManager=require('./job-search-manager').createJobSearchManager({
    dataDir:bridge.dataDir,
+   policy:automation.trackerPolicy(bridge.dataDir),
    audit:{append:(type,detail)=>bridge.ledger?.record?.({eventType:type,agent:'bridge',direction:'internal',metadata:{version:1,...detail,execution_authority:false}})}
   });
  }
@@ -114,8 +116,7 @@ function jobSearchManager(server){
 function jobSearchInput(server,parsed){
  const manager=jobSearchManager(server);
  if(parsed.action==='create_tracker'){
-  const standing=require('./personal-ops-automation').allows(server.bridge.dataDir,'local_tracker_updates');
-  return {kind:'job_search',route:'JOB_SEARCH',action:'create_tracker',...manager.createTracker({standingLocalUpdates:standing}),message:'Local job-search tracker ready (CSV, Excel-openable — not an .xlsx workbook). Updates require typed identifiable evidence. Cloud Sheets/Drive remain NOT_SUPPORTED until separately enrolled.',authority:false};
+  return {kind:'job_search',route:'JOB_SEARCH',action:'create_tracker',...manager.createTracker(),message:'Local job-search tracker ready (CSV, Excel-openable — not an .xlsx workbook). Updates require typed identifiable evidence plus standing authorization or host per-action approval. Cloud Sheets/Drive remain NOT_SUPPORTED until separately enrolled.',authority:false};
  }
  if(parsed.action==='list'){
   const listed=manager.list();

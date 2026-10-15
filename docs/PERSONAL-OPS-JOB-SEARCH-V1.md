@@ -30,14 +30,15 @@ There is no automatic external provider fallback for private conversation.
 
 ## Job Search Manager
 
-Local tracker path: `<dataDir>/job-search/applications.csv` (**CSV**, Excel-openable — **not** an `.xlsx` workbook). Paths are confined to that directory; symlinks are refused.
+Local tracker path: `<dataDir>/job-search/applications.csv` (**CSV**, Excel-openable — **not** an `.xlsx` workbook). Paths are confined to that directory; symlinks (including the `job-search` root and fixed `.tmp`/`.bak` names) are refused. Writes use exclusive `O_EXCL|O_NOFOLLOW` temporary files with unpredictable names, then `rename` (never follow a substituted destination).
 
 Schema: `id, company, role, source, status, applied_at, recruiter_email, posting_url, evidence, follow_up_at, notes, updated_at`.
 
 Rules:
 
 - Every create/update requires **typed** evidence: `{kind: message_id|thread_id|url|operator_confirmation, value}` (operator_confirmation also requires `explicit:true`). Arbitrary text is not evidence.
-- Spreadsheet formula injection (`=`, `+`, `-`, `@`) is neutralized on write and restored literally on read.
+- Tracker **mutations** (`upsert`, `follow_up`) additionally require either a **current** standing local-tracker grant or a **host-issued** one-shot `host_approval_id` (`action: request_approval`). Caller-supplied `operator_confirmation` is never self-authorizing; without standing it must equal the consumed approval id.
+- Spreadsheet formula injection (`=`, `+`, `-`, `@`) is neutralized on write with a reversible apostrophe policy (literal leading `'=` round-trips losslessly) and restored on read.
 - Duplicate company+role+posting merges; existing higher-progress status is preserved unless an explicit status is supplied. `applied` requires an explicit `applied_at` (never invented).
 - Daily digests use the operator-local calendar date (or an explicit IANA timezone); empty means empty — never fabricate jobs or outcomes.
 - Recruiter categorization uses only fields present on selected messages (Gmail metadata headers are repeated query params).
@@ -45,7 +46,7 @@ Rules:
 
 ## Bounded automation
 
-Owner may grant standing **read-only Gmail organization** and **selected local tracker updates** (`/api/assistant/personal-ops/automation` with exact boolean fields, ISO-8601 `expires_at` within 30 days, and `confirmed:true`). Malformed, stringy, or expired grants fail closed to inactive. Never standing-authorized without separate confirmation:
+Owner may grant standing **read-only Gmail organization** and **selected local tracker updates** (`/api/assistant/personal-ops/automation` with exact boolean fields, ISO-8601 `expires_at` within 30 days, schema `version:1`, and `confirmed:true`). Malformed, stringy, expired, ceiling-violating, or unsupported-version grants fail closed to inactive immediately; `jobSearchManager.status().standing_local_updates` always reflects live policy, never a stale `manager.json` flag. Never standing-authorized without separate confirmation:
 
 `send_email`, `submit_job_application`, `invite_attendees`, `share_documents`, `delete_records`, `expand_drive_scope`, `credential_changes`, `paid_external_services`, `account_deletion`, `unrestricted_memory_disclosure`.
 
@@ -80,3 +81,7 @@ Owner may grant standing **read-only Gmail organization** and **selected local t
 - Gmail OAuth refresh failures surface categorical `safe_error_class` values only (timeout/network/consent/http/schema/scope); live inbox reads remain an owner-only gate.
 - Live Ollama conversation success was verified with synthetic prompts against the qualified local model; private inbox content was not read.
 - Compatibility: rebase/retest if still-open PR #113 (Developer Autonomy) merges first; grants from #113 never imply personal-ops authority.
+
+## Release-gate note — conversation-routing suite
+
+`npm run test:conversation` reports **69/71** on this branch. Independent comparison against unchanged baseline `f968f49870a306cca7e5c18732501976c21644b5` in a clean worktree reproduced the **same two failures** (`private ingress and invalid research scope return no model authority or execution`, `invalid explicit and direct research scopes cannot dispatch even with a matching web template`): intent for `Research https://example.invalid` already returns `public_web_offer` on f968, so the assertions are pre-existing test/code drift on main, **not a regression from PR #114**. **Release-gate decision:** accept the pre-existing red suite for this personal-ops change; do not block #114 on those two routing assertions. Hosted GitHub Actions remain manually disabled per `docs/CI-BRANCH-PROTECTION.md`; local focused/typecheck/package evidence is the integration gate until the owner re-enables workflows.

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const http = require('node:http');
 const crypto = require('node:crypto');
 const intent = require('../src/assistant-intent');
 const service = require('../src/assistant-service');
@@ -27,6 +28,50 @@ const evidenceUrl = { kind: 'url', value: 'https://jobs.example.com/acme-eng' };
 const evidenceMsg = { kind: 'message_id', value: 'msg-abc123' };
 const evidenceConfirm = { kind: 'operator_confirmation', value: 'owner-confirmed-entry', explicit: true };
 
+function tempRoot(t, prefix = 'airo-job-') {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.chmodSync(root, 0o700);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+function grantStanding(root, { local = true, gmail = false, ms = 864e5 } = {}) {
+  return automation.save(root, {
+    standing_gmail_readonly: gmail,
+    standing_local_tracker_updates: local,
+    confirmed: true,
+    expires_at: new Date(Date.now() + ms).toISOString()
+  });
+}
+
+function standingManager(root) {
+  grantStanding(root);
+  return createJobSearchManager({ dataDir: root, policy: automation.trackerPolicy(root) });
+}
+
+function api(server, route, { method = 'POST', body } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(server.origin + route, {
+      method,
+      headers: {
+        authorization: `Bearer ${server.token}`,
+        ...(body ? { 'content-type': 'application/json' } : {})
+      }
+    }, res => {
+      let text = '';
+      res.on('data', p => text += p);
+      res.on('end', () => {
+        let parsed = text;
+        try { parsed = JSON.parse(text); } catch { /* keep text */ }
+        resolve({ status: res.statusCode, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
 test('personal-ops vague manage request routes to host capability plan, not model denial', async t => {
   const f = await fixture(t);
   const server = new ControlServer(f.bridge, { port: 0, conversationOptions: conversationOptions() });
@@ -41,28 +86,31 @@ test('personal-ops vague manage request routes to host capability plan, not mode
   assert.equal(plan.authority, false);
 });
 
-test('CSV formula injection is neutralized and round-trips literally', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'airo-job-inj-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const manager = createJobSearchManager({ dataDir: root });
+test('CSV formula injection is neutralized and round-trips literally including leading apostrophes', t => {
+  const root = tempRoot(t, 'airo-job-inj-');
+  const manager = standingManager(root);
   manager.createTracker();
   const evil = "=HYPERLINK(\"https://evil.example\",\"x\")";
+  const literalApostrophe = "'=SUM(1,1)";
   assert.match(esc(evil), /'=HYPERLINK|\"'=HYPERLINK/);
   assert.match(esc('+cmd'), /^'\+|^\"'\+/);
+  assert.match(esc(literalApostrophe), /''=SUM|\"''=SUM/);
+  assert.equal(unescapeCell(esc(evil).replace(/^"|"$/g, '').replace(/""/g, '"')), evil);
+  assert.equal(unescapeCell("''=SUM(1,1)"), literalApostrophe);
+  assert.equal(unescapeCell("'=HYPERLINK"), '=HYPERLINK');
   const r = manager.upsertApplication({
     company: evil, role: '+cmd|calc', status: 'discovered',
-    evidence: evidenceUrl, notes: '@SUM(A1)'
+    evidence: evidenceUrl, notes: literalApostrophe
   });
   assert.equal(r.ok, true);
   const listed = manager.list().applications[0];
   assert.equal(listed.company, evil);
   assert.equal(listed.role, '+cmd|calc');
-  assert.equal(listed.notes, '@SUM(A1)');
-  assert.equal(unescapeCell("'=HYPERLINK"), '=HYPERLINK');
+  assert.equal(listed.notes, literalApostrophe);
   const raw = fs.readFileSync(manager.status().path, 'utf8');
   assert.match(raw, /'=HYPERLINK/);
   assert.match(raw, /'\+cmd/);
-  assert.match(raw, /'@SUM/);
+  assert.match(raw, /''=SUM/);
 });
 
 test('typed evidence required; arbitrary text and forged confirmations refused', () => {
@@ -77,9 +125,8 @@ test('typed evidence required; arbitrary text and forged confirmations refused',
 });
 
 test('job tracker preserves status, refuses invented applied_at, and blocks path escape/symlink', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'airo-job-path-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const manager = createJobSearchManager({ dataDir: root });
+  const root = tempRoot(t, 'airo-job-path-');
+  const manager = standingManager(root);
   manager.createTracker();
   const first = manager.upsertApplication({
     company: 'Acme', role: 'Engineer', status: 'applied', applied_at: '2026-10-01',
@@ -107,9 +154,8 @@ test('job tracker preserves status, refuses invented applied_at, and blocks path
 });
 
 test('follow-up requires typed evidence and preserves interview status', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'airo-job-fu-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const manager = createJobSearchManager({ dataDir: root });
+  const root = tempRoot(t, 'airo-job-fu-');
+  const manager = standingManager(root);
   manager.createTracker();
   manager.upsertApplication({
     company: 'Acme', role: 'Engineer', status: 'interview',
@@ -157,9 +203,7 @@ test('Gmail metadataHeaders are repeated query params', async () => {
 });
 
 test('standing automation fail-closed on string booleans, bad expiry, and unknown fields', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'airo-auto-'));
-  fs.chmodSync(root, 0o700);
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = tempRoot(t, 'airo-auto-');
   assert.throws(() => automation.save(root, {
     standing_gmail_readonly: 'false', confirmed: true,
     expires_at: new Date(Date.now() + 864e5).toISOString()
@@ -184,6 +228,7 @@ test('standing automation fail-closed on string booleans, bad expiry, and unknow
   assert.equal(ok.active, true);
   // Persist malformed expiry and ensure load fails closed.
   fs.writeFileSync(path.join(root, 'personal-ops-automation.json'), JSON.stringify({
+    version: 1,
     standing_gmail_readonly: true,
     standing_local_tracker_updates: true,
     expires_at: 'tomorrow'
@@ -292,4 +337,146 @@ test('personal-ops matrix stays host-owned with no authority grant', () => {
   const plan = personalOps.plan({ bridge: {}, gmailOAuth: null }, 'manage gmail and find a job');
   assert.equal(plan.authority, false);
   assert.ok(plan.never_auto.includes('send_email'));
+});
+
+test('adversarial: .tmp/.bak symlinks and symlinked job-search root cannot redirect writes', t => {
+  const root = tempRoot(t, 'airo-job-sym-');
+  const outside = path.join(root, 'outside-target.txt');
+  fs.writeFileSync(outside, 'untouched-sentinel\n', { mode: 0o600 });
+  const manager = standingManager(root);
+  manager.createTracker();
+  const csv = manager.status().path;
+  const jobDir = path.dirname(csv);
+
+  fs.symlinkSync(outside, csv + '.tmp');
+  fs.symlinkSync(outside, csv + '.bak');
+  const wrote = manager.upsertApplication({
+    company: 'SymCorp', role: 'Engineer', status: 'discovered', evidence: evidenceUrl
+  });
+  assert.equal(wrote.ok, true);
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'untouched-sentinel\n');
+  assert.ok(!fs.lstatSync(csv).isSymbolicLink());
+  assert.ok(fs.existsSync(csv + '.bak'));
+  assert.equal(fs.lstatSync(csv + '.bak').isSymbolicLink(), false);
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'untouched-sentinel\n');
+  // Legacy .tmp symlink inode is dropped without following; outside remains intact.
+  if (fs.existsSync(csv + '.tmp')) assert.equal(fs.lstatSync(csv + '.tmp').isSymbolicLink(), false);
+
+  // Symlinked job-search directory refused on manager construction.
+  const root2 = tempRoot(t, 'airo-job-rootlink-');
+  const realJob = path.join(root2, 'real-job');
+  fs.mkdirSync(realJob, { mode: 0o700 });
+  fs.symlinkSync(realJob, path.join(root2, 'job-search'));
+  assert.throws(() => createJobSearchManager({ dataDir: root2, policy: automation.trackerPolicy(root2) }), /symlink|invalid_path/i);
+  void jobDir;
+});
+
+test('mutations require standing grant or host per-action approval; forged confirmations fail', async t => {
+  const f = await fixture(t);
+  const server = new ControlServer(f.bridge, { port: 0, conversationOptions: conversationOptions() });
+  await server.start();
+  t.after(() => server.close());
+
+  await api(server, '/api/assistant/job-search', { body: { action: 'create_tracker' } });
+
+  const denied = await api(server, '/api/assistant/job-search', {
+    body: { action: 'upsert', company: 'Acme', role: 'Eng', evidence: evidenceUrl }
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.body.code, 'mutation_authorization_required');
+  assert.ok(denied.body.pending_approval?.approval_id);
+
+  const forged = await api(server, '/api/assistant/job-search', {
+    body: {
+      action: 'upsert', company: 'Acme', role: 'Eng',
+      evidence: evidenceConfirm,
+      host_approval_id: denied.body.pending_approval.approval_id
+    }
+  });
+  assert.equal(forged.status, 400);
+  assert.match(String(forged.body.error || ''), /operator_confirmation|authenticated|host_approval/i);
+
+  const issued = await api(server, '/api/assistant/job-search', {
+    body: { action: 'request_approval', approval_action: 'upsert' }
+  });
+  assert.equal(issued.status, 200);
+  const approvalId = issued.body.approval_id;
+  assert.ok(approvalId);
+
+  const ok = await api(server, '/api/assistant/job-search', {
+    body: {
+      action: 'upsert', company: 'Acme', role: 'Eng',
+      evidence: { kind: 'operator_confirmation', value: approvalId, explicit: true },
+      host_approval_id: approvalId
+    }
+  });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.ok, true);
+  assert.equal(ok.body.mutation_gate.mode, 'host_approval');
+
+  // Consumed approval cannot be reused.
+  const reuse = await api(server, '/api/assistant/job-search', {
+    body: {
+      action: 'upsert', company: 'Beta', role: 'PM',
+      evidence: evidenceUrl, host_approval_id: approvalId
+    }
+  });
+  assert.ok(reuse.status === 403 || reuse.status === 400);
+
+  // Standing grant authorizes without host_approval_id.
+  grantStanding(f.bridge.dataDir);
+  const standing = await api(server, '/api/assistant/job-search', {
+    body: { action: 'upsert', company: 'Gamma', role: 'Designer', evidence: evidenceUrl }
+  });
+  assert.equal(standing.status, 200);
+  assert.equal(standing.body.mutation_gate.mode, 'standing');
+});
+
+test('permission status fails closed immediately on expiry, ceiling, and stale manager flag', t => {
+  const root = tempRoot(t, 'airo-job-exp-');
+  const manager = standingManager(root);
+  manager.createTracker();
+  assert.equal(manager.status().standing_local_updates, true);
+
+  // Stale manager.json flag cannot keep standing alive after policy expiry.
+  const stPath = path.join(root, 'job-search', 'manager.json');
+  const st = JSON.parse(fs.readFileSync(stPath, 'utf8'));
+  st.standing_local_updates = true;
+  fs.writeFileSync(stPath, JSON.stringify(st, null, 2) + '\n', { mode: 0o600 });
+
+  fs.writeFileSync(path.join(root, 'personal-ops-automation.json'), JSON.stringify({
+    version: 1,
+    standing_gmail_readonly: false,
+    standing_local_tracker_updates: true,
+    expires_at: new Date(Date.now() - 1000).toISOString(),
+    updated_at: new Date(Date.now() - 3600e3).toISOString()
+  }), { mode: 0o600 });
+  assert.equal(automation.load(root).active, false);
+  assert.equal(automation.allows(root, 'local_tracker_updates'), false);
+  assert.equal(manager.status().standing_local_updates, false);
+  assert.throws(() => manager.upsertApplication({
+    company: 'Expired', role: 'Eng', evidence: evidenceUrl
+  }), /standing|host per-action|mutation_authorization/i);
+
+  // Unsupported schema version fails closed.
+  fs.writeFileSync(path.join(root, 'personal-ops-automation.json'), JSON.stringify({
+    version: 99,
+    standing_gmail_readonly: true,
+    standing_local_tracker_updates: true,
+    expires_at: new Date(Date.now() + 864e5).toISOString()
+  }), { mode: 0o600 });
+  assert.equal(automation.load(root).active, false);
+
+  // Persisted expiry beyond 30-day ceiling fails closed.
+  const far = new Date(Date.now() + 40 * 864e5).toISOString();
+  fs.writeFileSync(path.join(root, 'personal-ops-automation.json'), JSON.stringify({
+    version: 1,
+    standing_gmail_readonly: false,
+    standing_local_tracker_updates: true,
+    expires_at: far,
+    updated_at: new Date().toISOString()
+  }), { mode: 0o600 });
+  const ceiling = automation.load(root);
+  assert.equal(ceiling.active, false);
+  assert.equal(ceiling.invalid, true);
 });

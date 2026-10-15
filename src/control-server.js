@@ -99,8 +99,10 @@ class ControlServer {
   }
   #wirePersonalOps() {
     if (!this.bridge.jobSearchManager) {
+      const automation = require('./personal-ops-automation');
       this.bridge.jobSearchManager = require('./job-search-manager').createJobSearchManager({
         dataDir: this.bridge.dataDir,
+        policy: automation.trackerPolicy(this.bridge.dataDir),
         audit: {
           append: (type, detail) => this.bridge.ledger?.record?.({
             eventType: type, agent: 'bridge', direction: 'internal',
@@ -537,20 +539,34 @@ class ControlServer {
         require('./control-plane-store').object(body,['standing_gmail_readonly','standing_local_tracker_updates','expires_at','confirmed']);
         const saved=require('./personal-ops-automation').save(this.bridge.dataDir,body,'operator');
         this.bridge.personalOpsAutomation=saved;
-        if(saved.active&&saved.standing_local_tracker_updates===true&&this.bridge.jobSearchManager)this.bridge.jobSearchManager.setStandingLocalUpdates(true);
-        else if(this.bridge.jobSearchManager)this.bridge.jobSearchManager.setStandingLocalUpdates(false);
+        if(this.bridge.jobSearchManager)this.bridge.jobSearchManager.setStandingLocalUpdates(saved.active&&saved.standing_local_tracker_updates===true);
         return this.json(res,200,{...saved,message:'Standing personal-ops preferences saved. Send/apply/invite/share/delete remain separately gated. Grants expire fail-closed.',authority:false});
       }
       if(url.pathname==='/api/assistant/job-search'){
-        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone']);
+        require('./control-plane-store').object(body,['action','company','role','status','evidence','posting_url','recruiter_email','applied_at','follow_up_at','notes','id','source','timezone','host_approval_id','approval_action']);
+        const automation=require('./personal-ops-automation');
         const manager=require('./assistant-service').jobSearchManager(this);
-        const standing=require('./personal-ops-automation').allows(this.bridge.dataDir,'local_tracker_updates');
-        if(body.action==='create_tracker')return this.json(res,200,manager.createTracker({standingLocalUpdates:standing}));
+        if(body.action==='create_tracker')return this.json(res,200,manager.createTracker());
         if(body.action==='list')return this.json(res,200,manager.list());
         if(body.action==='digest')return this.json(res,200,manager.dailyDigest({timezone:body.timezone||'local'}));
-        if(body.action==='upsert')return this.json(res,200,manager.upsertApplication(body));
-        if(body.action==='follow_up')return this.json(res,200,manager.recordFollowUp(body));
         if(body.action==='status')return this.json(res,200,manager.status());
+        if(body.action==='request_approval'){
+          return this.json(res,200,automation.issueApproval(this.bridge.dataDir,{action:body.approval_action,actor:'operator'}));
+        }
+        if(body.action==='upsert'||body.action==='follow_up'){
+          const standing=automation.allows(this.bridge.dataDir,'local_tracker_updates');
+          if(!standing&&!body.host_approval_id){
+            const pending=automation.issueApproval(this.bridge.dataDir,{action:body.action,actor:'operator'});
+            return this.json(res,403,{
+              error:'Tracker mutation requires current standing authorization or host per-action approval',
+              code:'mutation_authorization_required',
+              pending_approval:pending,
+              authority:false
+            });
+          }
+          if(body.action==='upsert')return this.json(res,200,manager.upsertApplication(body));
+          return this.json(res,200,manager.recordFollowUp(body));
+        }
         throw Error('Unsupported job-search action');
       }
       if(url.pathname==='/api/assistant/provider'){const saved=require('./conversation-provider').save(this.bridge.dataDir,body,'operator');for(const entry of this.conversationEngine.active.values())entry.controller.abort();this.bridge.controlStore.event('conversation.provider_preference_saved',null,{revision:saved.revision,provider:saved.provider,authority:false});return this.json(res,200,await require('./assistant-service').providerStatus(this));}
