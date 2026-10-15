@@ -104,3 +104,65 @@ test('unknown store still fails closed on identity validation', t => {
   db.exec('CREATE TABLE unexpected_identity_store (id TEXT)');
   assert.throws(() => identity.assertReadable(db), /unclassified store/);
 });
+
+function preferenceService(db, events = []) {
+  return {
+    bridge: {},
+    store: {
+      db,
+      event(...args) { events.push(args); }
+    }
+  };
+}
+
+test('eight-column explicit disable stamps owner_set so rollback cannot re-enable', t => {
+  const events = [];
+  const db = fixture(t, { modern: true });
+  db.prepare(`INSERT INTO cp_risk_acceptance_preference
+    (id,enabled,privacy,data_class,workers,updated_at,updated_by,owner_set)
+    VALUES (1,1,'local_only','public','["opencode"]',111,'system',0)`).run();
+  const acceptance = new RiskAcceptance(preferenceService(db, events));
+  assert.equal(acceptance.preference().enabled, true);
+  assert.equal(db.prepare('SELECT owner_set FROM cp_risk_acceptance_preference WHERE id=1').get().owner_set, 0);
+
+  acceptance.setPreference({ enabled: false, confirmed: true }, 'operator');
+  const after = db.prepare('SELECT enabled,owner_set,updated_by FROM cp_risk_acceptance_preference WHERE id=1').get();
+  assert.equal(after.enabled, 0);
+  assert.equal(after.owner_set, 1);
+  assert.equal(after.updated_by, 'operator');
+  assert.equal(acceptance.preference().enabled, false);
+  assert.equal(events.at(-1)[2].owner_set, true);
+
+  // Reopen against the same persisted row; owner intent remains disabled+owned.
+  const reopened = new RiskAcceptance(preferenceService(db));
+  assert.equal(reopened.preference().enabled, false);
+  assert.deepEqual(
+    db.prepare('SELECT enabled,owner_set,updated_by FROM cp_risk_acceptance_preference WHERE id=1').get(),
+    after
+  );
+});
+
+test('seven-column setPreference stays compatible without owner_set', t => {
+  const events = [];
+  const db = fixture(t);
+  const acceptance = new RiskAcceptance(preferenceService(db, events));
+  assert.equal(db.prepare('PRAGMA table_info(cp_risk_acceptance_preference)').all().length, 7);
+  acceptance.setPreference({ enabled: true, confirmed: true }, 'operator');
+  const row = db.prepare('SELECT enabled,updated_by FROM cp_risk_acceptance_preference WHERE id=1').get();
+  assert.equal(row.enabled, 1);
+  assert.equal(row.updated_by, 'operator');
+  assert.equal('owner_set' in row, false);
+  assert.equal(events.at(-1)[2].owner_set, undefined);
+  acceptance.setPreference({ enabled: false, confirmed: true }, 'operator');
+  assert.equal(acceptance.preference().enabled, false);
+});
+
+test('setPreference denies non-operator and unconfirmed writes', t => {
+  const db = fixture(t, { modern: true, existing: true });
+  const before = db.prepare('SELECT * FROM cp_risk_acceptance_preference WHERE id=1').get();
+  const acceptance = new RiskAcceptance(preferenceService(db));
+  assert.throws(() => acceptance.setPreference({ enabled: false, confirmed: true }, 'mcp'), /Only operator/);
+  assert.throws(() => acceptance.setPreference({ enabled: false }, 'operator'), /confirmation/);
+  assert.throws(() => acceptance.setPreference({ enabled: false, confirmed: false }, 'operator'), /confirmation/);
+  assert.deepEqual(db.prepare('SELECT * FROM cp_risk_acceptance_preference WHERE id=1').get(), before);
+});
