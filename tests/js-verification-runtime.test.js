@@ -79,7 +79,7 @@ test('resolveNpmCli finds npm-cli.js beside a pinned node binary', () => {
   if (cli) assert.equal(fs.statSync(cli).isFile(), true);
 });
 
-test('dependency copy rejects links escaping node_modules', t => {
+test('dependency copy rejects links escaping the repository', t => {
   const f = fixture(t);
   const outside = path.join(f.root, 'outside.js');
   fs.writeFileSync(outside, 'module.exports = 1;');
@@ -88,16 +88,38 @@ test('dependency copy rejects links escaping node_modules', t => {
   assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
 });
 
+test('materialized workspace package links remain inside the disposable repository', t => {
+  const f = fixture(t);
+  for (const root of [f.source, f.work]) {
+    fs.mkdirSync(path.join(root, 'packages'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'packages', 'local-tool.js'), 'process.stdout.write("workspace-tool");');
+  }
+  fs.symlinkSync('../../packages/local-tool.js', path.join(f.source, 'node_modules', '.bin', 'local-tool'));
+  const copied = materializeNodeModules(f.source, f.work);
+  assert.ok(['cloned', 'copied'].includes(copied.status), copied.status);
+  const { resolveNodeRunnable } = require('../src/js-verification-runtime');
+  assert.equal(resolveNodeRunnable(f.work, 'local-tool').file, path.join(f.work, 'packages', 'local-tool.js'));
+});
+
+test('workspace links to private repository paths still fail closed', t => {
+  const f = fixture(t);
+  fs.mkdirSync(path.join(f.source, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(f.source, '.git', 'config'), 'fixture');
+  fs.symlinkSync('../../.git/config', path.join(f.source, 'node_modules', '.bin', 'escape'));
+  assert.throws(() => materializeNodeModules(f.source, f.work), /symlink escapes/);
+});
+
 test('dependency disk budget rejects oversized trees before copying', t => {
   const f = fixture(t);
   assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 64 }), /disk budget exhausted/);
   assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
 });
 
-test('package-bin links cannot escape their dependency tree', t => {
+test('package-bin entrypoints must stay in the repository and cannot escape', t => {
   const f = fixture(t);
-  fs.writeFileSync(path.join(f.source, 'script.js'), 'console.log("out");');
-  fs.symlinkSync('../../script.js', path.join(f.source, 'node_modules', '.bin', 'escape'));
+  const external = path.join(f.root, 'outside.js');
+  fs.writeFileSync(external, 'console.log("no");');
+  fs.symlinkSync(external, path.join(f.source, 'node_modules', '.bin', 'escape'));
   const { resolveNodeRunnable } = require('../src/js-verification-runtime');
   assert.equal(resolveNodeRunnable(f.source, 'escape'), null);
   assert.equal(resolveNodeRunnable(f.source, 'node_modules/../script.js'), null);
