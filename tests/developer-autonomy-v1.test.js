@@ -644,6 +644,31 @@ test('explicit auxiliary merchant app tests may change under pinned static verif
     allowed_files: [relative], workflow: 'routine_edit', objective: 'Extend the auxiliary test'
   }, 'operator');
   assert.ok(grant.grant_id);
+  const scope = da.grantScope(grant.grant_id);
+  const mission = f.bridge.missions.create({
+    request_id: randomUUID() + ':mission',
+    project_id: scope.project_id,
+    goal_id: scope.goal_id,
+    objective: 'Extend the auxiliary test',
+    workspace: scope.workspace,
+    allowed_files: scope.allowed_files,
+    criteria: scope.criteria,
+    verification: scope.verification,
+    preferred_agent: 'opencode',
+    fallback_agents: [],
+    capability_scopes: scope.capability_scopes,
+    authority: scope.authority,
+    manifest: scope.manifest,
+    dispatch_policy: scope.dispatch_policy,
+    developer_autonomy: scope.developer_autonomy
+  }, 'operator');
+  assert.equal(mission.state, 'ready');
+  assert.ok(mission.envelope.contract.permissions.allowed_write_paths.includes(relative));
+  assert.throws(() => f.bridge.missions.create({
+    request_id: randomUUID(), project_id: scope.project_id, goal_id: scope.goal_id,
+    objective: 'Ungranted test edit', workspace: scope.workspace, allowed_files: [relative],
+    criteria: scope.criteria, verification: scope.verification, preferred_agent: 'opencode'
+  }, 'operator'), /protected/);
   const target = path.join(ws.path, relative);
   fs.appendFileSync(target, 'assert.equal(2, 2);\n');
   assert.doesNotThrow(() => da.assertVerifiers(policy, ws.path, [relative]));

@@ -38,6 +38,10 @@ const BRANCH = /^[A-Za-z0-9._\/-]{1,120}$/;
 
 const AUXILIARY_TEST = /^(?:tests?|__tests__)\/.+\.(?:ts|tsx|js|jsx|cjs|mjs)$/;
 
+function auxiliaryApplicationTest(name) {
+  return typeof name === 'string' && AUXILIARY_TEST.test(name) && !/(^|\/)(credentials|secrets)(\/|$)/.test(name);
+}
+
 function writableFile(root, name) {
   if (!AUXILIARY_TEST.test(name) || /(^|\/)(credentials|secrets)(\/|$)/.test(name)) return file(root, name);
   if (typeof name !== 'string' || name.length > 240 || name.includes('\\') || /[\x00-\x1f*?\[\]{}]/.test(name)
@@ -337,6 +341,7 @@ class DeveloperAutonomy {
     if (!grant || grant.state !== 'active') throw Error('Developer Autonomy grant unavailable');
     return { identity: { expires_at: grant.expires_at },
       objective: { original_instruction: input.objective },
+      permissions: { allowed_write_paths: [...input.allowed_files] },
       budget: { risk_class: 'normal', max_repair_attempts: grant.repair_budget,
         max_wall_clock_ms: Math.min(grant.expires_at - grant.created_at, grant.manifest.mission.budget.max_runtime_hours * 3600000),
         max_worker_invocations: grant.repair_budget + 1 } };
@@ -1298,4 +1303,4 @@ class DeveloperAutonomy {
   }
 }
 
-module.exports = { DeveloperAutonomy, WORKFLOWS, NEVER_AUTO, DEFAULT_BUDGETS };
+module.exports = { DeveloperAutonomy, WORKFLOWS, NEVER_AUTO, DEFAULT_BUDGETS, auxiliaryApplicationTest };
