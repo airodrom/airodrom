@@ -181,7 +181,7 @@ test('governed Cursor Mission: contract + disclosure + approval → sandboxed wo
   const f = await fixture(t, { defaultRuntime: 'opencode' });
   f.bridge.cursorWorker = new CursorWorker(f.bridge, { fixtureExecutable: FIXTURE });
   const ws = f.repo;
-  const authority = { level: 'development', permissions: { repository: ['read', 'write'], runtime: ['diagnostic', 'test'], network: ['internet', 'localhost'], secrets: [], data: ['read', 'workspace_write'] }, filesystem: { read: [ws], write: [ws] }, expiresAt: Date.now() + 60 * 60 * 1000 };
+  const authority = { level: 'development', permissions: { repository: ['read', 'write'], runtime: ['diagnostic', 'test'], network: ['internet', 'localhost'], secrets: [], data: ['read', 'workspace_write'] }, filesystem: { read: [ws], write: [path.join(ws, 'fixture.txt')] }, expiresAt: Date.now() + 60 * 60 * 1000 };
   const disclosure = { permissions: { external_disclosure: { authorized: true, providers: ['cursor'], purpose: 'Disposable Cursor qualification fixture' }, network: { mode: 'allowlist', allow: CURSOR_HOSTS } }, budget: { risk_class: 'fixture' } };
   // Ungoverned: a Cursor Mission without contract/disclosure never routes to Cursor.
   const ungoverned = f.create({ preferred_agent: 'cursor', fallback_agents: [], objective: 'Ungoverned ' + randomUUID().slice(0, 8), authority, dispatch_policy: { privacy: 'cloud_allowed', providers: ['cursor_runtime'], billing_classes: ['subscription'], max_attempts: 1 } });

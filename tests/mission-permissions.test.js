@@ -46,6 +46,14 @@ test('signed grants bind ceiling changes and honor STOP revocation',t=>{
  const {workspace}=isolated(t),issuer=new MissionAuthority({fixtureOnly:true});const m={id:'mission-permissions',objective:'Read fixture',workspace,authority:authority(workspace),criteria:[]};const grant=issuer.issueFixtureGrant(m,{capabilities:['read']});m.grantId=grant.id;
  assert.equal(issuer.verify(m,'read').allow,true);assert.equal(issuer.verify({...m,authority:{...m.authority,expiresAt:m.authority.expiresAt+1}},'read').allow,false);assert.equal(issuer.verify({...m,authorityRevoked:true},'read').allow,false);issuer.revoke(m.id,'STOP');assert.equal(issuer.verify(m,'read').allow,false);
 });
+test('registered verifier tasks do not require a repository-wide write grant',t=>{
+ const {workspace}=isolated(t);fs.writeFileSync(path.join(workspace,'fixture.txt'),'alpha\n');
+ const narrow=authority(workspace,'development',{filesystem:{read:[workspace],write:[path.join(workspace,'fixture.txt')]}});
+ const task=callRequirements({toolName:'capability',input:{name:'vscode_run_task',input:{repo:workspace,label:'diff-check'}}},workspace);
+ assert.equal(checkAuthority(narrow,task).allow,true);
+ assert.equal(checkAuthority(authority(workspace,'development',{permissions:{runtime:[]}}),task).allow,false);
+ assert.equal(checkAuthority(narrow,callRequirements({toolName:'capability',input:{name:'file_write',input:{path:path.join(workspace,'notes.txt'),content:'x'}}},workspace)).allow,false);
+});
 test('typed call mappings preserve runtime and network limits and deny unknown operations',t=>{
  const {workspace}=isolated(t);const a=authority(workspace,'development',{permissions:{runtime:[]}});
  assert.equal(checkAuthority(a,callRequirements({toolName:'test'},workspace)).allow,false);

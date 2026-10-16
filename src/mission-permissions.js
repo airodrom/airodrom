@@ -113,7 +113,10 @@ function callRequirements(call, workspace) {
     if (name === 'github_pr_create') return { repository: [args.draft === true ? 'draft_pr' : 'update_pr'], network: ['internet'] };
     if (['github_pr_update','github_pr_comment'].includes(name)) return { repository: ['update_pr'], network: ['internet'] };
     if (name === 'github_pr_merge') return { repository: ['merge'], network: ['internet'] };
-    if (name === 'vscode_run_task') return { runtime: ['test'], repository: ['read'], filesystem: { read: [file(args.repo)], write: [file(args.repo)] } };
+    // Registered verifier tasks run as the host, inside the Mission Seatbelt.
+    // Write roots stay the granted files. A repository-wide write requirement
+    // denied every file-scoped grant before git diff --check or the registered test could start.
+    if (name === 'vscode_run_task') return { runtime: ['test'], repository: ['read'], filesystem: { read: [file(args.repo)] } };
     if (name === 'project_dependency_install') return { repository: ['write'], runtime: ['install'], filesystem: { read: [file(args.repo)], write: [file(args.repo)] } };
     if (['service_start','service_restart','service_stop'].includes(name)) return { runtime: [name === 'service_restart' ? 'restart' : 'server'] };
     if (name === 'process_stop') return { runtime: ['kill'] };
