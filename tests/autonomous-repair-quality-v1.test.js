@@ -72,7 +72,8 @@ test('one preauthorized repair passes host verification and leaves Acceptance pe
   assert.match(child.envelope.objective, /Remaining automatic repair budget after this attempt: 0/);
   assert.equal(fs.readFileSync(child.envelope.workspace + '/fixture.txt', 'utf8'), 'beta\n');
   const again = require('../src/autonomous-repair').considerVerifiedRepair(b, parent.id);
-  assert.equal(again.action, 'skipped');
+  assert.equal(again.action, 'duplicate');
+  assert.equal(again.reason, 'repair_already_dispatched');
   assert.equal(repairsOf(f, parent.id).length, 1);
   assert.equal(b.missions.detail(parent.id).verifications[0].id, parentVerification);
   assert.equal(b.missions.detail(parent.id).verifications[0].result, 'failed');
@@ -89,6 +90,9 @@ test('budget zero, expired authority, duplicate dispatch, failed repair, and una
   assert.equal(repairsOf(f, blocked.id).length, 0);
   const skipped = require('../src/autonomous-repair').considerVerifiedRepair(b, blocked.id);
   assert.equal(skipped.reason, 'repair_budget');
+  const withheld = b.ledger.list({ missionId: blocked.id, limit: 50 }).events.find(event => event.event_type === 'mission.repair_withheld');
+  assert.equal(withheld.metadata.reason, 'repair_budget');
+  assert.equal(withheld.metadata.authority, false);
   assert.equal(repairsOf(f, blocked.id).length, 0);
   release(f, [blocked.id]);
 
@@ -144,4 +148,37 @@ test('budget zero, expired authority, duplicate dispatch, failed repair, and una
   assert.equal(b.missions.detail(outsideParent.id).verifications[0].id, outsideFailed.verifications[0].id);
   assert.equal(b.missions.detail(outsideParent.id).acceptance.length, 0);
   assert.equal(stopped.acceptance.length, 0);
+});
+
+test('an interrupted repair dispatch leaves no mission and a retry dispatches once', async t => {
+  const f = await setup(t), b = f.bridge;
+  const repair = require('../src/autonomous-repair');
+  let interrupt = true;
+  const original = b.missions.dispatch.bind(b.missions);
+  b.missions.dispatch = (id, input, owner) => {
+    const mission = b.controlStore.getMission(id);
+    if (interrupt && mission?.envelope?.repair_of) throw Error('dispatch_interrupted');
+    return original(id, input, owner);
+  };
+  const auth = authorize(f);
+  const parent = b.missions.create(auth.mission_input, 'operator');
+  b.missions.dispatch(parent.id, { request_id: randomUUID() });
+  const failed = await f.settle(parent.id, 'needs_rework');
+  assert.equal(failed.verifications[0].result, 'failed');
+  assert.equal(repairsOf(f, parent.id).length, 0);
+  const denied = b.ledger.list({ missionId: parent.id, limit: 80 }).events.filter(event => event.event_type === 'mission.repair_withheld');
+  assert.equal(denied.at(-1).metadata.reason, 'dispatch_interrupted');
+  assert.equal(denied.at(-1).metadata.action, 'failed');
+  interrupt = false;
+  const retried = repair.considerVerifiedRepair(b, parent.id);
+  assert.equal(retried.action, 'dispatched');
+  assert.equal(repairsOf(f, parent.id).length, 1);
+  const childId = repairsOf(f, parent.id)[0].id;
+  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(childId).n, 1);
+  const repeated = repair.considerVerifiedRepair(b, parent.id);
+  assert.equal(repeated.action, 'duplicate');
+  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(childId).n, 1);
+  assert.equal(b.ledger.list({ missionId: parent.id, limit: 80 }).events.filter(event => event.event_type === 'mission.repair_dispatched').length, 1);
+  assert.equal(b.missions.detail(parent.id).verifications[0].id, failed.verifications[0].id);
+  assert.equal(b.missions.detail(parent.id).acceptance.length, 0);
 });

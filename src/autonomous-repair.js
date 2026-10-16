@@ -406,45 +406,108 @@ class AutonomousRepair {
   }
 }
 
+function repairReason(error) {
+  return require('./secret-observation').redactText(String(error && error.message || error || 'repair_denied'))
+    .replace(/\/(?:Users|home|private|tmp)\/\S+/g, '[path]')
+    .slice(0, 200);
+}
+
+function recordRepair(store, parentId, outcome) {
+  const reason = repairReason(outcome.reason || outcome.action);
+  const metadata = {
+    action: outcome.action,
+    reason,
+    repair_mission_id: outcome.repair_mission_id || null,
+    authority: false,
+  };
+  if (outcome.action === 'dispatched') metadata.remaining_repair_budget = outcome.remaining_repair_budget;
+  store.event(outcome.action === 'dispatched' ? 'mission.repair_dispatched' : 'mission.repair_withheld', parentId, metadata);
+  return { ...outcome, reason };
+}
+
+function repairChild(bridge, parent) {
+  const ref = parent.envelope && parent.envelope.developer_autonomy;
+  if (!ref) return null;
+  return bridge.developerAutonomy.grantMissions(ref.grant_id).find(m => m.envelope.repair_of === parent.id) || null;
+}
+
+function latestDispatch(store, missionId) {
+  return store.db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=? ORDER BY created_at DESC LIMIT 1').get(missionId) || null;
+}
+
+// A committed repair Mission is dispatched at most once. A replay reports the
+// existing dispatch and does not claim a new one.
+function dispatchRepair(bridge, parent, created) {
+  const row = latestDispatch(bridge.controlStore, created.id);
+  if (row) return { action: 'duplicate', reason: 'repair_already_dispatched', repair_mission_id: created.id };
+  const result = bridge.missions.dispatch(created.id, { request_id: 'da-verified-repair-dispatch:' + parent.id });
+  if (result && result.status === 'unknown') return { action: 'failed', reason: 'repair_dispatch_unconfirmed', repair_mission_id: created.id };
+  if (!result || result.duplicate || !result.dispatch_id) return { action: 'duplicate', reason: 'repair_already_dispatched', repair_mission_id: created.id };
+  const used = bridge.developerAutonomy.grantMissions(parent.envelope.developer_autonomy.grant_id).filter(m => m.envelope.repair_of).length;
+  const budget = bridge.developerAutonomy.inspectGrant(parent.envelope.developer_autonomy.grant_id).repair_budget;
+  return { action: 'dispatched', reason: 'repair_dispatched', repair_mission_id: created.id, remaining_repair_budget: Math.max(0, budget - used) };
+}
+
 // One OpenCode repair after a failed host verification when the operator already
 // approved repair_budget >= 1. Does not renew authority, expand scope, or accept.
 function considerVerifiedRepair(bridge, parentId) {
   const store = bridge.controlStore;
+  try {
+    return considerVerifiedRepairBody(bridge, parentId);
+  } catch (error) {
+    const outcome = { action: 'failed', reason: repairReason(error) };
+    try { return recordRepair(store, parentId, outcome); }
+    catch { return outcome; }
+  }
+}
+
+function considerVerifiedRepairBody(bridge, parentId) {
+  const store = bridge.controlStore;
+  const finish = outcome => recordRepair(store, parentId, outcome);
   const parent = store.getMission(parentId);
-  if (!parent || parent.state !== 'needs_rework') return { action: 'skipped', reason: 'not_needs_rework' };
+  if (!parent || parent.state !== 'needs_rework') return finish({ action: 'skipped', reason: 'not_needs_rework' });
   const env = parent.envelope || {};
-  if (env.preferred_agent !== 'opencode' || (env.fallback_agents || []).length) return { action: 'skipped', reason: 'worker_not_authorized' };
-  if ((env.dispatch_policy?.privacy || 'local_only') !== 'local_only') return { action: 'skipped', reason: 'privacy_not_local' };
-  if (env.model_provider && env.model_provider !== 'ollama') return { action: 'skipped', reason: 'external_provider' };
+  if (env.preferred_agent !== 'opencode' || (env.fallback_agents || []).length) return finish({ action: 'skipped', reason: 'worker_not_authorized' });
+  if ((env.dispatch_policy?.privacy || 'local_only') !== 'local_only') return finish({ action: 'skipped', reason: 'privacy_not_local' });
+  if (env.model_provider && env.model_provider !== 'ollama') return finish({ action: 'skipped', reason: 'external_provider' });
   const ref = env.developer_autonomy;
-  if (!ref) return { action: 'skipped', reason: 'repair_budget' };
+  if (!ref) return finish({ action: 'skipped', reason: 'repair_budget' });
   let grant;
   try { grant = bridge.developerAutonomy.inspectGrant(ref.grant_id); }
-  catch { return { action: 'skipped', reason: 'grant_unavailable' }; }
-  if (!grant || !Number.isSafeInteger(grant.repair_budget) || grant.repair_budget < 1) return { action: 'skipped', reason: 'repair_budget' };
-  if (grant.state !== 'active') return { action: 'skipped', reason: 'authority_expired' };
-  if (env.authority && (!Number.isSafeInteger(env.authority.expiresAt) || env.authority.expiresAt <= Date.now())) return { action: 'skipped', reason: 'authority_expired' };
-  if (env.manifest?.expires_at && store.now() >= env.manifest.expires_at) return { action: 'skipped', reason: 'manifest_expired' };
-  try { bridge.developerAutonomy.assertRepair(parent); }
-  catch (error) { return { action: 'skipped', reason: String(error.message || 'repair_denied').slice(0, 200) }; }
-  const used = bridge.developerAutonomy.grantMissions(ref.grant_id).filter(m => m.envelope.repair_of).length;
-  if (used >= grant.repair_budget) return { action: 'skipped', reason: 'repair_budget' };
-  const diagnosis = diagnose(parent, store, { attempt: used + 1, maxAttempts: grant.repair_budget, remaining: Math.max(0, grant.repair_budget - used - 1) });
-  if (!diagnosis.ok) return { action: 'skipped', reason: diagnosis.reason };
-  const input = repairInput(parent, diagnosis, { request_id: 'da-verified-repair:' + parent.id, renewAuthority: false });
-  if (env.authority && !input.authority) return { action: 'skipped', reason: 'authority_expired' };
-  let created;
-  try { created = bridge.missions.create(input, 'operator'); }
-  catch (error) { return { action: 'skipped', reason: String(error.message || 'repair_create_failed').slice(0, 200) }; }
-  if (!created?.id || created.envelope?.repair_of !== parent.id) return { action: 'skipped', reason: 'repair_identity_conflict' };
-  if (!sameScope(parent, created.envelope)) return { action: 'skipped', reason: 'repair_scope_mismatch' };
-  try { bridge.missions.dispatch(created.id, { request_id: 'da-verified-repair-dispatch:' + parent.id }); }
-  catch (error) {
-    const message = String(error.message || '');
-    if (!/duplicate|already|active or uncertain/i.test(message)) return { action: 'skipped', reason: message.slice(0, 200), repair_mission_id: created.id };
+  catch { return finish({ action: 'skipped', reason: 'grant_unavailable' }); }
+  if (!grant || !Number.isSafeInteger(grant.repair_budget) || grant.repair_budget < 1) return finish({ action: 'skipped', reason: 'repair_budget' });
+  if (grant.state !== 'active') return finish({ action: 'skipped', reason: 'authority_expired' });
+  if (env.authority && (!Number.isSafeInteger(env.authority.expiresAt) || env.authority.expiresAt <= Date.now())) return finish({ action: 'skipped', reason: 'authority_expired' });
+  if (env.manifest?.expires_at && store.now() >= env.manifest.expires_at) return finish({ action: 'skipped', reason: 'manifest_expired' });
+  const existing = repairChild(bridge, parent);
+  if (existing) {
+    try { return finish(dispatchRepair(bridge, parent, existing)); }
+    catch (error) { return finish({ action: 'failed', reason: repairReason(error), repair_mission_id: existing.id }); }
   }
-  store.event('mission.repair_dispatched', parent.id, { repair_mission_id: created.id, remaining_repair_budget: Math.max(0, grant.repair_budget - used - 1), authority: false });
-  return { action: 'dispatched', repair_mission_id: created.id };
+  try { bridge.developerAutonomy.assertRepair(parent); }
+  catch (error) { return finish({ action: 'skipped', reason: repairReason(error) }); }
+  const used = bridge.developerAutonomy.grantMissions(ref.grant_id).filter(m => m.envelope.repair_of).length;
+  if (used >= grant.repair_budget) return finish({ action: 'skipped', reason: 'repair_budget' });
+  const diagnosis = diagnose(parent, store, { attempt: used + 1, maxAttempts: grant.repair_budget, remaining: Math.max(0, grant.repair_budget - used - 1) });
+  if (!diagnosis.ok) return finish({ action: 'skipped', reason: diagnosis.reason });
+  const input = repairInput(parent, diagnosis, { request_id: 'da-verified-repair:' + parent.id, renewAuthority: false });
+  if (env.authority && !input.authority) return finish({ action: 'skipped', reason: 'authority_expired' });
+  let created;
+  try {
+    created = transaction(store.db, () => {
+      const mission = bridge.missions.create(input, 'operator');
+      if (!mission?.id || mission.envelope?.repair_of !== parent.id) throw Error('repair_identity_conflict');
+      if (!sameScope(parent, mission.envelope)) throw Error('repair_scope_mismatch');
+      const dispatched = dispatchRepair(bridge, parent, mission);
+      if (dispatched.action !== 'dispatched') throw Error(dispatched.reason || 'repair_dispatch_failed');
+      return dispatched;
+    });
+  } catch (error) {
+    const raced = repairChild(bridge, parent);
+    if (raced && latestDispatch(store, raced.id)) return finish({ action: 'duplicate', reason: 'repair_already_dispatched', repair_mission_id: raced.id });
+    return finish({ action: 'failed', reason: repairReason(error), repair_mission_id: raced?.id || null });
+  }
+  return finish(created);
 }
 
 module.exports = { AutonomousRepair, diagnose, failedChecks, repairInput, repairAuthority, sameScope, repairKey, considerVerifiedRepair, PENDING_TIMEOUT_MS };

@@ -467,7 +467,11 @@ class MissionService {
       catch(error){if(this.store.getMission(m.id).state==='verifying')this.store.state(m.id,'blocked','Independent verification unavailable');}
       finally{this.store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
       if(verified?.status==='failed'&&this.store.getMission(m.id).state==='needs_rework'){
-        try{require('./autonomous-repair').considerVerifiedRepair(this.bridge,m.id);}catch{/* Parent verification evidence stays; a denied repair is not a new grant. */}
+        try{require('./autonomous-repair').considerVerifiedRepair(this.bridge,m.id);}
+        catch(error){
+          const reason=require('./secret-observation').redactText(String(error&&error.message||'repair_failed')).replace(/\/(?:Users|home|private|tmp)\/\S+/g,'[path]').slice(0,200);
+          try{this.store.event('mission.repair_withheld',m.id,{action:'failed',reason,authority:false});}catch{/* Parent verification evidence stays. */}
+        }
       }
       if(m.envelope.kind!=='browser_research'&&m.envelope.automatic_acceptance)this.acceptanceEngine.attempt(m.id);
       if(m.envelope.fixture_auto_acceptance?.authorized)this.bridge.fixtureAcceptance.attempt(m.id);
