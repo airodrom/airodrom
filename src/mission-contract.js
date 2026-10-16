@@ -39,7 +39,9 @@ const DEFAULT_DENIED_PATHS = Object.freeze([
 ]);
 const DEFAULT_DENIED_TOOLS = Object.freeze(['shell', 'sudo', 'network', 'mcp', 'web_fetch', 'git_push', 'git_merge', 'git_commit', 'process_signal', 'package_install', 'deploy', 'credential_export']);
 const KNOWN_PROVIDER_HOSTS = Object.freeze({
-  cursor: ['api2.cursor.sh', 'api3.cursor.sh', 'api4.cursor.sh', 'repo42.cursor.sh', 'agent.api5.cursor.sh', 'cursor.com', 'www.cursor.com', 'authenticator.cursor.sh', 'us-asia.gcpp.cursor.sh', 'us-eu.gcpp.cursor.sh', 'us-only.gcpp.cursor.sh', 'marketplace.cursorapi.com'],
+  // agentn.global.api5.cursor.sh is the current agent-stream endpoint observed under
+  // governed headless runs (2026.09.28); keep agent.api5.cursor.sh for older clients.
+  cursor: ['api2.cursor.sh', 'api3.cursor.sh', 'api4.cursor.sh', 'repo42.cursor.sh', 'agent.api5.cursor.sh', 'agentn.global.api5.cursor.sh', 'cursor.com', 'www.cursor.com', 'authenticator.cursor.sh', 'us-asia.gcpp.cursor.sh', 'us-eu.gcpp.cursor.sh', 'us-only.gcpp.cursor.sh', 'marketplace.cursorapi.com'],
   claude_code: ['api.anthropic.com', 'claude.ai', 'console.anthropic.com'],
   codex: ['api.openai.com', 'chatgpt.com', 'auth.openai.com'],
 });

@@ -9,10 +9,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
-const { CursorWorker, permissionConfig, sandboxProfile, parseStream, normalizeResult } = require('../src/cursor-worker');
+const { CursorWorker, permissionConfig, sandboxProfile, parseStream, normalizeResult, stagingRoot, redactDiagnostic, classifyFailure } = require('../src/cursor-worker');
 
 const FIXTURE = path.join(__dirname, 'fixtures/cursor-agent-fixture.cjs');
-const CURSOR_HOSTS = ['api2.cursor.sh', 'api3.cursor.sh', 'api4.cursor.sh', 'repo42.cursor.sh', 'agent.api5.cursor.sh'];
+const CURSOR_HOSTS = ['api2.cursor.sh', 'api3.cursor.sh', 'api4.cursor.sh', 'repo42.cursor.sh', 'agent.api5.cursor.sh', 'agentn.global.api5.cursor.sh'];
 
 function workspace() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cursor-ws-')));
@@ -51,9 +51,27 @@ test('cursor worker: readiness tiers are honest (installed ≠ authenticated ≠
   if (!source.available) assert.match(source.owner_step, /AGENT_CLI_CREDENTIAL_STORE=file agent login/);
 });
 
+test('cursor worker: short staging root keeps Cursor private dir inside writeRoots', () => {
+  const root = stagingRoot();
+  try {
+    const projects = path.join(root, 'state', 'cursor-data', 'projects');
+    assert.ok(projects.length <= 84, 'CURSOR_DATA_DIR/projects must stay ≤84 chars to avoid /tmp/.cursor fallback');
+    assert.match(root, process.platform === 'darwin' ? /^\/private\/tmp\/ad-/ : /airodrom-cursor-/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('cursor worker: failure diagnostics redact secrets and classify sandbox denials', () => {
+  const sample = redactDiagnostic('Bearer abcdef0123456789abcdef0123456789 authId:github|user_SECRETTOK EPERM mkdir \'/tmp/.cursor/private-var-folders-x\'');
+  assert.doesNotMatch(sample, /abcdef0123456789|SECRETTOK|github\|user_/);
+  assert.match(sample, /Bearer <redacted>/);
+  assert.deepEqual(classifyFailure(sample).sort(), ['cursor_private_dir', 'sandbox_denial'].sort());
+  assert.ok(classifyFailure('Failed to negotiate an HTTP CONNECT tunnel with the configured proxy').includes('network_or_proxy'));
+});
+
 test('cursor worker: host-authored deny-list and sandbox profile enforce boundaries independently of --force', () => {
   const p = permissionConfig(['fixture.txt']);
   assert.ok(p.permissions.deny.includes('Shell(*)') && p.permissions.deny.includes('WebFetch(*)') && p.permissions.deny.includes('Mcp(*:*)'));
+  assert.equal(p.permissions.deny.includes('Write(**)'), false, 'blanket Write(**) deny must not override allowlisted Write(path)');
   assert.ok(p.permissions.allow.includes('Write(fixture.txt)'));
   assert.equal(p.sandbox.mode, 'disabled', 'Cursor\'s own sandbox is disabled; sandbox-exec is authoritative');
   const fake = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cursor-fake-install-')));
