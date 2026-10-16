@@ -197,7 +197,31 @@ class DeveloperAutonomy {
     const trusted = policy.verifier_baseline;
     if (!trusted || !Array.isArray(trusted.files)) throw Error('Enrolled verifier baseline unavailable');
     const expected = new Map(trusted.files.map(entry => [entry.path, entry.sha256]));
-    if (allowed.some(name => expected.has(name)) || trusted.files.some(entry => snapshot.files[entry.path] !== entry.sha256)
+    // An auxiliary application test can be edited when explicitly named in the
+    // Mission and the enrolled verifier only runs a pinned static typecheck.
+    // It is never trusted as verification evidence. Registered tests, task
+    // definitions and referenced verification inputs remain immutable.
+    const configured = JSON.parse(fs.readFileSync(taskFile, 'utf8')).tasks || [];
+    const typecheckTasks = configured.filter(task => policy.verification_defaults.tests.includes(task.label));
+    let staticOnly = typecheckTasks.length > 0
+      && typecheckTasks.length === policy.verification_defaults.tests.length
+      && typecheckTasks.every(task => task.type === 'process' && task.command === 'npm'
+        && JSON.stringify(task.args) === '["run","typecheck"]');
+    if (staticOnly) {
+      try {
+        const originalPkg = fs.readFileSync(path.join(policy.repository, 'package.json'), 'utf8');
+        const currentPkg = fs.readFileSync(path.join(workspace, 'package.json'), 'utf8');
+        staticOnly = originalPkg === currentPkg
+          && JSON.parse(originalPkg).scripts?.typecheck === 'tsc --noEmit'
+          && !allowed.includes('package.json');
+      } catch { staticOnly = false; }
+    }
+    const editable = new Set(staticOnly ? allowed.filter(name =>
+      /^(?:tests?|__tests__)\/.+\.(?:ts|tsx|js|jsx|cjs|mjs)$/.test(name)
+      && expected.has(name)
+      && !trusted.referenced?.includes(name)) : []);
+    if (allowed.some(name => expected.has(name) && !editable.has(name))
+      || trusted.files.some(entry => snapshot.files[entry.path] !== entry.sha256 && !editable.has(entry.path))
       || Object.keys(snapshot.files).some(name => require('./verifier-baseline').isVerifierOwned(name) && !expected.has(name))) {
       throw Error('Enrolled verifier inputs changed or overlap writable scope');
     }
