@@ -43,7 +43,8 @@ class MissionService {
       developmentSessionId=session.id;
     }
     if(!Array.isArray(input.allowed_files)||!input.allowed_files.length||input.allowed_files.length>40)throw Error('Explicit allowed files required');input.allowed_files.forEach(relative);
-    if(input.allowed_files.some(f=>/(^|\/)(tests?|__tests__|\.vscode)(\/|$)|(^|\/)(package(?:-lock)?\.json|[^/]+\.(?:test|spec)\.[^/]+)$/.test(f)))throw Error('Verification inputs must remain protected');
+    const auxiliary=input.developer_autonomy?this.bridge.developerAutonomy.boundAuxiliaryFiles(input):[];
+    if(input.allowed_files.some(f=>/(^|\/)(tests?|__tests__|\.vscode)(\/|$)|(^|\/)(package(?:-lock)?\.json|[^/]+\.(?:test|spec)\.[^/]+)$/.test(f)&&!auxiliary.includes(f)))throw Error('Verification inputs must remain protected');
     if(input.authority!==undefined&&owner!=='operator')throw Error('Only operator may set mission authority');
     const authority=input.authority===undefined?require('./mission-permissions').trustedDefault(workspace,this.bridge.options.trustedRepositoryDefaults||[]):require('./mission-permissions').normalizeAuthority(input.authority,{workspace,operator:owner==='operator'});
     const scopes=this.bridge.capabilityHost.policy.normalizeTaskScopes(input.capability_scopes||['repo','developer_environment']);
@@ -102,7 +103,7 @@ class MissionService {
       repairOf=parent.id;
     }else if(baseline.dirty.some(f=>input.allowed_files.includes(f)))throw Error('Requested changes overlap pre-existing dirty work');
     // Repair baselines may already include dirty allowed files; fresh Missions may not.
-    const verificationManifest=baseline.version===2?require('./repository-verification').manifest(baseline,input.allowed_files,{inspectNow:!repairOf}):null;
+    const verificationManifest=baseline.version===2?require('./repository-verification').manifest(baseline,input.allowed_files,{inspectNow:!repairOf,authorizedAuxiliaryFiles:input.developer_autonomy?this.bridge.developerAutonomy.boundAuxiliaryFiles(input):[]}):null;
     // ADR 0051 canonical Mission contract. Mandatory for Cursor and for any governed
     // (zero-setup / handoff / corrective) Mission; legacy direct creates without a
     // contract keep their existing authority/manifest/dispatch-policy ceilings.

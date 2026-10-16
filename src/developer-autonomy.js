@@ -38,6 +38,10 @@ const BRANCH = /^[A-Za-z0-9._\/-]{1,120}$/;
 
 const AUXILIARY_TEST = /^(?:tests?|__tests__)\/.+\.(?:ts|tsx|js|jsx|cjs|mjs)$/;
 
+function auxiliaryApplicationTest(name) {
+  return typeof name === 'string' && AUXILIARY_TEST.test(name) && !/(^|\/)(credentials|secrets)(\/|$)/.test(name);
+}
+
 function writableFile(root, name) {
   if (!AUXILIARY_TEST.test(name) || /(^|\/)(credentials|secrets)(\/|$)/.test(name)) return file(root, name);
   if (typeof name !== 'string' || name.length > 240 || name.includes('\\') || /[\x00-\x1f*?\[\]{}]/.test(name)
@@ -195,6 +199,35 @@ class DeveloperAutonomy {
     return root;
   }
 
+  boundAuxiliaryFiles(source) {
+    const envelope = source?.envelope || source;
+    const ref = envelope?.developer_autonomy;
+    if (!ref) return [];
+    const scope = this.grantScope(ref.grant_id);
+    if (!scope || fingerprint(ref) !== fingerprint(scope.developer_autonomy)) {
+      throw Error('Developer Autonomy grant expired, revoked or changed');
+    }
+    const allowed = envelope.allowed_files;
+    const workspace = envelope.workspace;
+    if (!Array.isArray(allowed) || fingerprint(allowed) !== fingerprint(scope.allowed_files)) {
+      throw Error('Immutable grant ceiling mismatch');
+    }
+    if (typeof workspace !== 'string' || path.resolve(workspace) !== path.resolve(scope.workspace)) {
+      throw Error('Workspace grant mismatch');
+    }
+    const projectId = source.project_id || source.projectId;
+    const goalId = source.goal_id || source.goalId;
+    if ((projectId && projectId !== scope.project_id) || (goalId && goalId !== scope.goal_id)) {
+      throw Error('Immutable grant ceiling mismatch');
+    }
+    const recorded = envelope.verification_manifest?.authorized_auxiliary_files;
+    const derived = scope.allowed_files.filter(auxiliaryApplicationTest);
+    if (recorded && fingerprint([...recorded].sort()) !== fingerprint([...derived].sort())) {
+      throw Error('Authorized application-test scope mismatch');
+    }
+    return derived;
+  }
+
   assertWorkspace(workspace) {
     if (!workspace || !['ready', 'bound', 'held'].includes(workspace.state)) throw Error('Workspace not usable');
     assertIdentities(workspace.identities);
@@ -337,6 +370,7 @@ class DeveloperAutonomy {
     if (!grant || grant.state !== 'active') throw Error('Developer Autonomy grant unavailable');
     return { identity: { expires_at: grant.expires_at },
       objective: { original_instruction: input.objective },
+      permissions: { allowed_write_paths: [...input.allowed_files] },
       budget: { risk_class: 'normal', max_repair_attempts: grant.repair_budget,
         max_wall_clock_ms: Math.min(grant.expires_at - grant.created_at, grant.manifest.mission.budget.max_runtime_hours * 3600000),
         max_worker_invocations: grant.repair_budget + 1 } };
@@ -1298,4 +1332,4 @@ class DeveloperAutonomy {
   }
 }
 
-module.exports = { DeveloperAutonomy, WORKFLOWS, NEVER_AUTO, DEFAULT_BUDGETS };
+module.exports = { DeveloperAutonomy, WORKFLOWS, NEVER_AUTO, DEFAULT_BUDGETS, auxiliaryApplicationTest };

@@ -644,6 +644,31 @@ test('explicit auxiliary merchant app tests may change under pinned static verif
     allowed_files: [relative], workflow: 'routine_edit', objective: 'Extend the auxiliary test'
   }, 'operator');
   assert.ok(grant.grant_id);
+  const scope = da.grantScope(grant.grant_id);
+  const mission = f.bridge.missions.create({
+    request_id: randomUUID() + ':mission',
+    project_id: scope.project_id,
+    goal_id: scope.goal_id,
+    objective: 'Extend the auxiliary test',
+    workspace: scope.workspace,
+    allowed_files: scope.allowed_files,
+    criteria: scope.criteria,
+    verification: scope.verification,
+    preferred_agent: 'opencode',
+    fallback_agents: [],
+    capability_scopes: scope.capability_scopes,
+    authority: scope.authority,
+    manifest: scope.manifest,
+    dispatch_policy: scope.dispatch_policy,
+    developer_autonomy: scope.developer_autonomy
+  }, 'operator');
+  assert.equal(mission.state, 'ready');
+  assert.ok(mission.envelope.contract.permissions.allowed_write_paths.includes(relative));
+  assert.throws(() => f.bridge.missions.create({
+    request_id: randomUUID(), project_id: scope.project_id, goal_id: scope.goal_id,
+    objective: 'Ungranted test edit', workspace: scope.workspace, allowed_files: [relative],
+    criteria: scope.criteria, verification: scope.verification, preferred_agent: 'opencode'
+  }, 'operator'), /protected/);
   const target = path.join(ws.path, relative);
   fs.appendFileSync(target, 'assert.equal(2, 2);\n');
   assert.doesNotThrow(() => da.assertVerifiers(policy, ws.path, [relative]));
@@ -668,4 +693,109 @@ test('explicit auxiliary merchant app tests may change under pinned static verif
 
   const locked = da.enroll({ ...f.enrollInput, alias: 'fixture-da-immutable' }, 'operator');
   assert.throws(() => da.assertVerifiers(locked, f.repo, [relative]), /overlap writable scope/);
+});
+
+test('a granted application test survives creation, comparison, and host verification', async t => {
+  const f = await setup(t);
+  qualifyCanonical(f.bridge);
+  const source = 'export function validate(value: unknown): { ok: false, code: string } { return { ok: false, code: "missing_id" }; }\n';
+  const applicationTest = 'const assert = { equal(actual: unknown, expected: unknown): void { if (actual !== expected) throw new Error("not equal"); } };\nassert.equal(1, 1);\n';
+  fs.mkdirSync(path.join(f.repo, 'src'));
+  fs.writeFileSync(path.join(f.repo, 'src/events.ts'), source);
+  fs.writeFileSync(path.join(f.repo, 'tests/events.test.ts'), applicationTest);
+  fs.writeFileSync(path.join(f.repo, 'package.json'), JSON.stringify({ name: 'fixture', private: true, scripts: { typecheck: 'tsc --noEmit' } }));
+  const tasks = JSON.parse(fs.readFileSync(path.join(f.repo, '.vscode/tasks.json'), 'utf8'));
+  tasks.tasks.push({ label: 'static-typecheck', type: 'process', command: 'npm', args: ['run', 'typecheck'] });
+  fs.writeFileSync(path.join(f.repo, '.vscode/tasks.json'), JSON.stringify(tasks));
+  execFileSync('/usr/bin/git', ['-C', f.repo, 'add', 'src/events.ts', 'tests/events.test.ts', 'package.json', '.vscode/tasks.json'], { stdio: 'pipe' });
+  execFileSync('/usr/bin/git', ['-C', f.repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'Pin static typecheck and application test'], { stdio: 'pipe' });
+  const tscDir = path.join(f.repo, 'node_modules/.bin');
+  fs.mkdirSync(tscDir, { recursive: true });
+  fs.writeFileSync(path.join(tscDir, 'tsc'), '#!/usr/bin/env node\nprocess.exit(0);\n', { mode: 0o755 });
+  const previous = f.host.exec.resolveFirst.bind(f.host.exec);
+  f.host.exec.resolveFirst = candidates => {
+    const npm = candidates.find(candidate => typeof candidate === 'string' && candidate.endsWith('/npm'));
+    if (npm && fs.existsSync(npm)) return npm;
+    return previous(candidates);
+  };
+  const worker = path.join(f.root, 'auxiliary-worker');
+  fs.writeFileSync(worker, `#!${process.execPath}
+const fs=require('node:fs');
+if(process.argv.includes('--version')){console.log('opencode v2.0.25');process.exit(0);}
+let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{
+  const objective=JSON.parse(raw).objective;
+  const result={summary:'deterministic auxiliary fixture',changed_files:[],tests:[],artifacts:[],limitations:[]};
+  if(objective.includes('AUXILIARY_GRANT_APPEND')){
+    fs.writeFileSync('src/events.ts', ${JSON.stringify(source.replace('missing_id', 'checked'))});
+    fs.writeFileSync('tests/events.test.ts', fs.readFileSync('tests/events.test.ts','utf8')+'assert.equal(2, 2);\\n');
+    result.changed_files=['src/events.ts','tests/events.test.ts'];
+  } else if(objective.includes('AUXILIARY_GRANT_REPLACE')){
+    fs.writeFileSync('tests/events.test.ts','assert.equal(true, true);\\n');
+    result.changed_files=['tests/events.test.ts'];
+  } else if(objective.includes('AUXILIARY_GRANT_OUTSIDE')){
+    fs.writeFileSync('outside.txt','nope\\n');
+    result.changed_files=['outside.txt'];
+  }
+  console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));
+});
+`, { mode: 0o755 });
+  f.bridge.opencodeAdapter.options = Object.freeze({ ...f.bridge.opencodeAdapter.options, fixtureExecutable: worker });
+  const da = f.bridge.developerAutonomy;
+  const policy = da.enroll({ ...f.enrollInput, alias: 'fixture-da-lifecycle', default_tests: ['static-typecheck'] }, 'operator');
+  const allowed = ['src/events.ts', 'tests/events.test.ts'];
+  const auth = da.authorizeRoutine({
+    policy_id: policy.policy_id, request_id: randomUUID(),
+    objective: 'AUXILIARY_GRANT_APPEND implement the validator and append one assertion',
+    allowed_files: allowed, workflow: 'routine_edit', diff_check: 'diff-check', tests: ['static-typecheck']
+  }, 'operator');
+  assert.throws(() => f.bridge.missions.create({
+    ...auth.mission_input, request_id: randomUUID(),
+    developer_autonomy: { ...auth.mission_input.developer_autonomy, hash: '0'.repeat(64) }
+  }, 'operator'), /expired|revoked|changed/);
+  assert.throws(() => f.bridge.missions.create({
+    ...auth.mission_input, request_id: randomUUID(), allowed_files: ['tests/other.test.ts']
+  }, 'operator'), /ceiling|protected|grant/);
+  assert.throws(() => da.boundAuxiliaryFiles({ ...auth.mission_input, workspace: f.repo }), /Workspace grant mismatch/);
+  assert.throws(() => f.bridge.missions.create({
+    ...auth.mission_input, request_id: randomUUID(), developer_autonomy: undefined, allowed_files: ['tests/events.test.ts']
+  }, 'operator'), /protected/);
+  const mission = f.bridge.missions.create(auth.mission_input, 'operator');
+  assert.equal(mission.state, 'ready');
+  assert.deepEqual(mission.envelope.verification_manifest.authorized_auxiliary_files, ['tests/events.test.ts']);
+  f.bridge.missions.dispatch(mission.id, { request_id: randomUUID() });
+  const done = await f.settle(mission.id);
+  assert.equal(done.state, 'awaiting_acceptance');
+  assert.equal(done.acceptance.length, 0);
+  assert.equal(done.verifications[0].result, 'operator_review');
+  const checks = done.verifications[0].evidence;
+  for (const id of ['repository_v2', 'creation_repository_v2', 'task:static-typecheck', 'task:diff-check', 'protected_tests_unchanged', 'verifier_inputs_unchanged']) {
+    assert.equal(checks.find(check => check.id === id).status, id.startsWith('task:') || !id.includes('review') ? 'passed' : 'passed', id);
+  }
+  assert.equal(fs.readFileSync(path.join(auth.workspace.path, 'tests/events.test.ts'), 'utf8'), applicationTest + 'assert.equal(2, 2);\n');
+  assert.match(fs.readFileSync(path.join(auth.workspace.path, 'src/events.ts'), 'utf8'), /checked/);
+  const run = done.runs.find(item => item.agent_id === 'opencode');
+  assert.equal(run.state, 'completed');
+  assert.equal(run.termination_verified, 1);
+  const leases = f.bridge.controlStore.db.prepare('SELECT state FROM cp_leases WHERE mission_id=?').all(mission.id);
+  assert.ok(leases.length > 0);
+  assert.ok(leases.every(lease => lease.state === 'released'));
+
+  const replacement = da.enroll({ ...f.enrollInput, alias: 'fixture-da-replace', default_tests: ['static-typecheck'] }, 'operator');
+  const denied = da.authorizeRoutine({
+    policy_id: replacement.policy_id, request_id: randomUUID(),
+    objective: 'AUXILIARY_GRANT_REPLACE rewrite the application test',
+    allowed_files: ['tests/events.test.ts'], workflow: 'routine_edit', diff_check: 'diff-check', tests: ['static-typecheck']
+  }, 'operator');
+  const rejected = f.bridge.missions.create(denied.mission_input, 'operator');
+  f.bridge.missions.dispatch(rejected.id, { request_id: randomUUID() });
+  let settled;
+  for (let n = 0; n < 200; n++) {
+    await f.bridge.missions.tick();
+    settled = f.bridge.missions.detail(rejected.id);
+    if (['needs_rework', 'blocked', 'failed', 'awaiting_acceptance'].includes(settled.state)) break;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  assert.notEqual(settled.state, 'awaiting_acceptance');
+  assert.equal(settled.acceptance.length, 0);
+  assert.equal(fs.readFileSync(path.join(denied.workspace.path, 'tests/events.test.ts'), 'utf8'), applicationTest);
 });
