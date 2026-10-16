@@ -24,10 +24,46 @@ const MAX_PROMPT = 24000;
 const MAX_TRACE_EVENTS = 200;
 const DEFAULT_TIMEOUT_MS = 180000;
 const MAX_TIMEOUT_MS = 600000;
+// Cursor falls back to mkdir under /tmp/.cursor when its projects path exceeds 84
+// chars (see CLI private-dir logic). Keep the staging root short so CURSOR_DATA_DIR
+// and HOME stay inside Seatbelt writeRoots instead of that denied fallback.
+const STAGING_PREFIX = process.platform === 'darwin' ? '/tmp/ad-' : path.join(os.tmpdir(), 'airodrom-cursor-');
+const CURSOR_PROXY_CONNECTIONS = 64;
+const MAX_DIAG_SAMPLE = 480;
 const CANDIDATES = () => [path.join(os.homedir(), '.local/bin/cursor-agent'), path.join(os.homedir(), '.local/bin/agent'), '/usr/local/bin/cursor-agent'];
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => { throw new AgentAdapterError(code, code); };
 const quote = value => JSON.stringify(value);
+
+/** Redact credentials, tokens, auth ids and home paths before any diagnostic surface. */
+function redactDiagnostic(text) {
+  return String(text || '')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>')
+    .replace(/((?:authorization|token|secret|password|api[_-]?key)\s*[:=]\s*)\S+/gi, '$1<redacted>')
+    .replace(/\b(?:authId|userId|accountId)\b\s*[:=]\s*["']?[^"'\s,}]+/gi, m => m.replace(/[:=]\s*["']?[^"'\s,}]+/, '=<redacted>'))
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '<redacted-jwt>')
+    .replace(/\b[a-f0-9]{32,}\b/gi, '<redacted-hex>')
+    .replace(/\/Users\/[^/\s]+/g, '/Users/<redacted>')
+    .replace(/github\|[A-Za-z0-9_]+/g, 'github|<redacted>');
+}
+
+/** Categorical failure classes only — never persist unrestricted vendor stderr. */
+function classifyFailure(text) {
+  const t = String(text || '');
+  const classes = [];
+  if (/\/tmp\/\.cursor|private-var-folders|projects path|CURSOR_DATA_DIR/i.test(t) && /EPERM|operation not permitted|ENOENT|mkdir/i.test(t)) classes.push('cursor_private_dir');
+  if (/sandbox|Seatbelt|operation not permitted|EPERM|EACCES|sandbox-exec/i.test(t)) classes.push('sandbox_denial');
+  if (/connection_bound|proxy_denied|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|socket hang up|fetch failed|ConnectError|HTTP CONNECT tunnel|negotiate an HTTP CONNECT/i.test(t)) classes.push('network_or_proxy');
+  if (/not logged in|unauthorized|authentication required|auth.*(?:fail|required|unavailable)|401|403/i.test(t)) classes.push('auth_class');
+  if (/quota|rate.?limit|usage limit/i.test(t)) classes.push('quota');
+  return [...new Set(classes)];
+}
+
+function stagingRoot() {
+  const root = fs.realpathSync(fs.mkdtempSync(STAGING_PREFIX));
+  fs.chmodSync(root, 0o700);
+  return root;
+}
 
 function relative(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_.\/-]{1,300}$/.test(value) || path.isAbsolute(value) || value.split('/').some(p => !p || p === '.' || p === '..') || /(^|\/)(?:\.git|\.cursor|\.opencode|\.agents|\.claude|node_modules|\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|auth\.json|[^/]+\.(?:sqlite|db|pem|key))($|\/)/i.test(value)) fail('cursor_file_scope');
@@ -61,11 +97,15 @@ function resolveInstall(override = null) {
 
 /** Host-authored permission deny-list staged for the CLI (defence in depth; the sandbox is authoritative). */
 function permissionConfig(writable) {
+  // approvalMode allowlist: only listed Write(path) grants may mutate files. Do not also
+  // deny Write(**) — Cursor treats deny as higher precedence, which blocked every edit and
+  // produced cursor_runtime_failed after an otherwise healthy sandboxed run. Seatbelt
+  // exact-path writes remain the authority for containment.
   return {
     version: 1,
     permissions: {
       allow: ['Read(**)', ...writable.map(f => 'Write(' + f + ')')],
-      deny: ['Shell(*)', 'WebFetch(*)', 'Mcp(*:*)', 'Read(.env*)', 'Read(**/.env*)', 'Read(**/*.pem)', 'Read(**/*.key)', 'Write(**)'],
+      deny: ['Shell(*)', 'WebFetch(*)', 'Mcp(*:*)', 'Read(.env*)', 'Read(**/.env*)', 'Read(**/*.pem)', 'Read(**/*.key)'],
     },
     approvalMode: 'allowlist',
     sandbox: { mode: 'disabled', networkAccess: 'user_config_with_defaults' },
@@ -271,7 +311,7 @@ class CursorWorker {
     const allowedHosts = (hosts && hosts.length ? hosts : require('./mission-contract').KNOWN_PROVIDER_HOSTS.cursor).map(h => h.replace(/:\d+$/, ''));
     const install = this.install();
     const sandboxId = randomUUID();
-    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'airodrom-cursor-'))); fs.chmodSync(root, 0o700);
+    const root = stagingRoot();
     const trace = [];
     const emit = (event) => { if (trace.length < MAX_TRACE_EVENTS) trace.push({ at: Date.now(), ...event }); try { onEvent?.(event); } catch { /* observation never aborts execution */ } };
     const originals = new Map();
@@ -280,7 +320,7 @@ class CursorWorker {
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     try {
-      for (const d of ['workspace/.cursor', 'home/.cursor', 'brief', 'state/tmp', 'state/cache', 'state/cc']) fs.mkdirSync(path.join(root, d), { recursive: true, mode: 0o700 });
+      for (const d of ['workspace/.cursor', 'home/.cursor', 'brief', 'state/tmp', 'state/cache', 'state/cc', 'state/cursor-data']) fs.mkdirSync(path.join(root, d), { recursive: true, mode: 0o700 });
       for (const f of files) {
         const target = path.join(workspace, f);
         if (fs.realpathSync(target) !== target || !fs.lstatSync(target).isFile() || fs.statSync(target).nlink !== 1 || fs.statSync(target).size > MAX_FILE) fail('cursor_file_boundary');
@@ -305,11 +345,13 @@ class CursorWorker {
       const credential = this.stageCredential(root);
       const proxyController = new AbortController();
       controller.signal.addEventListener('abort', () => proxyController.abort(), { once: true });
-      proxy = await require('./bounded-worker').proxy(allowedHosts, proxyController, e => emit({ provenance: 'SANDBOX_OBSERVED', kind: e.type, host: e.host || null, reason: e.reason || null }));
+      proxy = await require('./bounded-worker').proxy(allowedHosts, proxyController, e => emit({ provenance: 'SANDBOX_OBSERVED', kind: e.type, host: e.host || null, reason: e.reason || null }), { maxConnections: CURSOR_PROXY_CONNECTIONS });
       const prompt = 'Read ' + path.join(root, 'brief', 'mission.json') + ' and complete the objective exactly as its rules describe. Use only the Read and Write tools on the listed files. Your final message must be the single JSON result object described in that file and nothing else.';
+      const cursorDataDir = path.join(root, 'state', 'cursor-data');
       const env = {
         PATH: '/usr/bin:/bin', HOME: path.join(root, 'home'), USER: 'airodrom-worker', LOGNAME: 'airodrom-worker', SHELL: '/usr/bin/false', LANG: 'en_US.UTF-8', NO_COLOR: '1', TERM: 'dumb',
         TMPDIR: path.join(root, 'state/tmp'), XDG_CACHE_HOME: path.join(root, 'state/cache'), XDG_STATE_HOME: path.join(root, 'state'), XDG_CONFIG_HOME: path.join(root, 'home'),
+        CURSOR_DATA_DIR: cursorDataDir,
         NODE_COMPILE_CACHE: path.join(root, 'state/cc'), CURSOR_INVOKED_AS: 'cursor-agent', DISABLE_TELEMETRY: '1', DISABLE_AUTOUPDATER: '1', NO_UPDATE_NOTIFIER: '1', NO_OPEN_BROWSER: '1',
         HTTPS_PROXY: 'http://127.0.0.1:' + proxy.port, HTTP_PROXY: 'http://127.0.0.1:' + proxy.port, ALL_PROXY: 'http://127.0.0.1:' + proxy.port, NO_PROXY: '', https_proxy: 'http://127.0.0.1:' + proxy.port, http_proxy: 'http://127.0.0.1:' + proxy.port, all_proxy: 'http://127.0.0.1:' + proxy.port, no_proxy: '',
         ...credential.env,
@@ -325,6 +367,12 @@ class CursorWorker {
         let child;
         try { child = spawn(command, argv, { cwd: path.join(root, 'workspace'), env: fixture ? { ...env, AIRODROM_FIXTURE_ROOT: root, ...(process.env.AIRODROM_CURSOR_FIXTURE_MODE ? { AIRODROM_CURSOR_FIXTURE_MODE: process.env.AIRODROM_CURSOR_FIXTURE_MODE } : {}) } : env, shell: false, detached: true, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return reject(new AgentAdapterError('cursor_spawn_failed', 'cursor_spawn_failed')); }
         let stdout = '', bytes = 0, timedOut = false, cancelled = false, overflow = false, pending = '';
+        let diagSample = '', failureClasses = [];
+        const noteDiag = chunk => {
+          const redacted = redactDiagnostic(chunk);
+          failureClasses = [...new Set(failureClasses.concat(classifyFailure(redacted)))];
+          if (diagSample.length < MAX_DIAG_SAMPLE) diagSample = (diagSample + redacted).slice(0, MAX_DIAG_SAMPLE);
+        };
         const stop = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* gone */ } } };
         const onAbort = () => { cancelled = true; stop(); };
         const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
@@ -339,17 +387,18 @@ class CursorWorker {
             try { const ev = JSON.parse(line); if (ev?.type === 'tool_call') { const kind = Object.keys(ev.tool_call || {})[0] || 'unknown'; const t = sanitizePath(root, ev.tool_call?.[kind]?.args?.path || null); emit({ provenance: 'WORKER_REPORTED', kind: 'worker.tool_' + (ev.subtype || 'event'), tool: kind.replace(/ToolCall$/, ''), scope: t?.scope || null, path: t?.path || null }); } else if (ev?.type === 'system') emit({ provenance: 'WORKER_REPORTED', kind: 'worker.system', subtype: ev.subtype || null, model: typeof ev.model === 'string' ? ev.model : null }); } catch { /* non-JSON noise is not an event */ }
           }
         });
-        child.stderr.on('data', c => { bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); } });
+        child.stderr.on('data', c => { bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); return; } noteDiag(c.toString()); });
         child.once('spawn', () => emit({ provenance: 'HOST_MEDIATED', kind: 'worker.started', pid_observed: true }));
         child.on('error', () => { clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort); reject(new AgentAdapterError('cursor_spawn_failed', 'cursor_spawn_failed')); });
         child.on('close', async (code, childSignal) => {
           clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort);
           stop(); let groupGone = false;
           for (let i = 0; i < 40; i++) { try { process.kill(-child.pid, 0); } catch (e) { groupGone = e.code === 'ESRCH'; break; } await new Promise(r => setTimeout(r, 25)); }
-          resolve({ code, signal: childSignal, stdout, timedOut, cancelled, overflow, termination_verified: groupGone });
+          resolve({ code, signal: childSignal, stdout, timedOut, cancelled, overflow, termination_verified: groupGone, failure_classes: failureClasses, diag_sample: diagSample });
         });
       });
-      emit({ provenance: 'HOST_MEDIATED', kind: 'worker.exited', exit_code: outcome.code, signal: outcome.signal, timed_out: outcome.timedOut, cancelled: outcome.cancelled, overflow: outcome.overflow, termination_verified: outcome.termination_verified, proxy: proxy.stats() });
+      const failureDiag = (outcome.code !== 0 || outcome.signal || outcome.timedOut) ? { failure_classes: outcome.failure_classes || [], diag_sample: outcome.diag_sample || null, staging_prefix: process.platform === 'darwin' ? '/tmp/ad-' : 'tmpdir', cursor_data_confined: true } : null;
+      emit({ provenance: 'HOST_MEDIATED', kind: 'worker.exited', exit_code: outcome.code, signal: outcome.signal, timed_out: outcome.timedOut, cancelled: outcome.cancelled, overflow: outcome.overflow, termination_verified: outcome.termination_verified, proxy: proxy.stats(), ...(failureDiag ? { failure: failureDiag } : {}) });
       if (!outcome.termination_verified) { cleanup = false; fail('cursor_termination_unverified'); }
       // Host-authored permission files must be byte-identical; a worker that rewrote them is denied.
       if (hash(fs.readFileSync(projectConfig)) !== configHashes.project || hash(fs.readFileSync(homeConfig)) !== configHashes.home) fail('cursor_permission_file_tampered');
@@ -431,4 +480,4 @@ class CursorWorker {
   async status() { return this.readiness(); }
 }
 
-module.exports = { CursorWorker, resolveInstall, permissionConfig, sandboxProfile, parseStream, normalizeResult, relative, version, ID, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS, MAX_OUTPUT };
+module.exports = { CursorWorker, resolveInstall, permissionConfig, sandboxProfile, parseStream, normalizeResult, relative, version, redactDiagnostic, classifyFailure, stagingRoot, ID, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS, MAX_OUTPUT, CURSOR_PROXY_CONNECTIONS };
