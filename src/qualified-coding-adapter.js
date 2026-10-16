@@ -41,6 +41,12 @@ class QualifiedCodingAdapter {
   identity() { return structuredClone(DESCRIPTOR); }
   assert(mission, operation) {
     const plan = mission.envelope.coding_plan;
+    if (!mission.envelope.contract) throw Error('host_coding_contract_required');
+    require('./mission-contract').assertIntact(mission.envelope.contract);
+    const execution = mission.envelope.contract.execution || {};
+    const disclosure = mission.envelope.contract.permissions?.external_disclosure;
+    if (execution.preferred_worker !== 'host' || execution.mode !== 'native_plan' || disclosure?.authorized === true || mission.envelope.contract.budget?.max_repair_attempts !== 0) throw Error('Host coding contract route mismatch');
+    if (!Number.isSafeInteger(mission.envelope.contract.identity?.expires_at) || mission.envelope.contract.identity.expires_at <= Date.now()) throw Error('contract_expired');
     if (!plan || plan.adapter.descriptor_hash !== fingerprint(DESCRIPTOR) || fingerprint(plan.adapter) !== fingerprint({ ...DESCRIPTOR, descriptor_hash: fingerprint(DESCRIPTOR) })) throw Error('Coding adapter qualification mismatch');
     const binding=this.service.db.prepare('SELECT envelope_hash FROM cp_execution_qualification WHERE mission_id=?').get(mission.id);
     if(!binding || binding.envelope_hash!==fingerprint(mission.envelope))throw Error('Immutable coding contract changed');

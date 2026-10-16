@@ -175,24 +175,43 @@ function securityScan(workspace, changedFiles, { contract = null, baselineRecord
   const readText = file => {
     try { const st = fs.lstatSync(path.join(workspace, file)); if (!st.isFile() || st.size > 4 * 1024 * 1024) return null; return fs.readFileSync(path.join(workspace, file), 'utf8'); } catch { return null; }
   };
+  const priorFor = file => {
+    if (!baselineRecord?.base_commit_sha) return contract ? { unavailable: 'trusted_baseline_missing' } : { text: '' };
+    const shown = trustedContent(workspace, baselineRecord, file);
+    if (shown) return { text: shown.toString('utf8') };
+    const exists = spawnSync('/usr/bin/git', ['-C', workspace, 'cat-file', '-e', baselineRecord.base_commit_sha + ':' + file], { encoding: 'utf8', timeout: 10000, env: { PATH: '/usr/bin:/bin', GIT_OPTIONAL_LOCKS: '0' } });
+    if (exists.status !== 0) return { text: '' };
+    return { unavailable: 'trusted_baseline_unreadable' };
+  };
+  const unreadable = changedFiles.filter(file => readText(file) === null);
   if (required.has('secret_scan')) {
     const findings = [];
-    for (const file of changedFiles) {
-      const text = readText(file); if (text === null) continue;
-      const before = baselineRecord ? trustedContent(workspace, baselineRecord, file) : null;
-      const priorText = before ? before.toString('utf8') : '';
-      for (const { rule, re } of SECRET_PATTERNS) {
-        const hits = (text.match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')) || []).length;
-        const prior = priorText ? (priorText.match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')) || []).length : 0;
-        if (hits > prior) findings.push({ file, rule, count: hits - prior, classification: 'NEW', severity: 'high' });
-        else if (hits) findings.push({ file, rule, count: hits, classification: 'PRE_EXISTING', severity: 'high' });
+    const blocked = [...unreadable];
+    if (!unreadable.length) {
+      for (const file of changedFiles) {
+        const prior = priorFor(file);
+        if (prior.unavailable) { blocked.push(file); continue; }
+        const text = readText(file);
+        for (const { rule, re } of SECRET_PATTERNS) {
+          const flags = re.flags.includes('g') ? re.flags : re.flags + 'g';
+          const hits = (text.match(new RegExp(re.source, flags)) || []).length;
+          const previous = prior.text ? (prior.text.match(new RegExp(re.source, flags)) || []).length : 0;
+          if (hits > previous) findings.push({ file, rule, count: hits - previous, classification: 'NEW', severity: 'high' });
+          else if (hits) findings.push({ file, rule, count: hits, classification: 'PRE_EXISTING', severity: 'high' });
+        }
       }
     }
-    const fresh = findings.filter(f => f.classification === 'NEW');
-    checks.push({ id: 'security:secret_scan', status: fresh.length ? 'failed' : 'passed', evidence: { scanned: changedFiles.length, new_findings: fresh.length, pre_existing_findings: findings.length - fresh.length, findings: findings.map(f => ({ file: f.file, rule: f.rule, classification: f.classification, count: f.count })) } });
+    if (blocked.length) checks.push({ id: 'security:secret_scan', status: 'unavailable', evidence: { classification: 'UNAVAILABLE', reason: 'Required scan input or trusted baseline is unreadable; not treated as passed', files: blocked.slice(0, 20), scanned: changedFiles.length } });
+    else {
+      const fresh = findings.filter(f => f.classification === 'NEW');
+      checks.push({ id: 'security:secret_scan', status: fresh.length ? 'failed' : 'passed', evidence: { scanned: changedFiles.length, new_findings: fresh.length, pre_existing_findings: findings.length - fresh.length, findings: findings.map(f => ({ file: f.file, rule: f.rule, classification: f.classification, count: f.count })), exhaustive: false } });
+    }
   }
-  const sensitive = changedFiles.filter(f => SENSITIVE_AREA.test(f) || SENSITIVE_AREA.test(readText(f) || '') && /\.(c?js|mjs|ts|py|go|rb|sh)$/.test(f));
-  checks.push({ id: 'security:sensitive_area', status: sensitive.length ? 'operator_review' : 'passed', evidence: { files: sensitive.slice(0, 20), policy: sensitive.length ? 'Stronger review required: changes touch authentication/authorization/secrets/sandbox/shell/MCP/network/deploy/database paths.' : 'No sensitive-area paths changed.' } });
+  if (unreadable.length) checks.push({ id: 'security:sensitive_area', status: 'unavailable', evidence: { classification: 'UNAVAILABLE', reason: 'Changed file is unreadable; sensitive-area review is not treated as passed', files: unreadable.slice(0, 20) } });
+  else {
+    const sensitive = changedFiles.filter(f => SENSITIVE_AREA.test(f) || (SENSITIVE_AREA.test(readText(f) || '') && /\.(c?js|mjs|ts|py|go|rb|sh)$/.test(f)));
+    checks.push({ id: 'security:sensitive_area', status: sensitive.length ? 'operator_review' : 'passed', evidence: { files: sensitive.slice(0, 20), policy: sensitive.length ? 'Stronger review required: changes touch authentication/authorization/secrets/sandbox/shell/MCP/network/deploy/database paths.' : 'No sensitive-area paths changed.', exhaustive: false } });
+  }
   const tools = { npm_audit: ['npm', ['audit', '--json', '--audit-level=high']], eslint: ['npx', ['--no-install', 'eslint', '--format', 'json']], typecheck: ['npx', ['--no-install', 'tsc', '--noEmit']], semgrep: ['semgrep', ['--json', '--quiet', '--config', 'auto']], gitleaks: ['gitleaks', ['detect', '--no-git', '--report-format', 'json', '--report-path', '/dev/stdout']] };
   for (const name of Object.keys(tools)) {
     if (!required.has(name)) continue;

@@ -8,7 +8,10 @@
 - Hosted CI workflow remains `disabled_manually` and `main` is unprotected; required gates were run locally and are recorded in the PR.
 - Airodrom Slack delivery is unconfigured on the live install; Mission start/completion notifications are a recorded limitation (routes exist).
 - ChatGPT may hold a conversation-scoped 36-tool catalog; a new conversation is required after install to see the coordinator tools. Airodrom cannot wake an inactive conversation.
-- Legacy Missions without a contract keep prior ceilings and show `contract: absent (legacy)` in evidence.
+- Legacy Missions without a contract keep prior ceilings and show `contract: absent (legacy)` in evidence. A later attempt to dispatch or verify a contractless host `coding_plan` reports `host_coding_contract_required` and does not invent security results. Stored verification rows are not migrated.
+- Host closeout Mission `8eb8e32d-5523-4938-8480-21364d81a0e2` remains `operator_review` with Acceptance pending. Its missing contract coverage is historical. The pattern scan of the corrected `src/events.ts` is supplementary and not exhaustive.
+- `tests/mission-service.test.js` still has two `external_disclosure_unauthorized` failures on current main. They are independent of host-coding contract derivation and are not treated as fixed.
+- `tests/execution-qualification.test.js` "Expired manifest prevents automatic settlement..." also fails on unmodified `ac9ee3e`: an `awaiting_acceptance` Mission is inside the manifest acceptance window, so expiry does not return `authority_or_adapter_invalid`. This change does not alter that window.
 - Pre-existing unrelated test failures reproduce on `079eee9`: `mission-service` "waiting Decision … survive restart", `agent-dispatch` "restart after fallback selection", `mcp-protocol` `listChanged`.
 
 ## Continuous Autonomous Execution V1 (2026-10-12)

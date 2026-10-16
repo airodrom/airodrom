@@ -108,15 +108,28 @@ class MissionService {
     // (zero-setup / handoff / corrective) Mission; legacy direct creates without a
     // contract keep their existing authority/manifest/dispatch-policy ceilings.
     if(input.developer_autonomy&&!repairOf&&input.contract!==undefined)throw Error('Developer Autonomy contract is host-derived');
-    const contractRequired=!!input.developer_autonomy||input.contract!==undefined||!!repairOf&&!!this.store.requireMission(input.repair_of).envelope.contract;
+    const hostCoding=!!codingPlan;
+    if(hostCoding&&input.developer_autonomy)throw Error('Host coding plan cannot bind Developer Autonomy');
+    if(hostCoding&&(preferred!=='host'||fallbacks.length||dispatchPolicy?.privacy!=='local_only'||dispatchPolicy?.task_category!=='deterministic_files'))throw Error('Host coding plan requires the deterministic local route');
+    const contracts=require('./mission-contract');
+    const suppliedContract=hostCoding?contracts.hostCodingSeed(input.contract):input.contract;
+    const contractRequired=hostCoding||!!input.developer_autonomy||suppliedContract!==undefined||!!repairOf&&!!this.store.requireMission(input.repair_of).envelope.contract;
     let contract=null;
     if(contractRequired){
       const parentContract=repairOf?this.store.requireMission(input.repair_of).envelope.contract:null;
-      contract=require('./mission-contract').normalizeContract(input.contract??parentContract??(input.developer_autonomy?this.bridge.developerAutonomy.contractFor(input):{}),{
+      contract=contracts.normalizeContract(hostCoding?suppliedContract:(suppliedContract??parentContract??(input.developer_autonomy?this.bridge.developerAutonomy.contractFor(input):{})),{
         request_id:input.request_id,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,
         dispatch_policy:dispatchPolicy,objective:input.objective,project_id:input.project_id,goal_id:input.goal_id,base_commit_sha:baseline.head||null,branch:baseline.branch||null,
-        repair_of:repairOf,operator:owner==='operator',...(input.developer_autonomy?{expires_at:this.bridge.developerAutonomy.inspectGrant(input.developer_autonomy.grant_id).expires_at}:{}),approval_id:input.approval_id||(parentContract?.audit?.approval_id)||null,fixture:!!fixturePolicy,
+        repair_of:repairOf,operator:owner==='operator',...(input.developer_autonomy?{expires_at:this.bridge.developerAutonomy.inspectGrant(input.developer_autonomy.grant_id).expires_at}:{}),...(hostCoding&&manifest?.expires_at?{expires_at:manifest.expires_at}:{}),approval_id:input.approval_id||(parentContract?.audit?.approval_id)||null,fixture:!!fixturePolicy,
       });
+      if(hostCoding){
+        if(!manifest)throw Error('Coding plan manifest boundary exceeded');
+        const allows=require('./mission-manifest').allowsPath;
+        for(const file of contract.permissions.allowed_write_paths)if(!allows(manifest,path.join(workspace,file),'write'))throw Error('Contract write exceeds manifest');
+        for(const op of codingPlan.operations)if(!contract.permissions.allowed_write_paths.includes(op.path))throw Error('Coding operation is outside the contract');
+        if(contract.execution.preferred_worker!=='host'||contract.permissions.external_disclosure.authorized||contract.permissions.external_providers.mode!=='none'||contract.budget.max_repair_attempts!==0||contract.budget.max_worker_invocations!==1)throw Error('Host coding contract exceeds the deterministic route');
+        for(const id of ['secret_scan','protected_tests_unchanged','verifier_inputs_unchanged'])if(!contract.verification.required_security_checks.includes(id))throw Error('Host coding contract is missing required security coverage');
+      }
       if(parentContract&&parentContract.scope_fingerprint!==contract.scope_fingerprint)throw Error('repair_scope_mismatch');
       // Verifier-owned inputs are hashed outside worker write authority (test-tampering
       // baseline). A corrective Mission inherits the parent's trusted baseline so a
