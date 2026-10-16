@@ -78,7 +78,7 @@ test('resolveNpmCli finds npm-cli.js beside a pinned node binary', () => {
   // Homebrew Node and many installs expose npm-cli next to node; when absent, stay null.
   if (cli) assert.equal(fs.statSync(cli).isFile(), true);
 });
-  
+
 test('dependency copy rejects links escaping node_modules', t => {
   const f = fixture(t);
   const outside = path.join(f.root, 'outside.js');
