@@ -99,6 +99,21 @@ test('mission subprocess sandbox denies external files, secrets and Git metadata
  assert.equal(temp.exitCode,0,temp.stderr);assert.equal(temp.stdout.trim(),'private');
  assert.equal(fs.existsSync(path.join(systemTemp,'escape')),false);
  assert.deepEqual(a.filesystem.write,writes);
+ const names=()=>fs.readdirSync(systemTemp).filter(name=>name.startsWith('airodrom-mission-'));
+ const before=new Set(names());
+ const failing=new HostExecutor({allowed:[process.execPath],home:root,spawnImpl:()=>{throw Error('spawn failed');}});
+ await assert.rejects(failing.run(process.execPath,['-e','0'],{cwd:workspace,missionAuthority:a}),/unqualified/);
+ assert.deepEqual(names().filter(name=>!before.has(name)),[]);
+ const controller=new AbortController();
+ const cancelled=executor.run(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:workspace,timeoutMs:10000,missionAuthority:a,signal:controller.signal});
+ setTimeout(()=>controller.abort(),50);
+ assert.equal((await cancelled).signal,'SIGKILL');
+ assert.deepEqual(names().filter(name=>!before.has(name)),[]);
+ const busy=t.mock.method(fs,'rmSync',()=>{throw Error('busy');});
+ await assert.rejects(executor.run(process.execPath,['-e','0'],{cwd:workspace,missionAuthority:a}),/cleanup failed/);
+ busy.mock.restore();
+ for (const name of names()) if (!before.has(name)) fs.rmSync(path.join(systemTemp,name),{recursive:true,force:true});
+ assert.deepEqual(a.filesystem.write,writes);
 });
 test('authority expiration and cancellation terminate bounded subprocesses',async t=>{
  const {root,workspace}=isolated(t);const {HostExecutor}=require('../src/host-exec');const executor=new HostExecutor({allowed:[process.execPath],home:root});
