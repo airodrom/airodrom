@@ -113,17 +113,48 @@ function baselineMap(record) {
   return { files, profiles };
 }
 
-/** Trusted content of a baseline file at the recorded base commit, or null when unavailable. */
+function safeRelative(file) {
+  return typeof file === 'string' && file.length > 0 && file.length <= 240 && !file.includes('\0') && !path.isAbsolute(file) && !file.split('/').some(part => !part || part === '.' || part === '..');
+}
+function runGit(workspace, args, timeout = 10000) {
+  if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || workspace.includes('\0')) return { unavailable: 'repository_unavailable' };
+  try { if (!fs.lstatSync(workspace).isDirectory()) return { unavailable: 'repository_unavailable' }; } catch { return { unavailable: 'repository_unavailable' }; }
+  const result = spawnSync('/usr/bin/git', ['-C', workspace, ...args], { encoding: 'buffer', timeout, maxBuffer: 16 * 1024 * 1024, env: { PATH: '/usr/bin:/bin', GIT_OPTIONAL_LOCKS: '0' } });
+  if (result.error) return { unavailable: result.error.code === 'ETIMEDOUT' ? 'git_timeout' : 'git_execution_error' };
+  if (result.status === null) return { unavailable: 'git_execution_error' };
+  return { status: result.status, stdout: result.stdout || Buffer.alloc(0) };
+}
+/** Read one path from a baseline commit. Only a confirmed absence returns empty content. */
+function baselineFile(workspace, sha, file) {
+  if (!/^[0-9a-f]{40}$/.test(sha || '')) return { unavailable: 'baseline_commit_invalid' };
+  if (!safeRelative(file)) return { unavailable: 'baseline_path_invalid' };
+  const commit = runGit(workspace, ['cat-file', '-e', sha + '^{commit}']);
+  if (commit.unavailable) return commit;
+  if (commit.status !== 0) return { unavailable: 'baseline_commit_unavailable' };
+  const tree = runGit(workspace, ['rev-parse', '--verify', '--quiet', sha + '^{tree}']);
+  if (tree.unavailable) return tree;
+  if (tree.status !== 0 || tree.stdout.length < 40) return { unavailable: 'baseline_tree_unavailable' };
+  const listed = runGit(workspace, ['ls-tree', '-r', '--name-only', '-z', sha]);
+  if (listed.unavailable) return listed;
+  if (listed.status !== 0) return { unavailable: 'baseline_tree_unavailable' };
+  const present = new Set(listed.stdout.toString('utf8').split('\0').filter(Boolean));
+  if (!present.has(file)) return { content: Buffer.alloc(0), absent: true };
+  const shown = runGit(workspace, ['show', sha + ':' + file]);
+  if (shown.unavailable) return shown;
+  if (shown.status !== 0) return { unavailable: 'trusted_baseline_unreadable' };
+  return { content: shown.stdout, absent: false };
+}
+/** Trusted bytes at the recorded base commit, or null when the path is absent or the lookup did not succeed. */
 function trustedContent(workspace, baselineRecord, file) {
   if (!baselineRecord?.base_commit_sha) return null;
-  const r = spawnSync('/usr/bin/git', ['-C', workspace, 'show', baselineRecord.base_commit_sha + ':' + file], { encoding: 'buffer', timeout: 10000, maxBuffer: 16 * 1024 * 1024, env: { PATH: '/usr/bin:/bin', GIT_OPTIONAL_LOCKS: '0' } });
-  if (r.status !== 0) return null;
-  return r.stdout;
+  const looked = baselineFile(workspace, baselineRecord.base_commit_sha, file);
+  if (looked.unavailable || looked.absent) return null;
+  return looked.content;
 }
 
 /**
  * Audit verifier-owned inputs against the trusted baseline.
- * @returns {{status:'passed'|'failed', changed:object[], tampering:object[], agent_authored:object[], authorized:object[], trusted_source:object}}
+ * @returns {{status:'passed'|'failed'|'unavailable', changed:object[], tampering:object[], agent_authored:object[], authorized:object[], trusted_source:object}}
  */
 function audit(workspace, baselineRecord, snapshot, { contract = null, allowedFiles = [] } = {}) {
   const changed = [], tampering = [], agentAuthored = [], authorized = [];
@@ -158,14 +189,18 @@ function audit(workspace, baselineRecord, snapshot, { contract = null, allowedFi
     changed.push(entry);
     if (writable.has(file)) agentAuthored.push(entry); else tampering.push(entry);
   }
-  // Trusted-source availability: baseline digests must be reproducible from the base commit.
-  let reproducible = 0, missing = [];
+  // Trusted-source availability: recorded digests must be reproduced from the base commit.
+  // A failed Git lookup is unavailable evidence. It is not an empty or complete baseline.
+  let reproducible = 0, missing = [], lookupFailure = null;
   for (const [file, digest] of baseFiles) {
-    const content = trustedContent(workspace, baselineRecord, file);
-    if (content && digestOf(content) === digest) reproducible += 1; else missing.push(file);
+    const looked = baselineFile(workspace, baselineRecord.base_commit_sha, file);
+    if (looked.unavailable) { missing.push(file); lookupFailure = lookupFailure || looked.unavailable; continue; }
+    if (!looked.absent && digestOf(looked.content) === digest) reproducible += 1;
+    else missing.push(file);
   }
-  const trusted_source = { available: missing.length === 0, base_commit_sha: baselineRecord.base_commit_sha, reproducible, missing: missing.slice(0, 20) };
-  return { status: tampering.length ? 'failed' : 'passed', changed, tampering, agent_authored: agentAuthored, authorized, trusted_source };
+  const trusted_source = { available: missing.length === 0, base_commit_sha: baselineRecord.base_commit_sha, reproducible, missing: missing.slice(0, 20), reason: lookupFailure };
+  const status = tampering.length ? 'failed' : lookupFailure ? 'unavailable' : missing.length ? 'failed' : 'passed';
+  return { status, changed, tampering, agent_authored: agentAuthored, authorized, trusted_source, reason: lookupFailure || (missing.length ? 'trusted_baseline_digest_mismatch' : null) };
 }
 
 /** Proportional, honest security scan of changed files. */
@@ -175,24 +210,43 @@ function securityScan(workspace, changedFiles, { contract = null, baselineRecord
   const readText = file => {
     try { const st = fs.lstatSync(path.join(workspace, file)); if (!st.isFile() || st.size > 4 * 1024 * 1024) return null; return fs.readFileSync(path.join(workspace, file), 'utf8'); } catch { return null; }
   };
+  const priorFor = file => {
+    if (!baselineRecord?.base_commit_sha) return contract ? { unavailable: 'trusted_baseline_missing' } : { text: '' };
+    const looked = baselineFile(workspace, baselineRecord.base_commit_sha, file);
+    if (looked.unavailable) return { unavailable: looked.unavailable };
+    const recorded = (baselineRecord.files || []).find(entry => entry.path === file);
+    if (recorded && digestOf(looked.content) !== recorded.sha256) return { unavailable: 'trusted_baseline_digest_mismatch' };
+    return { text: looked.content.toString('utf8'), absent: looked.absent === true };
+  };
+  const unreadable = changedFiles.filter(file => readText(file) === null);
   if (required.has('secret_scan')) {
     const findings = [];
-    for (const file of changedFiles) {
-      const text = readText(file); if (text === null) continue;
-      const before = baselineRecord ? trustedContent(workspace, baselineRecord, file) : null;
-      const priorText = before ? before.toString('utf8') : '';
-      for (const { rule, re } of SECRET_PATTERNS) {
-        const hits = (text.match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')) || []).length;
-        const prior = priorText ? (priorText.match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')) || []).length : 0;
-        if (hits > prior) findings.push({ file, rule, count: hits - prior, classification: 'NEW', severity: 'high' });
-        else if (hits) findings.push({ file, rule, count: hits, classification: 'PRE_EXISTING', severity: 'high' });
+    const blocked = [...unreadable];
+    if (!unreadable.length) {
+      for (const file of changedFiles) {
+        const prior = priorFor(file);
+        if (prior.unavailable) { blocked.push({ file, reason: prior.unavailable }); continue; }
+        const text = readText(file);
+        for (const { rule, re } of SECRET_PATTERNS) {
+          const flags = re.flags.includes('g') ? re.flags : re.flags + 'g';
+          const hits = (text.match(new RegExp(re.source, flags)) || []).length;
+          const previous = prior.text ? (prior.text.match(new RegExp(re.source, flags)) || []).length : 0;
+          if (hits > previous) findings.push({ file, rule, count: hits - previous, classification: 'NEW', severity: 'high' });
+          else if (hits) findings.push({ file, rule, count: hits, classification: 'PRE_EXISTING', severity: 'high' });
+        }
       }
     }
-    const fresh = findings.filter(f => f.classification === 'NEW');
-    checks.push({ id: 'security:secret_scan', status: fresh.length ? 'failed' : 'passed', evidence: { scanned: changedFiles.length, new_findings: fresh.length, pre_existing_findings: findings.length - fresh.length, findings: findings.map(f => ({ file: f.file, rule: f.rule, classification: f.classification, count: f.count })) } });
+    if (blocked.length) checks.push({ id: 'security:secret_scan', status: 'unavailable', evidence: { classification: 'UNAVAILABLE', reason: 'Required scan input or trusted baseline is unreadable; not treated as passed', baseline_reason: blocked[0]?.reason || null, files: blocked.slice(0, 20).map(entry => typeof entry === 'string' ? entry : entry.file), scanned: changedFiles.length } });
+    else {
+      const fresh = findings.filter(f => f.classification === 'NEW');
+      checks.push({ id: 'security:secret_scan', status: fresh.length ? 'failed' : 'passed', evidence: { scanned: changedFiles.length, new_findings: fresh.length, pre_existing_findings: findings.length - fresh.length, findings: findings.map(f => ({ file: f.file, rule: f.rule, classification: f.classification, count: f.count })), exhaustive: false } });
+    }
   }
-  const sensitive = changedFiles.filter(f => SENSITIVE_AREA.test(f) || SENSITIVE_AREA.test(readText(f) || '') && /\.(c?js|mjs|ts|py|go|rb|sh)$/.test(f));
-  checks.push({ id: 'security:sensitive_area', status: sensitive.length ? 'operator_review' : 'passed', evidence: { files: sensitive.slice(0, 20), policy: sensitive.length ? 'Stronger review required: changes touch authentication/authorization/secrets/sandbox/shell/MCP/network/deploy/database paths.' : 'No sensitive-area paths changed.' } });
+  if (unreadable.length) checks.push({ id: 'security:sensitive_area', status: 'unavailable', evidence: { classification: 'UNAVAILABLE', reason: 'Changed file is unreadable; sensitive-area review is not treated as passed', files: unreadable.slice(0, 20) } });
+  else {
+    const sensitive = changedFiles.filter(f => SENSITIVE_AREA.test(f) || (SENSITIVE_AREA.test(readText(f) || '') && /\.(c?js|mjs|ts|py|go|rb|sh)$/.test(f)));
+    checks.push({ id: 'security:sensitive_area', status: sensitive.length ? 'operator_review' : 'passed', evidence: { files: sensitive.slice(0, 20), policy: sensitive.length ? 'Stronger review required: changes touch authentication/authorization/secrets/sandbox/shell/MCP/network/deploy/database paths.' : 'No sensitive-area paths changed.', exhaustive: false } });
+  }
   const tools = { npm_audit: ['npm', ['audit', '--json', '--audit-level=high']], eslint: ['npx', ['--no-install', 'eslint', '--format', 'json']], typecheck: ['npx', ['--no-install', 'tsc', '--noEmit']], semgrep: ['semgrep', ['--json', '--quiet', '--config', 'auto']], gitleaks: ['gitleaks', ['detect', '--no-git', '--report-format', 'json', '--report-path', '/dev/stdout']] };
   for (const name of Object.keys(tools)) {
     if (!required.has(name)) continue;
@@ -207,4 +261,4 @@ function securityScan(workspace, changedFiles, { contract = null, baselineRecord
   return checks;
 }
 
-module.exports = { VERSION, capture, audit, securityScan, isVerifierOwned, profileText, trustedContent, SECRET_PATTERNS, SENSITIVE_AREA };
+module.exports = { VERSION, capture, audit, securityScan, isVerifierOwned, profileText, trustedContent, baselineFile, runGit, SECRET_PATTERNS, SENSITIVE_AREA };

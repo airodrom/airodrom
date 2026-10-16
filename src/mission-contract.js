@@ -309,6 +309,26 @@ function assertIntact(contract) {
   return contract;
 }
 
+/** Host-derived seed for a deterministic coding plan. Caller fields cannot drop coverage or add authority. */
+function hostCodingSeed(supplied) {
+  if (supplied !== undefined && supplied !== null && (typeof supplied !== 'object' || Array.isArray(supplied))) fail('Invalid contract');
+  return {
+    execution: { preferred_worker: 'host', mode: 'native_plan', sandbox: 'none', worker_allowlist: ['host'], concurrency: 1 },
+    permissions: {
+      network: { mode: 'none' },
+      external_disclosure: { authorized: false },
+      external_providers: { mode: 'none', providers: [] },
+      vault_access: { mode: 'none' },
+      personal_memory: { mode: 'none' },
+    },
+    budget: { risk_class: 'high', max_repair_attempts: 0, max_worker_invocations: 1 },
+    verification: {
+      required_security_checks: ['secret_scan', 'protected_tests_unchanged', 'verifier_inputs_unchanged'],
+      verifier: 'airodrom:host-verifier',
+    },
+  };
+}
+
 /** Measurable Definition of Done derived from registered verification only; never invents test names. */
 function definitionOfDone({ intent = null, criteria = [], verification = {}, allowed_files = [] } = {}) {
   const items = [];
@@ -329,5 +349,5 @@ function definitionOfDone({ intent = null, criteria = [], verification = {}, all
 
 module.exports = {
   SCHEMA_VERSION, RISK_CLASSES, ABSOLUTE_MAX_REPAIRS, WORKERS, EXTERNAL_WORKERS, DEFAULT_DENIED_PATHS, DEFAULT_DENIED_TOOLS,
-  KNOWN_PROVIDER_HOSTS, GIT_CHECKS, SECURITY_CHECKS, normalizeContract, fingerprintOf, assertIntact, definitionOfDone, globMatch,
+  KNOWN_PROVIDER_HOSTS, GIT_CHECKS, SECURITY_CHECKS, normalizeContract, fingerprintOf, assertIntact, hostCodingSeed, definitionOfDone, globMatch,
 };
