@@ -36,6 +36,23 @@ const ALIAS = v => {
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BRANCH = /^[A-Za-z0-9._\/-]{1,120}$/;
 
+const AUXILIARY_TEST = /^(?:tests?|__tests__)\/.+\.(?:ts|tsx|js|jsx|cjs|mjs)$/;
+
+function writableFile(root, name) {
+  if (!AUXILIARY_TEST.test(name) || /(^|\/)(credentials|secrets)(\/|$)/.test(name)) return file(root, name);
+  if (typeof name !== 'string' || name.length > 240 || name.includes('\\') || /[\x00-\x1f*?\[\]{}]/.test(name)
+    || name.split('/').some(part => !part || part === '.' || part === '..' || part.startsWith('.'))
+    || path.isAbsolute(name)) {
+    throw Error('Exact non-secret, non-verifier file required');
+  }
+  const target = path.join(root, name);
+  const s = fs.lstatSync(target);
+  if (!s.isFile() || s.isSymbolicLink() || s.nlink !== 1 || fs.realpathSync(target) !== target) {
+    throw Error('Existing regular file without symlinks required');
+  }
+  return target;
+}
+
 function file(root, name) {
   if (typeof name !== 'string' || name.length > 240 || name.includes('\\') || /[\x00-\x1f*?\[\]{}]/.test(name)
     || name.split('/').some(p => !p || p === '.' || p === '..' || p.startsWith('.'))
@@ -186,6 +203,30 @@ class DeveloperAutonomy {
     if (require('./control-execution').repositoryRoot(workspace.path) !== workspace.path) throw Error('Workspace repository changed');
   }
 
+  assertAuxiliaryText(policy, name, currentText) {
+    const trusted = policy.verifier_baseline;
+    const expected = new Map((trusted?.files || []).map(entry => [entry.path, entry.sha256]));
+    const previous = trusted?.assertion_profile?.find(entry => entry.path === name);
+    const baseline = fs.readFileSync(path.join(policy.repository, name));
+    if (createHash('sha256').update(baseline).digest('hex') !== expected.get(name)) throw Error('Enrolled verifier inputs changed or overlap writable scope');
+    const baselineText = baseline.toString('utf8');
+    // Counts are not a strength proof. The enrolled source must remain an
+    // exact prefix, and only a recognized added assertion may follow it.
+    if (!currentText.startsWith(baselineText)) throw Error('Authorized application test weakened existing assertions');
+    for (const line of currentText.slice(baselineText.length).split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('//')) continue;
+      if (/^(?:assert|expect)(?:\.[A-Za-z]+)?\([^;\n]*\);?$/.test(trimmed)) continue;
+      throw Error('Authorized application test change is not a recognized additive assertion');
+    }
+    const current = require('./verifier-baseline').profileText(currentText);
+    if (!previous || current.assertions < previous.assertions
+      || current.negative_assertions < previous.negative_assertions
+      || current.skips > previous.skips) {
+      throw Error('Authorized application test weakened existing assertions');
+    }
+  }
+
   assertVerifiers(policy, workspace, allowed = []) {
     const taskFile = path.join(workspace, '.vscode/tasks.json');
     const st = fs.lstatSync(taskFile);
@@ -197,9 +238,41 @@ class DeveloperAutonomy {
     const trusted = policy.verifier_baseline;
     if (!trusted || !Array.isArray(trusted.files)) throw Error('Enrolled verifier baseline unavailable');
     const expected = new Map(trusted.files.map(entry => [entry.path, entry.sha256]));
-    if (allowed.some(name => expected.has(name)) || trusted.files.some(entry => snapshot.files[entry.path] !== entry.sha256)
+    // An auxiliary application test can be edited when explicitly named in the
+    // Mission and the enrolled verifier only runs a pinned static typecheck.
+    // It is never trusted as verification evidence. Registered tests, task
+    // definitions and referenced verification inputs remain immutable.
+    const configured = JSON.parse(fs.readFileSync(taskFile, 'utf8')).tasks || [];
+    const typecheckTasks = configured.filter(task => policy.verification_defaults.tests.includes(task.label));
+    let staticOnly = typecheckTasks.length > 0
+      && typecheckTasks.length === policy.verification_defaults.tests.length
+      && typecheckTasks.every(task => task.type === 'process' && task.command === 'npm'
+        && JSON.stringify(task.args) === '["run","typecheck"]');
+    if (staticOnly) {
+      try {
+        const originalPkg = fs.readFileSync(path.join(policy.repository, 'package.json'), 'utf8');
+        const currentPkg = fs.readFileSync(path.join(workspace, 'package.json'), 'utf8');
+        staticOnly = originalPkg === currentPkg
+          && JSON.parse(originalPkg).scripts?.typecheck === 'tsc --noEmit'
+          && !allowed.includes('package.json');
+      } catch { staticOnly = false; }
+    }
+    const editable = new Set(staticOnly ? allowed.filter(name =>
+      /^(?:tests?|__tests__)\/.+\.(?:ts|tsx|js|jsx|cjs|mjs)$/.test(name)
+      && expected.has(name)
+      && !trusted.referenced?.includes(name)) : []);
+    if (allowed.some(name => expected.has(name) && !editable.has(name))
+      || trusted.files.some(entry => snapshot.files[entry.path] !== entry.sha256 && !editable.has(entry.path))
       || Object.keys(snapshot.files).some(name => require('./verifier-baseline').isVerifierOwned(name) && !expected.has(name))) {
       throw Error('Enrolled verifier inputs changed or overlap writable scope');
+    }
+    // Authorized auxiliary tests are not independent verification. Assertion
+    // counts do not prove strength. An edit is accepted only when the enrolled
+    // bytes remain an exact prefix and the suffix is a recognized added
+    // assertion. Replacements, skips, control-flow bypasses and import changes
+    // fail closed. An appended tautology is still not proof.
+    for (const name of editable) {
+      this.assertAuxiliaryText(policy, name, fs.readFileSync(path.join(workspace, name), 'utf8'));
     }
     for (const entry of trusted.files) {
       const target = path.join(workspace, entry.path), stat = fs.lstatSync(target);
@@ -299,7 +372,8 @@ class DeveloperAutonomy {
     const policy = this.inspect(ref.policy_id);
     let growth = 0;
     for (const change of changes) {
-      const name = file(mission.envelope.workspace, change.path);
+      const name = writableFile(mission.envelope.workspace, change.path);
+      if (AUXILIARY_TEST.test(change.path)) this.assertAuxiliaryText(policy, change.path, String(change.content ?? ''));
       growth += Math.max(0, Buffer.byteLength(change.content || '') - fs.statSync(name).size);
     }
     this.assertDiskBudget(policy, growth);
@@ -827,7 +901,7 @@ class DeveloperAutonomy {
       || new Set(input.allowed_files).size !== input.allowed_files.length) {
       throw Error('Exact allowed files within policy budget required');
     }
-    for (const f of input.allowed_files) file(workspace, f);
+    for (const f of input.allowed_files) writableFile(workspace, f);
     this.assertVerifiers(policy, workspace, input.allowed_files);
     this.assertDiskBudget(policy);
 
@@ -997,7 +1071,7 @@ class DeveloperAutonomy {
     if (g.workspace_id) this.assertWorkspace(this.inspectWorkspace(g.workspace_id));
     this.assertVerifiers(policy, workspace, g.scope.allowed_files);
     this.assertDiskBudget(policy);
-    for (const f of g.scope.allowed_files) file(workspace, f);
+    for (const f of g.scope.allowed_files) writableFile(workspace, f);
     return {
       project_id: g.project_id,
       goal_id: g.goal_id,

@@ -617,3 +617,55 @@ test('an enrolled linked checkout can prepare a separate self-contained clone', 
   assert.ok(fs.lstatSync(path.join(ws.path,'.git')).isDirectory());
   assert.equal(fs.readFileSync(path.join(linked,'fixture.txt'),'utf8'),'alpha\n');
 });
+
+test('explicit auxiliary merchant app tests may change under pinned static verification', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const relative = 'tests/unit/test_merchant_hub_policy.ts';
+  const sourceTest = path.join(f.repo, relative);
+  fs.mkdirSync(path.dirname(sourceTest), { recursive: true });
+  const initial = 'import assert from "node:assert/strict";\nassert.equal(1, 1);\nassert.notEqual(1, 2);\n';
+  fs.writeFileSync(sourceTest, initial);
+  const taskPath = path.join(f.repo, '.vscode/tasks.json');
+  const tasks = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+  tasks.tasks.push({ label: 'static-typecheck', type: 'process', command: 'npm', args: ['run', 'typecheck'] });
+  fs.writeFileSync(taskPath, JSON.stringify(tasks));
+  const packagePath = path.join(f.repo, 'package.json');
+  let pkg = {};
+  try { pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8')); } catch { /* disposable fixture */ }
+  fs.writeFileSync(packagePath, JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, typecheck: 'tsc --noEmit' } }));
+  execFileSync('/usr/bin/git', ['-C', f.repo, 'add', '.vscode/tasks.json', 'package.json', relative]);
+  execFileSync('/usr/bin/git', ['-C', f.repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+    'commit', '-m', 'Register static verifier and application test'], { stdio: 'pipe' });
+
+  const policy = da.enroll({ ...f.enrollInput, default_tests: ['static-typecheck'] }, 'operator');
+  const ws = da.prepareWorkspace({ policy_id: policy.policy_id, request_id: randomUUID() }, 'operator');
+  const grant = da.issueGrant({
+    policy_id: policy.policy_id, request_id: randomUUID(), workspace: ws.path, workspace_id: ws.workspace_id,
+    allowed_files: [relative], workflow: 'routine_edit', objective: 'Extend the auxiliary test'
+  }, 'operator');
+  assert.ok(grant.grant_id);
+  const target = path.join(ws.path, relative);
+  fs.appendFileSync(target, 'assert.equal(2, 2);\n');
+  assert.doesNotThrow(() => da.assertVerifiers(policy, ws.path, [relative]));
+
+  fs.writeFileSync(target, '/* weakened tests */\n');
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
+  fs.writeFileSync(target, initial.replace('assert.equal(1, 1);', 'assert.equal(true, true);'));
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
+  fs.writeFileSync(target, initial.replace('assert.notEqual(1, 2);', 'assert.equal(1, 1);'));
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
+  fs.writeFileSync(target, initial + 'if (false) { assert.equal(1, 1); }\n');
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /not a recognized additive assertion/);
+  fs.writeFileSync(target, 'const assert = { equal() {}, notEqual() {} };\n' + initial);
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
+  fs.writeFileSync(target, initial);
+  fs.writeFileSync(path.join(ws.path, 'package.json'), JSON.stringify({ scripts: { typecheck: 'node weaken.js' } }));
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /overlap writable scope|verification definitions|weakened/);
+  fs.writeFileSync(path.join(ws.path, 'package.json'), fs.readFileSync(path.join(f.repo, 'package.json')));
+  const config = fs.readFileSync(path.join(ws.path, '.vscode/tasks.json'), 'utf8');
+  fs.writeFileSync(path.join(ws.path, '.vscode/tasks.json'), config + ' ');
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /verification definitions/);
+
+  const locked = da.enroll({ ...f.enrollInput, alias: 'fixture-da-immutable' }, 'operator');
+  assert.throws(() => da.assertVerifiers(locked, f.repo, [relative]), /overlap writable scope/);
+});
