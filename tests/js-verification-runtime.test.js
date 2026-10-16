@@ -78,3 +78,34 @@ test('resolveNpmCli finds npm-cli.js beside a pinned node binary', () => {
   // Homebrew Node and many installs expose npm-cli next to node; when absent, stay null.
   if (cli) assert.equal(fs.statSync(cli).isFile(), true);
 });
+  
+test('dependency copy rejects links escaping node_modules', t => {
+  const f = fixture(t);
+  const outside = path.join(f.root, 'outside.js');
+  fs.writeFileSync(outside, 'module.exports = 1;');
+  fs.symlinkSync(outside, path.join(f.source, 'node_modules', '.bin', 'escape'));
+  assert.throws(() => materializeNodeModules(f.source, f.work), /symlink escapes/);
+  assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
+});
+
+test('dependency disk budget rejects oversized trees before copying', t => {
+  const f = fixture(t);
+  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 64 }), /disk budget exhausted/);
+  assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
+});
+
+test('package-bin links cannot escape their dependency tree', t => {
+  const f = fixture(t);
+  fs.writeFileSync(path.join(f.source, 'script.js'), 'console.log("out");');
+  fs.symlinkSync('../../script.js', path.join(f.source, 'node_modules', '.bin', 'escape'));
+  const { resolveNodeRunnable } = require('../src/js-verification-runtime');
+  assert.equal(resolveNodeRunnable(f.source, 'escape'), null);
+  assert.equal(resolveNodeRunnable(f.source, 'node_modules/../script.js'), null);
+});
+
+test('Mission Seatbelt retains exact execution and excludes general shells', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/host-exec.js'), 'utf8');
+  const declaration = source.match(/const missionExec = ([^\n]+)/)?.[1] || '';
+  assert.ok(declaration.includes('...exact'));
+  assert.doesNotMatch(declaration, /\/usr\/bin\/env|\/bin\/sh|\/bin\/bash/);
+});

@@ -57,9 +57,9 @@ class HostExecutor {
       const secretPattern = SECRET_COMPONENT_PATTERN.replace(String.raw`\.git|`, '');
       const privatePatterns = [secretPattern, '(^|/)[.]runtime(/|$)'];
       const runtimeRoots = ['/var/empty','/Applications/Xcode.app/Contents','/Library/Developer','/System','/usr/lib','/usr/share','/usr/bin','/bin','/sbin','/Library/Apple','/opt/homebrew','/usr/local','/dev',path.dirname(file),path.dirname(process.execPath)];
-      // Keep /usr/bin/env and POSIX shells on the exact exec allowlist so Node-based
-      // package tooling can resolve shebang interpreters when a rewrite is unavailable.
-      const missionExec = [...exact, ...['/usr/bin/env', '/bin/sh', '/bin/bash', '/usr/bin/xcrun', '/Applications/Xcode.app/Contents/Developer/usr/bin/git'].filter(candidate => fs.existsSync(candidate))];
+      // Do not globally allow env or shell execution; qualified JS package
+      // scripts use the pinned Node interpreter, and unsupported ones fail closed.
+      const missionExec = [...exact, ...['/usr/bin/xcrun', '/Applications/Xcode.app/Contents/Developer/usr/bin/git'].filter(candidate => fs.existsSync(candidate))];
       const bounded = makeProfile({readRoots:[...missionAuthority.filesystem.read,...runtimeRoots],writeRoots:missionAuthority.filesystem.write,protectedReadPatterns:privatePatterns,protectedWritePatterns:[...privatePatterns,...(allowGitMetadata?[]:['(^|/)[.]git(/|$)'])],allowLoopbackNetwork:missionAuthority.permissions.network.includes('localhost'),allowForkWithExactExec:true,execPaths:missionExec});
       const immutable = exact.map(candidate => `(deny file-write* (literal ${quote(fs.realpathSync(candidate))}))`).join('\n');
       return {file:'/usr/bin/sandbox-exec',args:['-p',bounded+'\n'+immutable,file,...args]};

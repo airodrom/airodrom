@@ -30,21 +30,42 @@ function resolveNpmCli(nodePath) {
   return null;
 }
 
-function materializeNodeModules(sourceRepo, workPath) {
+// Refuse oversized dependency trees and links that escape the isolated tree.
+function boundedDependencyBytes(root, maxBytes) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw Error('Invalid dependency disk budget');
+  const canonicalRoot = fs.realpathSync(root);
+  let bytes = 0, entries = 0;
+  function inspect(entry) {
+    const stat = fs.lstatSync(entry);
+    if (++entries > 200000) throw Error('Dependency file count exceeds bounded inspection');
+    bytes += stat.size;
+    if (bytes > maxBytes) throw Error('Developer Autonomy disk budget exhausted');
+    if (stat.isSymbolicLink()) {
+      const resolved = fs.realpathSync(entry);
+      if (!inside(canonicalRoot, resolved)) throw Error('Dependency symlink escapes materialized tree');
+    } else if (stat.isDirectory()) {
+      for (const child of fs.readdirSync(entry)) inspect(path.join(entry, child));
+    }
+  }
+  inspect(root);
+  return bytes;
+}
+
+function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 * 1024 } = {}) {
   if (typeof sourceRepo !== 'string' || typeof workPath !== 'string' || !path.isAbsolute(sourceRepo) || !path.isAbsolute(workPath)) {
     return { status: 'skipped', reason: 'invalid_paths' };
   }
   const src = path.join(sourceRepo, 'node_modules');
   const dst = path.join(workPath, 'node_modules');
   if (!fs.existsSync(src)) return { status: 'absent' };
-  if (fs.existsSync(dst)) {
-    try {
-      if (fs.lstatSync(dst).isSymbolicLink()) {
-        fs.rmSync(dst, { force: true });
-      } else {
-        return { status: 'present' };
-      }
-    } catch {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw Error('Invalid dependency disk budget');
+  let current = null;
+  try { current = fs.lstatSync(dst); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (current) {
+    if (current.isSymbolicLink()) fs.rmSync(dst, { force: true });
+    else {
+      if (!current.isDirectory()) throw Error('Dependency destination is not a directory');
+      boundedDependencyBytes(dst, maxBytes);
       return { status: 'present' };
     }
   }
@@ -52,21 +73,30 @@ function materializeNodeModules(sourceRepo, workPath) {
   try { srcStat = fs.lstatSync(src); } catch { return { status: 'absent' }; }
   if (srcStat.isSymbolicLink()) return { status: 'skipped', reason: 'source_symlink' };
   if (!srcStat.isDirectory()) return { status: 'skipped', reason: 'source_not_directory' };
+  boundedDependencyBytes(src, maxBytes);
 
   if (process.platform === 'darwin') {
     const cloned = spawnSync('/bin/cp', ['-Rc', src, dst], { encoding: 'utf8' });
     if (cloned.status === 0 && fs.existsSync(dst) && !fs.lstatSync(dst).isSymbolicLink()) {
-      return { status: 'cloned' };
+      try {
+        boundedDependencyBytes(dst, maxBytes);
+        return { status: 'cloned' };
+      } catch { /* Retry with relative links preserved by fs.cpSync. */ }
     }
-    try { fs.rmSync(dst, { recursive: true, force: true }); } catch { /* retry with copy */ }
+    fs.rmSync(dst, { recursive: true, force: true });
   }
 
-  fs.cpSync(src, dst, { recursive: true });
-  if (!fs.existsSync(dst) || fs.lstatSync(dst).isSymbolicLink()) {
-    try { fs.rmSync(dst, { recursive: true, force: true }); } catch { /* ignore */ }
-    return { status: 'failed', reason: 'materialization_symlink_or_missing' };
+  try {
+    fs.cpSync(src, dst, { recursive: true, verbatimSymlinks: true });
+    if (!fs.existsSync(dst) || fs.lstatSync(dst).isSymbolicLink()) {
+      throw Error('Materialized dependencies are missing or symlinked');
+    }
+    boundedDependencyBytes(dst, maxBytes);
+    return { status: 'copied' };
+  } catch (error) {
+    fs.rmSync(dst, { recursive: true, force: true });
+    throw error;
   }
-  return { status: 'copied' };
 }
 
 function resolveNodeRunnable(repo, token) {
@@ -82,13 +112,13 @@ function resolveNodeRunnable(repo, token) {
 
   for (const candidate of candidates) {
     if (!inside(repo, candidate) || !fs.existsSync(candidate)) continue;
+    const fromModules = inside(modulesRoot, candidate);
+    if (token.startsWith('node_modules/') && !fromModules) continue;
     let target = candidate;
     try {
-      const link = fs.lstatSync(candidate);
-      if (link.isSymbolicLink()) {
-        target = path.resolve(path.dirname(candidate), fs.readlinkSync(candidate));
-        if (!inside(modulesRoot, target) && !inside(repo, target)) continue;
-      }
+      // realpath resolves chained links, so an escaped .bin script is rejected.
+      target = fs.realpathSync(candidate);
+      if (!inside(repo, target) || (fromModules && !inside(modulesRoot, target))) continue;
       if (!fs.statSync(target).isFile()) continue;
     } catch { continue; }
     let head = '';

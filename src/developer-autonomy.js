@@ -100,10 +100,6 @@ function privateDirectory(name) {
 }
 function diskBytes(root, ceiling = Infinity) {
   let bytes = 0, entries = 0;
-  // Skip dependency trees: JS/TS verification materializes node_modules into
-  // disposable clones for Seatbelt readability. Those trees are reproducible
-  // from the enrolled checkout and must not consume Mission workspace budget.
-  const SKIP = new Set(['node_modules', '.git']);
   function walk(name) {
     const st = fs.lstatSync(name);
     if (++entries > 200000) throw Error('Workspace disk inventory exceeds bounded inspection');
@@ -111,7 +107,6 @@ function diskBytes(root, ceiling = Infinity) {
     if (bytes > ceiling) throw Error('Developer Autonomy disk budget exhausted');
     if (st.isDirectory() && !st.isSymbolicLink()) {
       for (const child of fs.readdirSync(name)) {
-        if (SKIP.has(child)) continue;
         walk(path.join(name, child));
       }
     }
@@ -590,9 +585,19 @@ class DeveloperAutonomy {
     // Materialize enrolled JS/TS dependencies into the disposable clone. Symlinks
     // do not grant Seatbelt read access to an external tree; clone/copy keeps
     // modules inside the mission filesystem read root without network install.
+    // Materialized dependencies consume the same workspace disk budget.
+    // Refuse oversized/escaping dependency trees before they are copied.
     try {
-      require('./js-verification-runtime').materializeNodeModules(policy.repository, workPath);
-    } catch { /* verification remains fail-closed if modules unavailable */ }
+      const availableBytes = policy.budgets.max_disk_mb * 1024 * 1024
+        - this.assertDiskBudget(policy) - 1024 * 1024;
+      if (availableBytes <= 0) throw Error('Developer Autonomy disk budget exhausted');
+      require('./js-verification-runtime').materializeNodeModules(policy.repository, workPath, { maxBytes: availableBytes });
+      this.assertDiskBudget(policy);
+    } catch (error) {
+      // Only this freshly created, unregistered disposable clone is removed.
+      fs.rmSync(workPath, { recursive: true, force: true });
+      throw error;
+    }
     const branched = safeGit(workPath, ['checkout', '-b', branch]);
     if (!branched.ok) {
       fs.rmSync(workPath, { recursive: true, force: true });
