@@ -110,12 +110,16 @@ function repairManifest(env) {
   return { mission };
 }
 
-function repairAuthority(env, now = Date.now()) {
+function repairAuthority(env, now = Date.now(), { renew = true } = {}) {
   const a = env.authority;
   if (!a || typeof a !== 'object') return undefined;
   // Envelope authority includes normalized version/label; create() rejects those extras.
   let expiresAt = a.expiresAt;
-  if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + 24 * 60 * 60 * 1000) {
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) {
+    if (!renew) return undefined;
+    expiresAt = now + 60 * 60 * 1000;
+  } else if (expiresAt > now + 24 * 60 * 60 * 1000) {
+    if (!renew) return undefined;
     expiresAt = now + 60 * 60 * 1000;
   }
   return {
@@ -126,7 +130,7 @@ function repairAuthority(env, now = Date.now()) {
   };
 }
 
-function repairInput(parent, diagnosis, { request_id } = {}) {
+function repairInput(parent, diagnosis, { request_id, renewAuthority = true } = {}) {
   const env = parent.envelope;
   const criteria = env.criteria || [];
   const native = criteria.filter(c => c.type === 'exact_file').map(c => ({ name: 'file_write', path: c.path, content: c.content }));
@@ -135,7 +139,7 @@ function repairInput(parent, diagnosis, { request_id } = {}) {
     ...(env.task_type === 'local_files' && native.length ? { native_actions: native } : {}),
   } : undefined;
   const manifest = repairManifest(env);
-  const authority = repairAuthority(env);
+  const authority = repairAuthority(env, Date.now(), { renew: renewAuthority });
   return {
     request_id: request_id || ('cae-repair:' + randomUUID()),
     project_id: parent.project_id,
@@ -402,4 +406,45 @@ class AutonomousRepair {
   }
 }
 
-module.exports = { AutonomousRepair, diagnose, failedChecks, repairInput, repairAuthority, sameScope, repairKey, PENDING_TIMEOUT_MS };
+// One OpenCode repair after a failed host verification when the operator already
+// approved repair_budget >= 1. Does not renew authority, expand scope, or accept.
+function considerVerifiedRepair(bridge, parentId) {
+  const store = bridge.controlStore;
+  const parent = store.getMission(parentId);
+  if (!parent || parent.state !== 'needs_rework') return { action: 'skipped', reason: 'not_needs_rework' };
+  const env = parent.envelope || {};
+  if (env.preferred_agent !== 'opencode' || (env.fallback_agents || []).length) return { action: 'skipped', reason: 'worker_not_authorized' };
+  if ((env.dispatch_policy?.privacy || 'local_only') !== 'local_only') return { action: 'skipped', reason: 'privacy_not_local' };
+  if (env.model_provider && env.model_provider !== 'ollama') return { action: 'skipped', reason: 'external_provider' };
+  const ref = env.developer_autonomy;
+  if (!ref) return { action: 'skipped', reason: 'repair_budget' };
+  let grant;
+  try { grant = bridge.developerAutonomy.inspectGrant(ref.grant_id); }
+  catch { return { action: 'skipped', reason: 'grant_unavailable' }; }
+  if (!grant || !Number.isSafeInteger(grant.repair_budget) || grant.repair_budget < 1) return { action: 'skipped', reason: 'repair_budget' };
+  if (grant.state !== 'active') return { action: 'skipped', reason: 'authority_expired' };
+  if (env.authority && (!Number.isSafeInteger(env.authority.expiresAt) || env.authority.expiresAt <= Date.now())) return { action: 'skipped', reason: 'authority_expired' };
+  if (env.manifest?.expires_at && store.now() >= env.manifest.expires_at) return { action: 'skipped', reason: 'manifest_expired' };
+  try { bridge.developerAutonomy.assertRepair(parent); }
+  catch (error) { return { action: 'skipped', reason: String(error.message || 'repair_denied').slice(0, 200) }; }
+  const used = bridge.developerAutonomy.grantMissions(ref.grant_id).filter(m => m.envelope.repair_of).length;
+  if (used >= grant.repair_budget) return { action: 'skipped', reason: 'repair_budget' };
+  const diagnosis = diagnose(parent, store, { attempt: used + 1, maxAttempts: grant.repair_budget, remaining: Math.max(0, grant.repair_budget - used - 1) });
+  if (!diagnosis.ok) return { action: 'skipped', reason: diagnosis.reason };
+  const input = repairInput(parent, diagnosis, { request_id: 'da-verified-repair:' + parent.id, renewAuthority: false });
+  if (env.authority && !input.authority) return { action: 'skipped', reason: 'authority_expired' };
+  let created;
+  try { created = bridge.missions.create(input, 'operator'); }
+  catch (error) { return { action: 'skipped', reason: String(error.message || 'repair_create_failed').slice(0, 200) }; }
+  if (!created?.id || created.envelope?.repair_of !== parent.id) return { action: 'skipped', reason: 'repair_identity_conflict' };
+  if (!sameScope(parent, created.envelope)) return { action: 'skipped', reason: 'repair_scope_mismatch' };
+  try { bridge.missions.dispatch(created.id, { request_id: 'da-verified-repair-dispatch:' + parent.id }); }
+  catch (error) {
+    const message = String(error.message || '');
+    if (!/duplicate|already|active or uncertain/i.test(message)) return { action: 'skipped', reason: message.slice(0, 200), repair_mission_id: created.id };
+  }
+  store.event('mission.repair_dispatched', parent.id, { repair_mission_id: created.id, remaining_repair_budget: Math.max(0, grant.repair_budget - used - 1), authority: false });
+  return { action: 'dispatched', repair_mission_id: created.id };
+}
+
+module.exports = { AutonomousRepair, diagnose, failedChecks, repairInput, repairAuthority, sameScope, repairKey, considerVerifiedRepair, PENDING_TIMEOUT_MS };
