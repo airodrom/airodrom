@@ -16,6 +16,59 @@ function inside(root, target) {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
+const PRIVATE_DEPENDENCY = /(^|\/)(?:[.]git|[.]runtime|[.]env(?:[.][^/]*)?|[.]ssh|[.]aws|secrets?|credentials?|vault)(\/|$)/i;
+
+function privateDependency(root, target) {
+  return PRIVATE_DEPENDENCY.test(path.relative(root, target).replaceAll(path.sep, '/'));
+}
+
+// Follow a symlink chain without trusting a final realpath that returned
+// through an outside hop. Every hop must remain inside the registered root.
+function resolveContained(root, entry) {
+  const canonicalRoot = fs.realpathSync(root);
+  let current = entry;
+  const seen = new Set();
+  for (let hop = 0; hop < 32; hop++) {
+    let stat;
+    try { stat = fs.lstatSync(current); }
+    catch (error) {
+      if (error.code === 'ENOENT') throw Error('Dependency symlink target is missing');
+      throw Error('Dependency path is unavailable');
+    }
+    if (!stat.isSymbolicLink()) {
+      let canonical;
+      try { canonical = fs.realpathSync(current); }
+      catch (error) {
+        if (error.code === 'ENOENT') throw Error('Dependency symlink target is missing');
+        throw Error('Dependency path is unavailable');
+      }
+      if (!inside(canonicalRoot, canonical) || privateDependency(canonicalRoot, canonical)) {
+        throw Error('Dependency symlink escapes permitted repository tree');
+      }
+      return canonical;
+    }
+    const id = stat.dev + ':' + stat.ino;
+    if (seen.has(id)) throw Error('Dependency symlink cycle');
+    seen.add(id);
+    let link;
+    try { link = fs.readlinkSync(current); }
+    catch { throw Error('Dependency path is unavailable'); }
+    let parent;
+    try { parent = fs.realpathSync(path.dirname(current)); }
+    catch { throw Error('Dependency path is unavailable'); }
+    if (!inside(canonicalRoot, parent) || privateDependency(canonicalRoot, parent)) {
+      throw Error('Dependency symlink escapes permitted repository tree');
+    }
+    // Resolve from the canonical parent so /var and /private/var cannot disagree.
+    const next = path.resolve(parent, link);
+    if (!inside(canonicalRoot, next) || privateDependency(canonicalRoot, next)) {
+      throw Error('Dependency symlink escapes permitted repository tree');
+    }
+    current = next;
+  }
+  throw Error('Dependency symlink chain is too long');
+}
+
 function resolveNpmCli(nodePath) {
   if (typeof nodePath !== 'string' || !path.isAbsolute(nodePath)) return null;
   const candidates = [
@@ -34,22 +87,39 @@ function resolveNpmCli(nodePath) {
 function boundedDependencyBytes(root, maxBytes, allowedRoot = root) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw Error('Invalid dependency disk budget');
   const canonicalRoot = fs.realpathSync(allowedRoot);
+  const seen = new Set();
   let bytes = 0, entries = 0;
-  function inspect(entry) {
-    const stat = fs.lstatSync(entry);
+  function charge(canonical) {
+    if (seen.has(canonical)) return;
+    seen.add(canonical);
+    let stat;
+    try { stat = fs.statSync(canonical); }
+    catch { throw Error('Dependency path is unavailable'); }
     if (++entries > 200000) throw Error('Dependency file count exceeds bounded inspection');
+    // Count the target, not the small size of a symlink directory entry.
     bytes += stat.size;
     if (bytes > maxBytes) throw Error('Developer Autonomy disk budget exhausted');
+    if (!stat.isDirectory()) return;
+    let children;
+    try { children = fs.readdirSync(canonical); }
+    catch { throw Error('Dependency path is unavailable'); }
+    for (const child of children) inspect(path.join(canonical, child));
+  }
+  function inspect(entry) {
+    let stat;
+    try { stat = fs.lstatSync(entry); }
+    catch { throw Error('Dependency path is unavailable'); }
     if (stat.isSymbolicLink()) {
-      const resolved = fs.realpathSync(entry);
-      const relative = path.relative(canonicalRoot, resolved).replaceAll(path.sep, '/');
-      if (!inside(canonicalRoot, resolved)
-        || /(^|\/)(?:[.]git|[.]runtime|[.]env(?:[.][^/]*)?|[.]ssh|[.]aws|secrets?|credentials?|vault)(\/|$)/i.test(relative)) {
-        throw Error('Dependency symlink escapes permitted repository tree');
-      }
-    } else if (stat.isDirectory()) {
-      for (const child of fs.readdirSync(entry)) inspect(path.join(entry, child));
+      charge(resolveContained(canonicalRoot, entry));
+      return;
     }
+    let canonical;
+    try { canonical = fs.realpathSync(entry); }
+    catch { throw Error('Dependency path is unavailable'); }
+    if (!inside(canonicalRoot, canonical) || privateDependency(canonicalRoot, canonical)) {
+      throw Error('Dependency symlink escapes permitted repository tree');
+    }
+    charge(canonical);
   }
   inspect(root);
   return bytes;
@@ -120,13 +190,8 @@ function resolveNodeRunnable(repo, token) {
     if (token.startsWith('node_modules/') && !fromModules) continue;
     let target = candidate;
     try {
-      // realpath resolves chained links, so an escaped .bin script is rejected.
-      target = fs.realpathSync(candidate);
-      // Workspace packages may live elsewhere inside this same disposable repo.
-      // Never follow executable links outside it or into private Git/secret paths.
-      const relative = path.relative(repo, target).replaceAll(path.sep, '/');
-      if (!inside(repo, target)
-        || /(^|\/)(?:[.]git|[.]runtime|[.]env(?:[.][^/]*)?|[.]ssh|[.]aws|secrets?|credentials?|vault)(\/|$)/i.test(relative)) continue;
+      // Walk every hop. A chain that leaves the repository and returns is denied.
+      target = resolveContained(repo, candidate);
       if (!fs.statSync(target).isFile()) continue;
     } catch { continue; }
     let head = '';

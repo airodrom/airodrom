@@ -650,7 +650,18 @@ test('explicit auxiliary merchant app tests may change under pinned static verif
 
   fs.writeFileSync(target, '/* weakened tests */\n');
   assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
+  fs.writeFileSync(target, initial.replace('assert.equal(1, 1);', 'assert.equal(true, true);'));
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
+  fs.writeFileSync(target, initial.replace('assert.notEqual(1, 2);', 'assert.equal(1, 1);'));
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
+  fs.writeFileSync(target, initial + 'if (false) { assert.equal(1, 1); }\n');
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /not a recognized additive assertion/);
+  fs.writeFileSync(target, 'const assert = { equal() {}, notEqual() {} };\n' + initial);
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /weakened existing assertions/);
   fs.writeFileSync(target, initial);
+  fs.writeFileSync(path.join(ws.path, 'package.json'), JSON.stringify({ scripts: { typecheck: 'node weaken.js' } }));
+  assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /overlap writable scope|verification definitions|weakened/);
+  fs.writeFileSync(path.join(ws.path, 'package.json'), fs.readFileSync(path.join(f.repo, 'package.json')));
   const config = fs.readFileSync(path.join(ws.path, '.vscode/tasks.json'), 'utf8');
   fs.writeFileSync(path.join(ws.path, '.vscode/tasks.json'), config + ' ');
   assert.throws(() => da.assertVerifiers(policy, ws.path, [relative]), /verification definitions/);
