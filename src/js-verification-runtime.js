@@ -31,9 +31,9 @@ function resolveNpmCli(nodePath) {
 }
 
 // Refuse oversized dependency trees and links that escape the isolated tree.
-function boundedDependencyBytes(root, maxBytes) {
+function boundedDependencyBytes(root, maxBytes, allowedRoot = root) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw Error('Invalid dependency disk budget');
-  const canonicalRoot = fs.realpathSync(root);
+  const canonicalRoot = fs.realpathSync(allowedRoot);
   let bytes = 0, entries = 0;
   function inspect(entry) {
     const stat = fs.lstatSync(entry);
@@ -42,7 +42,11 @@ function boundedDependencyBytes(root, maxBytes) {
     if (bytes > maxBytes) throw Error('Developer Autonomy disk budget exhausted');
     if (stat.isSymbolicLink()) {
       const resolved = fs.realpathSync(entry);
-      if (!inside(canonicalRoot, resolved)) throw Error('Dependency symlink escapes materialized tree');
+      const relative = path.relative(canonicalRoot, resolved).replaceAll(path.sep, '/');
+      if (!inside(canonicalRoot, resolved)
+        || /(^|\/)(?:[.]git|[.]runtime|[.]env(?:[.][^/]*)?|[.]ssh|[.]aws|secrets?|credentials?|vault)(\/|$)/i.test(relative)) {
+        throw Error('Dependency symlink escapes permitted repository tree');
+      }
     } else if (stat.isDirectory()) {
       for (const child of fs.readdirSync(entry)) inspect(path.join(entry, child));
     }
@@ -65,7 +69,7 @@ function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 *
     if (current.isSymbolicLink()) fs.rmSync(dst, { force: true });
     else {
       if (!current.isDirectory()) throw Error('Dependency destination is not a directory');
-      boundedDependencyBytes(dst, maxBytes);
+      boundedDependencyBytes(dst, maxBytes, workPath);
       return { status: 'present' };
     }
   }
@@ -73,13 +77,13 @@ function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 *
   try { srcStat = fs.lstatSync(src); } catch { return { status: 'absent' }; }
   if (srcStat.isSymbolicLink()) return { status: 'skipped', reason: 'source_symlink' };
   if (!srcStat.isDirectory()) return { status: 'skipped', reason: 'source_not_directory' };
-  boundedDependencyBytes(src, maxBytes);
+  boundedDependencyBytes(src, maxBytes, sourceRepo);
 
   if (process.platform === 'darwin') {
     const cloned = spawnSync('/bin/cp', ['-Rc', src, dst], { encoding: 'utf8' });
     if (cloned.status === 0 && fs.existsSync(dst) && !fs.lstatSync(dst).isSymbolicLink()) {
       try {
-        boundedDependencyBytes(dst, maxBytes);
+        boundedDependencyBytes(dst, maxBytes, workPath);
         return { status: 'cloned' };
       } catch { /* Retry with relative links preserved by fs.cpSync. */ }
     }
@@ -91,7 +95,7 @@ function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 *
     if (!fs.existsSync(dst) || fs.lstatSync(dst).isSymbolicLink()) {
       throw Error('Materialized dependencies are missing or symlinked');
     }
-    boundedDependencyBytes(dst, maxBytes);
+    boundedDependencyBytes(dst, maxBytes, workPath);
     return { status: 'copied' };
   } catch (error) {
     fs.rmSync(dst, { recursive: true, force: true });
@@ -118,7 +122,11 @@ function resolveNodeRunnable(repo, token) {
     try {
       // realpath resolves chained links, so an escaped .bin script is rejected.
       target = fs.realpathSync(candidate);
-      if (!inside(repo, target) || (fromModules && !inside(modulesRoot, target))) continue;
+      // Workspace packages may live elsewhere inside this same disposable repo.
+      // Never follow executable links outside it or into private Git/secret paths.
+      const relative = path.relative(repo, target).replaceAll(path.sep, '/');
+      if (!inside(repo, target)
+        || /(^|\/)(?:[.]git|[.]runtime|[.]env(?:[.][^/]*)?|[.]ssh|[.]aws|secrets?|credentials?|vault)(\/|$)/i.test(relative)) continue;
       if (!fs.statSync(target).isFile()) continue;
     } catch { continue; }
     let head = '';
