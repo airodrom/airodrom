@@ -43,6 +43,8 @@ test('missing Git verifier stays fail closed; explicit rework requires real veri
  assert.throws(()=>f.bridge.missions.accept(m.id,{request_id:'missing-verifier-accept',verification_id:v.id,decision:'accept',rationale:'Cannot accept unavailable evidence'}));
  unavailable.mock.restore();const calls=f.calls();
  await assert.rejects(f.bridge.missions.reverify(m.id,{id:m.id,request_id:'unavailable-verifier-retry'}),/failed verification required/);
+ assert.equal(f.bridge.missions.detail(m.id).verifications.filter(row=>row.result==='passed').length,0);
+ assert.equal(f.bridge.missions.detail(m.id).verifications.find(row=>row.id===v.id).result,'unavailable');
  await f.bridge.missions.tick();assert.equal(f.calls(),calls);
  f.bridge.missions.dispatch(m.id,{request_id:'restored-verifier-rework'});
  const ready=await f.settle(m.id),verified=ready.verifications.find(row=>row.result==='passed');
