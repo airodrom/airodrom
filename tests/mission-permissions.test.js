@@ -92,6 +92,13 @@ test('mission subprocess sandbox denies external files, secrets and Git metadata
  if(process.platform!=='darwin'){await assert.rejects(executor.run(process.execPath,['-e',script],{cwd:workspace,missionAuthority:a}),/unqualified/);return;}
  const result=await executor.run(process.execPath,['-e',script],{cwd:workspace,missionAuthority:a});assert.equal(result.exitCode,0,result.stderr);assert.equal(result.stdout.trim(),'4');
  assert.equal(fs.existsSync(path.join(root,'outside-write')),false);
+ const writes=[...a.filesystem.write];
+ const systemTemp=require('node:os').tmpdir();
+ const tempScript=`const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'case-'));fs.writeFileSync(path.join(dir,'ok'),'1');let denied=false;try{fs.writeFileSync(path.join(${JSON.stringify(systemTemp)},'escape'),'x')}catch{denied=true}console.log(denied&&fs.readFileSync(path.join(dir,'ok'),'utf8')==='1'?'private':'open')`;
+ const temp=await executor.run(process.execPath,['-e',tempScript],{cwd:workspace,missionAuthority:a});
+ assert.equal(temp.exitCode,0,temp.stderr);assert.equal(temp.stdout.trim(),'private');
+ assert.equal(fs.existsSync(path.join(systemTemp,'escape')),false);
+ assert.deepEqual(a.filesystem.write,writes);
 });
 test('authority expiration and cancellation terminate bounded subprocesses',async t=>{
  const {root,workspace}=isolated(t);const {HostExecutor}=require('../src/host-exec');const executor=new HostExecutor({allowed:[process.execPath],home:root});
