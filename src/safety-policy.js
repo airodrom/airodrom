@@ -236,7 +236,7 @@ class SafetyPolicy extends EventEmitter {
       const kind = /Host reasoning admission denied/.test(error.message) ? 'safety_denial' : hostReasoning ? 'invalid_tool_arguments' : /Malformed|Invalid (?:file path|bash command|diagnostic|read|literal|find|search)|exceeds safety limit|too deeply nested|Sparse arrays|Symbol keys|Input must|ENOENT|ENOTDIR|no such file or directory|Parent path does not exist|Use ls for directories|Only regular files and directories may be read/.test(error.message) ? 'invalid_tool_arguments' : 'safety_denial';
       return this._record(taskId, call, { allow: false, kind, reason: error.message });
     }
-    try{this.manifestGuard?.(task,call);}catch{return this._record(taskId,call,{allow:false,kind:'mission_grant_denied',reason:'Mission Manifest integrity, budget or program boundary denied'});}
+    try{this.manifestGuard?.(task,call);}catch(error){return this._record(taskId,call,{allow:false,kind:'mission_grant_denied',reason:String(error?.message||'Mission Manifest integrity, budget or program boundary denied').slice(0,500)});}
     if (task.mission?.manifest) {
       const ceiling=require('./mission-manifest').checkManifest(task.mission.manifest,call,task.workspace,this.now());
       if(!ceiling.allow)return this._record(taskId,call,{allow:false,kind:'mission_grant_denied',reason:ceiling.reason});

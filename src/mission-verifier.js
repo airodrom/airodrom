@@ -20,7 +20,7 @@ class MissionVerifier {
     const call=async(name,input)=>{
       if(this.bridge.closed)throw Error('Bridge is shutting down');
       const response=await this.bridge.invokeCapability(task.id,{name,input,requestId:`verify:${run.id}:${name}:${randomUUID()}`});
-      if(response.status!=='completed')throw Error(`Verification capability unavailable: ${response.status}`);
+      if(response.status!=='completed')throw Error(`Verification capability unavailable: ${response.status}${response.decision?.reason ? ': ' + response.decision.reason : ''}`);
       return response.result;
     };
     let snapshot=null;
@@ -54,9 +54,10 @@ class MissionVerifier {
         const vb=require('./verifier-baseline');
         const auditResult=vb.audit(envelope.workspace,envelope.contract.audit?.verifier_baseline,snapshot,{contract:envelope.contract,allowedFiles:envelope.allowed_files});
         add('verifier_inputs_unchanged',auditResult.status,{changed:auditResult.changed.length,tampering:auditResult.tampering.map(t=>({file:t.file,kind:t.kind,classification:t.classification,removed_assertions:t.removed_assertions??null,weakened_negative_checks:t.weakened_negative_checks??null,skips_added:t.skips_added??null})),agent_authored:auditResult.agent_authored.map(a=>a.file),authorized:auditResult.authorized.map(a=>a.file),trusted_source:auditResult.trusted_source,reason:auditResult.reason||null});
-        add('protected_tests_unchanged',auditResult.tampering.some(t=>/(^|\/)(tests?|__tests__)(\/|$)|\.(test|spec)\./.test(t.file))?'failed':'passed',{policy:'verifier-owned tests are immutable to workers; agent-authored tests are never proof'});
+        const protectedTests=auditResult.status==='unavailable'?'unavailable':auditResult.tampering.some(t=>/(^|\/)(tests?|__tests__)(\/|$)|\.(test|spec)\./.test(t.file))?'failed':'passed';
+        add('protected_tests_unchanged',protectedTests,auditResult.status==='unavailable'?{classification:'UNAVAILABLE',reason:auditResult.reason||'trusted_baseline_unavailable',policy:'Protected-test inspection is not treated as passed when the trusted baseline cannot be read'}:{policy:'verifier-owned tests are immutable to workers; agent-authored tests are never proof'});
       }
-      if(checks.some(c=>c.status==='failed')){noteCoverage('verification_stopped');return{status:'failed',checks,workspace_hash:snapshot.hash};}
+      if(checks.some(c=>c.status==='failed')||checks.some(c=>c.id==='verifier_inputs_unchanged'&&c.status==='unavailable')){noteCoverage('verification_stopped');return{status:checks.some(c=>c.status==='failed')?'failed':'unavailable',checks,workspace_hash:snapshot.hash};}
       add('git_status','passed',await call('git_status',{repo:envelope.workspace}));
       add('task_owned_diff','passed',await call('git_diff',{repo:envelope.workspace,paths:envelope.allowed_files,stat:true}));
       for(const criterion of envelope.criteria){

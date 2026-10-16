@@ -14,18 +14,22 @@ function plan(repo, files) {
   const { digest } = require('../src/qualified-coding-adapter');
   return { version: 1, operations: Object.entries(files).map(([file, content]) => ({ name: 'file_write', path: file, content, preimage_sha256: digest(path.join(repo, file)) })) };
 }
-function realTsc() {
-  const candidates = [
-    path.resolve(__dirname, '../node_modules/typescript/lib/tsc.js'),
-    path.join(require('node:os').homedir(), 'Documents/Codex/2026-10-16/airodrom-event-whitespace/node_modules/typescript/lib/tsc.js'),
-  ];
-  const found = candidates.find(file => fs.existsSync(file));
-  if (!found) throw new Error('Real TypeScript compiler is required; a stub is not used');
-  return found;
+function compiler() {
+  const root = path.resolve(__dirname, '..');
+  const declared = require(path.join(root, 'package.json')).devDependencies.typescript;
+  const locked = require(path.join(root, 'package-lock.json')).packages['node_modules/typescript'].version;
+  if (declared !== locked) throw new Error('TypeScript package and lockfile disagree');
+  const installed = require(require.resolve('typescript/package.json', { paths: [root] }));
+  if (installed.version !== locked) throw new Error('Installed TypeScript ' + installed.version + ' is not the lockfile-controlled ' + locked);
+  const entry = path.join(path.dirname(require.resolve('typescript/package.json', { paths: [root] })), installed.bin.tsc);
+  if (!fs.existsSync(entry)) throw new Error('Real TypeScript compiler is required; a stub is not used');
+  return { entry, version: installed.version };
 }
 function commit(repo) {
   execFileSync('/usr/bin/git', ['-C', repo, 'add', '-A']);
-  execFileSync('/usr/bin/git', ['-C', repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'host coding fixture']);
+  const pending = execFileSync('/usr/bin/git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' });
+  if (!pending.trim()) return;
+  execFileSync('/usr/bin/git', ['-C', repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'host coding fixture'], { encoding: 'utf8' });
 }
 
 test('a new host coding Mission derives coverage before the write and keeps Acceptance pending', async t => {
@@ -54,8 +58,15 @@ test('a new host coding Mission derives coverage before the write and keeps Acce
   assert.equal(evidence.find(check => check.id === 'owner-review').status, 'operator_review');
   assert.equal(evidence.find(check => check.id === 'security:sensitive_area').status, 'passed');
   assert.equal(fs.readFileSync(path.join(f.repo, 'sample.ts'), 'utf8'), files['sample.ts']);
-  const tsc = execFileSync(process.execPath, [realTsc(), '--strict', '--noEmit', 'sample.ts'], { cwd: f.repo, encoding: 'utf8' });
-  assert.equal(tsc, '');
+  // Supplementary evidence after settlement. This is not a registered task: receipt.
+  const tsc = compiler();
+  assert.equal(execFileSync(process.execPath, [tsc.entry, '--strict', '--noEmit', 'sample.ts'], { cwd: f.repo, encoding: 'utf8' }), '');
+  fs.writeFileSync(path.join(f.repo, 'invalid.ts'), 'export const bad: number = "no";\n');
+  let rejected = false;
+  try { execFileSync(process.execPath, [tsc.entry, '--strict', '--noEmit', 'invalid.ts'], { cwd: f.repo, encoding: 'utf8' }); }
+  catch (error) { rejected = true; assert.notEqual(error.status, 0); assert.match(String(error.stdout || error.stderr), /error TS/); }
+  assert.equal(rejected, true);
+  assert.equal(done.verifications[0].evidence.some(check => check.id === 'task:static-typecheck'), false);
   assert.equal(f.bridge.memory.db.prepare("SELECT COUNT(*) c FROM cp_leases WHERE mission_id=? AND state!='released'").get(created.id).c, 0);
   assert.equal(f.inference(), 0);
   assert.equal(done.runs.filter(run => run.agent_id === 'opencode').length, 0);
@@ -95,7 +106,7 @@ test('new secrets, sensitive paths, unreadable scans, and tampering fail closed 
   assert.throws(() => f.create({ objective: 'Secret exact content', allowed_files: ['fixture.txt'], criteria: [{ id: 'file-0', type: 'exact_file', path: 'fixture.txt', content: planted }], verification: { diff_check: 'diff-check', tests: ['fixture-test'], syntax: [] }, manifest: manifest(f.repo, ['fixture.txt']), coding_plan: plan(f.repo, { 'fixture.txt': planted }) }), /sensitive/);
   fs.writeFileSync(path.join(f.repo, 'fixture.txt'), planted);
   const head = execFileSync('/usr/bin/git', ['-C', f.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  const introduced = securityScan(f.repo, ['fixture.txt'], { contract: { verification: { required_security_checks: ['secret_scan'] } }, baselineRecord: { base_commit_sha: head, files: [{ path: 'fixture.txt', sha256: 'baseline' }] } });
+  const introduced = securityScan(f.repo, ['fixture.txt'], { contract: { verification: { required_security_checks: ['secret_scan'] } }, baselineRecord: { base_commit_sha: head, files: [] } });
   assert.equal(introduced.find(check => check.id === 'security:secret_scan').status, 'failed');
   assert.equal(introduced.find(check => check.id === 'security:secret_scan').evidence.new_findings > 0, true);
   fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'beta\n');
@@ -127,4 +138,73 @@ test('new secrets, sensitive paths, unreadable scans, and tampering fail closed 
   assert.equal(weakenedDone.verifications[0].evidence.find(check => check.id === 'protected_tests_unchanged').status, 'failed');
   assert.equal(weakenedDone.verifications[0].evidence.find(check => check.id === 'security:secret_scan').status, 'unavailable');
   assert.equal(weakenedDone.acceptance.length, 0);
+});
+
+test('verification rejects a tampered or missing contract and an expired manifest before a registered command', async t => {
+  const f = await fixture(t);
+  let verifierCommands = 0;
+  const run = f.host.exec.run.bind(f.host.exec);
+  f.host.exec.run = (file, args, options) => {
+    if (args && (args.includes('--check') || args.includes('--test'))) verifierCommands += 1;
+    return run(file, args, options);
+  };
+  const request = objective => ({ objective, allowed_files: ['fixture.txt'], criteria: [{ id: 'file-0', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }], manifest: manifest(f.repo, ['fixture.txt']), coding_plan: plan(f.repo, { 'fixture.txt': 'beta\n' }) });
+  const reset = () => { fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'alpha\n'); commit(f.repo); };
+  const altered = f.create(request('Verification contract mismatch'));
+  const verify = f.bridge.missions.verifier.verify.bind(f.bridge.missions.verifier);
+  f.bridge.missions.verifier.verify = async (mission, runRecord) => {
+    if (mission.id === altered.id) mission.envelope.contract.permissions.allowed_write_paths.push('package.json');
+    return verify(mission, runRecord);
+  };
+  f.bridge.missions.dispatch(altered.id, { request_id: 'verify-altered' });
+  const alteredDone = await f.settle(altered.id, 'needs_rework');
+  assert.equal(alteredDone.verifications[0].evidence.find(check => check.id === 'contract_integrity').status, 'failed');
+  assert.match(alteredDone.verifications[0].evidence.find(check => check.id === 'contract_integrity').evidence.reason, /altered/);
+  assert.equal(alteredDone.verifications[0].evidence.find(check => check.id === 'security:secret_scan').status, 'unavailable');
+  assert.equal(alteredDone.acceptance.length, 0);
+  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'beta\n');
+  reset();
+  const legacy = f.create(request('Verification legacy contract'));
+  f.bridge.missions.verifier.verify = async (mission, runRecord) => {
+    if (mission.id === legacy.id) delete mission.envelope.contract;
+    return verify(mission, runRecord);
+  };
+  f.bridge.missions.dispatch(legacy.id, { request_id: 'verify-legacy' });
+  const legacyDone = await f.settle(legacy.id, 'needs_rework');
+  assert.equal(legacyDone.verifications[0].evidence.find(check => check.id === 'contract_integrity').evidence.reason, 'host_coding_contract_required');
+  assert.equal(legacyDone.verifications[0].evidence.find(check => check.id === 'security:secret_scan').status, 'unavailable');
+  assert.equal(legacyDone.verifications[0].evidence.some(check => String(check.id).startsWith('task:')), false);
+  reset();
+  const unreadable = f.create(request('Unreadable trusted baseline'));
+  f.bridge.missions.verifier.verify = verify;
+  const blobName = execFileSync('/usr/bin/git', ['-C', f.repo, 'rev-parse', 'HEAD:tests/fixture.test.cjs'], { encoding: 'utf8' }).trim();
+  const blob = path.join(f.repo, '.git/objects', blobName.slice(0, 2), blobName.slice(2));
+  fs.chmodSync(blob, 0);
+  let unreadableDone;
+  try {
+    f.bridge.missions.dispatch(unreadable.id, { request_id: 'verify-unreadable' });
+    unreadableDone = await f.settle(unreadable.id, 'needs_rework');
+  } finally { fs.chmodSync(blob, 0o644); }
+  assert.equal(unreadableDone.verifications[0].evidence.find(check => check.id === 'verifier_inputs_unchanged').status, 'unavailable');
+  assert.equal(unreadableDone.verifications[0].evidence.find(check => check.id === 'verifier_inputs_unchanged').evidence.trusted_source.available, false);
+  assert.equal(unreadableDone.verifications[0].evidence.find(check => check.id === 'security:secret_scan').status, 'unavailable');
+  assert.notEqual(unreadableDone.verifications[0].result, 'passed');
+  assert.equal(unreadableDone.acceptance.length, 0);
+  reset();
+  const expiring = f.create(request('Verification manifest expiry'));
+  const invoke = f.bridge.invokeCapability.bind(f.bridge);
+  f.bridge.invokeCapability = (id, request) => {
+    if (request.name === 'vscode_run_task') f.bridge.controlStore.now = () => Date.now() + 48 * 60 * 60 * 1000;
+    return invoke(id, request);
+  };
+  const before = verifierCommands;
+  f.bridge.missions.dispatch(expiring.id, { request_id: 'verify-expired' });
+  const expiredDone = await f.settle(expiring.id, 'needs_rework');
+  assert.equal(verifierCommands, before);
+  assert.match(expiredDone.verifications[0].evidence.find(check => check.id === 'verification_available').evidence.reason, /Mission Manifest runtime budget expired/);
+  assert.equal(expiredDone.verifications[0].evidence.some(check => String(check.id).startsWith('task:')), false);
+  assert.equal(expiredDone.acceptance.length, 0);
+  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'beta\n');
+  const persisted = f.bridge.memory.db.prepare('SELECT result FROM cp_verifications WHERE mission_id=?').get(expiring.id);
+  assert.equal(persisted.result, 'unavailable');
 });

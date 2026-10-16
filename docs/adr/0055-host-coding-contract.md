@@ -15,7 +15,9 @@ A deterministic host `coding_plan` could be registered without a canonical Missi
 
 Newly created host coding Missions derive a canonical contract from the already validated workspace, allowed files, manifest, operations, verification tasks, and manifest expiry. The derived contract names the host worker, no reasoning provider, no external disclosure, no network, and zero repair attempts. Caller-supplied contracts cannot remove those checks or add authority. The trusted verifier baseline is captured at registration, before the host write.
 
-Dispatch and verification both require the intact contract. A legacy coding Mission that has no contract is not promoted: dispatch fails with `host_coding_contract_required`, and verification records that gap as failed contract integrity plus unavailable coverage. It does not invent a passing security result. Unreadable scan inputs and an unreadable trusted baseline are `unavailable`, not passed. Historical verification rows are not rewritten.
+Dispatch and verification both require the intact contract. A legacy coding Mission that has no contract is not promoted: dispatch fails with `host_coding_contract_required`, and verification records that gap as failed contract integrity plus unavailable coverage. It does not invent a passing security result. Unreadable scan inputs and a failed trusted-baseline lookup are `unavailable`, not passed. An absent path is empty historical content only after the baseline commit and tree have been read successfully. Historical verification rows are not rewritten.
+
+`assertIntact()` does not enforce expiry. A new verifier command is blocked by the manifest runtime budget through `MissionProgram.assert()` before the command starts, unless the Mission is already in the owner-Acceptance window. That window is unchanged.
 
 ## Alternatives considered
 
