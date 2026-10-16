@@ -100,12 +100,21 @@ function privateDirectory(name) {
 }
 function diskBytes(root, ceiling = Infinity) {
   let bytes = 0, entries = 0;
+  // Skip dependency trees: JS/TS verification materializes node_modules into
+  // disposable clones for Seatbelt readability. Those trees are reproducible
+  // from the enrolled checkout and must not consume Mission workspace budget.
+  const SKIP = new Set(['node_modules', '.git']);
   function walk(name) {
     const st = fs.lstatSync(name);
     if (++entries > 200000) throw Error('Workspace disk inventory exceeds bounded inspection');
     bytes += st.size;
     if (bytes > ceiling) throw Error('Developer Autonomy disk budget exhausted');
-    if (st.isDirectory() && !st.isSymbolicLink()) for (const child of fs.readdirSync(name)) walk(path.join(name, child));
+    if (st.isDirectory() && !st.isSymbolicLink()) {
+      for (const child of fs.readdirSync(name)) {
+        if (SKIP.has(child)) continue;
+        walk(path.join(name, child));
+      }
+    }
   }
   walk(root);
   return bytes;
@@ -578,6 +587,12 @@ class DeveloperAutonomy {
         : 'Unable to prepare isolated workspace: ') + clone.err);
     }
     directoryIdentity(workPath, true);
+    // Materialize enrolled JS/TS dependencies into the disposable clone. Symlinks
+    // do not grant Seatbelt read access to an external tree; clone/copy keeps
+    // modules inside the mission filesystem read root without network install.
+    try {
+      require('./js-verification-runtime').materializeNodeModules(policy.repository, workPath);
+    } catch { /* verification remains fail-closed if modules unavailable */ }
     const branched = safeGit(workPath, ['checkout', '-b', branch]);
     if (!branched.ok) {
       fs.rmSync(workPath, { recursive: true, force: true });
