@@ -199,6 +199,35 @@ class DeveloperAutonomy {
     return root;
   }
 
+  boundAuxiliaryFiles(source) {
+    const envelope = source?.envelope || source;
+    const ref = envelope?.developer_autonomy;
+    if (!ref) return [];
+    const scope = this.grantScope(ref.grant_id);
+    if (!scope || fingerprint(ref) !== fingerprint(scope.developer_autonomy)) {
+      throw Error('Developer Autonomy grant expired, revoked or changed');
+    }
+    const allowed = envelope.allowed_files;
+    const workspace = envelope.workspace;
+    if (!Array.isArray(allowed) || fingerprint(allowed) !== fingerprint(scope.allowed_files)) {
+      throw Error('Immutable grant ceiling mismatch');
+    }
+    if (typeof workspace !== 'string' || path.resolve(workspace) !== path.resolve(scope.workspace)) {
+      throw Error('Workspace grant mismatch');
+    }
+    const projectId = source.project_id || source.projectId;
+    const goalId = source.goal_id || source.goalId;
+    if ((projectId && projectId !== scope.project_id) || (goalId && goalId !== scope.goal_id)) {
+      throw Error('Immutable grant ceiling mismatch');
+    }
+    const recorded = envelope.verification_manifest?.authorized_auxiliary_files;
+    const derived = scope.allowed_files.filter(auxiliaryApplicationTest);
+    if (recorded && fingerprint([...recorded].sort()) !== fingerprint([...derived].sort())) {
+      throw Error('Authorized application-test scope mismatch');
+    }
+    return derived;
+  }
+
   assertWorkspace(workspace) {
     if (!workspace || !['ready', 'bound', 'held'].includes(workspace.state)) throw Error('Workspace not usable');
     assertIdentities(workspace.identities);

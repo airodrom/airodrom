@@ -118,9 +118,14 @@ function repositorySnapshot(root) {
   if (Buffer.byteLength(JSON.stringify(snapshot)) > POLICY.maxMetadataBytes) throw Error('Verification metadata budget exceeded');
   return { ...snapshot, hash: fingerprint({ repository, files, inventory, index, status: statusEntries }) };
 }
-function manifest(snapshot, allowed, { inspectNow = true, allowAuxiliaryApplicationTests = false } = {}) {
+function manifest(snapshot, allowed, { inspectNow = true, authorizedAuxiliaryFiles = [] } = {}) {
   if (snapshot.version !== 2 || !Array.isArray(allowed) || !allowed.length || allowed.length > POLICY.maxScope || new Set(allowed).size !== allowed.length)
     throw Error('Invalid verification manifest');
+  if (!Array.isArray(authorizedAuxiliaryFiles) || authorizedAuxiliaryFiles.some(name =>
+    !require('./developer-autonomy').auxiliaryApplicationTest(name) || !allowed.includes(name))) {
+    throw Error('Auxiliary test authorization is outside granted scope');
+  }
+  const authorized = new Set(authorizedAuxiliaryFiles);
   const known = new Map(Object.keys(snapshot.inventory).map(n => [n.toLowerCase(), n]));
   const scopeFolded = new Set();
   for (const name of allowed) {
@@ -129,17 +134,18 @@ function manifest(snapshot, allowed, { inspectNow = true, allowAuxiliaryApplicat
     safePath(name);
     if (known.has(name.toLowerCase()) && known.get(name.toLowerCase()) !== name) throw Error('Verification scope case ambiguity');
     if (inspectNow && snapshot.dirty.includes(name)) throw Error('Verification scope overlaps existing dirty work');
-    if (/^(?:tests?\/|\.vscode\/)|(^|\/)(?:\.env(?:\.|$)|credentials|secrets)/i.test(name)
-      && !(allowAuxiliaryApplicationTests && require('./developer-autonomy').auxiliaryApplicationTest(name))) throw Error('Protected verification scope');
+    if (/^(?:tests?\/|\.vscode\/)|(^|\/)(?:\.env(?:\.|$)|credentials|secrets)/i.test(name) && !authorized.has(name)) throw Error('Protected verification scope');
     const actual=inspectNow?inspect(snapshot.repository.root, name, { owned: true }):(snapshot.inventory[name]||{exists:false});
     if(actual.exists && !snapshot.inventory[name]?.exists)throw Error('Ignored/unobserved owned path');
   }
   return { version: 2, repository: snapshot.repository, baseline_hash: snapshot.hash,
-    allowed_files: [...allowed].sort(), before: Object.fromEntries(allowed.map(n => [n, snapshot.inventory[n] || { exists: false }])),
+    allowed_files: [...allowed].sort(), authorized_auxiliary_files: [...authorized].sort(),
+    before: Object.fromEntries(allowed.map(n => [n, snapshot.inventory[n] || { exists: false }])),
     pre_existing_dirty: snapshot.dirty, pre_existing_untracked: snapshot.untracked, policy: POLICY };
 }
-function compare(before, after, scope, tests = [], { creation = null, allowPreDirtyScope = false } = {}) {
-  const m = manifest(before, scope, { inspectNow: false });
+function compare(before, after, scope, tests = [], { creation = null, allowPreDirtyScope = false, mission = null, autonomy = null } = {}) {
+  const authorizedAuxiliaryFiles = mission && autonomy ? autonomy.boundAuxiliaryFiles(mission) : [];
+  const m = manifest(before, scope, { inspectNow: false, authorizedAuxiliaryFiles });
   if (after.version !== 2 || fingerprint(before.repository) !== fingerprint(after.repository)) throw Error('Verification repository/HEAD/worktree identity mismatch');
   const names = [...new Set([...Object.keys(before.inventory), ...Object.keys(after.inventory)])].sort();
   const changed = names.filter(n => fingerprint(before.inventory[n] || { exists: false }) !== fingerprint(after.inventory[n] || { exists: false }));
