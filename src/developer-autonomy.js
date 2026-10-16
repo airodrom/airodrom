@@ -225,6 +225,18 @@ class DeveloperAutonomy {
       || Object.keys(snapshot.files).some(name => require('./verifier-baseline').isVerifierOwned(name) && !expected.has(name))) {
       throw Error('Enrolled verifier inputs changed or overlap writable scope');
     }
+    // Authorized auxiliary tests are not independent verification. Do not
+    // permit deletion of existing assertions or negative cases, or new skips.
+    for (const name of editable) {
+      const previous = trusted.assertion_profile?.find(p => p.path === name);
+      const current = require('./verifier-baseline').profileText(
+        fs.readFileSync(path.join(workspace, name), 'utf8'));
+      if (!previous || current.assertions < previous.assertions
+        || current.negative_assertions < previous.negative_assertions
+        || current.skips > previous.skips) {
+        throw Error('Authorized application test weakened existing assertions');
+      }
+    }
     for (const entry of trusted.files) {
       const target = path.join(workspace, entry.path), stat = fs.lstatSync(target);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || fs.realpathSync(target) !== target) throw Error('Verifier path must be canonical');
