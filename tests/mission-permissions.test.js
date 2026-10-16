@@ -46,6 +46,14 @@ test('signed grants bind ceiling changes and honor STOP revocation',t=>{
  const {workspace}=isolated(t),issuer=new MissionAuthority({fixtureOnly:true});const m={id:'mission-permissions',objective:'Read fixture',workspace,authority:authority(workspace),criteria:[]};const grant=issuer.issueFixtureGrant(m,{capabilities:['read']});m.grantId=grant.id;
  assert.equal(issuer.verify(m,'read').allow,true);assert.equal(issuer.verify({...m,authority:{...m.authority,expiresAt:m.authority.expiresAt+1}},'read').allow,false);assert.equal(issuer.verify({...m,authorityRevoked:true},'read').allow,false);issuer.revoke(m.id,'STOP');assert.equal(issuer.verify(m,'read').allow,false);
 });
+test('registered verifier tasks do not require a repository-wide write grant',t=>{
+ const {workspace}=isolated(t);fs.writeFileSync(path.join(workspace,'fixture.txt'),'alpha\n');
+ const narrow=authority(workspace,'development',{filesystem:{read:[workspace],write:[path.join(workspace,'fixture.txt')]}});
+ const task=callRequirements({toolName:'capability',input:{name:'vscode_run_task',input:{repo:workspace,label:'diff-check'}}},workspace);
+ assert.equal(checkAuthority(narrow,task).allow,true);
+ assert.equal(checkAuthority(authority(workspace,'development',{permissions:{runtime:[]}}),task).allow,false);
+ assert.equal(checkAuthority(narrow,callRequirements({toolName:'capability',input:{name:'file_write',input:{path:path.join(workspace,'notes.txt'),content:'x'}}},workspace)).allow,false);
+});
 test('typed call mappings preserve runtime and network limits and deny unknown operations',t=>{
  const {workspace}=isolated(t);const a=authority(workspace,'development',{permissions:{runtime:[]}});
  assert.equal(checkAuthority(a,callRequirements({toolName:'test'},workspace)).allow,false);
@@ -84,6 +92,28 @@ test('mission subprocess sandbox denies external files, secrets and Git metadata
  if(process.platform!=='darwin'){await assert.rejects(executor.run(process.execPath,['-e',script],{cwd:workspace,missionAuthority:a}),/unqualified/);return;}
  const result=await executor.run(process.execPath,['-e',script],{cwd:workspace,missionAuthority:a});assert.equal(result.exitCode,0,result.stderr);assert.equal(result.stdout.trim(),'4');
  assert.equal(fs.existsSync(path.join(root,'outside-write')),false);
+ const writes=[...a.filesystem.write];
+ const systemTemp=require('node:os').tmpdir();
+ const tempScript=`const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'case-'));fs.writeFileSync(path.join(dir,'ok'),'1');let denied=false;try{fs.writeFileSync(path.join(${JSON.stringify(systemTemp)},'escape'),'x')}catch{denied=true}console.log(denied&&fs.readFileSync(path.join(dir,'ok'),'utf8')==='1'?'private':'open')`;
+ const temp=await executor.run(process.execPath,['-e',tempScript],{cwd:workspace,missionAuthority:a});
+ assert.equal(temp.exitCode,0,temp.stderr);assert.equal(temp.stdout.trim(),'private');
+ assert.equal(fs.existsSync(path.join(systemTemp,'escape')),false);
+ assert.deepEqual(a.filesystem.write,writes);
+ const names=()=>fs.readdirSync(systemTemp).filter(name=>name.startsWith('airodrom-mission-'));
+ const before=new Set(names());
+ const failing=new HostExecutor({allowed:[process.execPath],home:root,spawnImpl:()=>{throw Error('spawn failed');}});
+ await assert.rejects(failing.run(process.execPath,['-e','0'],{cwd:workspace,missionAuthority:a}),/unqualified/);
+ assert.deepEqual(names().filter(name=>!before.has(name)),[]);
+ const controller=new AbortController();
+ const cancelled=executor.run(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:workspace,timeoutMs:10000,missionAuthority:a,signal:controller.signal});
+ setTimeout(()=>controller.abort(),50);
+ assert.equal((await cancelled).signal,'SIGKILL');
+ assert.deepEqual(names().filter(name=>!before.has(name)),[]);
+ const busy=t.mock.method(fs,'rmSync',()=>{throw Error('busy');});
+ await assert.rejects(executor.run(process.execPath,['-e','0'],{cwd:workspace,missionAuthority:a}),/cleanup failed/);
+ busy.mock.restore();
+ for (const name of names()) if (!before.has(name)) fs.rmSync(path.join(systemTemp,name),{recursive:true,force:true});
+ assert.deepEqual(a.filesystem.write,writes);
 });
 test('authority expiration and cancellation terminate bounded subprocesses',async t=>{
  const {root,workspace}=isolated(t);const {HostExecutor}=require('../src/host-exec');const executor=new HostExecutor({allowed:[process.execPath],home:root});

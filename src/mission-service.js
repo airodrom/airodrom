@@ -461,7 +461,8 @@ class MissionService {
     const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);
     const receipt=this.store.request(owner,input.request_id,{op:'reverify',id},()=>{
       if(!['needs_rework','awaiting_acceptance'].includes(m.state)||m.envelope.baseline.version!==2)throw Error('V2 failed verification required');
-      const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode') AND state='completed' AND termination_verified=1 ORDER BY ended_at DESC LIMIT 1").get(id);
+      const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode','cursor') AND state='completed' AND termination_verified=1 ORDER BY ended_at DESC LIMIT 1").get(id);
+      // Unavailable means the verifier did not run. A later pass requires a new implementation dispatch; the unavailable row stays unavailable.
       if(!run||!this.db.prepare("SELECT 1 FROM cp_verifications WHERE mission_id=? AND run_id=? AND result='failed'").get(id,run.id))throw Error('Settled implementation with failed verification required');
       const verificationRun=randomUUID();this.store.startRun({id:verificationRun,taskId:run.task_id,missionId:id,agentId:'host',role:'verifier'});
       this.store.acquireLease({resource:m.envelope.workspace,runId:verificationRun,missionId:id});

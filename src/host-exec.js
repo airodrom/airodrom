@@ -95,17 +95,38 @@ class HostExecutor {
     if (typeof file !== 'string' || !path.isAbsolute(file) || !this.allowed.has(path.resolve(file)) || isInternalHelper(file)) return Promise.reject(new Error('Executable is not allowlisted'));
     if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string' || arg.includes('\0') || arg.length > 64 * 1024)) return Promise.reject(new Error('Invalid executable arguments'));
     if (signal?.aborted) return Promise.reject(new Error('Host operation cancelled'));
+    let privateTemp = null;
+    const releaseTemp = () => {
+      if (!privateTemp) return true;
+      try { fs.rmSync(privateTemp, { recursive: true, force: true }); privateTemp = null; return true; }
+      catch { return false; }
+    };
     if (missionAuthority) {
       const valid = require('./mission-permissions').checkAuthority(missionAuthority);
       if (!valid.allow) return Promise.reject(new Error(valid.reason));
       timeoutMs = Math.min(timeoutMs, missionAuthority.expiresAt - Date.now());
       detached = true;
-      env = {...env,HOME:'/var/empty'};
+      try {
+        const parent = fs.realpathSync(os.tmpdir());
+        privateTemp = fs.mkdtempSync(path.join(parent, 'airodrom-mission-'));
+        fs.chmodSync(privateTemp, 0o700);
+        const realTemp = fs.realpathSync(privateTemp);
+        const relative = path.relative(parent, realTemp);
+        if (relative.startsWith('..') || path.isAbsolute(relative)) {
+          if (!releaseTemp()) return Promise.reject(new Error('Mission temp directory cleanup failed'));
+          return Promise.reject(new Error('Mission temp directory escaped its parent'));
+        }
+        missionAuthority = { ...missionAuthority, filesystem: { read: [...missionAuthority.filesystem.read, realTemp], write: [...missionAuthority.filesystem.write, realTemp] } };
+        env = {...env,HOME:'/var/empty',TMPDIR:realTemp};
+      } catch (error) {
+        releaseTemp();
+        return Promise.reject(new Error(require('./secret-observation').redactText(error.message)));
+      }
     }
     return new Promise((resolve, reject) => {
       let child;
       try { const bounded = this.processBoundary(file, args, execDependencies, missionAuthority, allowGitMetadata); child = this.spawnImpl(bounded.file, bounded.args, { cwd, env: this.env(env), shell: false, stdio: ['pipe', 'pipe', 'pipe'], detached }); }
-      catch (error) { return reject(new Error(require('./secret-observation').redactText(error.message))); }
+      catch (error) { if (!releaseTemp()) return reject(new Error('Mission temp directory cleanup failed')); return reject(new Error(require('./secret-observation').redactText(error.message))); }
       let stdout = '', stderr = '', truncated = false, timedOut = false, done = false;
       const collect = which => chunk => {
         const text = chunk.toString('utf8');
@@ -122,10 +143,14 @@ class HostExecutor {
       if (signal?.aborted) abort();
       const timer = setTimeout(() => { timedOut = true; abort(); }, timeoutMs);
       timer.unref?.();
-      child.on('error', error => { if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener('abort',abort); reject(new Error(require('./secret-observation').redactText(error.message))); });
+      const finish = (settle) => {
+        if (!releaseTemp()) { reject(new Error('Mission temp directory cleanup failed')); return; }
+        settle();
+      };
+      child.on('error', error => { if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener('abort',abort); finish(() => reject(new Error(require('./secret-observation').redactText(error.message)))); });
       child.on('close', (code, exitSignal) => {
         if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener('abort',abort);
-        resolve({ exitCode: code, signal: exitSignal || null, timedOut, stdout: stdout.slice(0, maxOutput), stderr: stderr.slice(0, 64 * 1024), truncated });
+        finish(() => resolve({ exitCode: code, signal: exitSignal || null, timedOut, stdout: stdout.slice(0, maxOutput), stderr: stderr.slice(0, 64 * 1024), truncated }));
       });
       if (input !== null && input !== undefined) child.stdin?.end(String(input)); else child.stdin?.end();
     });

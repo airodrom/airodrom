@@ -2,16 +2,16 @@
   "version": 1,
   "cursor": {
     "runtime_version": "2026.09.28-64d2043",
-    "observed_at": 1791866886377,
-    "availability": "auth_required",
+    "observed_at": 1792123477272,
+    "availability": "available",
     "probe": "governed_sandboxed_headless_cli",
-    "execution_qualified": false,
-    "auth_state": "credential_file_unavailable",
-    "qualification_blocker": "cursor_credential_file_unavailable",
-    "qualification_owner_step": "AGENT_CLI_CREDENTIAL_STORE=file agent login (writes ~/.cursor/auth.json) or provide an API key file; then run node scripts/qualify-cursor-worker.cjs and review before flipping execution_qualified",
+    "execution_qualified": true,
+    "auth_state": "credential_file",
+    "qualification_blocker": null,
+    "qualification_owner_step": null,
     "sandbox_containment": "PROVEN",
     "sandbox_containment_shape": "cursor",
-    "sandbox_containment_observed_at": 1791866886377,
+    "sandbox_containment_observed_at": 1792123477272,
     "credential_store_policy": "file_or_api_key_only_keychain_denied"
   },
   "opencode": {

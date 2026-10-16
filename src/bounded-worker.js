@@ -101,13 +101,16 @@ function args(id,root,model){
  const disabled=['shell_tool','shell_snapshot','unified_exec','unified_exec_tty','apply_patch_freeform','apps','plugins','remote_plugin','plugin_sharing','hooks','memories','multi_agent','multi_agent_v2','browser_use','computer_use','in_app_browser','js_repl','code_mode','code_mode_host','image_generation','remote_control','skill_search','skill_mcp_dependency_install','tool_suggest','request_permissions_tool','standalone_web_search','sleep_tool','view_image','artifact','daemon_auto_start'];
  return ['exec','--ignore-user-config','--ignore-rules','--ephemeral','--json','--sandbox','read-only','--skip-git-repo-check','--output-schema',path.join(root,'schema.json'),'-c','forced_login_method="chatgpt"','-c','web_search="disabled"',...disabled.flatMap(f=>['-c','features.'+f+'=false']),...(model?['--model',model]:[]),'-'];
 }
-async function proxy(hosts,controller,onEvent){
+async function proxy(hosts,controller,onEvent,options={}){
+ // Lifetime CONNECT budget for one sandboxed run. Cursor opens many short-lived
+ // tunnels (auth, config, skills, agent); keep other workers on the tight default.
+ const maxConnections=Number.isInteger(options.maxConnections)&&options.maxConnections>=1&&options.maxConnections<=256?options.maxConnections:16;
  let bytes=0,connections=0,stopped=false;const sockets=new Set();
  const denied=reason=>onEvent?.({type:'worker.proxy_denied',reason,authority:false});
  const stop=()=>{stopped=true;for(const s of sockets)s.destroy();};controller.signal.addEventListener('abort',stop,{once:true});
  const server=http.createServer((req,res)=>{res.writeHead(403);res.end();});server.on('connect',async(req,client,head)=>{
   sockets.add(client);client.on('error',()=>{});client.on('close',()=>sockets.delete(client));const m=/^([a-z0-9.-]+):443$/.exec(req.url||'');onEvent?.({type:'worker.proxy',host:m&&hosts.includes(m[1])?m[1]:'[denied]',authority:false});
-  if(stopped||!m||!hosts.includes(m[1])||++connections>16){denied(stopped?'stopped':!m||!hosts.includes(m[1])?'endpoint':'connection_bound');client.destroy();return;}
+  if(stopped||!m||!hosts.includes(m[1])||++connections>maxConnections){denied(stopped?'stopped':!m||!hosts.includes(m[1])?'endpoint':'connection_bound');client.destroy();return;}
   try{const rows=await dns.lookup(m[1],{all:true});if(stopped||controller.signal.aborted||!rows.length||rows.some(r=>!require('./research-network').publicAddress(r.address,r.family)))throw Error();
    client.setTimeout(30000,()=>client.destroy());client.write('HTTP/1.1 200 Connection Established\r\n\r\n');let hello=head;
    const meter=c=>{bytes+=c.length;if(bytes>16777216){stop();controller.abort();}};
