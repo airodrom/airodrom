@@ -139,7 +139,7 @@ class GlobalAutopilot {
     // Revoke Autopilot-managed DA policies so unspent grants cannot continue.
     try {
       for (const p of this.bridge.developerAutonomy.list('operator') || []) {
-        if (!p.alias?.startsWith('autopilot:') || p.state !== 'active') continue;
+        if (!p.alias?.startsWith('autopilot-') || p.state !== 'active') continue;
         try {
           this.bridge.developerAutonomy.revoke({
             policy_id: p.policy_id,
@@ -211,7 +211,7 @@ class GlobalAutopilot {
     const tests = labels.filter(l => l !== diff).slice(0, 4);
     if (!diff || !tests.length) throw Error('Autopilot needs diff-check and at least one registered test task');
     return this.bridge.developerAutonomy.enroll({
-      alias: 'autopilot:' + project.projectId.slice(0, 8),
+      alias: 'autopilot-' + project.projectId.replace(/-/g,'').slice(0, 12),
       repository: workspace,
       project_id: project.projectId,
       goal_id: goalId,

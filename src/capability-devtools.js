@@ -374,6 +374,7 @@ function ideTaskPlan(ctx, repo, label, resolved = null) {
   if (!classified.argv) return { ...classified, error: 'Task uses shell operators and cannot run without a shell' };
   const [head, ...args] = classified.argv;
   let file = null;
+  let plannedArgs = args;
   if (head.startsWith('./') || head.startsWith('node_modules/')) {
     const candidate = path.resolve(repo, head);
     if (path.relative(repo, candidate).startsWith('..')) return { ...classified, error: 'Task script escapes the repository' };
@@ -381,10 +382,26 @@ function ideTaskPlan(ctx, repo, label, resolved = null) {
   } else {
     const tool = { npm: 'npm', pnpm: 'pnpm', node: 'node', python3: 'python', python: 'python', git: 'git', make: 'make' }[head];
     if (!tool) return { ...classified, error: `Task executable ${head} is not allowlisted` };
-    file = ctx.exec.resolveFirst(DEV_TOOLS[tool].candidates);
-    if (!file) return { ...classified, error: `${head} is not installed` };
+    // Mission Seatbelt allows exact process-exec only. npm/.bin shebang shims need
+    // /usr/bin/env and are denied; rewrite JS package scripts to pinned node + JS.
+    if (tool === 'npm' || tool === 'pnpm') {
+      const nodeFile = ctx.exec.resolveFirst(DEV_TOOLS.node.candidates);
+      if (!nodeFile) return { ...classified, error: 'node is not installed' };
+      const planned = require('./js-verification-runtime').planPackageManagerInvocation(repo, classified.argv, nodeFile);
+      if (!planned) {
+        file = ctx.exec.resolveFirst(DEV_TOOLS[tool].candidates);
+        if (!file) return { ...classified, error: `${head} is not installed` };
+      } else {
+        file = planned.file;
+        plannedArgs = planned.args;
+        ctx.exec.allow(file);
+      }
+    } else {
+      file = ctx.exec.resolveFirst(DEV_TOOLS[tool].candidates);
+      if (!file) return { ...classified, error: `${head} is not installed` };
+    }
   }
-  return { ...classified, file, args };
+  return { ...classified, file, args: plannedArgs };
 }
 
 function developerCapabilities({ jobs = new ClaudeCodeJobs() } = {}) {

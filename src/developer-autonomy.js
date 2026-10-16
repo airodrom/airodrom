@@ -105,7 +105,11 @@ function diskBytes(root, ceiling = Infinity) {
     if (++entries > 200000) throw Error('Workspace disk inventory exceeds bounded inspection');
     bytes += st.size;
     if (bytes > ceiling) throw Error('Developer Autonomy disk budget exhausted');
-    if (st.isDirectory() && !st.isSymbolicLink()) for (const child of fs.readdirSync(name)) walk(path.join(name, child));
+    if (st.isDirectory() && !st.isSymbolicLink()) {
+      for (const child of fs.readdirSync(name)) {
+        walk(path.join(name, child));
+      }
+    }
   }
   walk(root);
   return bytes;
@@ -578,6 +582,22 @@ class DeveloperAutonomy {
         : 'Unable to prepare isolated workspace: ') + clone.err);
     }
     directoryIdentity(workPath, true);
+    // Materialize enrolled JS/TS dependencies into the disposable clone. Symlinks
+    // do not grant Seatbelt read access to an external tree; clone/copy keeps
+    // modules inside the mission filesystem read root without network install.
+    // Materialized dependencies consume the same workspace disk budget.
+    // Refuse oversized/escaping dependency trees before they are copied.
+    try {
+      const availableBytes = policy.budgets.max_disk_mb * 1024 * 1024
+        - this.assertDiskBudget(policy) - 1024 * 1024;
+      if (availableBytes <= 0) throw Error('Developer Autonomy disk budget exhausted');
+      require('./js-verification-runtime').materializeNodeModules(policy.repository, workPath, { maxBytes: availableBytes });
+      this.assertDiskBudget(policy);
+    } catch (error) {
+      // Only this freshly created, unregistered disposable clone is removed.
+      fs.rmSync(workPath, { recursive: true, force: true });
+      throw error;
+    }
     const branched = safeGit(workPath, ['checkout', '-b', branch]);
     if (!branched.ok) {
       fs.rmSync(workPath, { recursive: true, force: true });
