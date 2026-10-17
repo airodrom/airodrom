@@ -98,8 +98,15 @@ async function newMission(server,input){
   if(created.state==='ready')server.bridge.missions.dispatch(missionId,{request_id:'assistant-research-dispatch:'+input.request_id},'operator');
   return {kind:'mission',route:input.explicit?'EXPLICIT MISSION':'WORK',mission_id:missionId,state:server.bridge.missions.require(missionId,'operator').state,browser_research_available:true,message:'Research Mission created. Beginning public website investigation within the approved domain. Account-only features require separate owner authorization.',authority:false};
  }
- const templates=matchingTemplates(server.bridge,input.workspace,input.worker);
- if(templates.length!==1)return draft(server,request,templates.length?'Several approved scopes match this workspace. Choose one host-registered Mission template.':'Mission created as a draft. Choose an owner-registered workspace template with allowed files and checks before execution.');
+ let resolved=input;
+ if(!resolved.workspace&&server.bridge.workTemplates){
+  const active=(server.bridge.workTemplates.list('operator')||[]).filter(item=>item.state==='active');
+  if(active.length===1){
+   try{const only=server.bridge.workTemplates.template(active[0].project,active[0].workspace_alias);if(only?.workspace)resolved={...resolved,workspace:only.workspace};}catch{/* invalid template stays unresolved */}
+  }else if(active.length>1)return draft(server,request,'Several registered projects are enrolled. Name the project. No disposable workspace was selected.');
+ }
+ const templates=matchingTemplates(server.bridge,resolved.workspace,resolved.worker);
+ if(templates.length!==1)return draft(server,request,templates.length?'Several approved scopes match this workspace. Choose one host-registered Mission template.':resolved.workspace?'Mission created as a draft. The resolved workspace has no single registered template with allowed files and checks.':'No registered project template matched. Register a work template before execution. No disposable workspace was selected.');
  const template=templates[0];
  if(capabilities.some(c=>c!=='web_read'&&!(template.capability_scopes||[]).includes(c)))return draft(server,request,'This request needs capabilities outside the registered template. Choose a supported bounded scope; no capability has been granted.');
  let route=null;

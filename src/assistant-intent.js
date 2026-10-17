@@ -92,6 +92,7 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(/^(?:list|show)\s+(?:my\s+)?(?:job\s+)?applications$/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'list'});
  if(/^(?:log|record|track)\s+(?:a\s+)?(?:job\s+)?application\b/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'upsert',raw:request});
  if(/^(?:find|identify)\s+(?:recruiter|recruiters)\b/i.test(request)||/^categorize\s+(?:job\s+)?(?:mail|email|gmail)\b/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'recruiters'});
+ if(/^(?:enable|turn on|disable|turn off)\s+(?:global\s+)?autopilot\b/i.test(request)||/^(?:read|show|what(?:'s| is))\s+(?:my\s+)?(?:settings|autonomy(?: mode)?|service status|expanded autonomy)\b/i.test(request)||/^(?:select|set)\s+(?:autonomy|expanded autonomy)\s+mode\b/i.test(request))return route('OPERATOR',{kind:'operator_control',objective:request,capability_classes:[]});
  if(isWorkRequest(request))return route('WORK',{kind:'work',objective:request,capability_classes:workCapabilities(request)});
  if(/^(?:do|handle|take care of)\s+(?:it|this|that)$/i.test(request))return {kind:'clarify',message:'Do you want to talk it through or create a Work Mission?'};
  if(/^(?:check|read|show|open)\s+(?:my\s+)?(?:inbox|messages|email|emails|mail)$/i.test(request))return route('CONNECTOR',{kind:'clarify',message:'Should I check Gmail or the official WhatsApp connector?'});

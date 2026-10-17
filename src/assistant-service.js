@@ -92,6 +92,7 @@ async function submit(server,input){
   if(parsed.action==='cancel')return missions.cancel(server,{mission_id:parsed.mission_id,request_id:input.request_id});
   return missions.newMission(server,{objective:parsed.objective,request_id:input.request_id,workspace:input.workspace,model:input.model,worker:input.worker,explicit:true});
  }
+ if(parsed.kind==='operator_control')return {kind:'operator_control',message:'Operator control uses authenticated settings APIs. No coding workspace or Mission was created.',objective:parsed.objective,authority:false,execution_authorized:false};
  if(parsed.kind==='work'){
   // Terminal/Chat natural-language WORK uses ZeroSetupWork. Never create a draft-only Mission that demands UUID template forms.
   if(!server.bridge.zeroSetupWork)return require('./assistant-missions').newMission(server,{objective:parsed.objective,capability_classes:parsed.capability_classes,request_id:input.request_id,workspace:input.workspace,model:input.model,worker:input.worker,explicit:false});
