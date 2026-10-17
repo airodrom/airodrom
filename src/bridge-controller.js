@@ -343,7 +343,13 @@ class BridgeController extends EventEmitter {
       for (const task of this.tasks.list()) {
         if (task.content_state === 'erased') continue;
         this._normalizeMission(task);
-        this.policy.registerTask(task);
+        try { this.policy.registerTask(task); }
+        catch (error) {
+          // A cleaned disposable workspace must not block service start.
+          // The task stays unrestored and cannot execute until its workspace exists.
+          if (error.code !== 'ENOENT') throw error;
+          continue;
+        }
         if (task.safetyStop?.latched) this.policy.latchSafetyStop(task.id, task.safetyStop.reason, task.safetyStop.evidence);
       }
       await backupBeforeMigration(this.memory.db, path.join(this.dataDir, 'memory.sqlite'));
