@@ -97,6 +97,7 @@ class ZeroSetupWork {
           const project = projects.find(p => p.projectId === da[0].project_id);
           return { ok: true, project, workspace: da[0].repository, developer_autonomy_policy_id: da[0].policy_id };
         }
+        if (da.length > 1) return { ok: false, clarify: true, message: 'Which registered project should I use?', choices: da.slice(0, 8).map(p => ({ project_name: p.project_id, workspace_label: readablePath(p.repository) })) };
       } catch { /* DA unavailable */ }
       const active = this.bridge.workTemplates.list('operator')
         .filter(t => t.state === 'active' && projects.some(p => p.projectId === t.project_id &&
@@ -105,6 +106,8 @@ class ZeroSetupWork {
         const project = projects.find(p => p.projectId === active[0].project_id);
         return { ok: true, project, workspace: active[0].workspace };
       }
+      if (active.length > 1) return { ok: false, clarify: true, message: 'Which registered project template should I use?', choices: active.slice(0, 8).map(t => ({ project_name: t.project, workspace_label: t.workspace_alias })) };
+      return { ok: false, clarify: true, message: 'No standing enrollment matches this request. Name a registered project. No disposable workspace was selected.', choices: projects.slice(0, 8).map(p => ({ project_name: p.name, workspace_label: readablePath(p.repositories[0]) })) };
     }
     if (matches.length === 1) return { ok: true, project: matches[0].project, workspace: matches[0].workspace };
     if (matches.length > 1) {
@@ -218,6 +221,11 @@ class ZeroSetupWork {
     // ask_airodrom / prepare_mission prepare WORK only. Ordinary chat and public-research
     // consent stay on host conversation / Terminal flows; never auto-prepare from chat text.
     const routed = require('./assistant-intent').parse(instruction);
+    if (routed.kind === 'operator_control') {
+      const record = { version: 1, instruction, routed: { kind: routed.kind }, clarify: false, authority: false, workspace: null };
+      this.write(request_id, principal, record, 'clarify');
+      return { state: 'OPERATOR', message: 'Operator control uses authenticated settings APIs. No coding workspace, Mission, or worker was selected.', authority: false, execution_authorized: false, next_action: 'use_operator_settings' };
+    }
     if (['conversation', 'preference', 'connector', 'remember', 'forget', 'recall', 'sensitive', 'vault', 'secret', 'private_storage'].includes(routed.kind)) {
       const record = { version: 1, instruction, routed: { kind: routed.kind }, clarify: true, authority: false };
       this.write(request_id, principal, record, 'clarify');

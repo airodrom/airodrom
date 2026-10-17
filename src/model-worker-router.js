@@ -7,7 +7,7 @@ function registry(bridge,observed={},now=Date.now()) {
  const configured=bridge.opencodeAdapter.options.model===MODEL;
  const qualified=runtime.execution_qualified===true&&evidence?.qualification_status==='qualified'&&configured&&now<EXPIRES;
  const ready=observed.ready===true;
- const external=bridge.workers?.catalog()||[];
+ const external=(bridge.workers?.catalog()||[]).filter(w=>w.id!=='cursor');
  const models=external.filter(w=>w.qualified&&w.model).map(w=>({id:w.id+':'+w.model,name:w.model,provider:w.provider,locality:'external',workers:[w.id],data_classes:['public'],tasks:['WORK'],context_limit:null,cost:null,cost_class:'subscription',qualification:w.qualification,available:w.available,evidence_version:w.qualification_id,runtime_version:w.version,expires_at:w.expires_at}));
  return {models:[...models,{id:MODEL,name:'Qwen3 Coder 30B',provider:'ollama',locality:'local',workers:['opencode'],data_classes:['public','personal'],tasks:['CONVERSATION','WORK'],context_limit:null,effective_context_limit:null,cost:null,cost_class:'local',qualification:qualified?'qualified':'unqualified',available:ready&&qualified,evidence_version:'opencode-2.0.25-memory-v2',runtime_version:runtime.runtime_version,model_digest:evidence?.digest||null,expires_at:EXPIRES}],workers:[
  {id:'opencode',support:'supported',transport:'confined_local_cli',locality:'local',qualification:qualified?'qualified':'unqualified',available:ready&&qualified,version:ready&&qualified?runtime.runtime_version:null,expires_at:EXPIRES,auth_state:'local_account_not_required',reason:qualified?(observed.reason||(!ready?'local_runtime_not_ready':null)):'qualification_required',capabilities:['conversation','coding'],live_qualified:qualified&&ready&&!bridge.opencodeAdapter.options.fixtureExecutable},
@@ -35,6 +35,16 @@ function select(catalog,input={}) {
 async function inspect(bridge,{conversation=qualifyConversation}={}){
  const [worker,direct]=await Promise.allSettled([bridge.opencodeAdapter.readiness(),conversation()]);
  const catalog=registry(bridge,worker.status==='fulfilled'?worker.value:{}),ready=direct.status==='fulfilled'&&direct.value.state==='READY'&&direct.value.model===MODEL;
+ if(bridge.cursorWorker){
+  let cursor=null;
+  try{cursor=await bridge.cursorWorker.readiness();}catch{cursor=null;}
+  if(cursor){
+   const qualified=cursor.tiers?.qualified===true&&cursor.ready===true;
+   catalog.workers=catalog.workers.filter(w=>w.id!=='cursor');
+   catalog.workers.push({id:'cursor',support:'experimental',transport:'sandboxed_headless_cli',locality:'external',qualification:qualified?'qualified':'unqualified',available:cursor.available===true&&cursor.ready===true,version:cursor.version||null,expires_at:null,auth_state:cursor.auth_state||'unknown',reason:cursor.reason||(qualified?null:'cursor_execution_unqualified'),capabilities:qualified?['coding','bounded_file_work']:[],live_qualified:qualified&&!bridge.cursorWorker.options?.fixtureExecutable,governed_worker:true,tiers:cursor.tiers||null});
+   if(qualified)catalog.models.push({id:'cursor:auto',name:'Cursor governed worker',provider:'cursor_runtime',locality:'external',workers:['cursor'],data_classes:['public'],tasks:['WORK'],context_limit:null,effective_context_limit:null,cost:null,cost_class:'subscription',qualification:'qualified',available:cursor.available===true,evidence_version:'governed-sandboxed-headless',runtime_version:cursor.version||null,expires_at:Date.now()+86400000});
+  }
+ }
  const local=catalog.models.find(m=>m.id===MODEL);local.conversation={available:ready,worker_required:false};
  // Conversation may mark the local model available for CONVERSATION routing only.
  // OpenCode WORK admission remains workers[0].available from OpenCode readiness —
