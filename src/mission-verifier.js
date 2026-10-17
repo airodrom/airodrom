@@ -4,8 +4,71 @@ const {createHash,randomUUID}=require('node:crypto');
 const {workspaceSnapshot}=require('./control-context');
 const {transaction,redactValue}=require('./control-plane-store');
 const hash=s=>createHash('sha256').update(s).digest('hex');
+const sleep=ms=>new Promise(resolve=>{const timer=setTimeout(resolve,Math.max(0,ms));timer.unref?.();});
+function canonical(value){
+  if(Array.isArray(value))return `[${value.map(canonical).join(',')}]`;
+  if(value&&typeof value==='object')return `{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+function capabilityRequestId(runId,name,input){
+  const digest=createHash('sha256').update(canonical([name,input||{}])).digest('hex').slice(0,32);
+  return `verify:${runId}:${name}:${digest}`;
+}
+
+function capabilityDeadline(mission,input,{now=Date.now(),defaultBudgetMs=60_000}={}){
+  const taskMs=Number.isFinite(input?.timeoutSeconds)?Math.max(1_000,Math.floor(input.timeoutSeconds*1000)):defaultBudgetMs;
+  // Recovery may outlast the registered task timeout by a short grace window while the
+  // same request_id settles; authority and manifest expiry remain hard stops.
+  const soft=now+taskMs+Math.min(15_000,Math.max(1_000,Math.floor(taskMs/4)));
+  const authority=mission?.envelope?.authority?.expiresAt;
+  const manifest=mission?.envelope?.manifest?.expires_at;
+  return Math.min(soft,Number.isSafeInteger(authority)?authority:Infinity,Number.isSafeInteger(manifest)?manifest:Infinity);
+}
+
 class MissionVerifier {
-  constructor(bridge,store){this.bridge=bridge;this.store=store;}
+  constructor(bridge,store,options={}){
+    this.bridge=bridge;this.store=store;
+    this.recoveryWaitMs=Number.isSafeInteger(options.recoveryWaitMs)&&options.recoveryWaitMs>0?options.recoveryWaitMs:250;
+    this.defaultCapabilityBudgetMs=Number.isSafeInteger(options.defaultCapabilityBudgetMs)&&options.defaultCapabilityBudgetMs>0?options.defaultCapabilityBudgetMs:60_000;
+  }
+  async invokeVerificationCapability(task,mission,run,name,input){
+    if(this.bridge.closed)throw Error('Bridge is shutting down');
+    const requestId=capabilityRequestId(run.id,name,input);
+    const deadline=capabilityDeadline(mission,input,{defaultBudgetMs:this.defaultCapabilityBudgetMs});
+    const invoke=()=>this.bridge.invokeCapability(task.id,{name,input,requestId});
+    let response=await invoke();
+    let recoveries=0;
+    while(response?.status==='pending'){
+      if(this.bridge.closed)throw Error('Bridge is shutting down');
+      if(task.cancelRequested||task.safetyStop?.latched)throw Error(`Verification capability unavailable: cancelled (${requestId})`);
+      const remaining=deadline-Date.now();
+      if(!(remaining>0))throw Error(`Verification capability unavailable: pending deadline exceeded (${requestId})`);
+      // Prefer the live in-flight promise when present so recovery does not wait another
+      // sync budget merely to learn the same execution finished. Still bound the wait by
+      // the verification deadline so a stuck capability cannot run forever.
+      const live=this.bridge.orchestrator?.inflight?.get(requestId);
+      if(live){
+        let timedOut=false;
+        response=await Promise.race([
+          live,
+          sleep(remaining).then(()=>{timedOut=true;return {status:'pending',request_id:requestId};})
+        ]);
+        if(timedOut||Date.now()>=deadline)throw Error(`Verification capability unavailable: pending deadline exceeded (${requestId})`);
+        recoveries++;
+        continue;
+      }
+      await sleep(Math.min(this.recoveryWaitMs,remaining));
+      response=await invoke();
+      recoveries++;
+      if(recoveries>240)throw Error(`Verification capability unavailable: pending recovery bound exceeded (${requestId})`);
+    }
+    if(response?.status!=='completed'){
+      const detail=response?.decision?.reason?`: ${response.decision.reason}`:'';
+      throw Error(`Verification capability unavailable: ${response?.status||'unknown'}${detail} (${requestId})`);
+    }
+    return response.result;
+  }
   async verify(mission,run){
     if(mission.envelope.kind==='conversation')return require('./conversation-mission').verify(this.bridge.missions,mission,run);
     if(mission.envelope.kind==='browser_research')return this.bridge.missions.research.verify(mission,run);
@@ -17,12 +80,7 @@ class MissionVerifier {
     const add=(id,status,evidence)=>checks.push({id,status,evidence:redactValue(evidence)});
     const coverageIds=['contract_integrity','verifier_inputs_unchanged','protected_tests_unchanged','security:secret_scan','security:sensitive_area'];
     const noteCoverage=(reason)=>{if(!(envelope.coding_plan||envelope.contract))return;for(const id of coverageIds)if(!checks.some(c=>c.id===id))add(id,'unavailable',{reason,classification:'UNAVAILABLE'});};
-    const call=async(name,input)=>{
-      if(this.bridge.closed)throw Error('Bridge is shutting down');
-      const response=await this.bridge.invokeCapability(task.id,{name,input,requestId:`verify:${run.id}:${name}:${randomUUID()}`});
-      if(response.status!=='completed')throw Error(`Verification capability unavailable: ${response.status}${response.decision?.reason ? ': ' + response.decision.reason : ''}`);
-      return response.result;
-    };
+    const call=(name,input)=>this.invokeVerificationCapability(task,mission,run,name,input);
     let snapshot=null;
     try {
       snapshot=workspaceSnapshot(envelope.workspace);
@@ -103,4 +161,4 @@ class MissionVerifier {
     return id;
   });}
 }
-module.exports={MissionVerifier};
+module.exports={MissionVerifier,capabilityRequestId,capabilityDeadline};
