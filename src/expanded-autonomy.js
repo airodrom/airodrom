@@ -502,7 +502,8 @@ class ExpandedAutonomy {
     if (m.state === 'completed') return { accepted: true, duplicate: true };
     if (m.state !== 'awaiting_acceptance') return deny('verification_not_ready');
     try {
-      this.bridge.developerAutonomy.assertMission(m, { allowExpiredGrant: true });
+      // Auto-accept requires a current grant; expired grants stay manual.
+      this.bridge.developerAutonomy.assertMission(m, { allowExpiredGrant: false });
     } catch {
       return deny('developer_autonomy_authority_invalid');
     }
