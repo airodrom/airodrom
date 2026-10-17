@@ -379,7 +379,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         _ = item("Quit Menu (service stays running)", #selector(quitHelper), in: menu, key: "q")
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(motionPreferenceChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         request(.status)
-        timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+        // ADR 0009: compact host summary every five seconds with one request in flight.
+        timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             guard let self, self.currentAction == nil else { return }
             self.request(.status)
         }
