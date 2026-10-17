@@ -304,6 +304,7 @@ class CursorWorker {
     const readiness = await this.readiness();
     this.lastReadiness = readiness;
     if (!readiness.ready) fail(readiness.reason || 'cursor_unavailable');
+    if (!this.options.fixtureExecutable && readiness.spend !== 'authorized_subscription') fail('BLOCKED_SPEND_AUTHORIZATION');
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || fs.realpathSync(workspace) !== workspace || !Array.isArray(files) || !files.length || files.length > 8 || new Set(files).size !== files.length || !Array.isArray(writable) || new Set(writable).size !== writable.length || writable.some(f => !files.includes(f))) fail('cursor_workspace_binding');
     files.forEach(relative); writable.forEach(relative);
     if (typeof objective !== 'string' || !objective.trim() || Buffer.byteLength(objective) > MAX_PROMPT || /\0/.test(objective)) fail('cursor_prompt_bound');
