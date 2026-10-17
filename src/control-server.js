@@ -276,7 +276,7 @@ class ControlServer {
         if (Object.keys(body).some(k => !['name', 'args', 'clientInfo'].includes(k)) || typeof body.name !== 'string') throw new Error('Invalid MCP operation');
         if (body.clientInfo !== undefined && (!body.clientInfo || typeof body.clientInfo !== 'object' || Array.isArray(body.clientInfo) || Object.keys(body.clientInfo).some(k => !['name', 'version'].includes(k)) || Object.values(body.clientInfo).some(v => typeof v !== 'string' || v.length > 100))) throw new Error('Invalid MCP client metadata');
         const session=this.mcpSessions.get(req.headers['x-airodrom-session']);
-        if(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status','prepare_mission','inspect_mission_proposal','get_mission_status','get_mission_events','get_mission_evidence','request_mission_correction','cancel_mission'].includes(body.name)&&(!session||session.expires_at<Date.now()))throw Error('Fresh authenticated handoff session required');
+        if(require('./mcp-client').SESSION_TOOLS.includes(body.name)&&(!session||session.expires_at<Date.now()))throw Error('Fresh authenticated handoff session required');
         const result = await (session?.mcp||this.mcp).call(body.name, body.args, body.clientInfo);
         this.lastMcpCallAt = Date.now();
         return this.json(res, 200, result);
