@@ -36,7 +36,8 @@ test('timeout and cancellation kill the owned process group; nonzero/malformed r
  const f=runtime(t);await assert.rejects(f.adapter.execute({...f.request,objective:'timeout',timeoutMs:100}),/opencode_timeout/);
  const controller=new AbortController(),pending=f.adapter.execute({...f.request,objective:'timeout',signal:controller.signal});setTimeout(()=>controller.abort(),100);
  await assert.rejects(pending,/opencode_cancelled/);
- for(const objective of ['nonzero','malformed','escalation'])await assert.rejects(f.adapter.execute({...f.request,objective}),error=>!error.message.includes('syntheticFailureSecret'));
+ await assert.rejects(f.adapter.execute({...f.request,objective:'nonzero'}),error=>error.code==='opencode_process_exit_nonzero'&&!error.message.includes('syntheticFailureSecret'));
+ for(const objective of ['malformed','escalation'])await assert.rejects(f.adapter.execute({...f.request,objective}),error=>!error.message.includes('syntheticFailureSecret'));
 });
 test('redaction drops raw runtime tools, credentials and self-attested tests; sessions must correlate',async()=>{
  const parsed=parseOutput(event({...result,summary:'Bearer syntheticResultSecret',tests:[{claimed:'passed'}]}),[]);assert.doesNotMatch(JSON.stringify(parsed),/syntheticResultSecret/);assert.deepEqual(parsed.result.tests,[]);

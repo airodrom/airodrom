@@ -21,7 +21,7 @@ const EXTRA = {
  'provider.request.started': ['Provider', 'Model invocation started'], 'policy.denied': ['Policy', 'Policy denied operation']
 };
 const safeEnum = (value, values) => values.includes(value) ? value : null;
-const ERRORS = ['provider_unavailable', 'opencode_local_provider_unavailable', 'opencode_timeout', 'opencode_process_failed', 'opencode_cancelled', 'authority_revoked', 'budget_exhausted', 'verification_failed', 'termination_unverified', 'unknown_delivery', 'agent_run_failed'];
+const ERRORS = ['provider_unavailable', 'opencode_local_provider_unavailable', 'opencode_timeout', 'opencode_process_failed', 'opencode_process_exit_nonzero', 'opencode_process_signal', 'opencode_sandbox_denied', 'opencode_provider_unavailable', 'opencode_runtime_configuration_failed', 'opencode_output_bound', 'opencode_cancelled', 'authority_revoked', 'budget_exhausted', 'verification_failed', 'termination_unverified', 'unknown_delivery', 'agent_run_failed'];
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 function eventView(event) {
  const label = STAGES[event.event_type] || EXTRA[event.event_type]; if (!label) return null;
