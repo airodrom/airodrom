@@ -6,8 +6,25 @@
  * engine. Defaults to MANUAL. High-impact domains stay inactive until
  * separately enrolled and independently qualified.
  */
+const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { object, identifier } = require('./control-plane-store');
+
+function containedPath(candidate, prefix) {
+  if (typeof candidate !== 'string' || typeof prefix !== 'string' || !candidate || !prefix) return false;
+  if (candidate.includes('\0') || prefix.includes('\0')) return false;
+  if (/(^|\/)\.\.(\/|$)/.test(candidate) || /(^|\/)\.\.(\/|$)/.test(prefix)) return false;
+  const resolved = path.resolve(candidate);
+  const root = path.resolve(prefix);
+  return resolved === root || resolved.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+}
+
+function resourceBound(candidate, enrolled) {
+  if (typeof candidate !== 'string' || typeof enrolled !== 'string' || !candidate || !enrolled) return false;
+  if (candidate === enrolled) return true;
+  const bound = enrolled.endsWith('/') ? enrolled : enrolled + '/';
+  return candidate.startsWith(bound);
+}
 
 const MODES = Object.freeze(['manual', 'routine_auto', 'expanded_auto']);
 const DOMAIN_KEYS = Object.freeze([
@@ -472,11 +489,13 @@ class ExpandedAutonomy {
       return { allow: true, reason: 'standing_credential_policy', automatic: true, policy_id: match.id };
     }
     if (domain === 'destructive_automation') {
+      if (!Number.isInteger(context.item_count) || context.item_count < 1) {
+        return { allow: false, reason: 'item_count_required', automatic: false };
+      }
       const match = active.find(p => {
-        const pathOk = (p.policy.allowed_paths || []).some(prefix =>
-          typeof context.path === 'string' && (context.path === prefix || context.path.startsWith(prefix.replace(/\/*$/, '') + '/')));
+        const pathOk = (p.policy.allowed_paths || []).some(prefix => containedPath(context.path, prefix));
         const typeOk = (p.policy.deletion_types || []).includes(context.deletion_type);
-        const countOk = !Number.isInteger(context.item_count) || context.item_count <= p.policy.max_items;
+        const countOk = context.item_count <= p.policy.max_items;
         return pathOk && typeOk && countOk;
       });
       if (!match) return { allow: false, reason: 'destructive_policy_mismatch', automatic: false };
@@ -486,8 +505,7 @@ class ExpandedAutonomy {
       return { allow: true, reason: 'standing_destructive_policy', automatic: true, policy_id: match.id };
     }
     if (domain === 'broad_resource_access') {
-      const match = active.find(p => (p.policy.resources || []).some(r =>
-        r === context.resource || (typeof r === 'string' && typeof context.resource === 'string' && context.resource.startsWith(r))));
+      const match = active.find(p => (p.policy.resources || []).some(r => resourceBound(context.resource, r)));
       if (!match) return { allow: false, reason: 'resource_not_enrolled', automatic: false };
       return { allow: true, reason: 'standing_resource_policy', automatic: true, policy_id: match.id };
     }

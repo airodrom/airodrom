@@ -271,10 +271,42 @@ test('destructive policy fails closed for safety records and unknown paths', (t)
       item_count: 1
     }).allow, false);
     assert.equal(ea.authorizeDomain('destructive_automation', {
+      path: '/private/tmp/expanded-clean/../expanded-clean/../../etc/passwd',
+      deletion_type: 'trash',
+      item_count: 1
+    }).allow, false);
+    assert.equal(ea.authorizeDomain('destructive_automation', {
+      path: '/private/tmp/expanded-clean/tmp.txt',
+      deletion_type: 'trash'
+    }).allow, false);
+    assert.equal(ea.authorizeDomain('destructive_automation', {
       path: '/private/tmp/expanded-clean/audit.jsonl',
       deletion_type: 'trash',
       item_count: 1
     }).allow, false);
+});
+
+test('broad resource access rejects prefix-sibling collisions', (t) => {
+  const { ea } = harness(t);
+  ea.setMode({
+    mode: 'expanded_auto',
+    confirmed: true,
+    request_id: randomUUID(),
+    flags: { broad_resource_access: true }
+  }, 'operator');
+  ea.enrollPolicy({
+    domain: 'broad_resource_access',
+    confirmed: true,
+    request_id: randomUUID(),
+    qualified: true,
+    policy: {
+      resources: ['github.com/acme/repo'],
+      expires_at: Date.now() + 86_400_000
+    }
+  }, 'operator');
+  assert.equal(ea.authorizeDomain('broad_resource_access', { resource: 'github.com/acme/repo' }).allow, true);
+  assert.equal(ea.authorizeDomain('broad_resource_access', { resource: 'github.com/acme/repo/src' }).allow, true);
+  assert.equal(ea.authorizeDomain('broad_resource_access', { resource: 'github.com/acme/repo-evil' }).allow, false);
 });
 
 test('settings persist across controller reconstruction', (t) => {
