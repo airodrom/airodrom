@@ -78,8 +78,8 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(remember){const content=remember[1];return route('MEMORY',sensitive(content)?{kind:'sensitive',content}:ordinary(content)||require('./memory-correction').isCorrectionStatement(content)?{kind:'remember',content}:/^my preference\.?$/i.test(content)?{kind:'clarify',message:'What preference should I remember? For example: Remember I prefer concise answers.'}:{kind:'clarify',message:'Choose the data class explicitly: /remember <ordinary fact> or /remember-sensitive <private fact>. Credentials require /vault.'});}
  const forget=/^forget\s+(?:that\s+)?(?:my\s+)?([\s\S]+?)\.?$/i.exec(request);
  if(forget)return route('MEMORY',{kind:'forget',selection:forget[1]});
- const recall=/^(?:what do you remember(?: about)?|recall|show (?:my )?memories(?: about)?)\s*(.*?)\??$/i.exec(request);
- if(recall)return route('MEMORY',{kind:'recall',query:recall[1].replace(/^my\s+/i,'').replace(/^me$/i,'')});
+ const recall=/^(?:please\s+)?(?:what do you remember(?: about)?|recall|show (?:my )?(?:saved )?memories(?: about)?)\s*(.*?)\??$/i.exec(request);
+ if(recall)return route('MEMORY',{kind:'recall',query:recall[1].replace(/^my\s+/i,'').replace(/^me$/i,'').replace(/^about\s+/i,'')});
  if(/^(?:check|read|show|open)\s+(?:my\s+)?gmail$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'recent'});
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});

@@ -50,14 +50,14 @@ function soft(value) {
 
 function focusOf(text) {
   const t = soft(text).toLowerCase();
-  if (/\b(?:sensitive\s+memory|\/remember-sensitive|\/sensitive)\b/.test(t)) return 'sensitive_memory';
+  if (/\b(?:sensitive\s+memory|sensitive\s+information|\/remember-sensitive|\/sensitive)\b/.test(t)) return 'sensitive_memory';
   if (/\b(?:secret\s+)?vault\b|\bkeychain\b|\bcredentials?\b/.test(t)) return 'secret_vault';
   if (/\bgmail\b|\binbox\b|\bemails?\b/.test(t)) return 'gmail';
   if (/\b(?:browse|browser|web|internet)\b/.test(t)) return 'web';
   if (/\bproject\s+memory\b/.test(t)) return 'project_memory';
-  if (/\b(?:personal\s+memory|ordinary\s+memory|memory\s+v2)\b/.test(t)) return 'personal_memory_v2';
+  if (/\b(?:personal\s+memory|ordinary\s+memory|memory\s+v2|memory\s+systems?|saved\s+memor(?:y|ies))\b/.test(t)) return 'personal_memory_v2';
   if (/\bassistant\b|\bwhat can you do\b|\bcapabilities?\b/.test(t)) return 'assistant';
-  if (/\bmemory\b|\bremember\b/.test(t)) return 'memory';
+  if (/\bmemor(?:y|ies)\b|\bremember\b/.test(t)) return 'memory';
   return 'assistant';
 }
 
@@ -69,6 +69,10 @@ function detect(message) {
   // Concrete remember/save with a that-clause stays a storage intent.
   if (/^(?:can you|could you|would you|please)\s+remember\s+that\b/i.test(raw)) return null;
   if (/^(?:remember|save|store)\s+that\b/i.test(raw)) return null;
+  // Imperative display/list of actual ordinary records stays on the recall path.
+  // Capability/how-to questions below remain host awareness.
+  if (/^(?:please\s+)?(?:show|list|view|display)(?:\s+me)?(?:\s+my)?(?:\s+saved)?\s+memor(?:y|ies)\b/i.test(raw)) return null;
+  if (/^(?:what do you remember|recall)\b/i.test(raw)) return null;
 
   const ask =
     /^(?:what|what's|whats|how|do you|does (?:airodrom|airo)|can (?:you|airodrom|airo)|could you|would you|tell me|explain)\b/i.test(raw) ||
@@ -77,11 +81,13 @@ function detect(message) {
   const patterns = [
     /\bwhat kind of memory\b/i,
     /\bwhat(?:\s+kind\s+of)?\s+memory\s+(?:do\s+you|you)\s+have\b/i,
-    /\bwhat memory do you have\b/i,
+    /\bwhat memory (?:systems?|kinds?)?\s*(?:do you have|are available)?\b/i,
     /\bwhat can you remember\b/i,
     /\bdo you have (?:a )?personal memory\b/i,
     /\b(?:can you|do you) remember (?:my )?(?:company|personal|private|sensitive)?\s*information\b/i,
     /\bwhat is sensitive memory\b/i,
+    /\b(?:can you|do you|does airodrom|can airodrom) access(?: my)? (?:sensitive(?:\s+(?:memory|information))?|private(?:\s+information)?)\b/i,
+    /\bhow (?:do|can) i (?:see|list|view|show|check)(?: my)? (?:saved\s+)?memor(?:y|ies)\b/i,
     /\b(?:do you have|is there) (?:a )?(?:secret )?vault\b/i,
     // "check/read/show/open my gmail" remains a connector action; access/use are capability questions.
     /\b(?:can you|do you|does airodrom|can airodrom) (?:access|use)(?: my)? (?:gmail|emails?|inbox)\b/i,
@@ -190,6 +196,7 @@ function explain(server, parsed = {}) {
     for (const s of systems) lines.push(`- ${s.title}: ${s.summary}`);
     if (focus === 'personal_memory_v2' || focus === 'memory') {
       lines.push('Ordinary company facts can be saved with /remember or an explicit Personal Memory choice; private company details belong in Sensitive Memory; credentials belong in the Vault.');
+      lines.push('To review ordinary saved memories, use /memory in the operator terminal or Control Center Memory. Sensitive entries use /sensitive (operator-only). Vault labels use /vault or /secret — values are never listed into chat.');
     }
   } else {
     lines.push('As your local assistant, I talk through host-owned workflows — I do not invent live connector access or memory contents.');
