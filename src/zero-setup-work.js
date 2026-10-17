@@ -271,7 +271,15 @@ class ZeroSetupWork {
       return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
     }
     if (scope.projectless) {
-      if (principal === 'operator' && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
+      const handoff = /^mcp:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(principal);
+      let standing = principal === 'operator';
+      if (handoff) {
+        try {
+          const mode = this.bridge.expandedAutonomy?.effective?.('operator');
+          standing = !!(mode && mode.mode !== 'manual' && !mode.emergency_stop && mode.flags?.manual_acceptance !== true);
+        } catch { standing = false; }
+      }
+      if ((principal === 'operator' || (handoff && standing)) && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
       const record = {
         version: 1, instruction, intent, projectless: true, project_id: null, workspace: scope.workspace,
         authority: false, execution_enabled: false,
@@ -524,7 +532,7 @@ class ZeroSetupWork {
   }
 
   startProjectless(request_id, principal, instruction, intent, scope) {
-    if (principal !== 'operator') throw Error('Projectless execution requires the authenticated operator');
+    if (principal !== 'operator' && !/^mcp:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(principal)) throw Error('Projectless execution requires the authenticated operator');
     if (!scope?.exact_fixture || !scope.workspace) throw Error('Projectless execution requires an exact authorized file change');
     const sandbox = require('./projectless-sandbox');
     sandbox.seedExactFixture(scope.workspace);

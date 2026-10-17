@@ -14,6 +14,8 @@ function discovery(dataDir = process.env.AIRODROM_DATA_DIR || path.join(__dirnam
   return value;
 }
 
+const SESSION_TOOLS = Object.freeze(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status','prepare_mission','inspect_mission_proposal','get_mission_status','get_mission_events','get_mission_evidence','request_mission_correction','cancel_mission']);
+
 function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,sessionFile=process.env.AIRODROM_MCP_SESSION_FILE } = {}) {
   let session=null,sessionPromise=null;
   if(sessionFile){if(!path.isAbsolute(sessionFile))throw Error('Absolute private session file required');if(require('./private-json').privateFileExists(sessionFile)){const saved=require('./private-json').readPrivateJSON(sessionFile);if(saved.version!==1||!require('./product-observability').id(saved.session_id))throw Error('Invalid client session file');resumeSession=saved.session_id;}}
@@ -21,7 +23,7 @@ function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,s
     let connection;
     try { connection = discovery(dataDir); }
     catch { const error = new Error('Bridge discovery failed'); error.publicMessage = 'Local bridge unavailable or private discovery invalid. Start the bridge with npm start.'; throw error; }
-    const needsSession=['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status'].includes(name);
+    const needsSession=SESSION_TOOLS.includes(name);
     if(needsSession&&(!session||session.pid!==connection.pid||session.port!==connection.port||session.token!==connection.token||session.expires_at<Date.now())){
       if(!sessionPromise)sessionPromise=(async()=>{
       const response=await fetch('http://127.0.0.1:'+connection.port+'/api/mcp/session',{method:'POST',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},body:JSON.stringify(session?.session_id?{session_id:session.session_id}:resumeSession?{session_id:resumeSession}:{}),redirect:'error',signal:AbortSignal.timeout(5000)});
@@ -55,4 +57,4 @@ function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,s
     });
   };
 }
-module.exports = { createClient, discovery };
+module.exports = { createClient, discovery, SESSION_TOOLS };
