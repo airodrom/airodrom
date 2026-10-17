@@ -42,6 +42,37 @@ test('concrete remember-that statements are not awareness', () => {
   assert.equal(intent.parse('Remember that my name is Aurora.').kind, 'remember');
 });
 
+test('list/see how-to and sensitive-access questions route to host awareness', () => {
+  for (const message of [
+    'How do I see my saved memories?',
+    'How can I list my memories?',
+    'What memory systems do you have?',
+    'Can you access my sensitive information?',
+    'Can you access my Sensitive Memory?',
+  ]) {
+    const parsed = intent.parse(message);
+    assert.equal(parsed.kind, 'memory_awareness', message);
+    assert.equal(parsed.authority, false, message);
+  }
+  assert.equal(intent.parse('How do I see my saved memories?').focus, 'personal_memory_v2');
+  assert.equal(intent.parse('Can you access my sensitive information?').focus, 'sensitive_memory');
+});
+
+test('ordinary memory display requests stay on authorized recall', () => {
+  for (const [message, queryPart] of [
+    ['Show my memories', ''],
+    ['Please show my memories', ''],
+    ['Show my saved memories', ''],
+    ['Show my memories about my company', 'company'],
+    ['What do you remember about my name?', 'name'],
+  ]) {
+    const parsed = intent.parse(message);
+    assert.equal(parsed.kind, 'recall', message);
+    assert.equal(parsed.route, 'MEMORY', message);
+    if (queryPart) assert.match(String(parsed.query || ''), new RegExp(queryPart, 'i'), message);
+  }
+});
+
 test('memory capability question explains Personal Memory without inventing contents', async (t) => {
   const f = await setup(t);
   f.server.rememberInteractive('My name is Aurora');
@@ -80,6 +111,24 @@ test('Personal versus Sensitive Memory boundaries', async (t) => {
   assert.match(sensitive.message, /operator-only/i);
   assert.match(sensitive.message, /\/remember-sensitive/i);
   assert.doesNotMatch(sensitive.message, /field-level encryption is (?:enabled|active)/i);
+
+  const list = await service.submit(f.server, {
+    message: 'How do I see my saved memories?',
+    request_id: crypto.randomUUID(),
+  });
+  assert.equal(list.kind, 'memory_awareness');
+  assert.equal(list.focus, 'personal_memory_v2');
+  assert.match(list.message, /\/memory/i);
+  assert.doesNotMatch(list.message, /Aurora|Blue Harbor|password=/i);
+
+  const access = await service.submit(f.server, {
+    message: 'Can you access my sensitive information?',
+    request_id: crypto.randomUUID(),
+  });
+  assert.equal(access.kind, 'memory_awareness');
+  assert.equal(access.focus, 'sensitive_memory');
+  assert.match(access.message, /\/sensitive/i);
+  assert.match(access.message, /Ordinary recall and chat context never include/i);
 });
 
 test('Vault access boundaries never disclose values', async (t) => {
