@@ -26,7 +26,10 @@ class MissionAgents {
         const lastFailure=this.store.db.prepare("SELECT state FROM cp_runs WHERE agent_id=? AND state IN ('failed','interrupted','cancelled') ORDER BY updated_at DESC LIMIT 1").get(id);
         observation.last_safe_error_class=observation.operational?.last_safe_error_class||(id==='cursor'?['quota_limited','auth_required'].includes(cursor.runtime?.availability)?cursor.runtime.availability:null:lastFailure?.state==='failed'?'agent_run_failed':lastFailure?.state==='interrupted'?'termination_unverified':lastFailure?.state==='cancelled'?'cancelled':null);
         observation.active_run=active||observation.active_run||null;observation.last_success=last||null;
-        observation.availability=observation.bounded_worker||observation.governed_worker?observation.availability:id==='claude_code'?(observation.available?'available':observation.reason==='busy'?'busy':!claude.installed?'unavailable':claude.availability==='needs_login'?'auth_required':'unavailable'):id==='host'?(observation.available?'available':'unavailable'):undefined;
+        // Preserve OpenCode readiness availability. Wiping it to undefined made
+        // agentRuntimeProfile default unavailable agents to "unknown", masking
+        // opencode_local_provider_* reasons at dispatch selection.
+        observation.availability=observation.bounded_worker||observation.governed_worker?observation.availability:id==='claude_code'?(observation.available?'available':observation.reason==='busy'?'busy':!claude.installed?'unavailable':claude.availability==='needs_login'?'auth_required':'unavailable'):id==='host'?(observation.available?'available':'unavailable'):id==='opencode'?(observation.available?'available':(observation.availability==='busy'?'busy':'unavailable')):undefined;
         observation.runtime_profile=require('./agent-runtime-profile').agentRuntimeProfile(id,observation);
       }
       this.store.observeAgent(id,observation.kind,observation);

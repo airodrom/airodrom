@@ -245,6 +245,7 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
   });
 }
 const READINESS_TTL_MS = 5000;
+const TRANSIENT_READINESS_TTL_MS = 400;
 class OpenCodeAdapter extends AgentAdapter {
   constructor(bridge, options = {}) {
     super({ id: 'opencode', label: 'OpenCode' }); this.bridge = bridge; this.options = Object.freeze({...options}); this.active = new Map();
@@ -312,7 +313,8 @@ class OpenCodeAdapter extends AgentAdapter {
   }
   async readiness() {
     const now = Date.now();
-    if (this._readinessCache && now - this._readinessCache.at < READINESS_TTL_MS) {
+    const ttl = this._readinessCache?.ttl ?? READINESS_TTL_MS;
+    if (this._readinessCache && now - this._readinessCache.at < ttl) {
       return { ...this._readinessCache.value, availability: this._readinessCache.value.ready ? (this.active.size ? 'busy' : 'available') : 'unavailable' };
     }
     if (this._readinessInflight) return this._readinessInflight;
@@ -326,19 +328,31 @@ class OpenCodeAdapter extends AgentAdapter {
     const r = executable && pinned ? spawnSync(executable, ['--version'], { encoding: 'utf8', timeout: 3000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin' } }) : null;
     const observed = r?.status === 0 ? version(r.stdout) : null;
     const configured = this.options.enabled === true && /^ollama\/[A-Za-z0-9_.:-]{1,120}$/.test(this.options.model || '');
-    const providerReady=configured&&(this.options.fixtureExecutable||await new Promise(resolve=>{
-      // Capability evidence pins the /api/show weight blob and template, not the
-      // distinct /api/tags manifest digest. Compare the same artifact identity.
-      const body=JSON.stringify({name:this.options.model.slice(7)}),request=require('node:http').request('http://127.0.0.1:11434/api/show',{method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)},timeout:1000},response=>{let text='',bytes=0;response.on('data',chunk=>{bytes+=chunk.length;if(bytes>256000){request.destroy();resolve(false);}else text+=chunk;});response.on('end',()=>{try{const capability=require('../local-model-capability'),live=capability.inspectOllamaShow(JSON.parse(text)),record=require('../../config/local-model-capability-v1.json').models.find(q=>q.model===this.options.model.slice(7));resolve(response.statusCode===200&&live.available&&!!live.digest&&!!live.templateHash&&capability.assessQualification(record,live).allow);}catch{resolve(false);}});response.on('error',()=>resolve(false));});request.on('error',()=>resolve(false));request.on('timeout',()=>{request.destroy();resolve(false);});request.end(body);
-    }));
+    let providerReason = null, providerClass = null, providerReady = false;
+    if (configured) {
+      if (this.options.fixtureExecutable) { providerReady = true; }
+      else {
+        const model = this.options.model.slice(7);
+        const record = require('../../config/local-model-capability-v1.json').models.find(q => q.model === model);
+        // Shared non-generating /api/show probe: one timeout recheck, digest/template still required.
+        const probe = await require('../local-ollama-show-probe').probeQualifiedShow({ model, record, transport: this.options.showTransport });
+        providerReady = probe.allow === true;
+        providerReason = probe.reason;
+        providerClass = probe.probe_class;
+      }
+    }
     const currentQualification=Date.now()<require('../model-worker-router').EXPIRES&&this.options.model===require('../model-worker-router').MODEL;
     const ready = currentQualification && !!executable && observed === VERSION && configured && providerReady && pinned && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
+    const providerFailReason = providerReason === 'opencode_local_provider_timeout' || providerReason === 'model_digest_changed' || providerReason === 'template_hash_changed'
+      ? providerReason
+      : 'opencode_local_provider_unavailable';
     const value = { agentId: this.id, implemented: true, installed: !!executable, version: observed, ready, available: ready,
       availability: ready ? this.active.size ? 'busy' : 'available' : 'unavailable',
       auth_state: configured ? 'local_not_required' : 'auth_required', workspace_required: true,
       execution_authority: false, continuation: false, memory_access_model: 'canonical_authorized_context_only',
-      reason: ready ? null : !pinned ? 'opencode_runtime_pins_changed' : !executable ? 'opencode_unavailable' : observed !== VERSION ? 'opencode_version_unqualified' : configured ? 'opencode_local_provider_unavailable' : 'opencode_local_provider_not_configured' };
-    this._readinessCache = { at: Date.now(), value };
+      reason: ready ? null : !pinned ? 'opencode_runtime_pins_changed' : !executable ? 'opencode_unavailable' : observed !== VERSION ? 'opencode_version_unqualified' : !configured ? 'opencode_local_provider_not_configured' : providerFailReason };
+    const transient = !ready && configured && (providerClass === 'timeout' || providerClass === 'unreachable');
+    this._readinessCache = { at: Date.now(), ttl: ready || !transient ? READINESS_TTL_MS : TRANSIENT_READINESS_TTL_MS, value };
     return value;
   }
   authorizedContext(context){
