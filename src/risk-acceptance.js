@@ -56,6 +56,15 @@ class RiskAcceptance {
     object(input, ['enabled', 'confirmed']);
     if (input.confirmed !== true) throw Error('Explicit operator confirmation required');
     if (typeof input.enabled !== 'boolean') throw Error('enabled must be boolean');
+    // Expanded Autonomy MANUAL / emergency stop blocks enabling preference.
+    try {
+      const ea = this.bridge.expandedAutonomy?.effective?.('operator');
+      if (input.enabled === true && ea && (ea.mode === 'manual' || ea.emergency_stop || ea.flags.manual_acceptance === true)) {
+        throw Error('Expanded Autonomy MANUAL mode blocks enabling automatic Acceptance preference');
+      }
+    } catch (e) {
+      if (/Expanded Autonomy MANUAL/.test(String(e.message || e))) throw e;
+    }
     // Explicit operator writes must stamp owner_set when the live eight-column
     // schema is present so a later rollback to 3680b0e cannot re-apply the
     // system default onto an owner-chosen preference.
@@ -191,6 +200,18 @@ class RiskAcceptance {
     const m = this.store.requireMission(id);
     const deny = reason => ({ accepted: false, reason });
     if (m.envelope.developer_autonomy) return deny('developer_autonomy_requires_owner_acceptance');
+    try {
+      const gate = this.bridge.expandedAutonomy?.mayAutoAccept?.(m);
+      if (gate && gate.allow !== true && gate.reason !== 'historical_mission_not_retroactive') {
+        // Historical missions with explicit envelope risk_auto_acceptance remain eligible;
+        // MANUAL/emergency stop still blocks new automated decisions.
+        if (gate.reason === 'expanded_autonomy_manual_or_stopped' || gate.reason === 'manual_acceptance_forced') {
+          return deny(gate.reason);
+        }
+      } else if (gate && gate.allow !== true && !m.envelope.risk_auto_acceptance?.authorized) {
+        return deny(gate.reason || 'expanded_autonomy_blocked');
+      }
+    } catch { /* expanded autonomy optional in partial fixtures */ }
     const row = this.db.prepare('SELECT * FROM cp_risk_acceptance WHERE mission_id=?').get(id);
     const policy = m.envelope.risk_auto_acceptance;
     if (!row || !policy?.authorized) return deny('not_preauthorized_risk');

@@ -352,6 +352,9 @@ class ControlServer {
         return this.json(res,200,status);
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
+      if(req.method==='GET'&&url.pathname==='/api/assistant/expanded-autonomy')return this.json(res,200,this.bridge.expandedAutonomy.status('operator'));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/expanded-autonomy/activity')return this.json(res,200,{items:this.bridge.expandedAutonomy.activity(Number(url.searchParams.get('limit')||50)||50),authority:false});
+      if(req.method==='GET'&&url.pathname==='/api/assistant/expanded-autonomy/policies')return this.json(res,200,{items:this.bridge.expandedAutonomy.listPolicies(url.searchParams.get('domain')||null),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbound')return this.json(res,200,this.bridge.whatsappInbound.status());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/live-connection')return this.json(res,200,this.bridge.whatsappInbound.liveConnectionReadiness());
       if(req.method==='GET'&&url.pathname==='/api/assistant/whatsapp/inbox')return this.json(res,200,this.bridge.whatsappInbound.list({limit:Number(url.searchParams.get('limit')||50)||50,status:url.searchParams.get('status')||null}));
@@ -427,6 +430,12 @@ class ControlServer {
       if(url.pathname==='/api/assistant/workers/revoke'){require('./control-plane-store').object(body,['worker']);return this.json(res,200,this.bridge.workers.revoke(body.worker,'operator'));}
       if(url.pathname==='/api/assistant/risk-acceptance'){require('./control-plane-store').object(body,['enabled','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.setPreference(body,'operator'));}
       if(url.pathname==='/api/assistant/risk-acceptance/authorize'){require('./control-plane-store').object(body,['mission_id','request_id','confirmed']);return this.json(res,200,this.bridge.missions.riskAcceptance.authorizeExisting(body.mission_id,{request_id:body.request_id,confirmed:body.confirmed},'operator'));}
+      if(url.pathname==='/api/assistant/expanded-autonomy/mode')return this.json(res,200,this.bridge.expandedAutonomy.setMode(body,'operator'));
+      if(url.pathname==='/api/assistant/expanded-autonomy/flags')return this.json(res,200,this.bridge.expandedAutonomy.setFlags(body,'operator'));
+      if(url.pathname==='/api/assistant/expanded-autonomy/stop')return this.json(res,200,this.bridge.expandedAutonomy.emergencyStop(body,'operator'));
+      if(url.pathname==='/api/assistant/expanded-autonomy/clear-stop')return this.json(res,200,this.bridge.expandedAutonomy.clearEmergency(body,'operator'));
+      if(url.pathname==='/api/assistant/expanded-autonomy/enroll')return this.json(res,201,this.bridge.expandedAutonomy.enrollPolicy(body,'operator'));
+      if(url.pathname==='/api/assistant/expanded-autonomy/revoke')return this.json(res,200,this.bridge.expandedAutonomy.revokePolicy(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/configure')return this.json(res,200,this.bridge.whatsappInbound.configure(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/bind-credentials')return this.json(res,200,this.bridge.whatsappInbound.bindCredentialReferences(body,'operator'));
       if(url.pathname==='/api/assistant/whatsapp/inbound/configure-environment')return this.json(res,200,this.bridge.whatsappInbound.configureMetaEnvironment(body,'operator'));
