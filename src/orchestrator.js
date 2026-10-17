@@ -129,7 +129,8 @@ class Orchestrator {
     catch { throw new Error('Task is running; wait for it to settle before invoking capabilities directly'); }
 
     const toolCallId = `${TOOL_CALL_PREFIX}${randomUUID()}`;
-    const record = { fingerprint, capability: name, brokerTool, toolCallId, state: 'running', requestedAt: this.now() };
+    // Bind this lease run to this request before any side effect or release path.
+    const record = { fingerprint, capability: name, brokerTool, toolCallId, state: 'running', requestedAt: this.now(), runId: lease.runId };
     task.capabilityInvocations = { ...(task.capabilityInvocations || {}), [requestId]: record };
     task.latestMcpRequestId = requestId;
     task.activeRunId = lease.runId; task.status = 'running'; task.lastActivityAt = this.now();
@@ -167,11 +168,13 @@ class Orchestrator {
     let lease;
     try { lease = bridge.leases.acquire(task.id, { agentId: 'bridge' }); }
     catch { throw new Error('Task is running; wait for it to settle before invoking capabilities directly'); }
-    const record = task.capabilityInvocations?.[requestId] || {
+    const priorRecord = task.capabilityInvocations?.[requestId] || {
       fingerprint: sha256(canonical(brokerTool ? [task.id, name, input, brokerTool] : [task.id, name, input])),
       capability: name, brokerTool, toolCallId: `${TOOL_CALL_PREFIX}${randomUUID()}`, state: 'settled'
     };
-    task.capabilityInvocations = { ...(task.capabilityInvocations || {}), [requestId]: { ...record, state: 'running' } };
+    // Refresh acquires a new lease run; keep one object so release sees the settled outcome.
+    const record = { ...priorRecord, state: 'running', runId: lease.runId };
+    task.capabilityInvocations = { ...(task.capabilityInvocations || {}), [requestId]: record };
     task.activeRunId = lease.runId; task.status = 'running'; task.lastActivityAt = this.now();
     bridge.tasks.save(task); bridge.emit('change');
     try {
@@ -183,7 +186,7 @@ class Orchestrator {
         duplicate: true,
         refreshed: true,
         result_recoverable: true,
-        prior_snapshot_at: Number.isSafeInteger(record.outcome?.settledAt) ? record.outcome.settledAt : (Number.isSafeInteger(prior?.prior_snapshot_at) ? prior.prior_snapshot_at : null),
+        prior_snapshot_at: Number.isSafeInteger(priorRecord.outcome?.settledAt) ? priorRecord.outcome.settledAt : (Number.isSafeInteger(prior?.prior_snapshot_at) ? prior.prior_snapshot_at : null),
         note: 'Live status was re-probed; a prior idempotent snapshot is not reused for process or service liveness.'
       };
       task.status = response.status === 'completed' ? 'completed' : task.status;
