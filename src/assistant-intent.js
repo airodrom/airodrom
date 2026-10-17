@@ -57,6 +57,8 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(privateIntent?.action==='save'&&privateIntent.value_present===false)return {...privateIntent,message:'Enter the private identifier in the native hidden prompt.'};
  const privateRequest=storage.parse(request);if(privateRequest)return privateRequest;
  if(privateIntent)return {...privateIntent,message:'Use the operator terminal /secret workflow. Private values never enter conversation.'};
+ // Host Memory/Vault/connector awareness before research or remember fall-through.
+ const awareness=require('./memory-awareness').detect(value);if(awareness)return awareness;
  const missionCommand=/^\/mission(?:\s+(new|list|status|cancel))?(?:\s+(.+))?$/i.exec(request);
  if(missionCommand){const action=(missionCommand[1]||'list').toLowerCase(),argument=missionCommand[2];if(action==='list'&&argument)return route('EXPLICIT MISSION',{kind:'clarify',message:'Use /mission list, /mission status [id], /mission cancel [id] or /mission new <objective>.'});return route('EXPLICIT MISSION',{kind:'mission',action,...(action==='new'?{objective:argument||null}:{mission_id:argument||null})});}
  if(/^\/(?:mission)\b/i.test(request))return route('EXPLICIT MISSION',{kind:'clarify',message:'Use /mission new, /mission list, /mission status or /mission cancel.'});
