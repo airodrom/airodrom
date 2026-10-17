@@ -515,8 +515,9 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  const runtime=runtimeView(ready),ledger=bridge.ledger.health();
  let cursor={agent_availability:'unqualified',agent_execution:false,agent_reason:'cursor_execution_unqualified',editor_available:false,last_ide_task:null};
  try{
+  const governed=bridge.cursorWorker?await bridge.cursorWorker.readiness():null;
   const agents=await bridge.capabilityHost.agentStatus();
-  const c=agents?.cursor||{};
+  const c=governed?{...agents?.cursor,availability:governed.availability,agent_availability:governed.ready?'available':governed.availability,agent_execution:governed.ready===true,agent_reason:governed.reason||(governed.ready?'governed_sandboxed_headless':'cursor_execution_unqualified'),installed:governed.installed}:agents?.cursor||{};
   cursor={
     agent_availability:enumValue(c.agent_availability||c.availability,['unqualified','unavailable','auth_required','quota_limited','available'],'unqualified'),
     agent_execution:c.agent_execution===true,
