@@ -37,12 +37,30 @@ class ControlExecution {
     // Airodrom host sessions can remain idle between turns. Settlement proves the turn,
     // not destruction of the reusable session process.
     const task = this.bridge.tasks.get(run.task_id);
-    if(run.agent_id==='bridge'&&task.mission?.capabilityProfile==='governed-browser-research-v1'){
-      // The invocation lease and browser worker are distinct canonical Runs.
-      // Correlate this settled action without copying the worker's evidence.
-      const invocation=task.capabilityInvocations?.[task.latestMcpRequestId];
-      const completed=invocation?.state==='settled'&&invocation.outcome?.status==='completed';
-      this.store.updateRun(run.id,{state:verified?(lease.cancelRequested?'cancelled':completed?'completed':'failed'):'termination_unverified',processState:verified?'not_started':'unknown',liveness:verified?'settled':'unknown',verified,result:{invocation_only:true,completed,accepted:false},deferAudit:true});return;
+    if (run.agent_id === 'bridge') {
+      // Orchestrator/verifier capability leases never spawn a worker on this run id.
+      // Correlate only the invocation that bound this exact runId — never latestMcpRequestId.
+      let requestId = null, invocation = null;
+      for (const [id, record] of Object.entries(task.capabilityInvocations || {})) {
+        if (record?.runId === lease.runId) { requestId = id; invocation = record; break; }
+      }
+      const completed = !!invocation && invocation.state === 'settled' && invocation.outcome?.status === 'completed';
+      this.store.updateRun(run.id, {
+        state: verified ? (lease.cancelRequested ? 'cancelled' : completed ? 'completed' : 'failed') : 'termination_unverified',
+        processState: verified ? 'not_started' : 'unknown',
+        liveness: verified ? 'settled' : 'unknown',
+        verified,
+        result: {
+          invocation_only: true,
+          completed,
+          accepted: false,
+          request_id: requestId,
+          invocation_status: invocation?.outcome?.status || (invocation ? invocation.state : null),
+          correlation: requestId ? 'run_bound' : 'missing'
+        },
+        deferAudit: true
+      });
+      return;
     }
     const success = task.status === 'completed' && require('./execution-evidence').satisfied(task, lease.runId);
     this.store.updateRun(lease.runId, {
