@@ -9,6 +9,8 @@
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { object, identifier } = require('./control-plane-store');
+const { transaction } = require('./control-transaction');
+const { workspaceSnapshot } = require('./control-context');
 
 function containedPath(candidate, prefix) {
   if (typeof candidate !== 'string' || typeof prefix !== 'string' || !candidate || !prefix) return false;
@@ -135,15 +137,24 @@ class ExpandedAutonomy {
       domains: Object.fromEntries(DOMAIN_KEYS.map(key => {
         const enrolled = policies.filter(p => p.domain === key && p.active && !p.revoked_at);
         const flagOn = flags[key] === true;
-        const qualified = enrolled.some(p => p.qualified);
+        const ownerMarkedQualified = enrolled.some(p => p.qualified);
+        // Owner-supplied qualified=true is never independent execution qualification.
+        const independentlyQualified = false;
+        const executorConnected = false;
+        const policyConfigured = enrolled.length > 0;
         return [key, {
           flag: flagOn,
+          policy_configured: policyConfigured,
           enrolled: enrolled.length,
-          qualified,
-          runnable: mode === 'expanded_auto' && flagOn && enrolled.length > 0 && qualified && !emergency && !expired,
+          owner_marked_qualified: ownerMarkedQualified,
+          independently_qualified: independentlyQualified,
+          executor_connected: executorConnected,
+          runnable: false,
           note: key === 'financial_automation' || key === 'production_automation'
-            ? 'Disabled until provider/adapter is independently qualified and enrolled'
-            : (enrolled.length ? 'Standing policy present' : 'No standing policy enrolled')
+            ? 'Execution disabled until independent adapter qualification and executor wiring'
+            : (policyConfigured
+              ? 'Standing policy enrolled; executor not connected — not runnable'
+              : 'No standing policy enrolled')
         }];
       })),
       scopes: {
@@ -194,8 +205,15 @@ class ExpandedAutonomy {
     if (input.confirmed !== true) throw Error('Explicit owner confirmation required');
     identifier(input.request_id);
     if (!MODES.includes(input.mode)) throw Error('Unknown Expanded Autonomy mode');
+    const prior = this.row();
+    // Emergency STOP stays latched until explicit clear-stop. Mode changes cannot clear it.
+    if (prior.emergency_stop === 1 && input.mode !== 'manual') {
+      const err = Error('HOLD: Emergency STOP is latched; use clear-stop before enabling Routine or Expanded Auto');
+      err.code = 'EXPANDED_AUTONOMY_EMERGENCY_HOLD';
+      throw err;
+    }
     const now = Date.now();
-    const flags = { ...this.flagsOf() };
+    const flags = { ...this.flagsOf(prior) };
     if (input.mode === 'manual') {
       flags.manual_acceptance = true;
       flags.expanded_autonomy = false;
@@ -208,34 +226,50 @@ class ExpandedAutonomy {
         if (typeof input.flags[key] === 'boolean') flags[key] = input.flags[key];
       }
     }
-    // High-impact flags cannot turn on outside expanded_auto.
     if (input.mode !== 'expanded_auto') {
       for (const key of DOMAIN_KEYS) flags[key] = false;
     }
-    let expiresAt = null;
+    let expiresAt = prior.expires_at || null;
     if (input.expires_at !== undefined && input.expires_at !== null) {
       if (!Number.isInteger(input.expires_at) || input.expires_at <= now) throw Error('expires_at must be a future epoch ms');
       expiresAt = input.expires_at;
+    } else if (input.mode === 'manual') {
+      expiresAt = null;
     }
     const authorizedAt = input.mode === 'manual' ? null : now;
-    this.db.prepare(`UPDATE cp_expanded_autonomy SET mode=?, flags=?, authorized_at=?, expires_at=?,
-      emergency_stop=0, emergency_stop_at=NULL, emergency_stop_by=NULL, emergency_request_id=NULL,
-      updated_at=?, updated_by=?, request_id=? WHERE id=1`)
-      .run(input.mode, JSON.stringify(flags), authorizedAt, expiresAt, now, owner, input.request_id);
-    // Keep Risk Acceptance preference aligned with mode for routine auto-accept.
-    try {
-      if (input.mode === 'manual') {
-        this.bridge.missions?.riskAcceptance?.setPreference({ enabled: false, confirmed: true }, owner);
-      } else if (input.sync_risk_acceptance !== false) {
-        this.bridge.missions?.riskAcceptance?.setPreference({ enabled: true, confirmed: true }, owner);
+    let previousPreference = false;
+    try { previousPreference = this.bridge.missions?.riskAcceptance?.preference?.()?.enabled === true; } catch { previousPreference = false; }
+    return transaction(this.db, () => {
+      // Preserve emergency_stop columns unchanged.
+      this.db.prepare(`UPDATE cp_expanded_autonomy SET mode=?, flags=?, authorized_at=?, expires_at=?,
+        updated_at=?, updated_by=?, request_id=? WHERE id=1`)
+        .run(input.mode, JSON.stringify(flags), authorizedAt, expiresAt, now, owner, input.request_id);
+      try {
+        if (input.mode === 'manual') {
+          this.bridge.missions?.riskAcceptance?.setPreference({ enabled: false, confirmed: true }, owner);
+        } else if (input.sync_risk_acceptance !== false) {
+          this.bridge.missions?.riskAcceptance?.setPreference({ enabled: true, confirmed: true }, owner);
+        }
+      } catch (error) {
+        // Compensate authoritative mode so callers never see a successful transition with mismatched preference.
+        this.db.prepare(`UPDATE cp_expanded_autonomy SET mode=?, flags=?, authorized_at=?, expires_at=?,
+          updated_at=?, updated_by=?, request_id=? WHERE id=1`)
+          .run(prior.mode, prior.flags, prior.authorized_at, prior.expires_at, now, owner, input.request_id);
+        try {
+          this.bridge.missions?.riskAcceptance?.setPreference({ enabled: previousPreference, confirmed: true }, owner);
+        } catch { /* best-effort preference restore */ }
+        const hold = Error('HOLD: Expanded Autonomy mode and Risk Acceptance preference could not be aligned');
+        hold.code = 'EXPANDED_AUTONOMY_PREFERENCE_HOLD';
+        hold.cause = error;
+        throw hold;
       }
-    } catch { /* risk acceptance may be unavailable in partial fixtures */ }
-    this.audit('mode_set', { mode: input.mode, flags, expires_at: expiresAt }, owner, input.request_id);
-    this.bridge.controlStore.event('expanded_autonomy.mode_set', null, {
-      mode: input.mode, request_id: input.request_id, authority: false
+      this.audit('mode_set', { mode: input.mode, flags, expires_at: expiresAt, emergency_stop_preserved: prior.emergency_stop === 1 }, owner, input.request_id);
+      this.bridge.controlStore.event('expanded_autonomy.mode_set', null, {
+        mode: input.mode, request_id: input.request_id, authority: false
+      });
+      this.bridge.emit?.('change');
+      return this.effective(owner);
     });
-    this.bridge.emit?.('change');
-    return this.effective(owner);
   }
 
   setFlags(input, owner = 'operator') {
@@ -431,6 +465,7 @@ class ExpandedAutonomy {
   /**
    * Whether new automated Acceptance decisions are permitted for this Mission.
    * Never retroactively authorizes Missions created before standing authorization.
+   * Manual mode blocks every new automatic decision, including per-mission preauth.
    */
   mayAutoAccept(mission) {
     const eff = this.effective('operator');
@@ -441,19 +476,105 @@ class ExpandedAutonomy {
       return { allow: false, reason: 'manual_acceptance_forced' };
     }
     if (!mission) return { allow: false, reason: 'mission_required' };
-    // Per-mission automatic_acceptance remains an explicit operator preauth path.
     if (mission.envelope?.automatic_acceptance === true) {
       return { allow: true, reason: 'mission_preauthorized', mode: eff.mode };
     }
     if (mission.envelope?.risk_auto_acceptance?.authorized === true) {
       return { allow: true, reason: 'risk_preauthorized', mode: eff.mode };
     }
-    // Standing mode must not authorize historical Missions.
     const authorizedAt = eff.authorized_at;
     if (!Number.isInteger(authorizedAt) || !Number.isInteger(mission.created_at) || mission.created_at < authorizedAt) {
       return { allow: false, reason: 'historical_mission_not_retroactive' };
     }
     return { allow: true, reason: 'standing_mode', mode: eff.mode };
+  }
+
+  /**
+   * Bounded Developer Autonomy auto-Acceptance under Routine/Expanded Auto.
+   * Reuses host verification evidence; never bypasses Mission contract or SafetyPolicy.
+   */
+  attemptDeveloperAutonomyAccept(id) {
+    const deny = reason => ({ accepted: false, reason });
+    const m = this.bridge.controlStore.requireMission(id);
+    if (!m.envelope?.developer_autonomy) return deny('not_developer_autonomy');
+    const gate = this.mayAutoAccept(m);
+    if (!gate.allow) return deny(gate.reason || 'expanded_autonomy_blocked');
+    if (m.state === 'completed') return { accepted: true, duplicate: true };
+    if (m.state !== 'awaiting_acceptance') return deny('verification_not_ready');
+    try {
+      this.bridge.developerAutonomy.assertMission(m, { allowExpiredGrant: true });
+    } catch {
+      return deny('developer_autonomy_authority_invalid');
+    }
+    try {
+      if (m.envelope.repair_of) this.bridge.developerAutonomy.assertRepair(m);
+    } catch {
+      return deny('repair_budget_or_authority');
+    }
+    if (m.envelope.preferred_agent !== 'opencode' || (m.envelope.fallback_agents || []).length) {
+      return deny('worker_route');
+    }
+    const scopes = m.envelope.capability_scopes || [];
+    if (scopes.some(s => !['repo', 'developer_environment'].includes(s))) return deny('privileged_scopes');
+    if ((m.envelope.criteria || []).some(c => c.type === 'operator_review')) return deny('operator_review_criteria');
+    if (this.bridge.controlStore.decisions(id).some(d => d.state === 'waiting_for_operator')) return deny('waiting_decision');
+    if (this.bridge.policy.list().some(a => a.status === 'pending' && this.bridge.controlStore.missionForTask(a.taskId)?.id === id)) {
+      return deny('pending_approval');
+    }
+    if (this.db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND state IN ('held','quarantined')").get(m.envelope.workspace)) {
+      return deny('workspace_lease');
+    }
+    if (this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','running','uncertain')").get(id)) {
+      return deny('active_or_uncertain_dispatch');
+    }
+    const v = this.db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id);
+    if (!v || v.result !== 'passed' || v.checker !== 'airodrom:host-verifier' || v.revision !== m.revision) {
+      return deny('independent_verification_required');
+    }
+    const run = this.bridge.controlStore.run(v.run_id);
+    const checks = JSON.parse(v.evidence);
+    if (!run || run.mission_id !== id || run.task_id !== m.task_id || run.state !== 'completed' || !run.termination_verified) {
+      return deny('run_correlation');
+    }
+    if (!require('./execution-evidence').runSatisfied(run)) return deny('native_tool_required');
+    if (m.envelope.criteria.some(c => !checks.some(x => x.id === c.id && x.status === 'passed')) || checks.some(c => c.status !== 'passed')) {
+      return deny('missing_or_failed_checker');
+    }
+    const snap = workspaceSnapshot(m.envelope.workspace);
+    if (snap.hash !== v.workspace_hash) return deny('stale_workspace');
+    const allowed = new Set(m.envelope.allowed_files || []);
+    if ((snap.dirty || []).some(f => !allowed.has(f))) return deny('unauthorized_workspace_changes');
+    if (m.envelope.manifest) {
+      const r = this.db.prepare('SELECT * FROM cp_mission_reviews WHERE mission_id=? AND verification_id=?').get(id, v.id);
+      const contract = this.bridge.missions.program.contract(id);
+      if (!r || r.result !== 'passed' || r.workspace_hash !== v.workspace_hash || (contract && r.manifest_hash !== contract.manifest_hash)) {
+        return deny('review_broker_required');
+      }
+    }
+    return transaction(this.db, () => {
+      const again = this.bridge.controlStore.requireMission(id);
+      if (again.state === 'completed') return { accepted: true, duplicate: true };
+      if (again.state !== 'awaiting_acceptance') return deny('verification_not_ready');
+      this.bridge.missions.accept(id, {
+        request_id: `da-auto-accept:${v.id}`,
+        verification_id: v.id,
+        decision: 'accept',
+        rationale: 'Expanded Autonomy Routine/Expanded Auto: Developer Autonomy grant current; independent host verification and termination satisfied',
+        evidence: JSON.stringify({ verification_id: v.id, mode: gate.mode, authority: false })
+      }, 'operator');
+      this.audit('developer_autonomy_auto_accepted', { mission_id: id, verification_id: v.id }, 'operator', null);
+      this.bridge.controlStore.event('expanded_autonomy.developer_autonomy_auto_accepted', id, {
+        verification_id: v.id, authority: false
+      });
+      return { accepted: true, verification_id: v.id, mode: gate.mode };
+    });
+  }
+
+  reconcileDeveloperAutonomyAccept() {
+    for (const { id } of this.db.prepare("SELECT id FROM cp_missions WHERE state='awaiting_acceptance'").all()) {
+      const m = this.bridge.controlStore.getMission(id);
+      if (m?.envelope?.developer_autonomy) this.attemptDeveloperAutonomyAccept(id);
+    }
   }
 
   /**

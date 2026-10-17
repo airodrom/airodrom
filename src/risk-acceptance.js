@@ -199,17 +199,24 @@ class RiskAcceptance {
   evaluate(id) {
     const m = this.store.requireMission(id);
     const deny = reason => ({ accepted: false, reason });
-    if (m.envelope.developer_autonomy) return deny('developer_autonomy_requires_owner_acceptance');
+    // Manual / emergency always blocks new automatic Acceptance, including DA and preauthorized risk rows.
+    try {
+      const eff = this.bridge.expandedAutonomy?.effective?.('operator');
+      if (eff && (eff.mode === 'manual' || eff.emergency_stop || eff.flags.manual_acceptance === true || eff.expired)) {
+        return deny('expanded_autonomy_manual_or_stopped');
+      }
+    } catch { /* expanded autonomy optional in partial fixtures */ }
+    if (m.envelope.developer_autonomy) {
+      // Bounded DA auto-accept is handled by ExpandedAutonomy.attemptDeveloperAutonomyAccept.
+      return deny('developer_autonomy_requires_owner_acceptance');
+    }
     try {
       const gate = this.bridge.expandedAutonomy?.mayAutoAccept?.(m);
-      if (gate && gate.allow !== true && gate.reason !== 'historical_mission_not_retroactive') {
-        // Historical missions with explicit envelope risk_auto_acceptance remain eligible;
-        // MANUAL/emergency stop still blocks new automated decisions.
-        if (gate.reason === 'expanded_autonomy_manual_or_stopped' || gate.reason === 'manual_acceptance_forced') {
-          return deny(gate.reason);
-        }
-      } else if (gate && gate.allow !== true && !m.envelope.risk_auto_acceptance?.authorized) {
+      if (gate && gate.allow !== true && !m.envelope.risk_auto_acceptance?.authorized) {
         return deny(gate.reason || 'expanded_autonomy_blocked');
+      }
+      if (gate && gate.allow !== true && (gate.reason === 'expanded_autonomy_manual_or_stopped' || gate.reason === 'manual_acceptance_forced')) {
+        return deny(gate.reason);
       }
     } catch { /* expanded autonomy optional in partial fixtures */ }
     const row = this.db.prepare('SELECT * FROM cp_risk_acceptance WHERE mission_id=?').get(id);

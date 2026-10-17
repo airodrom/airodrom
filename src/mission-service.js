@@ -234,7 +234,7 @@ class MissionService {
     // microtask that races finishRecovery would otherwise block auto-open forever.
     if(this.busy||this.stopped||this.bridge.closed||this.bridge.lifecycle&&this.bridge.lifecycle.state()!=='open')return;this.busy=true;
     try{
-      this.store.expireDecisions();this.acceptanceEngine.reconcile();this.riskAcceptance.reconcile();this.program.tick();
+      this.store.expireDecisions();this.acceptanceEngine.reconcile();this.riskAcceptance.reconcile();try{this.bridge.expandedAutonomy?.reconcileDeveloperAutonomyAccept?.();}catch{}this.program.tick();
       for(const c of this.db.prepare("SELECT * FROM cp_continuations WHERE state='queued'").all()){
         const m=this.store.getMission(c.mission_id);if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);continue;}if(m?.envelope.control_version!==2)continue;
         const chains=this.db.prepare('SELECT c.* FROM cp_autonomy_claims a JOIN cp_autonomy_chains c ON c.id=a.chain_id WHERE a.mission_id=?').all(m.id);
@@ -476,6 +476,7 @@ class MissionService {
       if(m.envelope.kind!=='browser_research'&&m.envelope.automatic_acceptance)this.acceptanceEngine.attempt(m.id);
       if(m.envelope.fixture_auto_acceptance?.authorized)this.bridge.fixtureAcceptance.attempt(m.id);
       if(m.envelope.risk_auto_acceptance?.authorized)this.riskAcceptance.attempt(m.id);
+      if(m.envelope.developer_autonomy)try{this.bridge.expandedAutonomy?.attemptDeveloperAutonomyAccept?.(m.id);}catch{/* DA auto-accept is best-effort after verification; failures leave awaiting_acceptance */}
     }
   }
   async reverify(id,input,owner='operator'){

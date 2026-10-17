@@ -50,9 +50,38 @@ test('defaults to MANUAL with high-impact domains off', (t) => {
     assert.equal(status.flags.expanded_autonomy, false);
     assert.equal(status.domains.financial_automation.runnable, false);
     assert.equal(status.domains.production_automation.runnable, false);
+    assert.equal(status.domains.credential_automation.executor_connected, false);
+    assert.equal(status.domains.credential_automation.independently_qualified, false);
     assert.equal(status.scopes.historical_missions, 'never_retroactive');
     assert.ok(MODES.includes('manual'));
     assert.equal(DEFAULT_FLAGS.financial_automation, false);
+});
+
+test('emergency STOP cannot be cleared by setMode', (t) => {
+  const { ea } = harness(t);
+  ea.setMode({ mode: 'routine_auto', confirmed: true, request_id: randomUUID() }, 'operator');
+  ea.emergencyStop({ confirmed: true, request_id: randomUUID() }, 'operator');
+  assert.equal(ea.status('operator').emergency_stop, true);
+  assert.throws(
+    () => ea.setMode({ mode: 'routine_auto', confirmed: true, request_id: randomUUID() }, 'operator'),
+    /HOLD: Emergency STOP/
+  );
+  const afterManual = ea.setMode({ mode: 'manual', confirmed: true, request_id: randomUUID() }, 'operator');
+  assert.equal(afterManual.emergency_stop, true);
+  assert.equal(afterManual.mode, 'manual');
+  const cleared = ea.clearEmergency({ confirmed: true, request_id: randomUUID() }, 'operator');
+  assert.equal(cleared.emergency_stop, false);
+  assert.equal(cleared.mode, 'manual');
+});
+
+test('Manual mode blocks preauthorized automatic Acceptance', (t) => {
+  const { ea } = harness(t);
+  ea.setMode({ mode: 'routine_auto', confirmed: true, request_id: randomUUID() }, 'operator');
+  const mission = { id: randomUUID(), created_at: Date.now(), envelope: { automatic_acceptance: true } };
+  assert.equal(ea.mayAutoAccept(mission).allow, true);
+  ea.setMode({ mode: 'manual', confirmed: true, request_id: randomUUID() }, 'operator');
+  assert.equal(ea.mayAutoAccept(mission).allow, false);
+  assert.match(ea.mayAutoAccept(mission).reason, /manual|stopped/);
 });
 
 test('ROUTINE AUTO enables standing auto-accept for new work only', (t) => {
@@ -144,6 +173,8 @@ test('credential standing policy binds purpose and never discloses values', (t) 
       }
     }, 'operator');
 
+    assert.equal(ea.status('operator').domains.credential_automation.runnable, false);
+    assert.equal(ea.status('operator').domains.credential_automation.executor_connected, false);
     assert.equal(ea.authorizeDomain('credential_automation', {
       credential_ref: 'vault:github-api',
       application: 'github',
