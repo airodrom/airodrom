@@ -18,8 +18,19 @@ class DeterministicAcceptance {
   evaluate(id) {
     const m=this.store.requireMission(id);
     const deny=reason=>({accepted:false,reason});
+    // Manual / emergency stop blocks every new automatic Acceptance decision.
+    if (this.bridge.expandedAutonomy) {
+      const eff=this.bridge.expandedAutonomy.effective('operator');
+      if (eff.mode==='manual'||eff.emergency_stop||eff.flags.manual_acceptance===true||eff.expired) {
+        return deny('expanded_autonomy_manual');
+      }
+    }
     const p=this.db.prepare('SELECT * FROM cp_execution_qualification WHERE mission_id=?').get(id);
-    if (!p || !m.envelope.automatic_acceptance || p.envelope_hash!==fingerprint(m.envelope)) return deny('preauthorization_missing_or_changed');
+    const standing=this.bridge.expandedAutonomy?.mayAutoAccept?.(m);
+    const preauthorized=m.envelope.automatic_acceptance===true ||
+      (standing?.allow===true && (standing.reason==='standing_mode'||standing.reason==='mission_preauthorized') && !!m.envelope.coding_plan);
+    if (!p || !preauthorized || p.envelope_hash!==fingerprint(m.envelope)) return deny('preauthorization_missing_or_changed');
+    if (!m.envelope.automatic_acceptance && standing && standing.allow!==true) return deny(standing.reason||'expanded_autonomy_blocked');
     if (m.state==='completed') return {accepted:true,duplicate:true};
     if (m.state!=='awaiting_acceptance') return deny('verification_not_ready');
     try { this.service.assertAuthority(m);this.service.codingAdapter.assert(m); } catch {return deny('authority_or_adapter_invalid');}
