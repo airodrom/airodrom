@@ -340,6 +340,19 @@ test('broad resource access rejects prefix-sibling collisions', (t) => {
   assert.equal(ea.authorizeDomain('broad_resource_access', { resource: 'github.com/acme/repo-evil' }).allow, false);
 });
 
+test('Manual mode blocks fixture auto-acceptance gate consult', (t) => {
+  const { ea, bridge } = harness(t);
+  // Simulate fixture path consulting effective() the same way FixtureAcceptance does.
+  ea.setMode({ mode: 'routine_auto', confirmed: true, request_id: randomUUID() }, 'operator');
+  assert.equal(ea.effective('operator').mode, 'routine_auto');
+  ea.setMode({ mode: 'manual', confirmed: true, request_id: randomUUID() }, 'operator');
+  const eff = ea.effective('operator');
+  assert.equal(eff.mode, 'manual');
+  assert.ok(eff.mode === 'manual' || eff.emergency_stop || eff.flags.manual_acceptance === true);
+  bridge.missions.riskAcceptance.pref = true;
+  assert.equal(ea.mayAutoAccept({ id: randomUUID(), created_at: Date.now(), envelope: { fixture_auto_acceptance: { authorized: true } } }).allow, false);
+});
+
 test('settings persist across controller reconstruction', (t) => {
   const {bridge} = harness(t);
     bridge.expandedAutonomy.setMode({ mode: 'expanded_auto', confirmed: true, request_id: randomUUID() }, 'operator');

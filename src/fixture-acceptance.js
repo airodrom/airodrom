@@ -21,6 +21,10 @@ class FixtureAcceptance{
  attempt(id){return transaction(this.db,()=>{
   const m=this.store.requireMission(id),a=m.envelope.fixture_auto_acceptance;
   const deny=reason=>{this.store.event('fixture.auto_acceptance.denied',id,{reason});return{accepted:false,reason};};
+  try{
+    const eff=this.bridge.expandedAutonomy?.effective?.('operator');
+    if(eff&&(eff.mode==='manual'||eff.emergency_stop||eff.flags.manual_acceptance===true||eff.expired))return deny('expanded_autonomy_manual_or_stopped');
+  }catch{/* expanded autonomy optional in partial fixtures */}
   if(!a?.authorized)return deny('not_preauthorized_fixture');
   const policy=this.db.prepare('SELECT * FROM cp_fixture_projects WHERE project_id=? AND workspace=?').get(m.project_id,m.envelope.workspace);
   if(!policy||a.policy_hash!==fingerprint(JSON.parse(policy.policy))||a.criteria_hash!==fingerprint(m.envelope.criteria)||m.envelope.criteria.some(c=>c.type!=='exact_file')||m.envelope.capability_scopes.some(s=>!['repo','developer_environment'].includes(s)))return deny('fixture_policy_mismatch');
