@@ -113,17 +113,36 @@ function searchSource() {
 
 function gmailObservation(server) {
   const state = require('./personal-ops').gmailState(server);
-  const live = state.live_qualified === true;
-  const connectedLive = state.auth === 'connected_live';
+  let item = null;
+  try {
+    item = require('./assistant-service').connectors(server.bridge).status().items.find((i) => i.id === 'gmail') || null;
+  } catch { /* connectors unset in some fixtures */ }
+
+  const authenticated = item ? item.connected === true : state.auth === 'connected_live' || state.auth === 'connected_unverified';
+  const live = item ? item.live_qualified === true : state.live_qualified === true;
+  const stateLive = state.live_qualified === true;
+  const stateAuthenticated = state.auth === 'connected_live' || state.auth === 'connected_unverified';
+
+  // Fail closed on disagreeing connector status vs personal-ops projection, or live without auth.
+  const inconsistent =
+    (item != null && (live !== stateLive || authenticated !== stateAuthenticated)) ||
+    (live && !authenticated) ||
+    (state.auth === 'connected_live' && !live) ||
+    (state.auth === 'connected_unverified' && live);
+
+  // Connected requires BOTH authenticated connection and current live qualification.
+  const connected = !inconsistent && authenticated && live && state.auth === 'connected_live';
+
   return {
     id: 'gmail',
-    live_qualified: live,
-    auth: state.auth,
-    // Only claim connected when live capability evidence confirms it.
-    connected: connectedLive || live,
-    availability: state.availability,
-    note: state.note,
-    next: state.next,
+    live_qualified: connected ? true : false,
+    auth: inconsistent ? 'inconsistent_or_stale' : state.auth,
+    connected,
+    availability: connected ? 'AVAILABLE' : state.availability,
+    note: inconsistent
+      ? 'Gmail status evidence is inconsistent or stale; treating as not connected.'
+      : state.note,
+    next: inconsistent ? '/gmail status' : state.next,
   };
 }
 

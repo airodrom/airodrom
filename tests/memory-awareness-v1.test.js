@@ -119,6 +119,41 @@ test('connected versus disconnected Gmail uses live evidence only', async (t) =>
   assert.match(connected.message, /live read access is available/i);
 });
 
+test('Gmail connected requires auth and live qualification; inconsistent evidence fails closed', async (t) => {
+  const f = await setup(t);
+
+  // Token/reference present but not live-qualified must not claim connected.
+  f.bridge.assistantConnectors = new AssistantConnectors({
+    gmail: { reference: 'opaque', scope: 'https://www.googleapis.com/auth/gmail.readonly' },
+    secrets: { resolve: async () => 'synthetic-mail-token' },
+    request: async () => ({ ok: true, text: async () => JSON.stringify({ messages: [] }) }),
+  });
+  const unverified = awareness.explain(f.server, { focus: 'gmail' });
+  assert.equal(unverified.connectors.gmail.connected, false);
+  assert.equal(unverified.connectors.gmail.live_qualified, false);
+  assert.equal(unverified.connectors.gmail.auth, 'connected_unverified');
+  assert.doesNotMatch(unverified.message, /live read access is available/i);
+
+  // Live flag without authenticated connection is inconsistent → fail closed.
+  f.bridge.assistantConnectors = {
+    status: () => ({
+      items: [{
+        id: 'gmail',
+        connected: false,
+        live_qualified: true,
+        configured: true,
+        state: 'live_qualified',
+      }],
+    }),
+  };
+  const stale = awareness.explain(f.server, { focus: 'gmail' });
+  assert.equal(stale.connectors.gmail.connected, false);
+  assert.equal(stale.connectors.gmail.live_qualified, false);
+  assert.equal(stale.connectors.gmail.auth, 'inconsistent_or_stale');
+  assert.match(stale.message, /inconsistent or stale|not live-connected/i);
+  assert.doesNotMatch(stale.message, /live read access is available right now/i);
+});
+
 test('governed browser availability is honest about qualification', async (t) => {
   const f = await setup(t);
   const result = await service.submit(f.server, {
