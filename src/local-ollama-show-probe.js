@@ -9,11 +9,33 @@ const TRANSIENT_TTL_MS = 400;
 const SHOW_TIMEOUT_MS = 1000;
 const MAX_BYTES = 256000;
 
-let cache = null;
-let inflight = null;
+/** @type {Map<string, { at: number, ttl: number, value: object, key: string }>} */
+const caches = new Map();
+/** @type {Map<string, Promise<object>>} */
+const inflights = new Map();
+/** @type {WeakMap<Function, string>} */
+const transportIds = new WeakMap();
+let transportSeq = 0;
 
 function denied(reason, probe_class) {
   return { allow: false, reason, probe_class, authority: false };
+}
+
+function transportIdentity(transport) {
+  if (typeof transport !== 'function') return 'http';
+  let id = transportIds.get(transport);
+  if (!id) {
+    id = 'transport:' + (++transportSeq);
+    transportIds.set(transport, id);
+  }
+  return id;
+}
+
+function probeKey({ model, record, transport }) {
+  const digest = typeof record?.digest === 'string' ? record.digest.slice(0, 128) : '';
+  const template = typeof record?.template_hash === 'string' ? record.template_hash.slice(0, 64) : '';
+  const status = typeof record?.qualification_status === 'string' ? record.qualification_status.slice(0, 40) : '';
+  return [model, digest, template, status, transportIdentity(transport)].join('\0');
 }
 
 function probeOnce({ model, record, timeoutMs, transport }) {
@@ -84,9 +106,12 @@ async function probeQualifiedShow({
   transport
 } = {}) {
   if (typeof model !== 'string' || !model || model.length > 120) return denied('opencode_local_provider_unavailable', 'denied');
-  if (cache && now - cache.at < cache.ttl) return { ...cache.value };
-  if (inflight) return inflight;
-  inflight = (async () => {
+  const key = probeKey({ model, record, transport });
+  const cached = caches.get(key);
+  if (cached && cached.key === key && now - cached.at < cached.ttl) return { ...cached.value };
+  const pending = inflights.get(key);
+  if (pending) return pending;
+  const run = (async () => {
     let result = await probeOnce({ model, record, timeoutMs, transport });
     // Exactly one recheck for transient probe timeout — never a loop, never generation.
     if (result.probe_class === 'timeout' && allowRecheck) {
@@ -96,21 +121,23 @@ async function probeQualifiedShow({
     const ttl = result.allow || result.probe_class === 'denied' || result.probe_class === 'oversized' || result.probe_class === 'parse'
       ? SUCCESS_TTL_MS
       : TRANSIENT_TTL_MS;
-    cache = { at: Date.now(), ttl, value: result };
+    caches.set(key, { at: Date.now(), ttl, value: result, key });
     return { ...result };
-  })().finally(() => { inflight = null; });
-  return inflight;
+  })().finally(() => { inflights.delete(key); });
+  inflights.set(key, run);
+  return run;
 }
 
 function resetShowProbeForTests() {
-  cache = null;
-  inflight = null;
+  caches.clear();
+  inflights.clear();
 }
 
 module.exports = {
   SUCCESS_TTL_MS,
   TRANSIENT_TTL_MS,
   SHOW_TIMEOUT_MS,
+  probeKey,
   probeQualifiedShow,
   resetShowProbeForTests
 };

@@ -169,3 +169,61 @@ test('conversation Ready does not mark OpenCode worker available for WORK', asyn
   assert.equal(worker.available, false);
   assert.equal(router.select(catalog, { mission_class: 'WORK' }).state, 'WAIT');
 });
+
+test('different model identities never share cached success', async () => {
+  resetShowProbeForTests();
+  const seen = [];
+  const transport = async ({ model }) => {
+    seen.push(model);
+    return { allow: true, probe_class: 'ready' };
+  };
+  const a = await probeQualifiedShow({ model: 'qwen3-coder:30b', record: evidence, transport });
+  const otherRecord = { ...evidence, model: 'other-model:1b', digest: 'sha256:' + 'b'.repeat(64) };
+  const b = await probeQualifiedShow({ model: 'other-model:1b', record: otherRecord, transport });
+  assert.equal(a.allow && b.allow, true);
+  assert.deepEqual(seen, ['qwen3-coder:30b', 'other-model:1b']);
+  await probeQualifiedShow({ model: 'qwen3-coder:30b', record: evidence, transport });
+  assert.deepEqual(seen, ['qwen3-coder:30b', 'other-model:1b'], 'first model still cached separately');
+});
+
+test('changed qualification evidence invalidates cache', async () => {
+  resetShowProbeForTests();
+  let calls = 0;
+  const transport = async () => { calls++; return { allow: true, probe_class: 'ready' }; };
+  assert.equal((await probeQualifiedShow({ model: 'qwen3-coder:30b', record: evidence, transport })).allow, true);
+  assert.equal(calls, 1);
+  const changed = { ...evidence, digest: 'sha256:' + 'c'.repeat(64) };
+  assert.equal((await probeQualifiedShow({ model: 'qwen3-coder:30b', record: changed, transport })).allow, true);
+  assert.equal(calls, 2, 'digest change must not reuse prior success');
+  assert.equal((await probeQualifiedShow({ model: 'qwen3-coder:30b', record: evidence, transport })).allow, true);
+  assert.equal(calls, 2, 'original evidence remains cached under its own key');
+  assert.equal((await probeQualifiedShow({ model: 'qwen3-coder:30b', record: changed, transport })).allow, true);
+  assert.equal(calls, 2, 'changed evidence remains isolated and cached');
+});
+
+test('different concurrent probe identities remain separate; identical requests single-flight', async () => {
+  resetShowProbeForTests();
+  const counts = { a: 0, b: 0 };
+  const transportA = async () => {
+    counts.a++;
+    await new Promise(r => setTimeout(r, 30));
+    return { allow: true, probe_class: 'ready' };
+  };
+  const transportB = async () => {
+    counts.b++;
+    await new Promise(r => setTimeout(r, 30));
+    return { allow: false, reason: 'opencode_local_provider_timeout', probe_class: 'timeout' };
+  };
+  const started = Date.now();
+  const [same1, same2, other] = await Promise.all([
+    probeQualifiedShow({ model: 'qwen3-coder:30b', record: evidence, transport: transportA }),
+    probeQualifiedShow({ model: 'qwen3-coder:30b', record: evidence, transport: transportA }),
+    probeQualifiedShow({ model: 'qwen3-coder:30b', record: evidence, transport: transportB })
+  ]);
+  assert.ok(Date.now() - started < 200, 'concurrent distinct probes must not serialize unboundedly');
+  assert.equal(counts.a, 1, 'identical requests coalesce');
+  assert.equal(same1.allow && same2.allow, true);
+  assert.equal(counts.b, 2, 'other transport times out with one recheck');
+  assert.equal(other.allow, false);
+  assert.equal(other.reason, 'opencode_local_provider_timeout');
+});
