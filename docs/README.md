@@ -1,5 +1,7 @@
 # Airodrom documentation
 
+**Projectless work** (registered Projects are optional): [PROJECTLESS-WORK-V1.md](PROJECTLESS-WORK-V1.md).
+
 **Master Personal AI Completion V1** (implementation program): [MASTER-PERSONAL-AI-COMPLETION-V1.md](MASTER-PERSONAL-AI-COMPLETION-V1.md).
 **Final Acceptance V2** (live tip vs offline evidence): [AIRODROM-FINAL-ACCEPTANCE-V2.md](AIRODROM-FINAL-ACCEPTANCE-V2.md). Cutover plan (not applied): [INSTALLED-TIP-CUTOVER-V2.md](INSTALLED-TIP-CUTOVER-V2.md).
 **Cutover approval gate V3** (**HOLD** until explicit auth): [AIRODROM-CUTOVER-APPROVAL-V3.md](AIRODROM-CUTOVER-APPROVAL-V3.md).
