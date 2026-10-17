@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Classify Expanded Autonomy control-plane tables in the Memory retention registry so identity validation no longer treats `cp_expanded_autonomy*` as unclassified stores after schema ensure.
+
 ### Added
 - Host coding plans now derive a canonical Mission contract and record contract, verifier-input, protected-test, secret-scan, and sensitive-area coverage. A failed trusted-baseline lookup stays unavailable. Legacy contractless rows are not rewritten ([ADR 0055](docs/adr/0055-host-coding-contract.md)).
 - Global Autopilot V1: owner ON/OFF/status/STOP across registered projects; Control Center switch; defaults OFF ([ADR 0054](docs/adr/0054-global-autopilot.md)).
