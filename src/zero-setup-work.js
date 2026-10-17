@@ -84,6 +84,10 @@ class ZeroSetupWork {
   }
 
   resolveScope(instruction, intent) {
+    if (/projectless task sandbox/i.test(instruction || '')) {
+      const sandbox = require('./projectless-sandbox').allocate();
+      return { ok: true, projectless: true, exact_fixture: /change fixture\.txt from alpha to beta/i.test(instruction || ''), project: null, workspace: sandbox.workspace, filesystem: sandbox.filesystem };
+    }
     const projects = (this.bridge.projects.listProjects({ status: 'active' }) || []).filter(p => !isProductionProject(p) && Array.isArray(p.repositories) && p.repositories.length);
     const matches = [];
     for (const project of projects) {
@@ -267,6 +271,7 @@ class ZeroSetupWork {
       return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
     }
     if (scope.projectless) {
+      if (principal === 'operator' && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
       const record = {
         version: 1, instruction, intent, projectless: true, project_id: null, workspace: scope.workspace,
         authority: false, execution_enabled: false,
@@ -518,6 +523,25 @@ class ZeroSetupWork {
     return this.statusView(live);
   }
 
+  startProjectless(request_id, principal, instruction, intent, scope) {
+    if (principal !== 'operator') throw Error('Projectless execution requires the authenticated operator');
+    if (!scope?.exact_fixture || !scope.workspace) throw Error('Projectless execution requires an exact authorized file change');
+    const sandbox = require('./projectless-sandbox');
+    sandbox.seedExactFixture(scope.workspace);
+    const { randomUUID } = require('node:crypto');
+    const before = (this.bridge.projects.listProjects() || []).length;
+    const mission = this.bridge.missions.create(sandbox.exactMissionInput(scope.workspace, randomUUID()), 'operator');
+    if ((this.bridge.projects.listProjects() || []).length !== before) throw Error('Projectless execution must not register a Project');
+    this.bridge.missions.dispatch(mission.id, { request_id: randomUUID() });
+    const record = {
+      version: 1, instruction, intent, projectless: true, project_id: null, workspace: scope.workspace, mission_id: mission.id,
+      authority: false, execution_enabled: true,
+      presentation: { brand: 'AIRODROM', goal: intent?.objective || instruction, project_name: null, workspace_label: 'task sandbox', worker: 'opencode', verification: 'Independent host verification', completion_policy: 'Automatic Acceptance after verification', status: 'Projectless OpenCode mission dispatched' }
+    };
+    this.write(request_id, principal, record, 'running');
+    return { state: 'DISPATCHED', projectless: true, execution_authorized: true, mission_id: mission.id, workspace: scope.workspace, presentation: record.presentation, authority: false, message: 'Projectless mission dispatched to OpenCode. No registered Project was created.' };
+  }
+
   async approve(input, owner = 'operator') {
     if (owner !== 'operator') throw Error('Authenticated local operator required');
     object(input, ['request_id', 'confirmed', 'channel']);
@@ -529,6 +553,7 @@ class ZeroSetupWork {
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
     if (live.developer_autonomy_policy_id) return this.activateAutonomy(live);
+    if (live.projectless) return this.startProjectless(live.request_id, live.principal, live.instruction, live.intent, { workspace: live.workspace, exact_fixture: /change fixture\.txt from alpha to beta/i.test(live.instruction || '') });
     // Distinct security decisions, presented as one coherent approval experience.
     if (!live.template_ready) {
       if (!live.proposal) throw Error('Template proposal missing');

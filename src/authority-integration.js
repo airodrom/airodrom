@@ -23,7 +23,7 @@ class AuthorityRuntime {
   get routing() { return this.active&&this.state().router_state==='enabled'; }
   project(id) { importProject(this.store,id); }
   registerMission(m) {
-    this.project(m.project_id);
+    if(m.project_id)this.project(m.project_id);
     const envelope={...m.envelope};
     // The full host-produced repository manifest stays in the immutable legacy
     // envelope. The portable revision commits to it without copying Git internals.
