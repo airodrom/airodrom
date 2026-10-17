@@ -10,11 +10,36 @@ const { randomUUID, createHash } = require('node:crypto');
 const { AgentAdapter, AgentAdapterError } = require('../agent-adapter');
 const { object, redactValue } = require('../control-plane-store');
 const MAX_CONTEXT = 24000, MAX_OUTPUT = 64000, MAX_FILE = 262144;
+const STDERR_CLASSIFY_BYTES = 4096;
 const VERSION = '2.0.25';
 const CODING_TIMEOUT_MS = 120000;
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => { throw new AgentAdapterError(code, code); };
 const quote = value => JSON.stringify(value);
+// Classify bounded stderr in memory only. Never return or persist the raw bytes.
+function classifyStderrClass(snippet) {
+  const text = Buffer.isBuffer(snippet)
+    ? snippet.subarray(0, STDERR_CLASSIFY_BYTES).toString('utf8')
+    : String(snippet || '').slice(0, STDERR_CLASSIFY_BYTES);
+  const t = text.normalize('NFKC').toLowerCase();
+  if (!t.trim()) return null;
+  if (/sandbox_apply|seatbelt|operation not permitted|deny\s+(?:file|network|process)|sandbox-exec/.test(t)) return 'sandbox_denied';
+  if (/econnrefused|:11434\b|connection refused|provider.?unavailable|ollama.{0,120}(?:refused|unavailable|unreachable|timeout|connect)|(?:refused|unavailable|unreachable|timeout|connect).{0,120}ollama|failed to (?:connect|fetch).{0,40}local/.test(t)) return 'provider_unavailable';
+  if (/unknown (?:flag|option|command|agent|model)|invalid (?:config|configuration|model|argument|option)|enoent|no such file|cannot find module|config(?:uration)?\s+(?:error|failed|invalid)/.test(t)) return 'runtime_configuration_failed';
+  return null;
+}
+function classifyProcessFailure(outcome, stderrClass = null) {
+  // Host lifecycle flags and process signals outrank stderr pattern matches.
+  if (outcome?.timedOut) return 'opencode_timeout';
+  if (outcome?.cancelled) return 'opencode_cancelled';
+  if (outcome?.overflow) return 'opencode_output_bound';
+  if (typeof outcome?.signal === 'string' && outcome.signal) return 'opencode_process_signal';
+  if (stderrClass === 'sandbox_denied') return 'opencode_sandbox_denied';
+  if (stderrClass === 'provider_unavailable') return 'opencode_provider_unavailable';
+  if (stderrClass === 'runtime_configuration_failed') return 'opencode_runtime_configuration_failed';
+  if (outcome?.code !== 0 && outcome?.code != null) return 'opencode_process_exit_nonzero';
+  return 'opencode_process_failed';
+}
 // Host-owned coding view: Authorization headers that bind a JS identifier are
 // ordinary source (for example Authorization:'Bearer '+token). Literal Bearer
 // tokens and other embedded secrets still pass through containsSecret unchanged.
@@ -179,6 +204,7 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
   return new Promise((resolve, reject) => {
     let child; try { child = spawn(file, args, { cwd: path.join(root, 'workspace'), env, shell: false, detached: true, stdio: ['pipe', 'pipe', 'pipe'] }); } catch { return reject(new AgentAdapterError('opencode_spawn_failed', 'opencode_spawn_failed')); }
     let stdout = '', bytes = 0, timedOut = false, cancelled = false, overflow = false, pending = '';
+    let stderrKeep = Buffer.alloc(0);
     const stop = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch {} } };
     const abort = () => { cancelled = true; stop(); };
     const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
@@ -194,8 +220,14 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
         if (line.trim()) { try { onLine(line); } catch { /* observatory must never abort execution */ } }
       }
     });
-    // Diagnostics are never returned or persisted, including failure paths.
-    child.stderr.on('data', c => { bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); } });
+    // Bound a classification window only. Raw stderr is never returned or persisted.
+    child.stderr.on('data', c => {
+      bytes += c.length; if (bytes > MAX_OUTPUT) { overflow = true; stop(); return; }
+      if (stderrKeep.length < STDERR_CLASSIFY_BYTES) {
+        const next = Math.min(c.length, STDERR_CLASSIFY_BYTES - stderrKeep.length);
+        stderrKeep = Buffer.concat([stderrKeep, c.subarray(0, next)]);
+      }
+    });
     child.stdin.on('error', () => {});
     child.once('spawn', () => { try { onStart?.(); } catch { stop(); } });
     child.on('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new AgentAdapterError('opencode_spawn_failed', 'opencode_spawn_failed')); });
@@ -205,7 +237,9 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
       // before destroying session state; an uncertain group stays unverified.
       stop(); let groupGone = false;
       for(let i=0;i<20;i++){try{process.kill(-child.pid,0);}catch(e){groupGone=e.code==='ESRCH';break;}await new Promise(r=>setTimeout(r,25));}
-      resolve({ code, signal: childSignal, stdout, timedOut, cancelled, overflow, termination_verified: groupGone });
+      const stderr_class = classifyStderrClass(stderrKeep);
+      stderrKeep = Buffer.alloc(0);
+      resolve({ code, signal: childSignal, stdout, timedOut, cancelled, overflow, termination_verified: groupGone, stderr_class });
     });
     child.stdin.end(input, error => { if (!error) { try { onContextDelivered?.(); } catch { /* Metadata observation does not alter execution. */ } } });
   });
@@ -365,7 +399,9 @@ class OpenCodeAdapter extends AgentAdapter {
       if(remaining < 10 || signal?.aborted)fail('opencode_timeout_or_cancel_bound');
       const outcome = await launch({ executable, root, writable, input, timeoutMs: remaining, signal, env: disposableEnv(root, path.join(root, 'workspace'), config), fixtureExecutable: this.options.fixtureExecutable, onStart, onLine, onContextDelivered });
       if (!outcome.termination_verified){cleanup=false;fail('opencode_termination_unverified');}
-      if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) fail(outcome.timedOut ? 'opencode_timeout' : outcome.cancelled ? 'opencode_cancelled' : 'opencode_process_failed');
+      if (outcome.timedOut || outcome.cancelled || outcome.overflow || outcome.code !== 0 || outcome.signal) {
+        fail(classifyProcessFailure(outcome, outcome.stderr_class || null));
+      }
       if (hash(fs.readFileSync(executable)) !== executableHash) fail('opencode_executable_changed');
       // Host-measured staging changes are authoritative. Parse worker JSON after inventory so a
       // malformed final text object can recover when allowlisted tools already mutated staging.
@@ -447,4 +483,4 @@ class OpenCodeAdapter extends AgentAdapter {
   async shutdown() { for (const controller of this.active.values()) controller.abort(); }
   async status() { return this.readiness(); }
 }
-module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, codingSecretScanView, MAX_CONTEXT, MAX_OUTPUT, MAX_FILE, CODING_TIMEOUT_MS, VERSION, OLLAMA_PORT };
+module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, codingSecretScanView, classifyStderrClass, classifyProcessFailure, MAX_CONTEXT, MAX_OUTPUT, MAX_FILE, STDERR_CLASSIFY_BYTES, CODING_TIMEOUT_MS, VERSION, OLLAMA_PORT };

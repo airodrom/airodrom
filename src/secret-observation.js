@@ -14,6 +14,33 @@ function sensitiveKey(k){
     || /password|passwd|secret|api.?key|authorization|cookie|credential|session.?value|private.?key|access.?key|signature|signed/i.test(k)
     || /token/i.test(k);
 }
-function safeValue(v,depth=0){if(depth>12)return'[bounded]';if(typeof v==='string')return redactText(v);if(Array.isArray(v))return v.slice(0,200).map(x=>safeValue(x,depth+1));if(v instanceof Error)return safeValue({name:v.name,message:v.message,stack:v.stack,cause:v.cause},depth+1);if(v&&typeof v==='object')return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,sensitiveKey(k)?'[omitted]':safeValue(x,depth+1)]));return v;}
+// Mission authority permissions.secrets is a typed capability allowlist (empty=[] means
+// no secret capabilities). Preserve only under parent key "permissions" with known flags.
+// Unrelated fields named "secrets" remain fully omitted.
+const PERMISSION_SECRET_FLAGS = Object.freeze(new Set(['use', 'production']));
+function permissionSecretsAllowlist(value) {
+  if (!Array.isArray(value) || value.length > 8) return null;
+  if (value.some(flag => typeof flag !== 'string' || !PERMISSION_SECRET_FLAGS.has(flag))) return null;
+  return value.slice(0, 8);
+}
+function safeValue(v, depth = 0, parentKey = null) {
+  if (depth > 12) return '[bounded]';
+  if (typeof v === 'string') return redactText(v);
+  if (Array.isArray(v)) return v.slice(0, 200).map(x => safeValue(x, depth + 1, parentKey));
+  if (v instanceof Error) return safeValue({ name: v.name, message: v.message, stack: v.stack, cause: v.cause }, depth + 1, parentKey);
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => {
+      if (sensitiveKey(k)) {
+        if (/^secrets$/i.test(k) && /^permissions$/i.test(String(parentKey || ''))) {
+          const allowlist = permissionSecretsAllowlist(x);
+          if (allowlist) return [k, allowlist.map(item => safeValue(item, depth + 1, k))];
+        }
+        return [k, '[omitted]'];
+      }
+      return [k, safeValue(x, depth + 1, k)];
+    }));
+  }
+  return v;
+}
 function observeProcesses({execute=execFile}={}){return new Promise((resolve,reject)=>execute('/bin/ps',['-axo','pid=,ppid=,uid=,stat=,comm='],{timeout:3000,maxBuffer:262144},(error,stdout)=>{if(error)return reject(Error('Process observation unavailable'));resolve(String(stdout).split('\n').flatMap(line=>{const m=/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line);return m?[{pid:+m[1],ppid:+m[2],uid:+m[3],state:m[4],executable:redactText(m[5])}]:[];}));}));}
 module.exports={redactText,safeValue,sensitiveKey,observeProcesses};

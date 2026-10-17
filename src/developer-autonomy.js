@@ -1149,6 +1149,11 @@ class DeveloperAutonomy {
     if (!t || fingerprint(ref) !== fingerprint(t.developer_autonomy)) {
       throw Error('Developer Autonomy grant expired, revoked or changed');
     }
+    // API projection placeholders are never authority. Fail closed rather than
+    // treating redacted display values as a typed permission allowlist.
+    if (input.authority?.permissions?.secrets === '[omitted]' || typeof input.authority?.permissions?.secrets === 'string') {
+      throw Error('Immutable grant ceiling mismatch');
+    }
     for (const key of ['project_id', 'goal_id', 'workspace', 'allowed_files', 'verification', 'capability_scopes', 'authority', 'dispatch_policy', 'fallback_agents', 'manifest']) {
       const canonical = value => key === 'dispatch_policy' ? require('./agent-dispatch').dispatchPolicy(value) : value;
       if (fingerprint(canonical(input[key])) !== fingerprint(canonical(t[key]))) throw Error('Immutable grant ceiling mismatch');
