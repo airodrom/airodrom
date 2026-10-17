@@ -230,6 +230,13 @@ test('general instructions select only one already-registered active WORK templa
     { kind: 'general', objective: 'Repair bounded test' }
   );
   assert.equal(scope.ok, true);
-  assert.equal(scope.project.projectId, release.projectId);
-  assert.equal(scope.workspace, fs.realpathSync(f.repo));
+  assert.equal(scope.projectless, true);
+  assert.equal(scope.project, null);
+  assert.notEqual(scope.workspace, fs.realpathSync(f.repo));
+  const named = new ZeroSetupWork(f.bridge).resolveScope(
+    'Please repair Airodrom Release Qualification and verify it.',
+    { kind: 'general', objective: 'Repair the named project' }
+  );
+  assert.equal(named.project.projectId, release.projectId);
+  assert.equal(named.workspace, fs.realpathSync(f.repo));
 });

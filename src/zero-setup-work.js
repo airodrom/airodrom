@@ -35,6 +35,30 @@ function isProductionProject(project) {
 function readablePath(workspace) {
   try { return path.basename(workspace); } catch { return 'selected workspace'; }
 }
+function explicitAuthorizedRepository(instruction, projects) {
+  const paths = String(instruction || '').match(/\/(?:Users|private|tmp|var|opt|home)\/[^\s'"]+/g) || [];
+  for (const candidate of paths) {
+    let root;
+    try { root = fs.realpathSync(candidate); } catch { continue; }
+    for (const project of projects) for (const workspace of project.repositories || []) {
+      try { if (fs.realpathSync(workspace) === root) return { project, workspace: root }; } catch { /* absent */ }
+    }
+  }
+  return null;
+}
+function explicitUnauthorizedPath(instruction, projects) {
+  const paths = String(instruction || '').match(/\/(?:Users|private|tmp|var|opt|home)\/[^\s'"]+/g) || [];
+  const allowed = new Set();
+  for (const project of projects) for (const workspace of project.repositories || []) {
+    try { allowed.add(fs.realpathSync(workspace)); } catch { /* absent enrollment */ }
+  }
+  for (const candidate of paths) {
+    let root;
+    try { root = fs.realpathSync(candidate); } catch { continue; }
+    if (!allowed.has(root)) return true;
+  }
+  return false;
+}
 
 class ZeroSetupWork {
   constructor(bridge) {
@@ -86,28 +110,15 @@ class ZeroSetupWork {
       const root = fs.realpathSync(named[0].repositories[0]);
       if (require('./control-execution').repositoryRoot(root) === root) return { ok: true, project: named[0], workspace: root };
     }
-    // For general instructions, prefer a UNIQUE active Developer Autonomy policy
-    // (standing per-repo enrollment). Fall back to a unique WORK template.
-    // An MCP message cannot register new authority.
+    // Ordinary work does not require a registered Project. An enrolled repository
+    // is used only when the instruction names that project or its authorized path.
     if (intent?.kind === 'general') {
-      try {
-        const da = (this.bridge.developerAutonomy?.list?.('operator') || [])
-          .filter(p => p.state === 'active' && projects.some(proj => proj.projectId === p.project_id));
-        if (da.length === 1) {
-          const project = projects.find(p => p.projectId === da[0].project_id);
-          return { ok: true, project, workspace: da[0].repository, developer_autonomy_policy_id: da[0].policy_id };
-        }
-        if (da.length > 1) return { ok: false, clarify: true, message: 'Which registered project should I use?', choices: da.slice(0, 8).map(p => ({ project_name: p.project_id, workspace_label: readablePath(p.repository) })) };
-      } catch { /* DA unavailable */ }
-      const active = this.bridge.workTemplates.list('operator')
-        .filter(t => t.state === 'active' && projects.some(p => p.projectId === t.project_id &&
-          p.repositories.some(w => { try { return fs.realpathSync(w) === t.workspace; } catch { return false; } })));
-      if (active.length === 1) {
-        const project = projects.find(p => p.projectId === active[0].project_id);
-        return { ok: true, project, workspace: active[0].workspace };
-      }
-      if (active.length > 1) return { ok: false, clarify: true, message: 'Which registered project template should I use?', choices: active.slice(0, 8).map(t => ({ project_name: t.project, workspace_label: t.workspace_alias })) };
-      return { ok: false, clarify: true, message: 'No standing enrollment matches this request. Name a registered project. No disposable workspace was selected.', choices: projects.slice(0, 8).map(p => ({ project_name: p.name, workspace_label: readablePath(p.repositories[0]) })) };
+      if (named.length > 1) return { ok: false, clarify: true, message: 'Which authorized repository should I use?', choices: named.map(p => ({ project_name: p.name, workspace_label: readablePath(p.repositories[0]) })) };
+      const authorized = explicitAuthorizedRepository(instruction, projects);
+      if (authorized) return { ok: true, project: authorized.project, workspace: authorized.workspace };
+      if (explicitUnauthorizedPath(instruction, projects)) return { ok: false, clarify: true, message: 'That repository is not authorized. No files were opened.', choices: [] };
+      const sandbox = require('./projectless-sandbox').allocate();
+      return { ok: true, projectless: true, project: null, workspace: sandbox.workspace, filesystem: sandbox.filesystem };
     }
     if (matches.length === 1) return { ok: true, project: matches[0].project, workspace: matches[0].workspace };
     if (matches.length > 1) {
@@ -254,6 +265,15 @@ class ZeroSetupWork {
       const record = { version: 1, instruction, intent, clarify: scope, authority: false };
       this.write(request_id, principal, record, 'clarify');
       return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
+    }
+    if (scope.projectless) {
+      const record = {
+        version: 1, instruction, intent, projectless: true, project_id: null, workspace: scope.workspace,
+        authority: false, execution_enabled: false,
+        presentation: { brand: 'AIRODROM', goal: intent.objective, project_name: null, workspace_label: 'task sandbox', files: [], worker: 'task sandbox', verification: 'Host verification remains required', completion_policy: 'Automatic Acceptance still requires independent verification', status: 'Projectless task sandbox prepared' }
+      };
+      this.write(request_id, principal, record, 'awaiting_approval');
+      return { state: 'PREPARED', projectless: true, message: 'Prepared a task-scoped sandbox. No registered Project was required or selected.', presentation: record.presentation, authority: false, execution_authorized: false, next_action: 'approve_in_terminal_or_control_center' };
     }
     const { project, workspace } = scope;
     // Global Autopilot ON: ensure a standing policy for the resolved repo (owner-delegated).
