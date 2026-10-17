@@ -4126,5 +4126,84 @@
       "request_id": "A",
       "actor": "A"
     }
+  },
+  "cp_expanded_autonomy": {
+    "fields": [
+      "id",
+      "mode",
+      "flags",
+      "authorized_at",
+      "expires_at",
+      "emergency_stop",
+      "emergency_stop_at",
+      "emergency_stop_by",
+      "emergency_request_id",
+      "updated_at",
+      "updated_by",
+      "request_id"
+    ],
+    "source": "src/expanded-autonomy.js",
+    "classification": {
+      "id": "A",
+      "mode": "A",
+      "flags": "B",
+      "authorized_at": "A",
+      "expires_at": "A",
+      "emergency_stop": "A",
+      "emergency_stop_at": "A",
+      "emergency_stop_by": "B",
+      "emergency_request_id": "A",
+      "updated_at": "A",
+      "updated_by": "B",
+      "request_id": "A"
+    }
+  },
+  "cp_expanded_autonomy_audit": {
+    "fields": [
+      "id",
+      "at",
+      "kind",
+      "actor",
+      "request_id",
+      "detail"
+    ],
+    "source": "src/expanded-autonomy.js",
+    "classification": {
+      "id": "A",
+      "at": "A",
+      "kind": "A",
+      "actor": "B",
+      "request_id": "A",
+      "detail": "B"
+    }
+  },
+  "cp_expanded_autonomy_policies": {
+    "fields": [
+      "id",
+      "domain",
+      "policy",
+      "policy_hash",
+      "active",
+      "qualified",
+      "created_at",
+      "expires_at",
+      "revoked_at",
+      "created_by",
+      "request_id"
+    ],
+    "source": "src/expanded-autonomy.js",
+    "classification": {
+      "id": "A",
+      "domain": "A",
+      "policy": "B",
+      "policy_hash": "D",
+      "active": "A",
+      "qualified": "A",
+      "created_at": "A",
+      "expires_at": "A",
+      "revoked_at": "A",
+      "created_by": "B",
+      "request_id": "A"
+    }
   }
 }

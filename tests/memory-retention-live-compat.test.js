@@ -166,3 +166,39 @@ test('setPreference denies non-operator and unconfirmed writes', t => {
   assert.throws(() => acceptance.setPreference({ enabled: false, confirmed: false }, 'operator'), /confirmation/);
   assert.deepEqual(db.prepare('SELECT * FROM cp_risk_acceptance_preference WHERE id=1').get(), before);
 });
+
+test('retention registry classifies expanded autonomy stores', () => {
+  assert.deepEqual(registry.cp_expanded_autonomy.fields, [
+    'id', 'mode', 'flags', 'authorized_at', 'expires_at',
+    'emergency_stop', 'emergency_stop_at', 'emergency_stop_by',
+    'emergency_request_id', 'updated_at', 'updated_by', 'request_id'
+  ]);
+  assert.equal(registry.cp_expanded_autonomy.source, 'src/expanded-autonomy.js');
+  assert.equal(registry.cp_expanded_autonomy.classification.emergency_stop, 'A');
+  assert.equal(registry.cp_expanded_autonomy.classification.flags, 'B');
+  assert.deepEqual(registry.cp_expanded_autonomy_audit.fields, [
+    'id', 'at', 'kind', 'actor', 'request_id', 'detail'
+  ]);
+  assert.deepEqual(registry.cp_expanded_autonomy_policies.fields, [
+    'id', 'domain', 'policy', 'policy_hash', 'active', 'qualified',
+    'created_at', 'expires_at', 'revoked_at', 'created_by', 'request_id'
+  ]);
+  assert.equal(registry.cp_expanded_autonomy_policies.classification.policy_hash, 'D');
+  assert.equal(registry.cp_expanded_autonomy_policies.classification.policy, 'B');
+});
+
+test('expanded autonomy schema remains identity-readable after ensure', t => {
+  const { ExpandedAutonomy } = require('../src/expanded-autonomy');
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const autonomy = new ExpandedAutonomy({ controlStore: { db } });
+  assert.ok(autonomy.row());
+  assert.doesNotThrow(() => identity.assertReadable(db));
+  const before = db.prepare('SELECT mode, emergency_stop FROM cp_expanded_autonomy WHERE id=1').get();
+  assert.equal(before.mode, 'manual');
+  assert.equal(before.emergency_stop, 0);
+  assert.deepEqual(
+    db.prepare('SELECT mode, emergency_stop FROM cp_expanded_autonomy WHERE id=1').get(),
+    before
+  );
+});
