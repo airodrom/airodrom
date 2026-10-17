@@ -439,6 +439,9 @@ function matchesFilter(bridge,m,filter,settled,archived){
  return false;
 }
 function missionCounts(bridge,missions=missionIndex(bridge)){
+ // No process-global or cross-bridge cache: counts must follow canonical missions.require
+ // reads (including test stubs) and must not leak between Bridge instances.
+ // Menu/nativeStatus never calls this — it uses bounded SQL instead.
  const settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db);
  return Object.fromEntries(FILTERS.map(name=>[name,missions.filter(m=>matchesFilter(bridge,m,name,settled,archived)).length]));
 }
@@ -559,13 +562,18 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
 }
 async function nativeStatus(bridge) {
  const s=await overview(bridge,{includeMissions:false}),db=bridge.controlStore.db;
+ require('./mission-visibility').ensure(db);
  // Featured menu Mission is live execution only — awaiting_acceptance / waiting_for_operator are review, not active work.
- const live=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying') ORDER BY created_at DESC,id LIMIT 1").get();
+ const live=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying') AND id NOT IN (SELECT mission_id FROM cp_mission_visibility WHERE archived=1) ORDER BY created_at DESC,id LIMIT 1").get();
  const m=live?missionView(bridge,bridge.controlStore.requireMission(live.id)):null;
- const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
- const counts=missionCounts(bridge);
- const reviewCount=counts['Needs Attention'];
- const unreadResults=counts['Unread Results']||0;
+ // Hot path: bounded SQL counts only. Never missionIndex/missionCounts — that loads every
+ // retained Mission graph (runs, ledger pages, recovery inspect) on each menu poll.
+ // Exclude presentation-archived rows so menu counts match filter semantics.
+ const notArchived="id NOT IN (SELECT mission_id FROM cp_mission_visibility WHERE archived=1)";
+ const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying') AND "+notArchived).get().n;
+ const reviewCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE ("+notArchived+") AND (state='waiting_for_operator' OR (state='awaiting_acceptance' AND coalesce(json_extract(envelope,'$.kind'),'')!='conversation'))").get().n;
+ const unreadResults=db.prepare("SELECT count(*) n FROM cp_missions WHERE ("+notArchived+") AND state='awaiting_acceptance' AND coalesce(json_extract(envelope,'$.kind'),'')='conversation'").get().n;
+ const failedCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework') AND "+notArchived).get().n;
  const {derive,menuPresentation}=require('./connection-status');
  const connectivity=derive({authorized:true,reachable:true,overviewStatus:s.status,lastOkAt:Date.now(),maintenance:!!bridge.closed});
  const presentation=menuPresentation({bridgeState:bridge.closed?'Stopped':'Connected',productStatus:s.status,activeMissions:activeCount,approvals:s.approvals.waiting,reviewMissions:reviewCount,missionState:m?.state||null});
@@ -584,7 +592,7 @@ async function nativeStatus(bridge) {
   mission:m?{id:m.id,label:m.label,state:m.state,phase:m.timeline.at(-1)?.label||'No transition observed',progress:m.progress.mode,worker:m.runtime||null,model:m.model?.id||null,elapsed_s,progress_value:m.progress.mode==='determinate'?m.progress.value:null,progress_maximum:m.progress.mode==='determinate'?m.progress.maximum:null}:null,
   review_missions:reviewCount,
   unread_results:unreadResults,
-  failed_missions:counts.Failed,
+  failed_missions:failedCount,
   diagnostic:['AIRODROM · PRE-RELEASE','Control: '+s.control.state,'OpenCode: '+s.runtime.state+' · Primary','Memory V2: '+s.memory.state+' · Local','Provider: '+s.provider.state,'Conversation: '+(conversationNickname||'Airo')+' · '+(conversationModel||'Unavailable'),'Installation: '+(s.installation_compatibility?.overall||'Unavailable'),'Active Missions: '+activeCount,'Needs Attention: '+reviewCount,'Unread Results: '+unreadResults,'Waiting Approvals: '+s.approvals.waiting,'Menu: '+presentation.label,'No tokens, URLs, paths, memory, prompts or process arguments exported.'].join('\n')};
 }
 function events(bridge,url) {

@@ -210,9 +210,11 @@ function launch({ executable, root, writable, env, input, timeoutMs, signal, fix
     child.stdin.end(input, error => { if (!error) { try { onContextDelivered?.(); } catch { /* Metadata observation does not alter execution. */ } } });
   });
 }
+const READINESS_TTL_MS = 5000;
 class OpenCodeAdapter extends AgentAdapter {
   constructor(bridge, options = {}) {
     super({ id: 'opencode', label: 'OpenCode' }); this.bridge = bridge; this.options = Object.freeze({...options}); this.active = new Map();
+    this._readinessCache = null; this._readinessInflight = null; this._observeCache = null;
     if (options.fixtureExecutable && !(process.env.NODE_ENV === 'test' && bridge?.options.allowFixtureWorker)) fail('opencode_fixture_denied');
   }
   capabilities() { return ['coding', 'bounded_file_work', 'result_publish', 'cancellation', 'runtime_status']; }
@@ -221,18 +223,72 @@ class OpenCodeAdapter extends AgentAdapter {
     for (const file of candidates) try { const real = fs.realpathSync(file); if (fs.statSync(real).isFile() && (fs.statSync(real).mode & 0o111)) return real; } catch {}
     return null;
   }
-  verifyArtifact(executable) {
+  qualifiedDigest() {
+    const digest = require('../../config/agent-runtime-qualification-v1.json').opencode.executable_sha256;
+    if (!/^[a-f0-9]{64}$/.test(digest || '')) fail('opencode_runtime_pins_changed');
+    return digest;
+  }
+  // Status/readiness only: path presence and pin path identity. Metadata cache never
+  // authorizes worker launch — execute() must call verifyArtifact(). Does not hash.
+  observeArtifact(executable) {
+    if (!executable) fail('opencode_unavailable');
+    let st; try { st = fs.statSync(executable); } catch { fail('opencode_unavailable'); }
+    if (!st.isFile() || !(st.mode & 0o111)) fail('opencode_unavailable');
+    let pinsStamp = '';
+    if (this.options.pinsFile) {
+      let pinsStat; try { pinsStat = fs.statSync(this.options.pinsFile); } catch { fail('opencode_runtime_pins_changed'); }
+      pinsStamp = this.options.pinsFile + '\0' + pinsStat.mtimeMs + '\0' + pinsStat.size;
+    }
+    const stamp = executable + '\0' + st.mtimeMs + '\0' + st.size + '\0' + pinsStamp;
+    if (this._observeCache && this._observeCache.stamp === stamp) {
+      if (!this._observeCache.ok) fail('opencode_runtime_pins_changed');
+      return executable;
+    }
     try {
-      if(!executable)fail('opencode_unavailable');
-      if(this.options.pinsFile){const pins=require('../local-bootstrap').validatePins(require('../local-bootstrap').ownedJSON(this.options.pinsFile));if(pins.executables.find(p=>p.id==='opencode').path!==executable)fail('opencode_runtime_pins_changed');}
-      else if(!this.options.fixtureExecutable)require('../sandbox-policy').verifyExecutable({id:'opencode',path:executable,sha256:require('../../config/agent-runtime-qualification-v1.json').opencode.executable_sha256});
+      if (this.options.pinsFile) {
+        // Path identity only — never validatePins/digest on the status hot path.
+        const pins = require('../local-bootstrap').ownedJSON(this.options.pinsFile);
+        const pin = Array.isArray(pins?.executables) ? pins.executables.find(p => p.id === 'opencode') : null;
+        if (!pin || pin.path !== executable) fail('opencode_runtime_pins_changed');
+      }
+      this._observeCache = { stamp, ok: true };
+    } catch { this._observeCache = { stamp, ok: false }; fail('opencode_runtime_pins_changed'); }
+    return executable;
+  }
+  // Launch admission: always digest-verify against the qualified evidence hash.
+  // runtime-pins.json may only name that digest — it cannot re-qualify a substitute.
+  verifyArtifact(executable) {
+    if (!executable) fail('opencode_unavailable');
+    if (this.options.fixtureExecutable) return executable;
+    const qualified = this.qualifiedDigest();
+    try {
+      if (this.options.pinsFile) {
+        const pins = require('../local-bootstrap').validatePins(require('../local-bootstrap').ownedJSON(this.options.pinsFile));
+        const pin = pins.executables.find(p => p.id === 'opencode');
+        if (!pin || pin.path !== executable || pin.sha256 !== qualified) fail('opencode_runtime_pins_changed');
+        // validatePins already digest-checked the pin; re-check against the canonical evidence.
+        require('../sandbox-policy').verifyExecutable({ id: 'opencode', path: executable, sha256: qualified });
+      } else {
+        require('../sandbox-policy').verifyExecutable({ id: 'opencode', path: executable, sha256: qualified });
+      }
     } catch { fail('opencode_runtime_pins_changed'); }
+    this._observeCache = null;
+    this._readinessCache = null;
     return executable;
   }
   async readiness() {
+    const now = Date.now();
+    if (this._readinessCache && now - this._readinessCache.at < READINESS_TTL_MS) {
+      return { ...this._readinessCache.value, availability: this._readinessCache.value.ready ? (this.active.size ? 'busy' : 'available') : 'unavailable' };
+    }
+    if (this._readinessInflight) return this._readinessInflight;
+    this._readinessInflight = this._probeReadiness().finally(() => { this._readinessInflight = null; });
+    return this._readinessInflight;
+  }
+  async _probeReadiness() {
     const executable = this.executable();
-    // Unqualified artifacts must not execute even for a version/status probe.
-    const pinned = !executable || (()=>{try{this.verifyArtifact(executable);return true;}catch{return false;}})();
+    // Status observation only — never treat readiness cache as launch authority.
+    const pinned = !executable || (()=>{try{this.observeArtifact(executable);return true;}catch{return false;}})();
     const r = executable && pinned ? spawnSync(executable, ['--version'], { encoding: 'utf8', timeout: 3000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin' } }) : null;
     const observed = r?.status === 0 ? version(r.stdout) : null;
     const configured = this.options.enabled === true && /^ollama\/[A-Za-z0-9_.:-]{1,120}$/.test(this.options.model || '');
@@ -243,11 +299,13 @@ class OpenCodeAdapter extends AgentAdapter {
     }));
     const currentQualification=Date.now()<require('../model-worker-router').EXPIRES&&this.options.model===require('../model-worker-router').MODEL;
     const ready = currentQualification && !!executable && observed === VERSION && configured && providerReady && pinned && (process.platform === 'darwin' || !!this.options.fixtureExecutable);
-    return { agentId: this.id, implemented: true, installed: !!executable, version: observed, ready, available: ready,
+    const value = { agentId: this.id, implemented: true, installed: !!executable, version: observed, ready, available: ready,
       availability: ready ? this.active.size ? 'busy' : 'available' : 'unavailable',
       auth_state: configured ? 'local_not_required' : 'auth_required', workspace_required: true,
       execution_authority: false, continuation: false, memory_access_model: 'canonical_authorized_context_only',
       reason: ready ? null : !pinned ? 'opencode_runtime_pins_changed' : !executable ? 'opencode_unavailable' : observed !== VERSION ? 'opencode_version_unqualified' : configured ? 'opencode_local_provider_unavailable' : 'opencode_local_provider_not_configured' };
+    this._readinessCache = { at: Date.now(), value };
+    return value;
   }
   authorizedContext(context){
     if(context===null)return null;
