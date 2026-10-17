@@ -29,7 +29,12 @@ function routeTask(input,agents){
   else if(input.required_provider&&provider!==input.required_provider)reason='provider_policy';
   else if(input.failed_agents?.includes(id))reason='prior_failure_requires_review';
   else if(input.unavailable_providers?.includes(provider))reason='provider_unavailable';
-  else if(!available&&!handoff)reason=['busy','auth_required','quota_limited','unknown','degraded'].includes(state)?state:a?.reason||'agent_unavailable';
+  else if(!available&&!handoff){
+    if(['busy','auth_required','quota_limited','degraded'].includes(state))reason=state;
+    else if(state==='unknown'&&typeof a?.reason==='string'&&a.reason)reason=a.reason;
+    else if(state==='unknown')reason='unknown';
+    else reason=a?.reason||'agent_unavailable';
+  }
   if(reason){rejected.push({agent:id,reason});continue;}
   return{selected:id,selected_agent:id,provider,selected_provider:provider,transport:id==='codex'?'handoff':'native',external_cycle_required:id==='codex',wait_reason:null,state:'selected',reason:deterministic?'deterministic_provider_independent':rejected.length?'compatible_fallback':'task_taxonomy',classification_mode:'deterministic',rejected,fallback_plan:order.filter(x=>x!==id),execution:'not_dispatched'};
  }
