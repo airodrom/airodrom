@@ -104,6 +104,10 @@ No auto-merge or deployment is included. Existing owner review remains distinct.
 | More than 4 files or 6 tasks | Cursor, subject to qualification and authorization |
 | Other bounded edits | OpenCode |
 
+A named Cursor/OpenCode worker in unrecognized prose blocks with
+`cognitive_explicit_worker_syntax_required`; use an explicit `use Cursor` or
+`use OpenCode` phrase to disambiguate. It never silently becomes an auto route.
+
 V1 permits at most eight existing scoped files, twelve tasks, one worker execution
 and zero automatic repairs. Each planning/execution attempt is bounded to 120 seconds;
 only schema-invalid plans can use the second planning attempt. Uncertain termination

@@ -107,6 +107,16 @@ test('route preserves explicit worker and disregards advisory complexity', () =>
   assert.throws(() => R.requestedWorker('Use Cursor only with OpenCode'), /ambiguous/);
 });
 
+test('unrecognized explicit worker prose blocks before planning instead of silently using another worker', async t => {
+  const f = await setup(t);
+  for (const instruction of ['In Fixture project run this in Cursor.', 'In Fixture project OpenCode must execute this.']) {
+    const result = await f.ask(randomUUID(), caller, instruction);
+    assert.equal(result.state, 'BLOCKED'); assert.deepEqual(result.blockers, ['cognitive_explicit_worker_syntax_required']);
+  }
+  assert.equal(f.plannerCalls, 0);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n, 0);
+});
+
 test('strict versioned schemas reject dependency cycles, unknown fields and tampered hashes', () => {
   const p = { version: 1, request_id: 'request', envelope_hash: 'a'.repeat(64), files: ['a'], tasks: [{ id: 'a', operation: 'edit', paths: ['a'], description: 'edit', depends_on: ['a'] }], verification: ['test'], complexity: 'bounded' };
   assert.throws(() => C.parse('PlanningProposal', p), /dependency/);

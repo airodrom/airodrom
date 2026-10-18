@@ -31,6 +31,8 @@ function enrollment(input, repository) {
 function requestedWorker(instruction) {
   const requested = [...String(instruction).matchAll(/\b(?:use|using|via|with)\s+(cursor|opencode|host)\b|\b(cursor|opencode|host)[- ]only\b/ig)].map(m => (m[1] || m[2]).toLowerCase());
   if (new Set(requested).size > 1) C.fail('cognitive_ambiguous_worker');
+  // A named worker in unrecognized prose must never silently become an auto route.
+  if (!requested.length && /\b(?:cursor|opencode)\b/i.test(instruction)) C.fail('cognitive_explicit_worker_syntax_required');
   return requested[0] || 'auto';
 }
 
