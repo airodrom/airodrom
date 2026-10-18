@@ -574,7 +574,8 @@ class ExpandedAutonomy {
   reconcileDeveloperAutonomyAccept() {
     for (const { id } of this.db.prepare("SELECT id FROM cp_missions WHERE state='awaiting_acceptance'").all()) {
       const m = this.bridge.controlStore.getMission(id);
-      if (m?.envelope?.developer_autonomy) this.attemptDeveloperAutonomyAccept(id);
+      if(require('./specialist-gateway').enabled(m)) {try{require('./specialist-gateway').autoAccept(this.bridge,id);}catch{}}
+      else if (m?.envelope?.developer_autonomy) this.attemptDeveloperAutonomyAccept(id);
     }
   }
 

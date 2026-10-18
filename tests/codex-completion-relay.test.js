@@ -74,7 +74,7 @@ test('publish rollback is atomic and retry creates one inbox/intent; independent
  assert.throws(()=>f.bridge.missions.accept(m.id,{request_id:'try-forged',decision:'accept',verification_id:'not-real',rationale:'Agent claims success'}),/not awaiting/);
 });
 test('isolated simulated Work child invokes exact injected command, automatic relay/read surface, independent host verification and fixture Acceptance',async t=>{
- const f=await fixture(t),p=f.bridge.projects.listProjects()[0];f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});
+ const f=await fixture(t),p=f.bridge.projects.listProjects()[0];f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});
  const m=f.create({preferred_agent:'codex',fixture_auto_acceptance:true}),h=f.bridge.codexAdapter.startTask(m.id,'smoke-relay'),pub=h.contract.result_publication;
  const childFile=path.join(f.root,'simulated-work.cjs');fs.writeFileSync(path.join(f.root,'RESULT.json'),JSON.stringify(envelope(h)),{mode:0o600});
  fs.writeFileSync(childFile,`require('node:fs').writeFileSync(${JSON.stringify(path.join(f.repo,'fixture.txt'))},'beta\\n');require('node:child_process').execFileSync(${JSON.stringify(pub.executable)},${JSON.stringify(pub.argv)},{stdio:'pipe'});`);

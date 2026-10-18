@@ -170,9 +170,9 @@ test('S13/S14/S15 duplicate request_id, approval replay, approval expiry', async
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 1);
   // Duplicate Mission create request_id with a different payload → idempotency conflict, nothing created.
   const before = f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n;
-  const input = { request_id: 'dup-create', project_id: m.project_id, goal_id: m.goal_id, objective: 'A ' + randomUUID(), workspace: f.repo, allowed_files: ['fixture.txt'], criteria: [{ id: 'c', type: 'operator_review', description: 'd' }], verification: { diff_check: 'diff-check', tests: ['fixture-test'], syntax: [] } };
+  const input = { request_id: 'dup-create', project_id: m.project_id, goal_id: m.goal_id, objective: 'Original synthetic duplicate request', workspace: f.repo, allowed_files: ['fixture.txt'], criteria: [{ id: 'c', type: 'operator_review', description: 'd' }], verification: { diff_check: 'diff-check', tests: ['fixture-test'], syntax: [] } };
   f.bridge.missions.create(input, 'operator');
-  assert.throws(() => f.bridge.missions.create({ ...input, objective: 'B ' + randomUUID() }, 'operator'), /Idempotency conflict/);
+  assert.throws(() => f.bridge.missions.create({ ...input, objective: 'Changed synthetic duplicate request' }, 'operator'), /Idempotency conflict/);
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, before + 1);
   // Expiry.
   approvals.bind(a.approval_id, m.id, 'operator');

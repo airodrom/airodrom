@@ -66,7 +66,7 @@ test('Acceptance, fixture auto-acceptance and Next Action independently refuse a
   const { fixture: missionFixture } = require('./fixtures/mission-fixture.cjs');
   const { randomUUID } = require('node:crypto');
   const f = await missionFixture(t), project = f.bridge.projects.listProjects()[0];
-  f.bridge.fixtureAcceptance.register({ project_id: project.projectId, workspace: f.repo, isolated: true, no_external_effects: true });
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');f.bridge.fixtureAcceptance.register({ project_id: project.projectId, workspace: f.repo, isolated: true, no_external_effects: true });
   const m = f.create({ fixture_auto_acceptance: true });
   const attempt = f.bridge.fixtureAcceptance.attempt.bind(f.bridge.fixtureAcceptance);
   f.bridge.fixtureAcceptance.attempt = () => ({ accepted: false });

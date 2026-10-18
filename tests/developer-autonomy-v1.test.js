@@ -9,6 +9,8 @@ const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { runtime, qualifyCanonical } = require('./fixtures/opencode-fixture.cjs');
 const ControlServer = require('../src/control-server');
 
+// Objectives are human-readable fixture labels, not random identifiers.
+let objectiveSequence = 0;
 async function setup(t) {
   const f = await fixture(t, { opencode: runtime(t).options });
   f.bridge.missionAuthority.initializeOperatorKey();
@@ -32,6 +34,23 @@ async function setup(t) {
   return f;
 }
 
+test('generated manifest UUID avoids card-text false positives without allowing secret titles or malformed IDs', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.enroll(f.enrollInput, 'operator');
+  const auth = da.authorizeRoutine({ policy_id: policy.policy_id, request_id: randomUUID(), objective: 'Manifest identity fixture', allowed_files: ['fixture.txt'] }, 'operator');
+  const { containsSecret } = require('../src/personal-memory');
+  const id = Array.from({ length: 100 }, (_, n) => 'da-grant-41111111-1111-4' + String(n).padStart(3, '0') + '-8111-abcdefabcdef').find(containsSecret);
+  assert.ok(id);
+  const manifest = structuredClone(auth.mission_input.manifest);
+  const options = { workspace: auth.mission_input.workspace, allowedFiles: auth.mission_input.allowed_files, verification: auth.mission_input.verification };
+  manifest.mission.id = id;
+  const normalize = require('../src/mission-manifest').normalizeManifest;
+  assert.equal(normalize(manifest, options).id, id);
+  for (const invalid of [id + '-extra', 'da-grant-4111111111111111', 'sk-fixtureprivatecredential'])
+    assert.throws(() => normalize({ mission: { ...manifest.mission, id: invalid } }, options), /sensitive manifest id/);
+  assert.throws(() => normalize({ mission: { ...manifest.mission, title: 'sk-fixtureprivatecredential' } }, options), /sensitive manifest title/);
+});
+
 test('owner-only enrollment, durable inspection, and reject unconfirmed consent', async t => {
   const f = await setup(t);
   const da = f.bridge.developerAutonomy;
@@ -45,6 +64,36 @@ test('owner-only enrollment, durable inspection, and reject unconfirmed consent'
   assert.throws(() => da.enroll(f.enrollInput, 'operator')); // alias unique
   await f.reopen();
   assert.equal(f.bridge.developerAutonomy.list('operator')[0].policy_hash, policy.policy_hash);
+});
+
+test('revocation accepts an exact sealed digest with a card-like substring and rejects malformed or mismatched digests', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.enroll(f.enrollInput, 'operator');
+  const { fingerprint } = require('../src/control-plane-store');
+  const { containsSecret } = require('../src/personal-memory');
+  const record = structuredClone(da.readPolicy(policy.policy_id).record);
+  let hash;
+  // Reproducible search over harmless aliases produces a real canonical digest,
+  // while retaining all normal signing and stored-policy integrity checks.
+  for (let n = 0; n < 100000; n++) {
+    record.alias = 'digest-fixture-' + n;
+    hash = fingerprint(record);
+    if (containsSecret(hash)) break;
+  }
+  assert.equal(containsSecret(hash), true);
+  const seal = f.bridge.missionAuthority.sealManifest({ mission_id: 'developer-autonomy:' + policy.policy_id, manifest_hash: hash });
+  da.db.prepare('UPDATE cp_developer_autonomy_policies SET alias=?,record=? WHERE policy_id=?')
+    .run(record.alias, JSON.stringify({ record, hash, seal }), policy.policy_id);
+  assert.equal(da.inspect(policy.policy_id).policy_hash, hash);
+  const input = { policy_id: policy.policy_id, policy_hash: hash, confirmed: true };
+  for (const invalid of [null, {}, 7, hash.toUpperCase(), hash.slice(1), hash + 'a', hash + '\n'])
+    assert.throws(() => da.revoke({ ...input, policy_hash: invalid }, 'operator'), /Invalid policy hash/);
+  assert.throws(() => da.revoke({ ...input, policy_hash: 'a'.repeat(64) }, 'operator'), /Exact current policy/);
+  assert.throws(() => da.revoke({ ...input, confirmed: false }, 'operator'), /consent/);
+  assert.throws(() => da.revoke(input, 'mcp:fixture'), /operator/);
+  assert.equal(da.inspect(policy.policy_id).state, 'active');
+  assert.equal(da.revoke(input, 'operator').state, 'revoked');
+  assert.equal(containsSecret(hash), true); // General content filtering is unchanged.
 });
 
 test('dirty source preserves unique work and creates disposable worktree', async t => {
@@ -111,7 +160,7 @@ test('revoked and expired policy/grant fail closed at dispatch', async t => {
   const auth = da.authorizeRoutine({
     policy_id: policy.policy_id,
     request_id: randomUUID(),
-    objective: 'DA revoke probe ' + randomUUID(),
+    objective: 'DA revoke probe ' + (++objectiveSequence),
     allowed_files: ['fixture.txt'],
     workflow: 'routine_edit',
     criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }]
@@ -126,7 +175,7 @@ test('revoked and expired policy/grant fail closed at dispatch', async t => {
   const grant = da.authorizeRoutine({
     policy_id: policy2.policy_id,
     request_id: randomUUID(),
-    objective: 'DA expiry probe ' + randomUUID(),
+    objective: 'DA expiry probe ' + (++objectiveSequence),
     allowed_files: ['fixture.txt'],
     workflow: 'routine_edit',
     criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }]
@@ -152,7 +201,7 @@ test('authorizeRoutine Mission completes with OpenCode fixture without WORK temp
   const auth = da.authorizeRoutine({
     policy_id: policy.policy_id,
     request_id: randomUUID(),
-    objective: 'Change fixture.txt from alpha to beta. DA acceptance ' + randomUUID(),
+    objective: 'Change fixture.txt from alpha to beta. DA acceptance ' + (++objectiveSequence),
     allowed_files: ['fixture.txt'],
     workflow: 'routine_edit',
     criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }]
@@ -342,7 +391,7 @@ test('supervisor standingAuthorization surfaces Developer Autonomy', async t => 
 
 function routine(da, policy, extra = {}) {
   return da.authorizeRoutine({ policy_id: policy.policy_id, request_id: randomUUID(),
-    objective: 'Change fixture.txt from alpha to beta. ' + randomUUID(), allowed_files: ['fixture.txt'],
+    objective: 'Change fixture.txt from alpha to beta. ' + (++objectiveSequence), allowed_files: ['fixture.txt'],
     workflow: 'routine_edit', ...extra }, 'operator');
 }
 
@@ -462,10 +511,10 @@ test('repair keeps grant lineage and rejects zero budget and revocation', async 
   assert.throws(()=>b.missions.create(input,'operator'),/revoked|expired|changed/);
 });
 
-test('ordinary enrolled requests retain the full instruction beyond the plan display limit', async t => {
+test('explicitly named enrolled requests retain the full instruction beyond the plan display limit', async t => {
   const f=await setup(t),b=f.bridge,da=b.developerAutonomy;
   da.enroll({...f.enrollInput,workflows:['routine_edit'],budgets:{...f.enrollInput.budgets,max_repairs:0}},'operator');
-  const instruction='Fix fixture.txt with these requirements: '+ 'Preserve existing content. '.repeat(45) + 'Final requirement: keep the trailing newline.';
+  const instruction='For Fixture project, fix fixture.txt with these requirements: '+ 'Preserve existing content. '.repeat(45) + 'Final requirement: keep the trailing newline.';
   assert.ok(instruction.length>1000);
   const request_id=randomUUID();
   const result=await b.zeroSetupWork.ask({instruction,request_id},'operator');
@@ -580,15 +629,15 @@ test('alternate registered test cannot broaden enrolled verification', async t =
   assert.throws(()=>routine(da,policy,{tests:['alternate-check'],allowed_files:['custom-validator.cjs']}),/enrolled tasks/);
 });
 
-test('Developer Autonomy never inherits or enables automatic Acceptance', async t => {
+test('MANUAL Developer Autonomy cannot enable or inherit automatic Acceptance', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
-  b.missions.riskAcceptance.setPreference({enabled:true,confirmed:true},'operator');
+  assert.throws(()=>b.missions.riskAcceptance.setPreference({enabled:true,confirmed:true},'operator'),/MANUAL/);
   const auth = routine(da,policy,{criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   assert.throws(()=>b.missions.create({...auth.mission_input,risk_auto_acceptance:true},'operator'),/explicit Acceptance/);
   const m=b.missions.create(auth.mission_input,'operator');
   assert.equal(m.envelope.risk_auto_acceptance,undefined);
   assert.throws(()=>b.missions.riskAcceptance.authorizeExisting(m.id,{request_id:randomUUID(),confirmed:true},'operator'),/explicit Acceptance/);
-  assert.equal(b.missions.riskAcceptance.evaluate(m.id).reason,'developer_autonomy_requires_owner_acceptance');
+  assert.equal(b.missions.riskAcceptance.evaluate(m.id).reason,'expanded_autonomy_manual_or_stopped');
   b.missions.dispatch(m.id,{request_id:randomUUID()});
   const done=await f.settle(m.id);
   assert.equal(done.state,'awaiting_acceptance');

@@ -466,6 +466,7 @@ class CursorWorker {
   /** MissionService dispatch adapter (same shape as OpenCodeAdapter.dispatch). */
   async dispatch({ task, repo, prompt, context, requestId } = {}) {
     const b = this.bridge, m = b.controlStore.requireMission(task?.controlPlaneMissionId);
+    const assignment=require('./specialist-gateway').adapterScope(b,task,ID);
     if (m.task_id !== task.id || m.envelope.workspace !== repo || context?.id !== task.contextPackId || m.envelope.preferred_agent !== ID || m.envelope.fallback_agents.length) fail('cursor_mission_binding');
     const readiness = await this.readiness(); this.lastReadiness = readiness;
     if (!this.qualifiedFor(m, { readiness })) fail('cursor_mission_unqualified');
@@ -475,7 +476,9 @@ class CursorWorker {
     const controller = new AbortController();
     const runId = b.controlContext.inspect(context.id).run_id;
     const contract = m.envelope.contract;
-    const timeoutMs = Math.min(MAX_TIMEOUT_MS, this.options.timeoutMs || DEFAULT_TIMEOUT_MS, Math.max(1000, contract.budget.max_wall_clock_ms || DEFAULT_TIMEOUT_MS));
+    const timeoutMs = Math.min(MAX_TIMEOUT_MS, this.options.timeoutMs || DEFAULT_TIMEOUT_MS, assignment ? assignment.deadline-b.controlStore.now() : Infinity, Math.max(1000, contract.budget.max_wall_clock_ms || DEFAULT_TIMEOUT_MS));
+    if(timeoutMs<1000)fail('gateway_assignment_runtime_expired');
+    const files=assignment?.files||m.envelope.allowed_files,writable=assignment?.writable||contract.permissions.allowed_write_paths;
     const model = m.envelope.model && !/^(auto|cursor:auto)$/.test(m.envelope.model)
       ? String(m.envelope.model).replace(/^cursor:/, '') : null;
     let count = 0, reservation = null, deadlineTimer = null, grantMonitor = null;
@@ -486,7 +489,7 @@ class CursorWorker {
         if (!b.missionApprovals?.reserveSubscription) fail('BLOCKED_SPEND_AUTHORIZATION');
         reservation = b.missionApprovals.reserveSubscription(m.id, requestId, timeoutMs);
         executionTickets.set(ticket, { worker: this, reservation, workspace: repo, signal: controller.signal,
-          files: JSON.stringify(m.envelope.allowed_files), writable: JSON.stringify(contract.permissions.allowed_write_paths),
+          files: JSON.stringify(files), writable: JSON.stringify(writable),
           objective_hash: hash(prompt), model, hosts: JSON.stringify(contract.permissions.network.allow) });
         deadlineTimer = setTimeout(() => controller.abort(), Math.max(0, reservation.deadline_at - b.controlStore.now()));
         deadlineTimer.unref?.();
@@ -498,7 +501,7 @@ class CursorWorker {
       }
       this.active.set(task.id, controller);
       const result = await this.execute({
-        workspace: repo, files: m.envelope.allowed_files, writable: contract.permissions.allowed_write_paths, objective: prompt, timeoutMs, signal: controller.signal,
+        workspace: repo, files, writable, objective: prompt, timeoutMs, signal: controller.signal,
         model, admission: ticket,
         hosts: contract.permissions.network.allow,
         onEvent: event => {

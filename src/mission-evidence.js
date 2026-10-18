@@ -60,10 +60,11 @@ function evidencePackage(bridge, missionId) {
   const final = lineage[lineage.length - 1] ? store.getMission(lineage[lineage.length - 1].mission_id) : mission;
   const root = lineage[0] ? store.getMission(lineage[0].mission_id) : mission;
   const detail = bridge.missions.detail(final.id);
+  const specialists=require('./specialist-gateway').enabled(final)?require('./specialist-gateway').inspect(bridge,final):null;
   const verifications = detail.verifications || [];
   const latestVerification = verifications[0] || null;
   // Worker runs: coding agents, or host native-plan runs with execution evidence. Bridge/verifier bookkeeping runs are excluded.
-  const workerRuns = (detail.runs || []).filter(r => ['opencode', 'cursor', 'claude_code', 'codex'].includes(r.agent_id) || (r.agent_id === 'host' && r.result?.native_execution_evidence));
+  const workerRuns = (detail.runs || []).filter(r => !r.result?.gateway && (['opencode', 'cursor', 'claude_code', 'codex'].includes(r.agent_id) || (r.agent_id === 'host' && r.result?.native_execution_evidence)));
   const lastWorkerRun = workerRuns[workerRuns.length - 1] || null;
   const planId = planFor(bridge, final.id) || planFor(bridge, root.id);
   let autonomous = null, phase = null;
@@ -77,10 +78,10 @@ function evidencePackage(bridge, missionId) {
   const approval = final.envelope.approval_id && bridge.missionApprovals ? bridge.missionApprovals.view(final.envelope.approval_id) : null;
   const contract = final.envelope.contract || null;
   const changedFiles = [];
-  for (const run of detail.runs || []) for (const a of run.result?.artifacts || []) if (a?.path && !changedFiles.some(c => c.path === a.path)) changedFiles.push({ path: a.path, sha256: a.sha256 || null, size: a.size || null, run_id: run.id });
+  for(const run of detail.runs||[])for(const a of run.result?.artifacts||[])if(a?.path){const item={path:a.path,sha256:a.sha256||null,size:a.size??null,run_id:run.id},prior=changedFiles.findIndex(c=>c.path===a.path);if(prior<0)changedFiles.push(item);else if(specialists)changedFiles[prior]=item;}
   const tests = (latestVerification?.evidence || []).filter(c => /^task:/.test(c.id)).map(c => ({ name: c.id.slice(5), status: c.status, exit_code: c.evidence?.exit_code ?? null }));
   const security = (latestVerification?.evidence || []).filter(c => /^security:|^(verifier_inputs_unchanged|protected_tests_unchanged|contract_integrity)$/.test(c.id)).map(c => ({ id: c.id, status: c.status, classification: c.evidence?.classification || null, new_findings: c.evidence?.new_findings ?? null, tampering: c.evidence?.tampering?.length ?? null }));
-  const repairs = lineage.filter(l => l.repair_of).length;
+  const repairs = specialists?specialists.repair_attempts:lineage.filter(l=>l.repair_of).length;
   const stageId = phase?.stage_id || null;
   const budgetSources = { contract: contract?.budget?.max_repair_attempts ?? null, plan: autonomous?.max_repairs ?? null, approval: approval?.repair_budget ?? null };
   const effectiveRepairs = [budgetSources.contract, budgetSources.plan, budgetSources.approval].filter(v => Number.isSafeInteger(v));
@@ -89,18 +90,22 @@ function evidencePackage(bridge, missionId) {
     // The effective ceiling is the strictest of contract, Goal Plan authorization and approval.
     max_repair_attempts: effectiveRepairs.length ? Math.min(...effectiveRepairs) : null,
     budget_sources: budgetSources,
-    dispatches: autonomous?.dispatch_count ?? null,
-    max_dispatches: autonomous?.max_dispatches ?? null,
+    dispatches: specialists?detail.dispatches.length:autonomous?.dispatch_count??null,
+    max_dispatches: specialists?contract.budget.max_worker_invocations:autonomous?.max_dispatches??null,
     worker_runs: workerRuns.length,
     wall_clock_ms: final.updated_at && root.created_at ? final.updated_at - root.created_at : null,
     repair_signatures: stageId ? (autonomous?.repair_signatures?.[stageId] || []).length : null,
   };
   const spend = contract?.budget?.spend_observability === 'UNKNOWN_SUBSCRIPTION' || lastWorkerRun?.agent_id === 'cursor' ? 'UNKNOWN (subscription-backed worker; no per-run billing is observable)' : 'LOCAL_NO_SPEND (local inference)';
   const unauthorized = (latestVerification?.evidence || []).filter(c => ['protected_files', 'repository_v2', 'creation_repository_v2', 'verifier_inputs_unchanged', 'protected_tests_unchanged'].includes(c.id) && c.status === 'failed').map(c => c.id);
-  const status = final.state === 'completed' ? 'OWNER_ACCEPTED' : final.state === 'awaiting_acceptance' ? 'VERIFIED_AWAITING_ACCEPTANCE' : final.state === 'cancelled' ? 'CANCELLED' : phase?.phase || final.state.toUpperCase();
-  const nextSafeAction = final.state === 'awaiting_acceptance' ? 'Owner reviews evidence and records Acceptance (accept or rework) in Control Center or Terminal.' : final.state === 'completed' ? 'None required for this Mission. Merge, installation and production remain separate owner-controlled actions.' : phase?.observing ? 'Wait; Airodrom is still executing or repairing within the approved scope.' : phase?.message || 'Owner inspects diagnostics; no automatic retry is pending.';
+  const status = final.state === 'completed' ? (specialists?'AUTOMATICALLY_ACCEPTED':'OWNER_ACCEPTED') : final.state === 'awaiting_acceptance' ? 'VERIFIED_AWAITING_ACCEPTANCE' : final.state === 'cancelled' ? 'CANCELLED' : phase?.phase || final.state.toUpperCase();
+  const legacyNextSafeAction = final.state === 'awaiting_acceptance' ? 'Owner reviews evidence and records Acceptance (accept or rework) in Control Center or Terminal.' : final.state === 'completed' ? 'None required for this Mission. Merge, installation and production remain separate owner-controlled actions.' : phase?.observing ? 'Wait; Airodrom is still executing or repairing within the approved scope.' : phase?.message || 'Owner inspects diagnostics; no automatic retry is pending.';
+  const nextSafeAction=specialists&&['ready','dispatching','running','verifying'].includes(final.state)?'Wait; sealed specialist work, evaluation and bounded repair advance automatically.':specialists&&final.state==='awaiting_acceptance'?'Automatic completion is pending current policy, protected-action clearance or settlement; no routine manual Acceptance is required.':legacyNextSafeAction;
   return {
     schema_version: 1,
+    ...(specialists?{specialists}:{}),
+    ...(final.envelope.cognitive ? { gateway: require('./opencode-gateway').evidence(bridge, final),
+    cognitive: require('./cognitive-router').evidence(bridge, final, detail, latestVerification, changedFiles) } : {}),
     mission_id: final.id,
     root_mission_id: root.id,
     goal_id: final.goal_id,
@@ -127,8 +132,8 @@ function evidencePackage(bridge, missionId) {
       'Worker summaries are untrusted; only host verification records prove results.',
     ],
     approval_status: approval ? { approval_id: approval.approval_id, state: approval.state, channel: approval.channel, expires_at: approval.expires_at, repair_budget: approval.repair_budget, external_disclosure: approval.external_disclosure } : { state: 'absent' },
-    acceptance_status: final.state === 'completed' ? 'accepted' : (detail.acceptance || []).length ? detail.acceptance[0].decision : 'owner_only_pending',
-    settlement_status: detail.program_contract?.settlement?.state || null,
+    acceptance_status: final.state === 'completed' ? 'accepted' : (detail.acceptance || []).length ? detail.acceptance[0].decision : (specialists?'automatic_pending':'owner_only_pending'),
+    settlement_status: detail.program_contract?.settlement?.state || (specialists?db.prepare('SELECT state FROM cp_mission_settlements WHERE mission_id=?').get(final.id)?.state:null) || null,
     unauthorized_changes: unauthorized,
     git: { pr_created: false, merged: false, installed: false, note: 'Coding workers never commit, push, merge or deploy; those remain owner actions.' },
     worker_summary_untrusted: (detail.results || []).map(r => r.result?.summary).filter(Boolean).slice(-1)[0] || null,
@@ -138,11 +143,11 @@ function evidencePackage(bridge, missionId) {
       tests_passed: tests.length ? tests.every(t => t.status === 'passed') : null,
       security_passed: security.length ? security.every(s => ['passed', 'operator_review'].includes(s.status)) : null,
       repair_needed: repairs > 0,
-      attempts: repairs + 1,
+      attempts: specialists?workerRuns.length:repairs+1,
       original_goal_resumed: !!planId && (final.state === 'awaiting_acceptance' || final.state === 'completed'),
       unauthorized_changes: unauthorized.length > 0,
       pr_created: false, merged: false, installed: false,
-      requires_owner: final.state === 'awaiting_acceptance' ? ['Acceptance'] : final.state === 'completed' ? [] : ['Inspect diagnostics'],
+      requires_owner: specialists&&['ready','dispatching','running','verifying','completed','awaiting_acceptance'].includes(final.state)?[]:final.state === 'awaiting_acceptance' ? ['Acceptance'] : final.state === 'completed' ? [] : ['Inspect diagnostics'],
     },
     next_safe_action: nextSafeAction,
     authority: false,
@@ -169,7 +174,7 @@ function missionEvents(bridge, missionId, { limit = 100 } = {}) {
 
 function compactMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') return {};
-  const keep = ['state', 'previous', 'reason', 'kind', 'provenance', 'agent_id', 'plan_id', 'stage_id', 'repair_mission_id', 'parent_mission_id', 'diagnosis', 'classification', 'attempt', 'max_repairs', 'approval_id', 'result', 'phase', 'tool', 'scope', 'path', 'exit_code', 'termination_verified', 'dispatch_path'];
+  const keep = ['assignment_id', 'worker', 'role', 'repair', 'worker_run_id', 'binding_hash', 'result_hash', 'recommendation', 'state', 'previous', 'reason', 'kind', 'provenance', 'agent_id', 'plan_id', 'stage_id', 'repair_mission_id', 'parent_mission_id', 'diagnosis', 'classification', 'attempt', 'max_repairs', 'approval_id', 'result', 'phase', 'tool', 'scope', 'path', 'exit_code', 'termination_verified', 'dispatch_path'];
   return Object.fromEntries(Object.entries(metadata).filter(([k]) => keep.includes(k)));
 }
 

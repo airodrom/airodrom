@@ -13,7 +13,11 @@ function pattern(value){
 function matches(glob,file){const expression=glob.split('**').map(part=>part.split('*').map(p=>p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('[^/]*')).join('.*');return new RegExp('^'+expression+'$').test(file);}
 function normalizeManifest(input,{workspace,allowedFiles,verification,now=Date.now()}={}){
  object(input,['mission']);const m=input.mission;object(m,['id','version','title','repository','authority','duration','scope','permissions','evidence','settlement','budget']);
- if(m.version!==1)throw Error('Unsupported Mission Manifest version');text(m.id,'manifest id',120);text(m.title,'manifest title',240);
+ if(m.version!==1)throw Error('Unsupported Mission Manifest version');
+ // The host-generated grant UUID is an opaque coordinate, not free text. Its
+ // decimal segments can accidentally satisfy the payment-card checksum.
+ const grantId=typeof m.id==='string'&&/^da-grant-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(m.id);
+ if(!grantId)text(m.id,'manifest id',120);text(m.title,'manifest title',240);
  object(m.repository,['root','branch']);const root=fs.realpathSync(m.repository.root);if(root!==workspace)throw Error('Manifest repository mismatch');text(m.repository.branch,'manifest branch',240);
  if(!/^[a-zA-Z0-9_./-]+$/.test(m.repository.branch)||m.repository.branch.includes('..'))throw Error('Invalid manifest branch');
  object(m.authority,['level']);if(m.authority.level!=='Development')throw Error('Manifest V1 requires Development authority');

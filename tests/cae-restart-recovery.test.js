@@ -6,9 +6,11 @@ const { randomUUID } = require('node:crypto');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { manifest } = require('./fixtures/opencode-fixture.cjs');
 
+// Objectives are human-readable fixture labels, not random identifiers.
+let objectiveSequence = 0;
 function native(f, extra = {}) {
   return f.create({
-    objective: 'Synthetic CAE restart step ' + randomUUID(),
+    objective: 'Synthetic CAE restart step ' + (++objectiveSequence),
     task_type: 'local_files',
     manifest: manifest(f.repo),
     dispatch_policy: {

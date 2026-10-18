@@ -4,7 +4,7 @@ const {fixture}=require('./fixtures/mission-fixture.cjs'),display=require('../sr
 const visibility=require('../src/mission-visibility');
 const url=q=>new URL('http://localhost/api/product/missions?'+q);
 test('Mission activity searches all retained IDs/titles, paginates recent first and distinguishes canonical filters',async t=>{
- const f=await fixture(t),b=f.bridge,created=[];
+ const f=await fixture(t,{opencode:require('./fixtures/opencode-fixture.cjs').runtime(t).options}),b=f.bridge,created=[];
  for(let i=0;i<31;i++){const m=f.create({objective:'Activity fixture '+i});created.push(m.id);b.controlStore.db.prepare('UPDATE cp_missions SET created_at=? WHERE id=?').run(1000+i,m.id);}
  const state=(n,s)=>b.controlStore.db.prepare('UPDATE cp_missions SET state=? WHERE id=?').run(s,created[n]);state(0,'running');state(1,'verifying');state(2,'awaiting_acceptance');state(3,'waiting_for_operator');state(4,'blocked');state(5,'needs_rework');state(6,'completed');
  const page=display.missionHistory(b,url(''));assert.equal(page.total,31);assert.equal(page.limit,15);assert.equal(page.missions.length,15);assert.equal(page.missions[0].id,created[30]);assert.equal(page.has_more,true);
@@ -69,7 +69,7 @@ test('archive and restore are presentation-only and refuse active or review Miss
 });
 test('draft Missions render as registered without inventing worker failure',async t=>{
  const f=await fixture(t),b=f.bridge,server={bridge:b};
- const receipt=await require('../src/assistant-missions').newMission(server,{objective:'Draft only fixture',request_id:require('node:crypto').randomUUID(),explicit:true});
+ const receipt=await require('../src/assistant-missions').newMission(server,{objective:'Draft only fixture',workspace:f.repo,request_id:require('node:crypto').randomUUID(),explicit:true});
  assert.equal(receipt.state,'draft');
  const view=display.missionView(b,b.missions.require(receipt.mission_id,'operator'));
  assert.equal(view.state,'draft');
@@ -87,7 +87,7 @@ test('outcome-first never reports verified success without current verification 
  assert.equal(view.outcome.success,false);
  assert.match(view.outcome.headline,/verification incomplete|Verified|Completed/i);
  assert.equal(view.next_action,null);
- const draft=await require('../src/assistant-missions').newMission({bridge:b},{objective:'Draft outcome',request_id:require('node:crypto').randomUUID(),explicit:true});
+ const draft=await require('../src/assistant-missions').newMission({bridge:b},{objective:'Draft outcome',workspace:f.repo,request_id:require('node:crypto').randomUUID(),explicit:true});
  const d=display.missionView(b,b.missions.require(draft.mission_id,'operator'));
  assert.match(d.outcome.headline,/Registered/);
  assert.equal(d.outcome.success,false);

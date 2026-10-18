@@ -36,16 +36,21 @@ function safe(value) {
     return Object.fromEntries(Object.entries(x).map(([k, v]) => {
       if (parent === 'permissions' && k === 'secrets' && Array.isArray(v) && v.every(flag => ['use', 'production'].includes(flag)))
         return ['restricted_permission_dimension', v];
-      const segments = [...trail, k], gitCoordinate = ['verification_manifest', 'repository', 'head'];
-      const typedGitField = segments.length === 3 && segments.every((key, i) => key === gitCoordinate[i]) ||
-        segments.length === 4 && segments[0] === 'envelope' && segments.slice(1).every((key, i) => key === gitCoordinate[i]);
-      // Git HEAD is a typed host-observed coordinate. Its hexadecimal digits
+      const segments = [...trail, k], coordinatePath = segments[0] === 'envelope' ? segments.slice(1) : segments;
+      const typedGitField = [
+        ['verification_manifest', 'repository', 'head'],
+        ['contract', 'project', 'base_commit_sha'],
+        ['contract', 'audit', 'verifier_baseline', 'base_commit_sha'],
+      ].some(expected => coordinatePath.length === expected.length && coordinatePath.every((key, i) => key === expected[i]));
+      // Git revisions are typed host-observed coordinates. Their hexadecimal digits
       // can coincidentally match a payment-card pattern; free text remains scanned.
       const gitHead = typedGitField && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
+      const grantManifestId = coordinatePath.length === 2 && coordinatePath[0] === 'manifest' && coordinatePath[1] === 'id' &&
+        typeof v === 'string' && /^da-grant-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v);
       const coordinate = typeof v === 'string' && (
         (/(?:^|_)hash$/.test(k) && /^[a-f0-9]{64}$/.test(v)) ||
         (/(?:^|_)(?:id|ref)$|^memoryId$|^taskId$|^runId$/.test(k) && /^(?:sha256:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(v)) ||
-        (x === value && x.kind === 'mission_episodic' && k === 'subject_key' && /^episode\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)) || gitHead
+        (x === value && x.kind === 'mission_episodic' && k === 'subject_key' && /^episode\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)) || gitHead || grantManifestId
       );
       return [k, coordinate ? '[opaque coordinate]' : inspection(v, k, [...trail, k])];
     }));

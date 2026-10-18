@@ -64,6 +64,14 @@
  const stampKnown=t=>{if(!Number.isFinite(t)||t<=0)return null;return new Date(t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});};
  const stateText=s=>({draft:'Registered — execution not started',ready:'Ready to execute',dispatching:'Queued',running:'Running',verifying:'Independent verification',awaiting_acceptance:'Waiting for approval',waiting_for_operator:'Waiting for operator',needs_rework:'Needs rework',blocked:'Blocked',paused:'Paused',completed:'Completed',cancelled:'Cancelled'})[s]||null;
  function phase(m){const wrap=node('div',null,'phase'),track=node('div',null,'track '+(m.progress.mode==='indeterminate'?'active':'paused'));track.setAttribute('role','progressbar');track.setAttribute('aria-label',m.progress.label);if(m.progress.mode==='determinate'){track.setAttribute('aria-valuenow',m.progress.value);track.setAttribute('aria-valuemax',m.progress.maximum);track.setAttribute('aria-valuemin','0');track.classList.add('determinate');track.style.setProperty('--progress',(m.progress.maximum>0?Math.min(100,100*m.progress.value/m.progress.maximum):0)+'%');}const label=(m.display&&m.display.label)||stateText(m.state);if(label)wrap.append(track,node('span',label));else wrap.append(track);return wrap;}
+ function specialistPanel(m){
+   if(!m.specialists)return document.createDocumentFragment();
+   const g=m.specialists,panel=node('section',null,'glass specialist-progress');
+   panel.append(node('h3','Specialist work'),node('p','Automatic completion · repairs '+g.repairs_used+' / '+g.repairs_limit));
+   const list=node('ol');
+   for(const a of g.assignments){const row=node('li');row.append(node('strong',a.worker+' · '+readable(a.role)),node('span',' — '+readable(a.state)),node('small',(a.returned_to_opencode?'Result returned to OpenCode':'Result not yet evaluated')+' · attempts '+a.attempts+' · checks '+readable(a.verification)));list.append(row);}
+   panel.append(list);return panel;
+ }
  function lifecycle(m){
    const panel=node('article',null,'glass live-mission');panel.dataset.missionId=m.id;
    const advancing=['dispatching','running','verifying'].includes(m.state);
@@ -738,7 +746,7 @@
    for(const [label,value]of [['Outcome',outcome.headline],['Worker',m.worker_assigned?m.runtime:null],['Progress',ACTIVE_UI(m.state)?(activity.current_label||m.latest_activity):null],['Elapsed',elapsed],['Created',stampKnown(m.created_at)]]){
      if(!present(value))continue;const fact=node('div');fact.append(node('small',label),node('span',value));summary.append(fact);
    }
-   root.append(summary);
+   root.append(summary,specialistPanel(m));
 
    // Active Missions: unified three-column Live Execution Monitor (reuses Observatory SSE/ledger).
    if(ACTIVE_UI(m.state) || activity.advancing){
@@ -945,6 +953,7 @@ function developerAutonomyView(){
   for(const item of status.policies||[]){
    const card=glass(item.alias||item.policy_id,item.state,'Repository standing consent');
    const detail=node('details');detail.append(node('summary','Inspect policy'),node('p','Repository: '+(item.repository||'Unavailable')),node('p','Workflows: '+(item.workflows||[]).join(', ')),node('p','Workers: '+(item.workers||[]).join(', ')),node('p','Expires: '+(item.expires_at?stamp(item.expires_at):'Unavailable')),node('pre',JSON.stringify(item.budgets||{},null,2)));
+   if(item.cognitive)detail.append(node('p','Automatic planning files: '+item.cognitive.files.join(', ')),node('p','Delegated caller references: '+(item.cognitive.delegated_callers.join(', ')||'Local owner only')),node('p','Planning attempts: '+item.cognitive.planning_attempts+'; execution assignments: '+(item.cognitive.max_assignments||1)+'; repairs: '+(item.cognitive.repair_attempts||0)+(item.cognitive.version>=2?'; every result returns to OpenCode.':'.')));
    card.append(detail);
    if(item.state==='active'&&item.policy_hash)card.append(button('Revoke policy',async()=>{if(!window.confirm('Revoke Developer Autonomy for '+(item.alias||item.policy_id)+'? Active grants will fail closed.'))return;try{await api('/api/assistant/developer-autonomy/revoke',{policy_id:item.policy_id,policy_hash:item.policy_hash,confirmed:true});await refresh();}catch(e){$('notice').textContent=e.message;}}));
    result.append(card);
@@ -954,8 +963,11 @@ function developerAutonomyView(){
   for(const [key,label] of [['alias','Policy alias'],['repository','Exact repository root'],['project_id','Project ID'],['goal_id','Goal ID'],['diff_check','Diff-check task'],['default_tests','Default tests (one per line)'],['workflows','Workflows (comma-separated)'],['duration_days','Duration days (1–90)']]){
    const field=node('label',label);const input=node(key==='default_tests'?'textarea':'input');input.name=key;input.value=draft[key]||'';input.oninput=()=>{draft[key]=input.value;};field.append(input);form.append(field);
   }
+  form.append(node('p','Optional automatic planning: restrict discovery to exact files and delegate only the authenticated caller references you intend to authorize. Revocation, expiry and Emergency STOP stop new work.'));
+  for(const [key,label] of [['cognitive_files','Planning files (one per line; leave empty to disable)'],['cognitive_callers','Delegated caller references (one per line; empty means local owner only)']]){const field=node('label',label),input=node('textarea');input.name=key;input.value=draft[key]||'';input.oninput=()=>{draft[key]=input.value;};field.append(input);form.append(field);}
   const submit=node('button','Review and enroll');submit.type='submit';form.append(submit);
-  form.onsubmit=async e=>{e.preventDefault();const body={alias:draft.alias,repository:draft.repository,project_id:draft.project_id,goal_id:draft.goal_id,diff_check:draft.diff_check||'diff-check',default_tests:(draft.default_tests||'fixture-test').split('\n').map(s=>s.trim()).filter(Boolean),workflows:(draft.workflows||'routine_edit,test,repair').split(',').map(s=>s.trim()).filter(Boolean),duration_days:Number(draft.duration_days||30),workers:['opencode'],confirmed:true};if(!window.confirm('Enroll Developer Autonomy for this exact repository?\n'+JSON.stringify(body,null,2)+'\nProtected merges, deploys and secrets remain separately gated.'))return;submit.disabled=true;try{await api('/api/assistant/developer-autonomy/enroll',body);for(const k of Object.keys(draft))delete draft[k];draft.duration_days='30';draft.workflows='routine_edit,test,repair,feature_branch';draft.diff_check='diff-check';draft.default_tests='fixture-test';await refresh();}catch(err){$('notice').textContent=err.message;}finally{submit.disabled=false;}};
+  const repairField=node('label','Maximum repeated specialist executions for repair (0–2)'),repairInput=node('input');repairInput.type='number';repairInput.name='cognitive_repairs';repairInput.min='0';repairInput.max='2';repairInput.value=draft.cognitive_repairs||'0';repairInput.oninput=()=>{draft.cognitive_repairs=repairInput.value;};repairField.append(repairInput);form.append(repairField);
+  form.onsubmit=async e=>{e.preventDefault();const body={alias:draft.alias,repository:draft.repository,project_id:draft.project_id,goal_id:draft.goal_id,diff_check:draft.diff_check||'diff-check',default_tests:(draft.default_tests||'fixture-test').split('\n').map(s=>s.trim()).filter(Boolean),workflows:(draft.workflows||'routine_edit,test,repair').split(',').map(s=>s.trim()).filter(Boolean),duration_days:Number(draft.duration_days||30),workers:['opencode'],confirmed:true};if(draft.cognitive_files?.trim())body.cognitive={version:3,max_assignments:3,acceptance:'automatic',repair_attempts:Number(draft.cognitive_repairs||0),files:draft.cognitive_files.split('\n').map(s=>s.trim()).filter(Boolean),delegated_callers:(draft.cognitive_callers||'').split('\n').map(s=>s.trim()).filter(Boolean),planning_attempts:2,planning_ms:120000,execution_ms:120000};submit.disabled=true;try{await api('/api/assistant/developer-autonomy/enroll',body);for(const k of Object.keys(draft))delete draft[k];draft.duration_days='30';draft.workflows='routine_edit,test,repair,feature_branch';draft.diff_check='diff-check';draft.default_tests='fixture-test';await refresh();}catch(err){$('notice').textContent=err.message;}finally{submit.disabled=false;}};
   result.append(form);result.append(node('p','Never auto: '+((status.never_auto||[]).join(', ')||'protected operations'),'muted'));return result;
  }
 

@@ -19,7 +19,8 @@ class MissionService {
   get research(){return this._research||(this._research=new (require('./research-mission').ResearchMission)(this));}
   createResearch(input,owner='operator'){return this.research.create(input,owner);}
   create(input,owner='operator'){
-    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','developer_autonomy','data_class','model','worker','development_session_id','repair_of','contract','approval_id','projectless']);
+    object(input,['request_id','project_id','goal_id','objective','workspace','allowed_files','criteria','verification','preferred_agent','fallback_agents','capability_scopes','constraints','priority','fixture_auto_acceptance','dispatch_policy','task_type','continuity','target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary','authority','manifest','coding_plan','automatic_acceptance','risk_auto_acceptance','work_template','developer_autonomy','data_class','model','worker','development_session_id','repair_of','contract','approval_id','projectless','cognitive_request_id']);
+    if(input.cognitive_request_id!==undefined&&owner!=='operator')throw Error('Cognitive Mission binding requires the host');
     if((input.contract!==undefined||input.approval_id!==undefined)&&owner!=='operator')throw Error('Only operator may register a Mission contract or approval');
     if(input.approval_id!==undefined)identifier(input.approval_id);
     if(input.continuity!==undefined&&!['prior_context','current_prompt'].includes(input.continuity))throw Error('Invalid continuity mode');
@@ -91,6 +92,7 @@ class MissionService {
       if(owner!=='operator')throw Error('Only operator may register a corrective Mission');
       identifier(input.repair_of);
       const parent=this.store.requireMission(input.repair_of);
+      if(parent.envelope.cognitive)require('./opencode-gateway').assertRepair(this.bridge,parent);
       if(parent.envelope.developer_autonomy&&fingerprint(input.developer_autonomy||null)!==fingerprint(parent.envelope.developer_autonomy))throw Error('Corrective Mission must retain Developer Autonomy grant');
       if(parent.state!=='needs_rework')throw Error('Corrective Mission requires a failed parent Mission');
       if(parent.project_id!==input.project_id||parent.goal_id!==input.goal_id)throw Error('Corrective Mission Goal scope mismatch');
@@ -140,17 +142,25 @@ class MissionService {
       // worker's tampering can never be re-blessed by re-capturing after the failure.
       contract.audit.verifier_baseline=parentContract?.audit?.verifier_baseline||require('./verifier-baseline').capture(workspace,{allowedFiles:input.allowed_files,verification,baseline});
     }
+    let cognitive=input.cognitive_request_id===undefined?null:require('./cognitive-router').bind(this.bridge,input.cognitive_request_id,input,contract);
+    if(repairOf&&this.store.requireMission(repairOf).envelope.cognitive){
+      const parent=this.store.requireMission(repairOf);
+      const repairBinding=require('./opencode-gateway').assertRepair(this.bridge,parent);
+      const captured=require('./cognitive-integrity').capture(workspace,parent.envelope.cognitive.envelope.permitted_paths);
+      cognitive={...parent.envelope.cognitive,repair_binding:repairBinding,repair_baseline:{permitted_paths:parent.envelope.cognitive.envelope.permitted_paths,git_anchor:captured.head,integrity:captured.integrity},workspace_identity:captured.workspace_identity};
+    }
     const approvalId=input.approval_id||contract?.audit?.approval_id||null;
     if(approvalId&&this.bridge.missionApprovals)this.bridge.missionApprovals.assertBindable(approvalId,{contract,workspace,repair_of:repairOf});
     return this.store.request(owner,input.request_id,{op:'create_mission',...input},()=>{
       this.bridge.developerAutonomy.assertCreation(input);
       const projectMission=projectless?{missionId:randomUUID()}:this.bridge.projects.createMission({goalId:goal.goalId,name:input.developer_autonomy?'['+fingerprint(input.request_id).slice(0,8)+'] '+input.objective.slice(0,160):input.objective.slice(0,180),description:input.objective,acceptanceCriteria:criteria.map(c=>c.description||`Verify ${c.id}`)});
-      const envelope={control_version:2,...(contract?{contract}:{}),...(approvalId?{approval_id:approvalId}:{}),...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(input.developer_autonomy?{developer_autonomy:input.developer_autonomy}:{}),...(this.bridge.globalAutopilot?.enabled?.()?{autopilot:true}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),...(developmentSessionId?{development_session_id:developmentSessionId}:{}),...(repairOf?{repair_of:repairOf}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(projectless?{projectless:true,project_id:null,goal_id:null}:{}),...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
+      const envelope={control_version:2,...(cognitive?{cognitive}:{}),...(contract?{contract}:{}),...(approvalId?{approval_id:approvalId}:{}),...(workerContract?{worker_contract:workerContract,model:preferred+':'+workerContract.model,model_provider:require('./bounded-worker').SPECS[preferred].provider,model_locality:'external',model_route_mode:input.model&&input.model!=='auto'?'MANUAL':'AUTO'}:{}),...(codingPlan?{coding_plan:codingPlan}:{}),...(input.automatic_acceptance?{automatic_acceptance:true}:{}),...(riskPolicy?{risk_auto_acceptance:riskPolicy,data_class:riskPolicy.data_class}:{}),...(input.work_template?{work_template:input.work_template}:{}),...(input.developer_autonomy?{developer_autonomy:input.developer_autonomy}:{}),...(this.bridge.globalAutopilot?.enabled?.()?{autopilot:true}:{}),...(manifest?{manifest}:{}),...(authority?{authority}:{}),...Object.fromEntries(['target_domains','required_memory_keys','required_assurance','maxCostUsdBoundary'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.continuity?{continuity:input.continuity}:{}),...(developmentSessionId?{development_session_id:developmentSessionId}:{}),...(repairOf?{repair_of:repairOf}:{}),route_mode:automatic?'default':'declared',task_type:taskType,...(dispatchPolicy?{dispatch_policy:dispatchPolicy}:{}),fixture_auto_acceptance:fixturePolicy,...(projectless?{projectless:true,project_id:null,goal_id:null}:{}),...(verificationManifest?{verification_manifest:verificationManifest}:{}),kind:'coding',...(preferred==='opencode'?{model:require('./model-worker-router').MODEL,model_provider:'ollama',model_locality:'local',model_route_mode:input.model&&input.model!=='auto'&&input.model!=='local'?'MANUAL':'AUTO'}:{}),objective:input.objective,workspace,allowed_files:input.allowed_files,criteria,verification,preferred_agent:preferred,fallback_agents:fallbacks,capability_scopes:scopes,constraints:input.constraints||'',priority:Number.isInteger(input.priority)?Math.max(0,Math.min(100,input.priority)):50,baseline};
       const task=this.newTask(projectMission.missionId,projectless?undefined:goal.projectId,envelope,owner,1);
       const m=this.store.registerMission({id:projectMission.missionId,projectId:projectless?null:goal.projectId,goalId:projectless?null:goal.goalId,taskId:task.id,owner,envelope,ceiling:{...(authority?{mission_authority:authority}:{}),capability_scopes:scopes,authority:'existing SafetyPolicy and signed authority only',policy_version:this.bridge.capabilityHost.policy.policyVersion}});
       this.db.prepare('INSERT INTO cp_mission_tasks VALUES(?,?,1,NULL,NULL,?)').run(task.id,m.id,Date.now());
       this.bridge.developerAutonomy.bindMission(m);
       this.program.register(m);this.acceptanceEngine.register(m);this.riskAcceptance.register(m,riskPolicy);
+      require('./specialist-gateway').register(this,m);
       if(developmentSessionId)this.bridge.developmentSessions.attach({session_id:developmentSessionId,mission_id:m.id,confirmed:true},owner);
       if(fixturePolicy)this.store.event('fixture.auto_acceptance.authorized',m.id,{policy:fixturePolicy});
       this.store.event('task.created',m.id,{task_id:task.id});return this.detail(m.id,owner);
@@ -169,6 +179,7 @@ class MissionService {
     const bound=this.bridge.developmentSessions?.forMission(id)||null;
     view.development_session_id=m.envelope.development_session_id||bound?.id||null;
     view.development_session=bound?{id:bound.id,branch:bound.branch,worktree:bound.worktree,integration_state:bound.integration_state,assigned_worker:bound.assigned_worker}:null;
+    if(require('./specialist-gateway').enabled(m))view.specialists=require('./specialist-gateway').inspect(this.bridge,m);
     return view;
   }
   dispatch(id,{request_id},owner='operator'){
@@ -178,6 +189,7 @@ class MissionService {
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
   assertAuthority(mission, requirements={}){
+    require('./cognitive-router').assertBound(this.bridge,mission);
     this.bridge.workTemplates.assertMission(mission);
     this.bridge.developerAutonomy.assertDispatch(mission);
     this.bridge.globalAutopilot?.assertMission(mission);
@@ -205,8 +217,10 @@ class MissionService {
     }
   }
   queue(id,decisionId=null){
-    const m=this.store.requireMission(id);this.assertAuthority(m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
+    const m=this.store.requireMission(id);this.assertAuthority(m);if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').queue(this,m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
     if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&!(m.envelope.preferred_agent==='cursor'&&m.envelope.contract)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
+    if(m.envelope.cognitive&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('cognitive_execution_attempts_exhausted');
+    if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
     if(['conversation','browser_research'].includes(m.envelope.kind)&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('Bounded Missions admit one run only; create a fresh Mission.');
     if(m.state==='waiting_for_operator'&&!decisionId)throw Error('Mission requires its Decision answer');
     if(this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','dispatching','running','unknown')").get(id))throw Error('Mission has an active or uncertain dispatch; reconcile it first');
@@ -285,7 +299,7 @@ class MissionService {
         if(choice.selected!==fallback.selected_fallback){requeue();return;}
         route=this.bridge.authorityRuntime?.routing?await this.bridge.authorityRuntime.route(m,await this.agents.refresh()):{selected:choice.selected,reason:'durable_compatible_fallback',transport:'native'};
         if(route.selected!==fallback.selected_fallback)throw Error('Governed fallback requires WAIT and reconciliation');
-      }else route=await this.agents.select(m.envelope);
+      }else route=require('./specialist-gateway').enabled(m)?await require('./specialist-gateway').select(this,m,dispatch):await this.agents.select(m.envelope);
       transaction(this.db,()=>{this.db.prepare('UPDATE cp_dispatches SET route=?,updated_at=? WHERE id=?').run(JSON.stringify(route),Date.now(),dispatch.id);this.store.event('agent.route.planned',m.id,route);});
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
@@ -297,7 +311,7 @@ class MissionService {
       if(m.envelope.manifest&&!m.envelope.worker_contract&&!['host','opencode'].includes(route.selected)&&!governedCursor)throw Error('Mission Manifest requires a qualified bounded native adapter');
       // Existing external adapters do not enforce all six permission dimensions.
       if(m.envelope.authority && !m.envelope.worker_contract&&!['host','opencode'].includes(route.selected)&&!governedCursor)throw Error('Mission authority requires a qualified bounded native adapter');
-      if(m.envelope.authority && m.envelope.dispatch_policy?.native_actions.length)this.assertAuthority(m,{repository:['write'],data:['workspace_write'],filesystem:{write:m.envelope.dispatch_policy.native_actions.map(a=>path.resolve(m.envelope.workspace,a.path))}});
+      if(m.envelope.authority && m.envelope.dispatch_policy?.native_actions.length)this.assertAuthority(m,m.envelope.dispatch_policy.native_actions.every(a=>a.name==='file_read')?{repository:['read'],filesystem:{read:m.envelope.dispatch_policy.native_actions.map(a=>path.resolve(m.envelope.workspace,a.path))}}:{repository:['write'],data:['workspace_write'],filesystem:{write:m.envelope.dispatch_policy.native_actions.map(a=>path.resolve(m.envelope.workspace,a.path))}});
       this.bridge.authorityRuntime?.assertDispatch(m,route);
       if(route.selected==='opencode'||route.selected==='cursor'||m.envelope.worker_contract)return await this.launchOpenCode(dispatch,m,route);
       if(route.selected==='host'&&(fallback||m.envelope.task_type==='local_files'))return await this.launchNative(dispatch,m,fallback||{fallback_policy:m.envelope.dispatch_policy});
@@ -334,7 +348,8 @@ class MissionService {
     const cursor=route.selected==='cursor'&&!m.envelope.worker_contract;
     const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),vendor=!!m.envelope.worker_contract,agentId=vendor?m.envelope.preferred_agent:cursor?'cursor':'opencode',adapter=vendor?this.bridge.workers.get(agentId):cursor?this.bridge.cursorWorker:this.bridge.opencodeAdapter;
     if(cursor&&!adapter)throw Error('worker_execution_unqualified');
-    if(workspaceSnapshot(m.envelope.workspace).hash!==m.envelope.baseline.hash)throw Error('opencode_workspace_changed');
+    const specialist=require('./specialist-gateway').enabled(m)?require('./specialist-gateway').adapterScope(this.bridge,task,agentId):null;
+    if(workspaceSnapshot(m.envelope.workspace).hash!==require('./specialist-gateway').baseline(this.bridge,m,task.id).hash)throw Error('opencode_workspace_changed');
     this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor||cursor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
     if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor||cursor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
     if(cursor&&!m.envelope.contract?.permissions?.external_disclosure?.authorized)throw Error('external_disclosure_unauthorized');
@@ -348,20 +363,25 @@ class MissionService {
         this.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,task.id);task.contextPackId=pack.id;task.assignedAgent=agentId;this.bridge.tasks.save(task);
         this.store.updateRun(runId,{state:'running',processState:vendor?'starting':'alive'});
         this.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,updated_at=? WHERE id=? AND state IN ('queued','dispatching')").run(runId,Date.now(),dispatch.id);
-        this.store.state(m.id,'running');started=true;return pack;
+        if(this.store.getMission(m.id).state!=='running')this.store.state(m.id,'running');require('./specialist-gateway').started(this.bridge,m,task.id,runId);started=true;return pack;
       });
       await this.web.preflight(m,task);
-      const prompt=require('./exact-file-prompt').opencodePrompt(m);
+      if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
+      require('./specialist-gateway').assertFresh(this.bridge,m,task.id);
+      const prompt=specialist?JSON.stringify(require('./specialist-gateway').workerInput(this.bridge,m,task.id)):require('./exact-file-prompt').opencodePrompt(m);
       let output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt,context:{id:pack.id},requestId:`mission:${dispatch.id}`});
+      if(m.envelope.cognitive&&output.result?.web_requests?.length)throw Error('cognitive_external_discovery_not_authorized');
       for(let round=0;output.result?.web_requests?.length;round++){if(round>=2||output.changes.length)throw Error('opencode_web_request_bound');for(const action of output.result.web_requests)await this.web.call(m,task,action);output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt,context:{id:pack.id},requestId:`mission:${dispatch.id}:web:${round}`});}
       if(vendor)this.bridge.workers.assertOutput(this.store.requireMission(m.id),output);
+      if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
+      require('./specialist-gateway').assertFresh(this.bridge,m,task.id);
       this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
       if(task.cancelRequested||task.safetyStop?.latched)throw Error('opencode_cancelled');
       for(const [i,change]of output.changes.entries()){
         if(vendor)this.bridge.workers.assertOutput(this.store.requireMission(m.id),output);
         this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
         const file=path.join(m.envelope.workspace,change.path);
-        if(!m.envelope.allowed_files.includes(change.path)||require('./qualified-coding-adapter').digest(file)!==change.preimage_sha256)throw Error('opencode_preimage_changed');
+        if(!(specialist?specialist.writable:m.envelope.allowed_files).includes(change.path)||require('./qualified-coding-adapter').digest(file)!==change.preimage_sha256)throw Error('opencode_preimage_changed');
         this.bridge.developerAutonomy.assertChanges(this.store.requireMission(m.id),output.changes);
         const applied=await this.bridge.invokeCapability(task.id,{name:'file_write',input:{path:file,content:change.content},requestId:`opencode-apply:${runId}:${i}`});
         if(applied.status!=='completed')throw Error('opencode_apply_not_completed');
@@ -383,6 +403,7 @@ class MissionService {
   }
   async launchNative(dispatch,m,fallback){
     const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),plan=fallback.fallback_policy.native_actions;
+    if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
     // Prior rejected agents may have written allowed_files; only protected paths block fallback.
     const snapshot=workspaceSnapshot(m.envelope.workspace);
     for(const [file,digest]of Object.entries(m.envelope.baseline.files))if(!m.envelope.allowed_files.includes(file)&&snapshot.files[file]!==digest)throw Error('Workspace changed before native fallback');
@@ -403,13 +424,13 @@ class MissionService {
         if(m.envelope.coding_plan)this.codingAdapter.assert(this.store.requireMission(m.id),a);
         if(this.store.getMission(m.id).state==='cancelled'||task.safetyStop?.latched){failed=true;break;}
         const requestId=`native-fallback:${runId}:${i}`;
-        const response=await this.bridge.invokeCapability(task.id,{name:a.name,input:{path:path.join(m.envelope.workspace,a.path),content:a.content},requestId});
+        const response=await this.bridge.invokeCapability(task.id,{name:a.name,input:{path:path.join(m.envelope.workspace,a.path),...(a.name==='file_write'?{content:a.content}:{})},requestId});
         if(['unknown','pending'].includes(response.status))throw Error('Uncertain native fallback');
         if(response.status!=='completed'){failed=true;break;}receipts.push(requestId);
       }
       transaction(this.db,()=>{
         this.store.updateRun(runId,{state:failed?'failed':'completed',processState:'not_started',verified:true,result:{...(m.envelope.coding_plan?{coding_adapter:m.envelope.coding_plan.adapter,coding_plan_hash:fingerprint(m.envelope.coding_plan)}:{}),native_execution_evidence:{run_id:runId,required_execution_kind:'native',completed_invocations:receipts.length,receipt_refs:receipts}}});
-        this.captureResult(runId,{status:failed?'failed':'completed',result:{text:JSON.stringify({summary:failed?'Native plan stopped by policy':'Immutable native file plan completed',changed_files:plan.map(a=>a.path),tests:[],artifacts:[],limitations:[]})}});
+        this.captureResult(runId,{status:failed?'failed':'completed',result:{text:JSON.stringify({summary:failed?'Native plan stopped by policy':'Immutable native file plan completed',changed_files:plan.filter(a=>a.name==='file_write').map(a=>a.path),tests:[],artifacts:[],limitations:[]})}});
       });
     }catch{
       this.store.updateRun(runId,{state:'termination_unverified',processState:'unknown',verified:false,resolution:'reconcile_native_invocation'});
@@ -441,6 +462,7 @@ class MissionService {
   }
   async processResult(row){
     const m=this.store.getMission(row.mission_id),run=this.store.run(row.run_id),result=JSON.parse(row.normalized);
+    if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').processResult(this,row);
     if(m.state==='dispatching')return;
     transaction(this.db,()=>{
       this.db.prepare('UPDATE cp_run_results SET processed_at=? WHERE run_id=? AND processed_at=0').run(Date.now(),run.id);
@@ -466,7 +488,19 @@ class MissionService {
         this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id,mode:m.envelope.kind==='browser_research'?'read':'write'});
         // Disposable self-repair marker: at most one intentional exact-file mismatch before host verify.
         try{const injected=require('./self-repair-fixture').applyControlledFailure(this.store.getMission(m.id));if(injected.applied)this.store.event('self_repair.controlled_failure',m.id,{file:injected.file,authority:false},{runId:run.id});}catch{/* marker absent or invalid */}
-        verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);
+        verified=await this.verifier.verify(this.store.getMission(m.id),run);
+        let evaluationFailed=false,evaluation=null;
+        if(require('./opencode-gateway').enabled(m))try{evaluation=await require('./opencode-gateway').evaluate(this.bridge,this.store.getMission(m.id),run,verified);}catch{evaluationFailed=true;}
+        if(this.store.getMission(m.id).state==='verifying'){
+          this.verifier.persist(m,run,verified);
+          // Failed/unavailable verification already retains the canonical
+          // needs_rework state. Only an otherwise acceptable result can move
+          // from awaiting_acceptance to blocked; no lifecycle bypass is needed.
+          if(this.store.getMission(m.id).state==='awaiting_acceptance'){
+            if(evaluationFailed)this.store.state(m.id,'blocked','OpenCode evaluation unavailable; host verification retained');
+            else if(evaluation&&evaluation.evaluation.recommendation!=='ready')this.store.state(m.id,'blocked','OpenCode requested '+evaluation.evaluation.recommendation+'; no host-verified repair is authorized');
+          }
+        }
       }
       catch(error){if(this.store.getMission(m.id).state==='verifying')this.store.state(m.id,'blocked','Independent verification unavailable');}
       finally{this.store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
@@ -488,7 +522,7 @@ class MissionService {
     const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);
     const receipt=this.store.request(owner,input.request_id,{op:'reverify',id},()=>{
       if(!['needs_rework','awaiting_acceptance'].includes(m.state)||m.envelope.baseline.version!==2)throw Error('V2 failed verification required');
-      const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode','cursor') AND state='completed' AND termination_verified=1 ORDER BY ended_at DESC LIMIT 1").get(id);
+      const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode','cursor') AND state='completed' AND termination_verified=1 AND id IN (SELECT run_id FROM cp_dispatches WHERE mission_id=cp_runs.mission_id) ORDER BY ended_at DESC LIMIT 1").get(id);
       // Unavailable means the verifier did not run. A later pass requires a new implementation dispatch; the unavailable row stays unavailable.
       if(!run||!this.db.prepare("SELECT 1 FROM cp_verifications WHERE mission_id=? AND run_id=? AND result='failed'").get(id,run.id))throw Error('Settled implementation with failed verification required');
       const verificationRun=randomUUID();this.store.startRun({id:verificationRun,taskId:run.task_id,missionId:id,agentId:'host',role:'verifier'});
@@ -519,6 +553,7 @@ class MissionService {
       const workspaceHash=(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash;
       const revisionOk=v&&(v.revision===m.revision||(authorityExpiredBlock&&v.revision<m.revision&&['passed','operator_review'].includes(v.result)));
       if(!v||!revisionOk||workspaceHash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
+      if(input.decision==='accept')require('./opencode-gateway').assertAcceptance(this.bridge,m,v);
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
       if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this.bridge.workers?.assertEvidence(this.store.run(v.run_id));this.bridge.cursorWorker?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');
@@ -540,11 +575,11 @@ class MissionService {
       for(const h of this.db.prepare("SELECT h.run_id FROM cp_codex_handoffs h JOIN cp_runs r ON r.id=h.run_id WHERE r.mission_id=? AND h.state<>'settled'").all(id))this.bridge.codexAdapter.cancelTask(h.run_id);
       this.store.event('mission.stop_requested',id,{});return{mission_id:id,state:'cancelled'};
     });
-    afterCommit(this.db,()=>{this._web?.cancel(id);if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id)){const task=this.bridge.tasks.get(row.task_id);this.bridge.opencodeAdapter?.cancel({task});for(const a of this.bridge.workers?.adapters.values()||[])a.cancel({task});}for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
+    afterCommit(this.db,()=>{this._web?.cancel(id);if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id)){const task=this.bridge.tasks.get(row.task_id);this.bridge.opencodeAdapter?.cancel({task});this.bridge.cursorWorker?.cancel({task});for(const a of this.bridge.workers?.adapters.values()||[])a.cancel({task});}for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
     return result;
   }
   decisionDetails(id){const d=this.store.decision(id);if(!d)throw Error('Decision not found');const m=this.detail(d.mission_id);return{decision:d,mission_objective:m.objective,result:this.db.prepare('SELECT normalized FROM cp_run_results WHERE run_id=?').get(d.run_id)?.normalized||null,verification:m.verifications,risks:['Worker rationale is untrusted; protected approvals are separate.']};}
-  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.riskAcceptance.reconcile();this.schedule();}
+  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(require('./specialist-gateway').recover(this,m))continue;if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.riskAcceptance.reconcile();this.schedule();}
   async close(){this.stopped=true;await this._web?.close();await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();await this.bridge.workers?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
 }
 module.exports={MissionService,relative};

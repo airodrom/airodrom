@@ -143,7 +143,7 @@ test('two isolated processes reconstruct the deterministic resume fixture withou
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'project-memory-v2-resume-'));
   const databasePath = path.join(directory, 'memory.sqlite');
   const missionId = `fixture-${randomUUID()}`;
-  const objective = `Recover immutable objective ${randomUUID()}`;
+  const objective = 'Recover immutable synthetic objective';
   const invoke = (...args) => spawnSync(process.execPath, [resumeFixturePath, ...args], { encoding: 'utf8' });
 
   const recorded = invoke('record', databasePath, missionId, objective);

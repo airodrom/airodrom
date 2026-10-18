@@ -160,6 +160,8 @@ test('governed Missions carry a contract and a bound approval; repairs reuse the
 
 test('zero-setup approve issues exactly one approval bound to the Mission contract and the repair reuses it', async t => {
   const f = await fixture(t, { opencode: require('./fixtures/opencode-fixture.cjs').runtime(t).options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   f.bridge.missionAuthority.initializeOperatorKey();
   require('./fixtures/opencode-fixture.cjs').qualifyCanonical(f.bridge);
   const project = f.bridge.projects.createProject({ name: 'Human Acceptance Exact File', repositories: [f.repo], privacyPolicy: 'local_only' });

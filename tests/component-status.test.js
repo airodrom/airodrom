@@ -9,6 +9,7 @@ const path = require('node:path');
 
 test('component status uses the fixed vocabulary and never reports READY from installation alone', async t => {
   const f = await fixture(t);
+  f.bridge.cursorWorker.readiness = async () => ({installed:false,ready:false,available:false,availability:'unavailable',reason:'fixture_worker_unavailable',tiers:{authenticated:false,qualified:false}});
   const status = await componentStatus(f.bridge);
   for (const c of Object.values(status.components)) assert.ok(STATES.includes(c.state), c.state);
   assert.equal(status.components.airodrom_service.state, 'READY');

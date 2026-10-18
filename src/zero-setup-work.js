@@ -228,15 +228,34 @@ class ZeroSetupWork {
       throw Error('Secrets and private identifiers cannot be work instructions. Use the vault flows.');
     }
     const prior = this.read(request_id);
+    if (!prior || prior.cognitive) {
+      const cognitive = await require('./cognitive-router').prepare(this, { instruction, request_id }, principal);
+      if (cognitive) return cognitive;
+    }
     if (prior) {
       if (prior.principal !== principal) throw Error('Resume the original authenticated handoff session; duplicate execution denied');
-      if (prior.work_spec && prior.instruction !== instruction) throw Error('projectless_request_replay_mismatch');
+      if ((prior.work_spec || prior.projectless || prior.intake_blockers) && prior.instruction !== instruction)
+        throw Error('projectless_request_replay_mismatch');
       if (principal === 'operator' && prior.developer_autonomy_policy_id && prior.state === 'awaiting_approval') return this.activateAutonomy(prior);
       return this.statusView(prior);
     }
     // ask_airodrom / prepare_mission prepare WORK only. Ordinary chat and public-research
     // consent stay on host conversation / Terminal flows; never auto-prepare from chat text.
-    const workSpec = require('./projectless-sandbox').parseWorkSpec(instruction);
+    const sandbox = require('./projectless-sandbox');
+    const workSpec = sandbox.parseWorkSpec(instruction) || sandbox.parseNaturalWorkSpec(instruction);
+    if (!workSpec && sandbox.explicitlyRequestsCursor(instruction)) {
+      // In particular, never let the historical alpha/beta fixture shortcut turn
+      // an explicit Cursor request into an OpenCode dispatch.
+      const record = { version: 1, instruction, clarify: true, authority: false,
+        intake_blockers: ['projectless_exact_two_file_syntax_required'],
+        presentation: { worker: 'cursor', files: [], measurable: false,
+          status: 'Cursor needs explicit bounded files and exact contents' } };
+      this.write(request_id, principal, record, 'clarify');
+      return this.statusView(this.read(request_id));
+    }
+    if (workSpec && workSpec.files.some(file => require('./assistant-intent').secret(file.content) ||
+        require('./private-vault-intent').containsPrivate(file.content)))
+      throw Error('Secrets and private identifiers cannot be work instructions. Use the vault flows.');
     // A strictly validated data packet is bounded work, not conversational text.
     // The same secret/private-content and authenticated-session gates still apply.
     const routed = workSpec ? { kind: 'work' } : require('./assistant-intent').parse(instruction);
@@ -293,10 +312,7 @@ class ZeroSetupWork {
         // Standing local autonomy is not external disclosure or spending consent.
         if (workSpec.worker === 'opencode' && (principal === 'operator' || (handoff && standing)))
           return await this.startBoundedProjectless(this.read(request_id));
-        return { state: 'PREPARED', projectless: true, execution_authorized: false, authority: false,
-          presentation: record.presentation,
-          blockers: workSpec.worker === 'cursor' ? ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'] : ['owner_approval_required'],
-          next_action: workSpec.worker === 'cursor' ? 'authorize_cursor_via_authenticated_local_api' : 'approve_in_terminal_or_control_center' };
+        return { ...this.statusView(this.read(request_id)), state: 'PREPARED', projectless: true };
       }
       if ((principal === 'operator' || (handoff && standing)) && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
       const record = {
@@ -305,7 +321,7 @@ class ZeroSetupWork {
         presentation: { brand: 'AIRODROM', goal: intent.objective, project_name: null, workspace_label: 'task sandbox', files: [], worker: 'task sandbox', verification: 'Host verification remains required', completion_policy: 'Automatic Acceptance still requires independent verification', status: 'Projectless task sandbox prepared' }
       };
       this.write(request_id, principal, record, 'awaiting_approval');
-      return { state: 'PREPARED', projectless: true, message: 'Prepared a task-scoped sandbox. No registered Project was required or selected.', presentation: record.presentation, authority: false, execution_authorized: false, next_action: 'approve_in_terminal_or_control_center' };
+      return { ...this.statusView(this.read(request_id)), state: 'PREPARED', projectless: true };
     }
     const { project, workspace } = scope;
     // Global Autopilot ON: ensure a standing policy for the resolved repo (owner-delegated).
@@ -417,6 +433,7 @@ class ZeroSetupWork {
   }
 
   statusView(record) {
+    if (record.cognitive) return require('./cognitive-router').view(record, this.bridge);
     const live = record.request_id ? this.read(record.request_id) : record;
     const state = live.state || record.state || 'awaiting_approval';
     let outcome = null;
@@ -465,16 +482,37 @@ class ZeroSetupWork {
     }
     const terminalStates = ['verified', 'awaiting_acceptance', 'blocked', 'failed', 'rejected', 'clarify'];
     const phaseTerminal = phase ? !require('./recovery-phase').OBSERVING.has(phase) : terminalStates.includes(state);
-    const cursorApproval = state === 'awaiting_approval' && live.work_spec?.worker === 'cursor';
+    const waiting = state === 'awaiting_approval';
+    const cursorApproval = waiting && live.work_spec?.worker === 'cursor';
+    // A generic task sandbox is not an executable Mission. Approval cannot supply
+    // missing files or verification; keep the original admission guards intact.
+    // Derive this for old durable proposals too, without rewriting their state.
+    const unboundedProjectless = waiting && live.projectless && !live.work_spec &&
+      !/change fixture\.txt from alpha to beta/i.test(live.instruction || '');
+    const ownerIntake = waiting && live.developer_autonomy_policy_id && live.principal !== 'operator';
+    const blockers = live.intake_blockers || (unboundedProjectless
+      ? ['projectless_scope_required', 'measurable_success_criteria_required']
+      : cursorApproval ? ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']
+      : ownerIntake ? ['standing_policy_requires_authenticated_owner_intake']
+      : waiting ? ['owner_approval_required'] : []);
+    if (unboundedProjectless) presentation.status = 'Needs bounded file scope and verification';
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
-      message: state === 'awaiting_approval'
-        ? cursorApproval
+      message: live.intake_blockers
+        ? 'Use Cursor only in a new disposable workspace to create exactly two files: then list each relative path and a JSON-quoted exact content string. Encode newlines as \\n. Unsupported or additional constraints require a new bounded request; approval cannot supply missing scope.'
+        : state === 'awaiting_approval'
+        ? unboundedProjectless
+          ? 'Prepared a task-scoped sandbox. No registered Project was selected. This request has no executable file scope or measurable success criteria; approval alone cannot start it. Provide bounded exact-result files, or name an authorized repository and its exact files. Autopilot and automatic Acceptance do not supply missing scope.'
+          : cursorApproval
           ? 'Cursor requires scoped disclosure and subscription authorization through the authenticated local operator API. The current Terminal and Control Center approval buttons cannot issue this grant.'
+          : ownerIntake
+            ? 'This repository has a standing policy, but MCP intake remains a proposal. Existing standing consent is activated through authenticated owner intake or explicit owner approval; ChatGPT text does not activate it.'
           : 'Airodrom prepared a bounded task. Confirm in the authenticated Terminal with y/N, or Approve this task in Control Center. No file writes or autonomous scheduling occur before that confirmation.'
         : presentation.status,
       presentation,
-      next_action: cursorApproval ? 'authorize_cursor_via_authenticated_local_api' : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
+      blockers,
+      admission: { standard_approval_supported: waiting && !unboundedProjectless && !cursorApproval, authority: false },
+      next_action: live.intake_blockers || unboundedProjectless ? 'define_bounded_projectless_work' : cursorApproval ? 'authorize_cursor_via_authenticated_local_api' : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
       outcome,
       technical: {
         request_id: live.request_id || record.request_id,
@@ -628,6 +666,7 @@ class ZeroSetupWork {
     if (!live) throw Error('Prepared task unavailable');
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
+    if (live.cognitive) return await require('./cognitive-router').approve(this, live, { ...input, channel: input.channel || 'terminal' }, owner);
     if (live.work_spec) return await this.startBoundedProjectless(live, { ...input, owner,
       channel: input.channel || 'terminal' });
     if (input.subscription_execution !== undefined) throw Error('Subscription permission requires an explicit bounded Cursor task');
@@ -748,6 +787,7 @@ class ZeroSetupWork {
     if (live.proposal) {
       try { this.bridge.workTemplates.rejectProposal({ project: live.proposal.project, workspace_alias: live.proposal.workspace_alias, confirmed: true }, 'operator'); } catch { /* optional */ }
     }
+    if (live.cognitive && live.mission_id) this.bridge.missions.cancel(live.mission_id, { request_id: 'cognitive-cancel:' + input.request_id }, owner);
     live.state = 'rejected';
     live.presentation = { ...live.presentation, status: 'Cancelled' };
     this.write(input.request_id, live.principal, live, 'rejected');

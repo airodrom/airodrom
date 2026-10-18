@@ -20,6 +20,9 @@ const STAGES = Object.freeze({
  'approval.requested':['Approval','Protected approval required'], 'approval.revoked':['Approval','Protected approval revoked'], 'approval.required':['Approval','Protected approval required'], 'approval.approved':['Approval','Protected approval granted'],
  'approval.rejected':['Approval','Protected approval rejected'], 'approval.expired':['Approval','Protected approval expired'],
  'agent.completed':['Mission','Worker result received'], 'agent.failed':['Mission','Worker failed'], 'agent.started':['Worker','Worker started'],
+ 'gateway.result_received':['Runtime','Worker result returned to OpenCode'],
+ 'gateway.evaluated':['Runtime','OpenCode evaluation recorded'],
+ 'gateway.unavailable':['Runtime','OpenCode evaluation unavailable'],
  'worker.started':['Worker','Worker started'], 'worker.tool_requested':['Worker','Tool requested'], 'worker.tool_permitted':['Worker','Tool permitted'],
  'worker.tool_denied':['Worker','Tool denied'], 'worker.tool_completed':['Worker','Tool completed'], 'worker.waiting':['Worker','Worker waiting'],
  'worker.failed':['Worker','Worker failed'], 'worker.terminated':['Worker','Worker terminated'],
@@ -52,6 +55,7 @@ const DISPLAY_STAGE = Object.freeze({
  'mission.request_received':'request','mission.created':'request','mission.authority_registered':'request','manifest.registered':'request',
  'context_pack.created':'context','runtime.context.delivered':'context',
  'runtime.qualification.checked':'runtime','agent.route.selected':'runtime',
+ 'gateway.result_received':'verification','gateway.evaluated':'verification','gateway.unavailable':'verification',
  'mission.dispatching':'execution','run.started':'execution','runtime.execution.started':'execution','mission.running':'execution','agent.completed':'execution','agent.failed':'execution',
  'agent.started':'execution','worker.started':'execution','worker.tool_requested':'execution','worker.tool_permitted':'execution','worker.tool_denied':'execution','worker.tool_completed':'execution','worker.waiting':'execution','worker.failed':'execution','worker.terminated':'execution','worker.execution_started':'execution','worker.output_observed':'execution','worker.proxy':'execution','worker.proxy_denied':'execution',
  'fs.file_read':'execution','fs.file_created':'execution','fs.file_modified':'execution','fs.file_deleted':'execution','git.diff_observed':'execution','git.diff.observed':'execution','git.branch.observed':'execution','git.baseline.observed':'execution',
@@ -329,6 +333,12 @@ function missionView(bridge, mission) {
   termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','unknown','not_started'],'not_started')},
   progress:progress({state}),timeline:history,history_truncated:ev.has_more,latest_activity:history.at(-1)?.label||(state==='draft'||state==='ready'?'Registered — execution not started':null),
   archived,actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent,archive:visibility.archiveEligible(mission,bridge)&&!archived,restore:archived}};
+ if(require('./specialist-gateway').enabled(mission)){
+  const graph=require('./specialist-gateway').inspect(bridge,mission);
+  view.specialists={state:enumValue(graph.state,['prepared','running','waiting_acceptance','settled','blocked','needs_rework','cancelled']),concurrency:1,repairs_used:graph.repair_attempts,repairs_limit:mission.envelope.cognitive.envelope.limits.repair_attempts,acceptance:'automatic',assignments:graph.assignments.map((a,i)=>({number:i+1,worker:enumValue(a.worker,['opencode','cursor']),role:enumValue(a.role,['implementation','review','analysis']),operation:enumValue(a.operation,['read','edit']),state:enumValue(a.state,['pending','queued','running','evaluating','ready','failed','unavailable']),attempts:a.attempts.length,returned_to_opencode:!!a.attempts.at(-1)?.evaluation_run_id,verification:a.attempts.at(-1)?.verification?.status||'not_observed'}))};
+  view.actions.accept=false;
+  if(acceptance?.decision==='accept')view.acceptance.mode='automatically_verified';
+ }
  view.autonomous_managed=autonomousManaged(bridge,mission.id);
  view.display=displayStatus(state,{started:!!view.started_at,settled:view.settlement.status==='settled',archived,kind:view.kind});
  view.recovery=recoveryStatus(bridge,mission,view);

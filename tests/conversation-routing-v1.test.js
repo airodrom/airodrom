@@ -40,10 +40,10 @@ for(const canonical of [false,true])test('natural Memory preference writes and e
 });
 for(const canonical of [false,true])test('unscoped Work and explicit Missions persist zero-authority canonical drafts / '+canonical,async t=>{
  const f=await fixture(t);if(canonical)qualifyCanonical(f.bridge);const server={bridge:f.bridge};
- // Natural-language WORK uses ZeroSetupWork: clarify without a unique disposable workspace; never dispatch.
+ // Natural-language WORK prepares an isolated proposal without execution authority; never dispatch.
  const request_id=id(),receipt=await service.submit(server,{message:'Fix this repository',request_id,workspace:f.repo});
- assert.equal(receipt.kind,'zero_setup');assert.equal(receipt.state,'CLARIFY');assert.equal(receipt.execution_authorized,false);
- assert.equal((await service.submit(server,{message:'Fix this repository',request_id,workspace:f.repo})).state,'CLARIFY');
+ assert.equal(receipt.kind,'zero_setup');assert.equal(receipt.state,'PREPARED');assert.equal(receipt.execution_authorized,false);
+ assert.equal((await service.submit(server,{message:'Fix this repository',request_id,workspace:f.repo})).state,'WAIT');
  for(const table of ['cp_missions','cp_mission_tasks','cp_dispatches','cp_runs','cp_leases','cp_acceptances'])assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM '+table).get().n,0,table);
  // Explicit Mission creation still records a zero-authority draft that cannot execute.
  const explicit=await service.submit(server,{message:'Create a Mission',request_id:id()});assert.equal(explicit.state,'draft');assert.equal(f.bridge.missions.require(explicit.mission_id).envelope.explicit_mission,true);
@@ -63,6 +63,8 @@ for(const canonical of [false,true])test('unscoped Work and explicit Missions pe
 });
 test('registered Work template retains exact files, checks and governed verification',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,server={bridge:b};
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
  b.missionAuthority.initializeOperatorKey();qualifyCanonical(b);
  const p=b.projects.createProject({name:'Human Acceptance Exact File',repositories:[f.repo],privacyPolicy:'local_only'});
  b.projects.createGoal({projectId:p.projectId,name:'Exact-file alpha to beta'});

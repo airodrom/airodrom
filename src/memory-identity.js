@@ -11,7 +11,7 @@ const states=new WeakMap();
 const readableStamps=new WeakMap();
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEGACY=/(?:sha256:|arch:|operator_text:)[0-9a-f]{64}|(?:^|[:/._-])[0-9a-f]{64}(?=$|[:/._-])/i;
-const CONTENT_IDS={authority_memory_candidates:'id',authority_memories:'id',authority_context_pack_manifests:'id',authority_context_pack_diffs:'id',authority_memory_conflicts:'id',authority_routing_decisions:'id',authority_runtime_capability_observations:'id',authority_evidence_records:'id',authority_qualification_receipts:'id',personal_memories:'memory_id',architecture_memory_versions:'version_hash',cp_context_packs:'id',cp_candidates:'id',cp_artifacts:'id',authority_artifact_records:'id',chatgpt_events:'record_id',cp_requests:'record_id',cp_invocations:'origin_event_id',cp_provider_requests:'record_id',cp_mission_budget_usage:'record_id',cp_slack_outbox:'id',cp_slack_health_outbox:'id'};
+const CONTENT_IDS={authority_memory_candidates:'id',authority_memories:'id',authority_context_pack_manifests:'id',authority_context_pack_diffs:'id',authority_memory_conflicts:'id',authority_routing_decisions:'id',authority_runtime_capability_observations:'id',authority_evidence_records:'id',authority_qualification_receipts:'id',personal_memories:'memory_id',architecture_memory_versions:'version_hash',cp_context_packs:'id',cp_candidates:'id',cp_artifacts:'id',authority_artifact_records:'id',chatgpt_events:'record_id',cp_requests:'record_id',cp_invocations:'origin_event_id',cp_provider_requests:'record_id',cp_mission_budget_usage:'record_id',cp_mission_program_nodes:'record_id',cp_slack_outbox:'id',cp_slack_health_outbox:'id'};
 const SLACK_INTENTS=['cp_slack_outbox','cp_slack_health_outbox'];
 const exists=(db,t)=>!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
 const q=v=>'"'+v.replaceAll('"','""')+'"';
@@ -88,7 +88,7 @@ function opaqueOrigin(db,table,row,sourceDb){
   if(!sourceDb)return;
   if(!exists(sourceDb,table))throw Error('Retained request origin mismatch');
   const current=sourceDb.prepare(`SELECT * FROM ${q(table)} WHERE ${q(key)}=?`).get(row[key]);
-  const protectedKeys=table==='cp_invocations'?['task_id']:table==='cp_provider_requests'?['run_id']:['mission_id','kind'];
+  const protectedKeys=table==='cp_invocations'?['task_id']:table==='cp_provider_requests'?['run_id']:table==='cp_mission_program_nodes'?['mission_id']:['mission_id','kind'];
   if(!current||protectedKeys.some(k=>current[k]!==row[k]))throw Error('Retained request origin scope mismatch');
 }
 function anchor(db,root,events,sourceDb) {
@@ -107,7 +107,7 @@ function anchor(db,root,events,sourceDb) {
     }
     return origin;
   }
-  if(['cp_invocations','cp_provider_requests','cp_mission_budget_usage'].includes(root.table)){opaqueOrigin(db,root.table,root.row,sourceDb);return root.table+':'+root.row[CONTENT_IDS[root.table]];}
+  if(['cp_invocations','cp_provider_requests','cp_mission_budget_usage','cp_mission_program_nodes'].includes(root.table)){opaqueOrigin(db,root.table,root.row,sourceDb);return root.table+':'+root.row[CONTENT_IDS[root.table]];}
   if(root.table==='cp_requests'){requestOrigin(db,root.row,sourceDb);return 'request-record:'+root.row.record_id;}
   if(root.table==='architecture_memory_versions'&&UUID.test(root.row.origin_event_id||''))return architectureAnchor(db,root.row.origin_event_id,root.row.project_id,sourceDb);
   if(root.table==='personal_memories'&&exists(db,'architecture_memory_versions')){const versions=db.prepare('SELECT origin_event_id,project_id FROM architecture_memory_versions WHERE memory_id=?').all(root.old);if(versions.length===1&&UUID.test(versions[0].origin_event_id||''))return architectureAnchor(db,versions[0].origin_event_id,versions[0].project_id,sourceDb);}
@@ -196,7 +196,7 @@ function migrate(db,{sourceDb=null,now=Date.now(),beforeApply=null,beforeRewrite
     if(!sourceDb&&exists(db,'architecture_memory_versions')){state.writing=true;try{require('./architecture-memory').prepareIdentityMigration(db,{now});}finally{state.writing=false;}}
     if(exists(db,'chatgpt_events'))require('./chatgpt-events').prepareIdentitySchema(db);
     if(exists(db,'cp_invocations')){const prep=require('./control-plane-store');prep.prepareInvocationIdentitySchema(db);prep.prepareLegacyInvocationOrigins(db,{sourceDb});for(const row of db.prepare('SELECT * FROM cp_invocations').all())opaqueOrigin(db,'cp_invocations',row,sourceDb);}
-    for(const [table,module,schema,prepare]of [['cp_provider_requests','./provider-gateway','prepareProviderRequestIdentitySchema','prepareLegacyProviderRequestIdentities'],['cp_mission_budget_usage','./mission-program','prepareBudgetIdentitySchema','prepareLegacyBudgetIdentities']])if(exists(db,table)){const prep=require(module);if(sourceDb)prep[schema](db);else prep[prepare](db);for(const row of db.prepare(`SELECT * FROM ${q(table)}`).all())opaqueOrigin(db,table,row,sourceDb);}
+    for(const [table,module,schema,prepare]of [['cp_provider_requests','./provider-gateway','prepareProviderRequestIdentitySchema','prepareLegacyProviderRequestIdentities'],['cp_mission_budget_usage','./mission-program','prepareBudgetIdentitySchema','prepareLegacyBudgetIdentities'],['cp_mission_program_nodes','./mission-program','prepareNodeIdentitySchema','prepareLegacyNodeIdentities']])if(exists(db,table)){const prep=require(module);if(sourceDb)prep[schema](db);else prep[prepare](db);for(const row of db.prepare(`SELECT * FROM ${q(table)}`).all())opaqueOrigin(db,table,row,sourceDb);}
     if(exists(db,'cp_requests')){const prep=require('./control-plane-store');if(sourceDb)prep.prepareRequestIdentitySchema(db);else prep.prepareLegacyRequestIdentities(db);const requests=db.prepare('SELECT * FROM cp_requests').all();for(const row of requests)requestOrigin(db,row,sourceDb);}
     const all=rows(db),found=roots(db,all),events=auditRows(db);if(!verifyLedgerChain(events).valid)throw Error('Identity source audit integrity invalid');
     validateLineage(db);
@@ -287,7 +287,7 @@ function migrate(db,{sourceDb=null,now=Date.now(),beforeApply=null,beforeRewrite
   finally{aliases.clear();}
 }
 function qualification(db) {
-  try{if(exists(db,'memory_identity_meta')&&db.prepare('SELECT version FROM memory_identity_meta WHERE id=1').get()?.version!==1)throw Error('Unsupported identity version');if(exists(db,'memory_identity_lineage'))validateLineage(db);const missingOrigins=exists(db,'cp_requests')?(!db.prepare('PRAGMA table_info(cp_requests)').all().some(c=>c.name==='record_id')?db.prepare('SELECT count(*) n FROM cp_requests').get().n:db.prepare('SELECT record_id FROM cp_requests').all().filter(r=>!UUID.test(r.record_id||'')).length):0;let otherOrigins=0;for(const table of ['cp_invocations','cp_provider_requests','cp_mission_budget_usage'])if(exists(db,table)){const key=CONTENT_IDS[table];otherOrigins+=db.prepare(`PRAGMA table_info(${q(table)})`).all().some(c=>c.name===key)?db.prepare(`SELECT ${q(key)} id FROM ${q(table)}`).all().filter(r=>!UUID.test(r.id||'')).length:db.prepare(`SELECT count(*) n FROM ${q(table)}`).get().n;}const all=rows(db),found=roots(db,all),progress=exists(db,'memory_identity_progress')?db.prepare('SELECT state FROM memory_identity_progress WHERE id=1').get():null;
+  try{if(exists(db,'memory_identity_meta')&&db.prepare('SELECT version FROM memory_identity_meta WHERE id=1').get()?.version!==1)throw Error('Unsupported identity version');if(exists(db,'memory_identity_lineage'))validateLineage(db);const missingOrigins=exists(db,'cp_requests')?(!db.prepare('PRAGMA table_info(cp_requests)').all().some(c=>c.name==='record_id')?db.prepare('SELECT count(*) n FROM cp_requests').get().n:db.prepare('SELECT record_id FROM cp_requests').all().filter(r=>!UUID.test(r.record_id||'')).length):0;let otherOrigins=0;for(const table of ['cp_invocations','cp_provider_requests','cp_mission_budget_usage','cp_mission_program_nodes'])if(exists(db,table)){const key=CONTENT_IDS[table];otherOrigins+=db.prepare(`PRAGMA table_info(${q(table)})`).all().some(c=>c.name===key)?db.prepare(`SELECT ${q(key)} id FROM ${q(table)}`).all().filter(r=>!UUID.test(r.id||'')).length:db.prepare(`SELECT count(*) n FROM ${q(table)}`).get().n;}const all=rows(db),found=roots(db,all),progress=exists(db,'memory_identity_progress')?db.prepare('SELECT state FROM memory_identity_progress WHERE id=1').get():null;
     return {legacy_content_identifiers:found.length,unanchored_request_records:missingOrigins+otherOrigins,migration_required:found.length>0||missingOrigins+otherOrigins>0||!!progress&&progress.state!=='complete',state:progress?.state||'unmigrated',authority:false};
   }catch{return{legacy_content_identifiers:null,migration_required:true,state:'failed',safe_error_class:'unknown_identity_schema',authority:false};}
 }
@@ -319,7 +319,7 @@ function assertReadable(db) {
   const tableColumns=new Map(tables(db).map(t=>[t,columns(db,t)])),present=t=>tableColumns.has(t);
   if(exists(db,'memory_identity_meta')){if(db.prepare('SELECT version FROM memory_identity_meta WHERE id=1').get()?.version!==1)throw Error('Unsupported identity migration version');validateLineage(db);if(db.prepare('SELECT state FROM memory_identity_progress WHERE id=1').get()?.state!=='complete')throw Error('Identity migration incomplete; retained reads denied');}
   // Never trust a copied COMPLETE disposition without examining identities.
-  for(const table of ['cp_invocations','cp_provider_requests','cp_mission_budget_usage'])if(present(table)){const key=CONTENT_IDS[table],cols=tableColumns.get(table);if(!cols.some(c=>c.name===key)||db.prepare(`SELECT ${q(key)} id FROM ${q(table)}`).all().some(r=>!UUID.test(r.id||'')))throw Error('Retained request origin unavailable; explicit migration required');}
+  for(const table of ['cp_invocations','cp_provider_requests','cp_mission_budget_usage','cp_mission_program_nodes'])if(present(table)){const key=CONTENT_IDS[table],cols=tableColumns.get(table);if(!cols.some(c=>c.name===key)||db.prepare(`SELECT ${q(key)} id FROM ${q(table)}`).all().some(r=>!UUID.test(r.id||'')))throw Error('Retained request origin unavailable; explicit migration required');}
   if(present('cp_requests')){const cols=tableColumns.get('cp_requests');if(!cols.some(c=>c.name==='record_id')||db.prepare('SELECT record_id FROM cp_requests').all().some(r=>!UUID.test(r.record_id||'')))throw Error('Request origin unavailable; explicit source migration required');}
   for(const [table,column]of Object.entries(CONTENT_IDS))if(present(table))for(const row of db.prepare(`SELECT ${q(column)} value FROM ${q(table)}`).all())if(legacy(row.value))throw Error('Legacy content-derived identity requires migration');
   for(const [table,cols]of tableColumns){

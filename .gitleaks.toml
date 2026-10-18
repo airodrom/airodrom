@@ -57,3 +57,10 @@ condition = "AND"
 paths = ["(^|/)tests/capability\\-expansion\\-v2\\.test\\.js$"]
 regexTarget = "secret"
 regexes = ["^ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210$"]
+
+# Exact captured token only. No path condition: gitleaks 8.30.1 path+regex
+# allowlists suppressed other credentials in the same file.
+[[allowlists]]
+description = "Non-secret JavaScript property comparison; exact captured text only"
+regexTarget = "secret"
+regexes = ["^a\\.idempotency_key===$"]

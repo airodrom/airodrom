@@ -13,6 +13,34 @@ const { diagnose: discoveryDiagnose } = require('../src/mcp-discovery');
 
 function server(f) { return new McpTools(f.bridge); }
 
+test('MCP inspect reports missing projectless scope instead of offering an unusable approval', async t => {
+  const f = await fixture(t), mcp = server(f), request_id = 'scope-' + randomUUID();
+  f.bridge.globalAutopilot.enable({ request_id: 'enable-' + randomUUID(), confirmed: true }, 'operator');
+  const prepared = await mcp.call('prepare_mission', { objective: 'Audit the unrelated parser and implement a fix.', request_id }, { name: 'chatgpt', version: '1' });
+  const record = f.bridge.zeroSetupWork.read(request_id);
+  t.after(() => fs.rmSync(record.workspace, { recursive: true, force: true }));
+  assert.equal(prepared.state, 'PREPARED');
+  const inspected = await mcp.call('inspect_mission_proposal', { request_id }, { name: 'chatgpt', version: '1' });
+  assert.equal(inspected.state, 'WAIT');
+  assert.equal(inspected.execution_authorized, false);
+  assert.equal(inspected.approval.standard_approval_supported, false);
+  assert.equal(inspected.approval.channel, null);
+  assert.equal(inspected.next_action, 'define_bounded_projectless_work');
+  assert.deepEqual(inspected.blockers, ['projectless_scope_required', 'measurable_success_criteria_required']);
+  const cursorRequest = 'cursor-' + randomUUID();
+  await mcp.call('prepare_mission', { objective: 'AIRODROM_WORK_V1\n' + JSON.stringify({ version: 1, worker: 'cursor',
+    files: [{ path: 'result.txt', content: 'expected\n' }] }), request_id: cursorRequest }, { name: 'chatgpt', version: '1' });
+  const cursorRecord = f.bridge.zeroSetupWork.read(cursorRequest);
+  t.after(() => fs.rmSync(cursorRecord.workspace, { recursive: true, force: true }));
+  const cursor = await mcp.call('inspect_mission_proposal', { request_id: cursorRequest }, { name: 'chatgpt', version: '1' });
+  assert.equal(cursor.execution_authorized, false);
+  assert.equal(cursor.approval.standard_approval_supported, false);
+  assert.equal(cursor.approval.channel, 'authenticated local operator API with scoped disclosure and subscription grant');
+  assert.deepEqual(cursor.blockers, ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 0);
+});
+
 test('discovery advertises the coordinator catalog version and honest client limitations', () => {
   const d = discoveryDiagnose({});
   assert.equal(d.schema_version, 2);
@@ -23,6 +51,8 @@ test('discovery advertises the coordinator catalog version and honest client lim
 
 test('prepare_mission → inspect_mission_proposal returns a measurable, approval-gated proposal; ChatGPT text cannot approve', async t => {
   const f = await fixture(t, { opencode: runtime(t).options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   f.bridge.missionAuthority.initializeOperatorKey();
   qualifyCanonical(f.bridge);
   const project = f.bridge.projects.createProject({ name: 'Human Acceptance Exact File', repositories: [f.repo], privacyPolicy: 'local_only' });

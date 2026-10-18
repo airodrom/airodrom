@@ -70,8 +70,8 @@ function permitRedaction(db,table) {
 }
 function replayKeys(db,table) {
   const columns=validateSchema(db,table),primary=columns.filter(c=>c.pk).sort((a,b)=>a.pk-b.pk).map(c=>c.name);
-  if(UUID_REPLAY_KEYS[table]){
-    const key=UUID_REPLAY_KEYS[table];
+  if(UUID_REPLAY_KEYS[table]||table==='cp_mission_program_nodes'){
+    const key=UUID_REPLAY_KEYS[table]||'record_id';
     if(!columns.some(c=>c.name===key)||fields[table].classification[key]!=='A')throw Error('Request replay identity requires explicit migration');
     const ids=db.prepare(`SELECT ${quoted(key)} FROM ${quoted(table)}`).all().map(r=>r[key]);
     if(ids.some(id=>!UUID.test(id||''))||new Set(ids).size!==ids.length)throw Error('Request replay identity requires explicit migration');
