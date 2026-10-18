@@ -332,7 +332,7 @@
    const root=node('div',null,'live-activity-v2');
    const head=node('div',null,'la-head');
    head.append(node('div',null,'la-title-block'));
-   head.firstChild.append(node('h2','Live Activity & Logs'),node('p','Mission-centered work monitoring. Progress is host-observed only. Unsaved typing is not observable. Cursor Agent is unqualified.','muted'));
+   head.firstChild.append(node('h2','Live Activity & Logs'),node('p','Mission-centered work monitoring. Progress is host-observed only. Unsaved typing is not observable. OpenCode and Cursor tool names appear only when those workers emit structured events.','muted'));
    const status=node('div',null,'la-stream-status');
    const connLabel=paused?'Paused — display may be stale':obsConnection==='connected'?'Live':obsConnection==='connecting'?'Connecting…':'Polling — stream reconnecting';
    status.append(chip(paused?'waiting':obsConnection==='connected'?'Ready':'Degraded'),node('span',connLabel+(livePausedStale&&paused?' · stale':''),'muted'));
@@ -587,12 +587,15 @@
  }
  function observatoryFeed(list,limit=80,chronological=false){
    const ol=node('ol',null,'obs-feed');
-   const items=[...(list||[])].filter(e=>!obsFilter||e.category===obsFilter).filter(e=>!obsQuery||(`${e.label} ${e.path||''} ${e.tool||''} ${e.job||''}`).toLowerCase().includes(obsQuery.toLowerCase())).slice(-limit);if(!chronological)items.reverse();
+   const items=[...(list||[])].filter(e=>!obsFilter||e.category===obsFilter).filter(e=>!obsQuery||(`${e.label} ${e.path||''} ${e.tool||''} ${e.job||''} ${e.agent_id||''}`).toLowerCase().includes(obsQuery.toLowerCase())).slice(-limit);if(!chronological)items.reverse();
    for(const e of items){
      const li=node('li',null,'obs-item entry'+(e.branch==='attention'?' attention':''));
      li.dataset.eventId=e.event_id||String(e.sequence||e.timestamp_ms);
      const head=node('div',null,'obs-item-head');
      head.append(node('time',stamp(e.timestamp_ms)),node('span',e.category,'obs-cat'),node('strong',e.label));
+     if(e.agent_id)head.append(node('span',e.agent_id,'chip muted'));
+     if(e.timing==='mid_run')head.append(node('span','live','chip ready'));
+     else if(e.timing==='post_execution'||e.timing==='end_of_run')head.append(node('span',e.timing.replaceAll('_',' '),'chip muted'));
      if(e.writer_class)head.append(node('span',e.writer_class.replaceAll('_',' '),'chip muted'));
      li.append(head);
      if(e.path||e.tool||e.job||e.exit_code!=null||e.branch||e.project){
@@ -610,6 +613,88 @@
      ol.append(li);
    }
    return ol.children.length?ol:empty('No observed events in this filter. Progress is never inferred.');
+ }
+ /** Unified Live Execution Monitor for active Missions — three-column Observatory layout. */
+ function executionMonitor(m,obs,activity,outcome,workerObserved){
+   const wrap=node('div',null,'execution-monitor');
+   const pulse=node('section',null,'obs-pulse'+(workerObserved||activity.advancing?' live':''));
+   pulse.append(node('h3','Live Execution Monitor'));
+   const telem=activity.telemetry||(obs?.signals?.mid_run_worker?'mid_run_events':obs?.events?.length?'post_execution_observations':'none');
+   const statusLine=paused?'Updates paused':failures?'Disconnected — retrying':obsConnection==='connected'?'Connected — live events':obsConnection==='connecting'?'Connecting':'Polling';
+   pulse.append(node('p',statusLine+' · Last observation: '+stampKnown(obs?.observed_at||m.observed_at),'muted'));
+   if(telem==='none'&&!workerObserved)pulse.append(node('p','No further telemetry is available for this Mission yet.','muted'));
+   else if(telem==='post_execution_observations')pulse.append(node('p','Showing post-execution host observations. Mid-run worker tool events appear only when the assigned worker emits them.','muted'));
+   else if(telem==='mid_run_events')pulse.append(node('p','Receiving mid-run worker events. Tool names are sanitized; arguments and private reasoning are never shown.','muted'));
+   const counters=node('div',null,'live-facts obs-summary');
+   for(const [label,value]of [
+     ['Status',readable(m.state)||outcome.headline],
+     ['Worker',m.worker_assigned?(m.runtime||activity.worker||'assigned'):'not assigned'],
+     ['Files',activity.files_changed!=null?String(activity.files_changed):(obs?.files?.length?String(new Set((obs.files||[]).map(e=>e.path).filter(Boolean)).size):'0')],
+     ['Tests',((activity.tests_passed||0)+(activity.tests_failed||0))?`${activity.tests_passed||0} pass · ${activity.tests_failed||0} fail`:(obs?.tests?.length?String(obs.tests.length):null)],
+     ['Elapsed',activity.elapsed_s!=null?safeNum(activity.elapsed_s,' s'):null],
+     ['Telemetry',telem==='mid_run_events'?'real-time':telem==='post_execution_observations'?'post-run':'none']
+   ]){
+     if(!present(value))continue;const fact=node('div');fact.append(node('small',label),node('span',value));counters.append(fact);
+   }
+   pulse.append(counters);wrap.append(pulse);
+
+   const grid=node('div',null,'obs-grid');
+   const left=node('section',null,'glass obs-col obs-left');
+   left.append(node('h3','Mission timeline'));
+   left.append(node('p',workerObserved?'Worker process observed alive.':'No actively executing worker confirmed.','muted'));
+   const timelineEvents=obs?.events||m.timeline||[];
+   left.append(timelineEvents.length?observatoryFeed(timelineEvents,120,true):empty('Waiting for host events…'));
+   left.append(node('small','Chronological ledger. Expand rows for sanitized command/test output.','muted'));
+
+   const center=node('section',null,'glass obs-col obs-center');
+   center.append(node('h3','Activity'));
+   const filters=node('div',null,'filters');
+   const findLabel=node('label','Filter'),find=node('input');
+   find.type='search';find.placeholder='File, tool, worker…';find.value=obsQuery;find.dataset.focusKey='exec-mon-search';
+   find.oninput=()=>{obsQuery=find.value;render();};findLabel.append(find);filters.append(findLabel);
+   const categoryLabel=node('label','Category'),categorySelect=node('select');
+   categorySelect.setAttribute('aria-label','Event category');categorySelect.dataset.focusKey='exec-mon-category';
+   for(const name of ['','Mission','Worker','Runtime','Command','File','Git','Test','Capability','Verification','Approval','Settlement','System']){
+     const option=node('option',name||'All');option.value=name;categorySelect.append(option);
+   }
+   categorySelect.value=obsFilter;categorySelect.onchange=()=>{obsFilter=categorySelect.value;render();};
+   categoryLabel.append(categorySelect);filters.append(categoryLabel);center.append(filters);
+   const follow=button(obsFollow?'Follow: On':'Follow: Off',()=>{obsFollow=!obsFollow;render();});
+   follow.setAttribute('aria-pressed',String(obsFollow));follow.dataset.focusKey='exec-mon-follow';center.append(follow);
+   const activityList=[...(obs?.worker||[]),...(obs?.commands||[]),...(obs?.tests||[])];
+   const activitySrc=activityList.length?activityList:(obs?.events||[]).filter(e=>['Worker','Runtime','Command','Test','Capability'].includes(e.category));
+   const logs=node('div',null,'live-log-window');logs.dataset.logMission=m.id;logs.tabIndex=0;logs.setAttribute('role','region');logs.setAttribute('aria-label','Live activity');
+   logs.append(activitySrc.length?observatoryFeed(activitySrc,80,true):empty('No mid-run activity observed yet.'));
+   logs.onscroll=()=>{if(logs.isConnected&&obsFollow&&logs.scrollHeight-logs.clientHeight-logs.scrollTop>24){obsFollow=false;render();}};
+   logs.dataset.restoreScroll=obsFollow?String(Number.MAX_SAFE_INTEGER):'0';
+   center.append(logs);
+   if(obs?.observation_boundary){
+     const b=obs.observation_boundary;
+     center.append(node('p',`Boundary · tools: ${b.worker_tools||'unknown'} · files: ${b.files||'host'} · real-time: ${b.real_time_vs_post||'unspecified'}`,'privacy'));
+   }
+
+   const right=node('section',null,'glass obs-col obs-right');
+   right.append(node('h3','Files & verification'));
+   const files=obs?.files||[];
+   if(!files.length)right.append(empty('No host-measured file changes yet.'));
+   else{
+     const ul=node('ul',null,'obs-files');
+     for(const e of files.slice(-24).reverse()){
+       const li=node('li');
+       const lines=[e.lines_added!=null?'+'+e.lines_added:'',e.lines_removed!=null?'−'+e.lines_removed:''].filter(Boolean).join(' ');
+       li.append(node('strong',e.path||e.label),node('small',(e.category||'')+(lines?' · '+lines:'')+' · '+(stamp(e.timestamp_ms)||'')));
+       if(e.path)li.append(button('Diff',()=>loadDiff(m.id,e.path)));
+       ul.append(li);
+     }
+     right.append(ul);
+   }
+   const diffKey=[...diffCache.keys()].find(k=>k.startsWith(m.id+':'));
+   if(diffKey){const d=diffCache.get(diffKey);right.append(node('h3','Diff · '+d.path),node('pre',d.diff,'diff-view'));}
+   right.append(glass('Verification',readable(m.verification.status)||'Not observed',m.verification.current?'Current':'Not current'));
+   right.append(glass('Acceptance',readable(m.acceptance.status)||'Not applicable',m.actions.accept?'Decision required':null));
+   if((obs?.tests||[]).length)right.append(node('h3','Tests'),observatoryFeed(obs.tests,12,true));
+   grid.append(left,center,right);wrap.append(grid);
+   return wrap;
  }
  // Keep open details panels stable across periodic polling and SSE updates.
  function persistentMissionPanel(mission,key,label,content,onChange){
@@ -654,6 +739,13 @@
      if(!present(value))continue;const fact=node('div');fact.append(node('small',label),node('span',value));summary.append(fact);
    }
    root.append(summary);
+
+   // Active Missions: unified three-column Live Execution Monitor (reuses Observatory SSE/ledger).
+   if(ACTIVE_UI(m.state) || activity.advancing){
+     root.append(executionMonitor(m,obs,activity,outcome,workerObserved));
+     root.append(node('p',(obs?.limitations||['Execution Monitor shows sanitized host observations only.']).join(' '),'privacy'));
+     return root;
+   }
 
    const tabs=node('div',null,'mission-tabs detail-tabs');tabs.setAttribute('role','tablist');
    const tabDefs=[['Outcome','Outcome'],['Live Logs','Live Logs'],['Worker','Worker'],['Files & Git','Files'],['Tests','Tests'],['Verification','Verification'],['Audit','Audit']];

@@ -78,12 +78,13 @@ Logical erasure does not prove forensic deletion of physical media, WAL/free pag
 
 Secret patterns and dependency advisory databases cannot prove the absence of every unknown secret or vulnerability. License inventory describes observed upstream terms and preserves notices; it is not a legal ownership opinion. GitHub Private Vulnerability Reporting is the sole confidential vulnerability channel; the owner must enable/verify it immediately upon public visibility switch. If unavailable, reporters wait and keep sensitive details private. This publication step is not a pre-publication hardening blocker.
 
-## Live Agent Observatory V1
+## Live Agent Observatory V1 / Live Execution Monitor V1
 
 - Continuous filesystem watching is unavailable; file create/modify/delete evidence is host-measured after the worker turn.
-- OpenCode mid-run streams expose tool names only — not arguments, file contents, or model reasoning.
+- OpenCode and Cursor mid-run streams expose tool names only when those workers emit structured events — not arguments, file contents, or model reasoning. Absence of a tool event is not fabricated.
 - Diff panels are Mission-scoped and size-capped; out-of-scope paths never appear.
-- Empty activity panes show "Detailed activity unavailable." instead of synthetic progress.
+- Empty activity / “no further telemetry” states are explicit; progress percentages are never invented.
+- Live Execution Monitor three-column UI is source-ready; do not treat it as live until managed install verifies the running SHA and browser behavior during an actual Mission.
 - Installing Observatory into a running service requires an owner-authorized restart; `live_cutover_authorized` remains false until then.
 
 ## WhatsApp Inbound V1 / Meta live connection

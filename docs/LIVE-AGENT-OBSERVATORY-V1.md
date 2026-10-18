@@ -1,10 +1,10 @@
 # Live Agent Observatory V1
 
-Control Center Mission detail is a three-column Live Observatory:
+Control Center Mission detail uses Observatory projection for live and recorded Mission activity. **Live Execution Monitor V1** ([LIVE-EXECUTION-MONITOR-V1.md](LIVE-EXECUTION-MONITOR-V1.md)) mounts the three-column layout for active Missions:
 
-- **Left** — Mission timeline and execution stages
-- **Center** — current activity, elapsed time, heartbeat, live command/worker stream
-- **Right** — files, Git diff, worker details, tests, verification/acceptance
+- **Left** — Mission timeline (chronological ledger events)
+- **Center** — filtered activity, connection state, observation boundary
+- **Right** — files, Git diff, tests, verification/acceptance
 
 Overview shows active Missions, working agents, waiting Approvals, recent failures, current operations, and system readiness.
 
@@ -23,19 +23,21 @@ Hidden pages and paused feeds stop SSE. Events are deduplicated by `event_id` an
 
 | Event class | Source | Timing |
 | --- | --- | --- |
-| `worker.started` / `worker.terminated` | OpenCode adapter | Mid-run / end of turn |
-| `worker.tool_requested` / `worker.tool_completed` | OpenCode NDJSON `onLine` | Mid-run (tool name only) |
-| `fs.file_*` | Host measurement of allowed paths | After worker turn |
+| `worker.started` / `worker.terminated` | OpenCode adapter; Cursor `observeCursorEvent` | Mid-run / end of turn |
+| `worker.tool_requested` / `worker.tool_completed` | OpenCode NDJSON `onLine`; Cursor stream-json when emitted | Mid-run (tool name only) |
+| `fs.file_*` | Host measurement of allowed paths | After worker turn (`timing: post_execution`) |
 | `git.diff_observed` | Host Git measurement | After worker turn |
 | `shell.command.*` / `test.*` | Governed job ledger | When jobs register outcomes |
 | Mission lifecycle STAGES | Product observability projection | Continuous ledger |
 
+Snapshot `version: 2` adds file/test counters and `activity.telemetry` (`mid_run_events` | `post_execution_observations` | `none`).
+
 ## Observation boundary
 
 - Continuous filesystem watch: **unavailable** — file creates/modifies/deletes are host-measured after the worker turn.
-- Mid-run tool **names** are observed from OpenCode NDJSON; arguments, prompts, and hidden reasoning are never stored.
+- Mid-run tool **names** come from OpenCode NDJSON and Cursor stream-json when those workers emit them; arguments, prompts, and hidden reasoning are never stored.
 - Diff viewer: Mission `allowed_files` only, capped at 200 lines / 24 KiB.
-- Empty center stream shows **Detailed activity unavailable.** rather than inventing progress.
+- Empty activity / no telemetry states say so explicitly rather than inventing progress.
 
 ## Activation (owner-authorized only)
 
