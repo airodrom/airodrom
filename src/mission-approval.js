@@ -16,6 +16,30 @@ const CHANNELS = new Set(['terminal', 'control_center', 'fixture']);
 const MAX_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TTL_MS = 2 * 60 * 60 * 1000;
 
+// Billing visibility is not permission. This is a separate, explicit operator
+// decision to permit a finite subscription-backed run with unobservable cost.
+// It promises invocation/time limits, NEVER an unenforceable monetary cap.
+function subscriptionExecution(input, contract, channel) {
+  if (input === undefined || input === null) return null;
+  object(input, ['provider', 'acknowledge_unknown_cost', 'max_invocations', 'max_runtime_ms']);
+  if (channel === 'fixture' || input.provider !== 'cursor' || input.acknowledge_unknown_cost !== true)
+    throw Error('subscription_explicit_authorization_required');
+  if (contract.execution.preferred_worker !== 'cursor' || contract.execution.mode !== 'sandboxed_headless' ||
+      !contract.permissions.external_disclosure.authorized ||
+      !contract.permissions.external_disclosure.providers.includes('cursor'))
+    throw Error('subscription_scope_mismatch');
+  if (contract.budget.max_actual_spend_usd !== undefined && contract.budget.max_actual_spend_usd !== null)
+    throw Error('subscription_monetary_cap_unenforceable');
+  if (!Number.isSafeInteger(input.max_invocations) || input.max_invocations < 1 ||
+      input.max_invocations > Math.min(12, contract.budget.max_worker_invocations))
+    throw Error('subscription_invocation_bound');
+  if (!Number.isSafeInteger(input.max_runtime_ms) || input.max_runtime_ms < 1000 ||
+      input.max_runtime_ms > Math.min(600000, contract.budget.max_wall_clock_ms))
+    throw Error('subscription_runtime_bound');
+  return { provider: 'cursor', acknowledge_unknown_cost: true,
+    max_invocations: input.max_invocations, max_runtime_ms: input.max_runtime_ms };
+}
+
 class MissionApprovals {
   constructor(bridge) {
     this.bridge = bridge;
@@ -40,6 +64,15 @@ class MissionApprovals {
       revoked_at INTEGER, revoked_reason TEXT,
       bound_missions TEXT NOT NULL DEFAULT '[]',
       summary TEXT NOT NULL
+    )`);
+    // Reservations consume the allowance even when launch fails or the host dies.
+    // Restart/replay must never silently refund and execute a paid request twice.
+    this.db.exec(`CREATE TABLE IF NOT EXISTS cp_subscription_invocations(
+      approval_id TEXT NOT NULL, request_id TEXT NOT NULL, mission_id TEXT NOT NULL,
+      scope_fingerprint TEXT NOT NULL, started_at INTEGER NOT NULL,
+      deadline_at INTEGER NOT NULL, state TEXT NOT NULL CHECK(state IN ('reserved','settled')),
+      outcome TEXT, settled_at INTEGER,
+      PRIMARY KEY(approval_id,request_id)
     )`);
   }
 
@@ -75,11 +108,12 @@ class MissionApprovals {
    */
   issue(input, owner = 'operator') {
     if (owner !== 'operator') throw Error('Authenticated local operator required');
-    object(input, ['request_id', 'channel', 'contract', 'plan_id', 'goal_id', 'confirmed', 'ttl_ms', 'summary']);
+    object(input, ['request_id', 'channel', 'contract', 'plan_id', 'goal_id', 'confirmed', 'ttl_ms', 'summary', 'subscription_execution']);
     identifier(input.request_id);
     if (input.confirmed !== true) throw Error('Explicit owner approval required');
     if (!CHANNELS.has(input.channel)) throw Error('Unknown approval channel');
     const contract = require('./mission-contract').assertIntact(input.contract);
+    const subscription = subscriptionExecution(input.subscription_execution, contract, input.channel);
     const ttl = input.ttl_ms ?? DEFAULT_TTL_MS;
     if (!Number.isSafeInteger(ttl) || ttl < 60000 || ttl > MAX_TTL_MS) throw Error('Approval window must be between one minute and 24 hours');
     if (input.plan_id !== undefined) identifier(input.plan_id);
@@ -94,10 +128,13 @@ class MissionApprovals {
       repair_budget: contract.budget.max_repair_attempts,
       production: 'No access',
       git: 'No commits, pushes, merges or deployments',
+      ...(subscription ? { subscription_execution: subscription } : {}),
     };
     const existing = this.db.prepare('SELECT * FROM cp_mission_approvals WHERE request_id=?').get(input.request_id);
     if (existing) {
-      if (existing.scope_fingerprint !== contract.scope_fingerprint || existing.principal !== owner) throw Error('approval_replay_denied');
+      if (existing.scope_fingerprint !== contract.scope_fingerprint || existing.principal !== owner ||
+          JSON.stringify(JSON.parse(existing.summary).subscription_execution || null) !== JSON.stringify(subscription))
+        throw Error('approval_replay_denied');
       return { ...this.view(existing.approval_id), duplicate: true };
     }
     const now = this.now();
@@ -167,6 +204,81 @@ class MissionApprovals {
     return r;
   }
 
+  /** Inspect a grant against current host records, never a worker-supplied object. */
+  subscriptionFor(missionId) {
+    const mission = this.store.requireMission(identifier(missionId));
+    const contract = require('./mission-contract').assertIntact(mission.envelope.contract);
+    if (mission.envelope.preferred_agent !== 'cursor' || !mission.envelope.approval_id)
+      throw Error('BLOCKED_SPEND_AUTHORIZATION');
+    const approval = this.assertDispatch(mission);
+    if (!approval || approval.principal !== 'operator' || approval.state !== 'active')
+      throw Error('BLOCKED_SPEND_AUTHORIZATION');
+    const grant = subscriptionExecution(approval.summary.subscription_execution, contract, approval.channel);
+    if (!grant) throw Error('BLOCKED_SPEND_AUTHORIZATION');
+    if (mission.envelope.maxCostUsdBoundary !== undefined) throw Error('subscription_monetary_cap_unenforceable');
+    if (mission.state !== 'running')
+      throw Error('subscription_mission_not_running');
+    if (!Number.isSafeInteger(contract.identity.created_at) || !Number.isSafeInteger(contract.identity.expires_at) ||
+        this.now() >= contract.identity.expires_at)
+      throw Error('subscription_expired');
+    return { mission, contract, approval, grant };
+  }
+
+  /** Atomic, finite admission; no retry on a used request, even after restart. */
+  reserveSubscription(missionId, requestId, timeoutMs) {
+    identifier(requestId);
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 600000)
+      throw Error('subscription_runtime_bound');
+    return transaction(this.db, () => {
+      const { mission, contract, approval, grant } = this.subscriptionFor(missionId);
+      if (this.db.prepare('SELECT 1 FROM cp_subscription_invocations WHERE approval_id=? AND request_id=?').get(approval.approval_id, requestId))
+        throw Error('subscription_invocation_replay_denied');
+      const used = this.db.prepare('SELECT count(*) n FROM cp_subscription_invocations WHERE approval_id=?').get(approval.approval_id).n;
+      if (used >= grant.max_invocations) throw Error('subscription_invocations_exhausted');
+      const now = this.now();
+      const deadline = Math.min(now + timeoutMs, now + grant.max_runtime_ms, approval.expires_at,
+        contract.identity.expires_at, contract.identity.created_at + contract.budget.max_wall_clock_ms);
+      if (!Number.isSafeInteger(deadline) || deadline - now < 1000) throw Error('subscription_expired');
+      this.db.prepare(`INSERT INTO cp_subscription_invocations
+        (approval_id,request_id,mission_id,scope_fingerprint,started_at,deadline_at,state)
+        VALUES(?,?,?,?,?,?,'reserved')`).run(approval.approval_id, requestId, mission.id, contract.scope_fingerprint, now, deadline);
+      this.store.event('subscription.execution.reserved', mission.id, {
+        approval_id: approval.approval_id, request_id: requestId, deadline_at: deadline,
+        billing_observability: 'UNKNOWN_SUBSCRIPTION', authority: false,
+      });
+      return Object.freeze({ approval_id: approval.approval_id, request_id: requestId,
+        mission_id: mission.id, deadline_at: deadline });
+    });
+  }
+
+  /** Re-read before launch, periodically while running, and before result publication. */
+  assertSubscription(reservation) {
+    const row = this.db.prepare('SELECT * FROM cp_subscription_invocations WHERE approval_id=? AND request_id=?')
+      .get(reservation?.approval_id || '', reservation?.request_id || '');
+    if (!row || row.state !== 'reserved' || row.mission_id !== reservation.mission_id ||
+        row.deadline_at !== reservation.deadline_at) throw Error('BLOCKED_SPEND_AUTHORIZATION');
+    const { mission, contract, approval, grant } = this.subscriptionFor(row.mission_id);
+    if (approval.approval_id !== row.approval_id || contract.scope_fingerprint !== row.scope_fingerprint)
+      throw Error('subscription_scope_mismatch');
+    if (this.now() >= row.deadline_at || row.deadline_at > row.started_at + grant.max_runtime_ms)
+      throw Error('subscription_expired');
+    return { row, mission };
+  }
+
+  settleSubscription(reservation, outcome) {
+    if (!['completed', 'failed', 'cancelled', 'unknown'].includes(outcome)) throw Error('subscription_outcome_invalid');
+    return transaction(this.db, () => {
+      const changed = this.db.prepare(`UPDATE cp_subscription_invocations SET state='settled',outcome=?,settled_at=?
+        WHERE approval_id=? AND request_id=? AND mission_id=? AND state='reserved'`)
+        .run(outcome, this.now(), reservation.approval_id, reservation.request_id, reservation.mission_id).changes;
+      if (changed) this.store.event('subscription.execution.settled', reservation.mission_id, {
+        approval_id: reservation.approval_id, request_id: reservation.request_id,
+        outcome, billing_observability: 'UNKNOWN_SUBSCRIPTION', authority: false,
+      });
+      return { settled: changed === 1, cost_observed: 'UNKNOWN_SUBSCRIPTION', authority: false };
+    });
+  }
+
   /** Whether an authorized repair may be created for a failed Mission under its approval. */
   allowRepair(failed, { repairs = 0 } = {}) {
     const approvalId = failed.envelope.approval_id;
@@ -215,4 +327,4 @@ class MissionApprovals {
   }
 }
 
-module.exports = { MissionApprovals, CHANNELS, MAX_TTL_MS, DEFAULT_TTL_MS };
+module.exports = { MissionApprovals, CHANNELS, MAX_TTL_MS, DEFAULT_TTL_MS, subscriptionExecution };

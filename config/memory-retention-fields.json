@@ -3994,6 +3994,31 @@
       "summary": "B"
     }
   },
+  "cp_subscription_invocations": {
+    "fields": [
+      "approval_id",
+      "request_id",
+      "mission_id",
+      "scope_fingerprint",
+      "started_at",
+      "deadline_at",
+      "state",
+      "outcome",
+      "settled_at"
+    ],
+    "source": "src/mission-approval.js",
+    "classification": {
+      "approval_id": "A",
+      "request_id": "A",
+      "mission_id": "A",
+      "scope_fingerprint": "A",
+      "started_at": "A",
+      "deadline_at": "A",
+      "state": "A",
+      "outcome": "A",
+      "settled_at": "A"
+    }
+  },
   "cp_developer_autonomy_policies": {
     "fields": [
       "policy_id",
