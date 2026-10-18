@@ -62,8 +62,8 @@ function fixture(t) {
     missions: { assertAuthority(m) { b.missionApprovals.assertDispatch(m); if (m.state !== 'running') throw Error('Mission stopped'); } },
     controlContext: { inspect: () => ({ run_id: 'synthetic-run' }) } };
   b.missionApprovals = new MissionApprovals(b);
-  const workspace = path.join(root, 'workspace');
-  fs.mkdirSync(workspace);
+  fs.mkdirSync(path.join(root, 'workspace'));
+  const workspace = fs.realpathSync(path.join(root, 'workspace'));
   for (const file of ['first.txt', 'second.txt']) fs.writeFileSync(path.join(workspace, file), 'pending\n');
   const c = seal({ project: { workspace, project_id: null },
     identity: { created_at: now, expires_at: now + 600000, goal_id: null },
