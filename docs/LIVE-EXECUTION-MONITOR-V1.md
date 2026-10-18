@@ -65,3 +65,26 @@ Until installed and browser-verified on the running service, this feature is **s
 - [Live Agent Observatory V1](LIVE-AGENT-OBSERVATORY-V1.md)
 - [ADR 0036](adr/0036-live-agent-observatory-v1.md)
 - [Known limitations](KNOWN-LIMITATIONS.md)
+
+## Running installation evidence (2026-10-18)
+
+| Item | Value |
+| --- | --- |
+| Merged PR | [#146](https://github.com/airodrom/airodrom/pull/146) |
+| Installed SHA | `d88d6f3e8e71d99f163338ee05c84190139ca405` |
+| Install tree | `…/airodrom-reconcile/install/airodrom-main-d88d6f3e8e71` |
+| Rollback checkpoint | `~/.airodrom/rollback-checkpoints/pre-d88d6f3e8e71-20261018T170256Z` |
+| Service | healthy after managed cutover |
+
+### Progressive mid-run proof
+
+Mission `fb0880af-2938-44f2-bccd-60a5a6a11017` (OpenCode `AIRODROM_WORK_V1`, three files): authenticated Observatory polls while `state=running` observed `activity.telemetry=mid_run_events`, then `worker.tool_*` events (`live_while_active: true`, 67 samples). Mission `ddd972cb-f986-40c0-90ea-2b08dcbaba2f` retained 12 tool/start events with timestamps before `finished_at` and `observation_boundary.worker_tools=opencode_ndjson_mid_run`.
+
+### Control Center assets
+
+Authenticated GET `/control-hub.js` on the running install includes `executionMonitor` / `Live Execution Monitor`; `/control-hub.css` includes `.obs-grid`. Stale “Cursor Agent is unqualified” copy is absent. Operator browser sessions must use the private launch link from `product-control open` / macOS menu (query-token paste into an automation browser is not an authorized session).
+
+### Focused tests at merge
+
+`node --test tests/live-observatory-v1.test.js` — 11/11 including Cursor progressive capture and UI contracts.
+
