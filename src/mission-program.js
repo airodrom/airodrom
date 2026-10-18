@@ -64,11 +64,15 @@ class MissionProgram {
  assertAcceptance(mission,verificationId){if(!mission.envelope.manifest)return;this.assert(mission);if(mission.envelope.kind==='browser_research')this.service.research.assertAcceptance(mission,verificationId);const r=this.db.prepare('SELECT * FROM cp_mission_reviews WHERE mission_id=? AND verification_id=?').get(mission.id,verificationId);if(!r||!['passed','operator_review'].includes(r.result)||r.workspace_hash!==(mission.envelope.kind==='browser_research'?this.service.research.safeSnapshot(mission):workspaceSnapshot(mission.envelope.workspace)).hash)throw Error('Mission Review Broker evidence missing, failed or stale');}
  settle(id,decision){
  const work=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='cp_work_bindings'").get()&&this.db.prepare('SELECT 1 FROM cp_work_bindings WHERE mission_id=?').get(id);
- if(!this.contract(id)&&!work)return;
+ const mission=this.store.requireMission(id);
+ // Projectless / envelope-contract Missions have no program manifest row, but Control Center
+ // still needs a settlement receipt after Acceptance (otherwise UI stays "awaiting Settlement").
+ const projectlessSettle=!!(mission.envelope.projectless||mission.envelope.contract);
+ if(!this.contract(id)&&!work&&!projectlessSettle)return;
  if(!this.db.prepare('SELECT 1 FROM cp_acceptances WHERE mission_id=? AND decision=?').get(id,decision))throw Error('Settlement requires canonical Acceptance');
- if(this.store.requireMission(id).state!==(decision==='accept'?'completed':'needs_rework'))throw Error('Settlement requires accepted mission state');
+ if(mission.state!==(decision==='accept'?'completed':'needs_rework'))throw Error('Settlement requires accepted mission state');
  if(work&&decision==='accept')this.bridge.workExecution.assertEvidence(id);
- if(work)this.db.prepare("INSERT OR IGNORE INTO cp_mission_settlements VALUES(?,NULL,'waiting_acceptance','Work evidence requires Acceptance',?)").run(id,this.now());
+ if(work||projectlessSettle)this.db.prepare("INSERT OR IGNORE INTO cp_mission_settlements VALUES(?,NULL,'waiting_acceptance','Work evidence requires Acceptance',?)").run(id,this.now());
  this.db.prepare('UPDATE cp_mission_settlements SET state=?,recommendation=?,updated_at=? WHERE mission_id=?').run(decision==='accept'?'settled':'needs_rework',decision==='accept'?'Accepted locally; no merge or deployment performed':'Operator requested rework',this.now(),id);
  this.store.event('mission.settled',id,{state:decision==='accept'?'settled':'needs_rework'});
  }

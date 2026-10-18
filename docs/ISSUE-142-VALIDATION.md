@@ -194,6 +194,40 @@ Keep issue #142 open until those receipts exist. No live installation, service r
 real Cursor/OpenCode execution, paid provider request or live Acceptance is established
 by this receipt.
 
+## Live installation and Cursor Mission receipts (2026-10-18)
+
+Host install cut over to `94870768552a77aa9d92e1df61aa78011d4e6230` (PR #144 on main)
+under managed checkpoint `pre-94870768552a-20261018T162912Z`. Focused source suites on
+that SHA were 44/44. Service health after cutover: admission open, OpenCode Ready,
+Cursor governed worker ready/authenticated/qualified with
+`spend: UNKNOWN_SUBSCRIPTION` and `spend_authorization: mission_scoped_owner_grant_required`.
+
+Live two-file Cursor Mission (not OpenCode substitute):
+
+| Field | Value |
+| --- | --- |
+| Mission | `d2b100bd-1df9-4957-82a7-cb2a531ec335` |
+| Worker run | `e3281d70-f601-4519-93c7-20e590cfb3de` (`agent_id=cursor`, `termination_verified=1`) |
+| Verification | `6647c77d-e575-4302-a331-f79733a6fb92` (`passed`, checker `airodrom:host-verifier`) |
+| Acceptance | `b1895dc1-ea75-4da1-ba76-0c65ba0fd72b` (`accept`) |
+| Subscription | invocation `settled` / `completed` under scoped owner grant (`max_invocations=1`, `max_runtime_ms=120000`, unknown cost acknowledged) |
+| Files | `alpha.txt` / `beta.txt` exact host bytes (`alpha-one\n`, `beta-two\n`) |
+| Projects | count unchanged (25 → 25); `project_id`/`goal_id` null |
+| Leases / sandbox | released; disposable workspace removed after Acceptance |
+
+Prepare used authenticated MCP `prepare_mission` with `AIRODROM_WORK_V1`; grant used
+`POST /api/assistant/zero-setup/approve` with `subscription_execution`. Control Center
+on the new origin showed Connected, Workers with `cursor · qualified`, and the Mission
+listed under Recent as Cursor work.
+
+Follow-up source repairs after that live run (this branch): chat intent routes
+`AIRODROM_WORK_V1` as WORK; Cursor dispatch no longer fail-closes solely because
+`lastReadiness` was never probed; projectless Acceptance writes a settlement receipt so
+CC can show settled; product status caches Cursor readiness. Focused suites after those
+fixes: 50/50 (`projectless-work`, `projectless-bounded-work`,
+`projectless-mission-integration`, `cursor-spend-admission`,
+`cursor-subscription-retention`).
+
 ## Historical evidence
 
 The initial repair recorded 28 focused tests passing on Node 22.16.0 plus syntax checks

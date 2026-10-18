@@ -276,9 +276,24 @@ Before marking **LIVE RESOLVED**, record:
 6. Billing remains unknown unless independently observed; actual grant/consumption
    and any monetary limitation are recorded honestly.
 
+### Observed live receipts (2026-10-18)
+
+- Installed SHA: `94870768552a77aa9d92e1df61aa78011d4e6230` (PR #144); checkpoint
+  `pre-94870768552a-20261018T162912Z`.
+- Mission `d2b100bd-1df9-4957-82a7-cb2a531ec335`; Cursor run
+  `e3281d70-f601-4519-93c7-20e590cfb3de` (`termination_verified`); verifier
+  `6647c77d-e575-4302-a331-f79733a6fb92` (`passed`); Acceptance
+  `b1895dc1-ea75-4da1-ba76-0c65ba0fd72b` (`accept`); subscription invocation settled;
+  exact `alpha.txt`/`beta.txt`; projectless; leases released; sandbox removed.
+- Billing stayed `UNKNOWN_SUBSCRIPTION`; grant was scoped (`1` invocation / `120000` ms)
+  with unknown cost acknowledged. Control Center Connected; Cursor route qualified.
+- Follow-up source (chat WORK_V1 routing, cold `lastReadiness` dispatch, projectless
+  settlement receipt) is recorded in the [validation receipt](ISSUE-142-VALIDATION.md).
+  ChatGPT handoff prepare_mission session alignment shipped earlier in PR #141.
+
 Record installed SHA, date, Mission/Run/verifier/Acceptance IDs and remaining limitations
-here or in a linked closeout receipt only after observing them. Until then, keep issue
-#142 open. A merged source fix is not an installed or execution-proven fix.
+here or in a linked closeout receipt only after observing them. A merged source fix is
+not an installed or execution-proven fix until the checklist above has host receipts.
 
 ## Documentation and regression rule
 

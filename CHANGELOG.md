@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Route `AIRODROM_WORK_V1` packets as WORK in chat intent; probe Cursor readiness before projectless dispatch; treat unprobed `lastReadiness` as contract-ok until launch/execute; write settlement receipts for projectless Acceptance so Control Center can show settled; cache Cursor readiness from product status.
 - Classify Expanded Autonomy control-plane tables in the Memory retention registry so identity validation no longer treats `cp_expanded_autonomy*` as unclassified stores after schema ensure.
 
 ### Added

@@ -292,7 +292,7 @@ class ZeroSetupWork {
         this.write(request_id, principal, record, 'awaiting_approval');
         // Standing local autonomy is not external disclosure or spending consent.
         if (workSpec.worker === 'opencode' && (principal === 'operator' || (handoff && standing)))
-          return this.startBoundedProjectless(this.read(request_id));
+          return await this.startBoundedProjectless(this.read(request_id));
         return { state: 'PREPARED', projectless: true, execution_authorized: false, authority: false,
           presentation: record.presentation,
           blockers: workSpec.worker === 'cursor' ? ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'] : ['owner_approval_required'],
@@ -572,7 +572,7 @@ class ZeroSetupWork {
     return { state: 'DISPATCHED', projectless: true, execution_authorized: true, mission_id: mission.id, workspace: scope.workspace, presentation: record.presentation, authority: false, message: 'Projectless mission dispatched to OpenCode. No registered Project was created.' };
   }
 
-  startBoundedProjectless(live, confirmation = null) {
+  async startBoundedProjectless(live, confirmation = null) {
     const sandbox = require('./projectless-sandbox');
     const spec = sandbox.normalizeWorkSpec(live.work_spec);
     const external = spec.worker === 'cursor';
@@ -596,6 +596,10 @@ class ZeroSetupWork {
           subscription_execution: confirmation.subscription_execution }, 'operator');
         this.bridge.missionApprovals.bind(approval.approval_id, mission.id, 'operator');
         live.approval_id = approval.approval_id;
+        // Cold processes have no lastReadiness; probe before queue/assertAuthority.
+        if (this.bridge.cursorWorker) {
+          this.bridge.cursorWorker.lastReadiness = await this.bridge.cursorWorker.readiness();
+        }
       }
       if ((this.bridge.projects.listProjects() || []).length !== before) throw Error('Projectless execution must not register a Project');
       live.dispatch_attempted = true;
@@ -624,7 +628,7 @@ class ZeroSetupWork {
     if (!live) throw Error('Prepared task unavailable');
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
-    if (live.work_spec) return this.startBoundedProjectless(live, { ...input, owner,
+    if (live.work_spec) return await this.startBoundedProjectless(live, { ...input, owner,
       channel: input.channel || 'terminal' });
     if (input.subscription_execution !== undefined) throw Error('Subscription permission requires an explicit bounded Cursor task');
     if (live.developer_autonomy_policy_id) return this.activateAutonomy(live);
