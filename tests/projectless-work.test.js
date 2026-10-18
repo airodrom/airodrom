@@ -74,6 +74,18 @@ test('operator settings and projectless preparation do not select a project or a
   });
 });
 
+test('AIRODROM_WORK_V1 packets route as WORK through assistant chat intent', () => {
+  const packet = 'AIRODROM_WORK_V1\n' + JSON.stringify({
+    version: 1,
+    worker: 'cursor',
+    files: [{ path: 'alpha.txt', content: 'alpha-one\n' }, { path: 'beta.txt', content: 'beta-two\n' }]
+  });
+  const parsed = intent.parse(packet);
+  assert.equal(parsed.kind, 'work');
+  assert.equal(parsed.objective, packet.trim());
+  assert.equal(intent.parse('hello there').kind, 'conversation');
+});
+
 test('governed Cursor stays selectable only when qualified, and local work stays on OpenCode', async () => {
   const ready = { ready: true, available: true, version: '2026.09.28-64d2043', auth_state: 'credential_file', reason: null, tiers: { qualified: true } };
   const catalog = await router.inspect({

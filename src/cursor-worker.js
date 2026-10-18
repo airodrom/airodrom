@@ -278,7 +278,12 @@ class CursorWorker {
     if (c.permissions.personal_memory?.mode !== 'none' || c.permissions.vault_access?.mode !== 'none') return false;
     if (!mission.envelope.approval_id) return false;
     if (readiness) return readiness.ready === true;
-    return this.lastReadiness?.ready === true || !!this.options.fixtureExecutable;
+    if (this.options.fixtureExecutable) return true;
+    // Contract checks above already passed. A cold process has no lastReadiness until
+    // agents.refresh() or execute(); blocking here rejects an otherwise ready worker.
+    // Live readiness is still enforced at launch (after refresh) and inside execute().
+    if (!this.lastReadiness) return true;
+    return this.lastReadiness.ready === true;
   }
 
   stageCredential(root) {
