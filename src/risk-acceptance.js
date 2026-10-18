@@ -198,6 +198,7 @@ class RiskAcceptance {
 
   evaluate(id) {
     const m = this.store.requireMission(id);
+    if(require('./rollback-compatibility').unsupported(m))return{accepted:false,reason:'unsupported_cognitive_source'};
     const deny = reason => ({ accepted: false, reason });
     // Manual / emergency always blocks new automatic Acceptance, including DA and preauthorized risk rows.
     try {
@@ -277,6 +278,7 @@ class RiskAcceptance {
   }
 
   attempt(id) {
+    if(require('./rollback-compatibility').unsupported(this.store.requireMission(id)))return{accepted:false,reason:'unsupported_cognitive_source'};
     return transaction(this.db, () => {
       const result = this.evaluate(id);
       if (!result.accepted) {

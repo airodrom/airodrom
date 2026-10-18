@@ -2314,7 +2314,8 @@
       "node_id",
       "mission_id",
       "input",
-      "state"
+      "state",
+      "record_id"
     ],
     "source": "src/mission-program.js",
     "classification": {
@@ -2322,7 +2323,8 @@
       "node_id": "B",
       "mission_id": "A",
       "input": "B",
-      "state": "A"
+      "state": "A",
+      "record_id": "A"
     }
   },
   "reasoning_admissions": {

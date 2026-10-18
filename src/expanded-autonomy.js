@@ -496,6 +496,7 @@ class ExpandedAutonomy {
   attemptDeveloperAutonomyAccept(id) {
     const deny = reason => ({ accepted: false, reason });
     const m = this.bridge.controlStore.requireMission(id);
+    if(require('./rollback-compatibility').unsupported(m))return{accepted:false,reason:'unsupported_cognitive_source'};
     if (!m.envelope?.developer_autonomy) return deny('not_developer_autonomy');
     const gate = this.mayAutoAccept(m);
     if (!gate.allow) return deny(gate.reason || 'expanded_autonomy_blocked');

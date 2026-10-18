@@ -8,6 +8,7 @@ const {repositoryRoot}=require('./control-execution');
 const {MissionAgents}=require('./mission-agents');
 const {MissionVerifier}=require('./mission-verifier');
 const {normalizeResult}=require('./mission-result');
+const rollback=require('./rollback-compatibility');
 function relative(value){text(value,'file path',300);if(path.isAbsolute(value)||value.split(/[\\/]/).some(p=>!p||p==='.'||p==='..'||p==='.git')||/(^|\/)(\.env|\.ssh|credentials|secrets)/i.test(value))throw Error('Unsafe Mission file path');return value;}
 class MissionService {
   constructor(bridge){this.bridge=bridge;this.store=bridge.controlStore;this.db=this.store.db;this.db.exec('CREATE TABLE IF NOT EXISTS cp_continuity_checks(run_id TEXT PRIMARY KEY,mission_id TEXT NOT NULL,status TEXT NOT NULL,evidence TEXT NOT NULL,checked_at INTEGER NOT NULL)');this.program=new (require('./mission-program').MissionProgram)(this);this.codingAdapter=new (require('./qualified-coding-adapter').QualifiedCodingAdapter)(this);this.acceptanceEngine=new (require('./deterministic-acceptance').DeterministicAcceptance)(this);this.riskAcceptance=new (require('./risk-acceptance').RiskAcceptance)(this);this.agents=new MissionAgents(bridge,this.store);this.verifier=new MissionVerifier(bridge,this.store);this.busy=false;this.stopped=false;}
@@ -91,7 +92,7 @@ class MissionService {
     if(input.repair_of!==undefined){
       if(owner!=='operator')throw Error('Only operator may register a corrective Mission');
       identifier(input.repair_of);
-      const parent=this.store.requireMission(input.repair_of);
+      const parent=this.store.requireMission(input.repair_of);rollback.assertSupported(parent);
       if(parent.envelope.cognitive)require('./opencode-gateway').assertRepair(this.bridge,parent);
       if(parent.envelope.developer_autonomy&&fingerprint(input.developer_autonomy||null)!==fingerprint(parent.envelope.developer_autonomy))throw Error('Corrective Mission must retain Developer Autonomy grant');
       if(parent.state!=='needs_rework')throw Error('Corrective Mission requires a failed parent Mission');
@@ -173,6 +174,7 @@ class MissionService {
   detail(id,owner='operator'){
     const m=this.require(id,owner);if(m.envelope.kind==='work_request')return {...m,objective:m.envelope.objective,next_action:'register_bounded_scope',program_contract:null,tasks:[],runs:[],decisions:[],verifications:[],acceptance:[],artifacts:[],timeline:[],results:[],dispatches:[]};const view={...m,program_contract:this.program.detail(id),objective:m.envelope.objective,priority:m.envelope.priority,next_action:({ready:'dispatch',waiting_for_operator:'answer_decision',awaiting_acceptance:'accept_or_rework',needs_rework:'explicit_dispatch',blocked:'review_then_dispatch'})[m.state]||'inspect',tasks:this.db.prepare('SELECT * FROM cp_mission_tasks WHERE mission_id=? ORDER BY ordinal').all(id),runs:this.db.prepare('SELECT id FROM cp_runs WHERE mission_id=? ORDER BY created_at').all(id).map(r=>this.store.run(r.id)),decisions:this.store.decisions(id),verifications:this.db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC').all(id).map(v=>({...v,evidence:JSON.parse(v.evidence)})),acceptance:this.db.prepare('SELECT * FROM cp_acceptances WHERE mission_id=? ORDER BY created_at DESC').all(id),artifacts:this.db.prepare('SELECT * FROM cp_artifacts WHERE mission_id=?').all(id),timeline:this.bridge.ledger.list({missionId:id,limit:100,order:'desc'}).events,results:this.db.prepare('SELECT run_id,normalized FROM cp_run_results WHERE mission_id=?').all(id).map(r=>({run_id:r.run_id,result:{...JSON.parse(r.normalized),continuity:JSON.parse(this.db.prepare('SELECT evidence FROM cp_continuity_checks WHERE run_id=?').get(r.run_id)?.evidence||'null')}})),dispatches:this.db.prepare('SELECT * FROM cp_dispatches WHERE mission_id=? ORDER BY created_at').all(id).map(d=>({...d,route:d.route?JSON.parse(d.route):null}))};
     if(require('./removed-runtime').removed(m)){view.runtimeRemoved=true;view.runtimeLabel='Historical runtime removed';view.next_action='inspect';}
+    if(rollback.unsupported(m)){view.compatibility=rollback.projection();view.next_action='restore_compatible_source';}
     view.results=view.results.map(r=>({...r,result:require('./conversation-mission').projectRead(this.bridge,m.task_id,r.result,m.id)}));
     view.timeline=view.timeline.map(e=>require('./conversation-mission').projectEvent(this.bridge,e));
     const bound=this.bridge.developmentSessions?.forMission(id)||null;
@@ -187,6 +189,7 @@ class MissionService {
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
   assertAuthority(mission, requirements={}){
+    rollback.assertSupported(mission);
     require('./cognitive-router').assertBound(this.bridge,mission);
     this.bridge.workTemplates.assertMission(mission);
     this.bridge.developerAutonomy.assertDispatch(mission);
@@ -252,7 +255,7 @@ class MissionService {
     try{
       this.store.expireDecisions();this.acceptanceEngine.reconcile();this.riskAcceptance.reconcile();try{this.bridge.expandedAutonomy?.reconcileDeveloperAutonomyAccept?.();}catch{}this.program.tick();
       for(const c of this.db.prepare("SELECT * FROM cp_continuations WHERE state='queued'").all()){
-        const m=this.store.getMission(c.mission_id);if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);continue;}if(m?.envelope.control_version!==2)continue;
+        const m=this.store.getMission(c.mission_id);if(rollback.unsupported(m))continue;if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);continue;}if(m?.envelope.control_version!==2)continue;
         const chains=this.db.prepare('SELECT c.* FROM cp_autonomy_claims a JOIN cp_autonomy_chains c ON c.id=a.chain_id WHERE a.mission_id=?').all(m.id);
         if(chains.some(chain=>{if(Date.now()-chain.started_at>=chain.max_runtime_ms){this.bridge.boundedNextActions.pause(chain.id,'runtime_budget');return true;}return chain.state==='paused';}))continue;
         if(m.state==='cancelled'){this.db.prepare("UPDATE cp_continuations SET state='cancelled' WHERE id=?").run(c.id);continue;}
@@ -269,7 +272,7 @@ class MissionService {
         }
         transaction(this.db,()=>{this.queue(m.id,c.decision_id);this.db.prepare("UPDATE cp_continuations SET state='scheduled' WHERE id=? AND state='queued'").run(c.id);this.store.event('mission.resumed_after_decision',m.id,{decision_id:c.decision_id,dispatch_path:'decision_resume_native'});this.store.event('mission.resumed',m.id,{decision_id:c.decision_id});});
       }
-      for(const row of this.db.prepare("SELECT * FROM cp_dispatches WHERE state='queued' ORDER BY created_at LIMIT 1").all())await this.launch(row);
+      for(const row of this.db.prepare("SELECT * FROM cp_dispatches WHERE state='queued' ORDER BY created_at").all()){if(rollback.unsupported(this.store.getMission(row.mission_id)))continue;await this.launch(row);break;}
       for(const row of this.db.prepare('SELECT * FROM cp_run_results WHERE processed_at=0').all()) {try{await this.processResult(row);}catch(error){const m=this.store.getMission(row.mission_id);if(!['cancelled','completed','blocked'].includes(m.state))this.store.state(m.id,'blocked','Structured result could not be processed safely');}}
       // Durable CAE scheduler: client disconnect must not stop authorized goals.
       try{await this.bridge.autonomousExecution?.tick();}catch{/* Scheduler faults must not crash Mission tick. */}
@@ -277,6 +280,7 @@ class MissionService {
   }
   async launch(dispatch){
     let m=this.store.getMission(dispatch.mission_id);
+    if(rollback.unsupported(m))return;
     if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);return;}
     if(m.state==='cancelled')return;
     // Claim before any await so concurrent ticks cannot double-dispatch the same row.
@@ -456,6 +460,7 @@ class MissionService {
     afterCommit(this.db,()=>this.schedule());
   }
   async processResult(row){
+    if(rollback.unsupported(this.store.getMission(row.mission_id)))return;
     const m=this.store.getMission(row.mission_id),run=this.store.run(row.run_id),result=JSON.parse(row.normalized);
     if(m.state==='dispatching')return;
     transaction(this.db,()=>{
@@ -513,7 +518,7 @@ class MissionService {
   }
   async reverify(id,input,owner='operator'){
     object(input,['id','request_id']);identifier(input.request_id);
-    const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);
+    const m=this.require(id,owner);rollback.assertSupported(m);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);
     const receipt=this.store.request(owner,input.request_id,{op:'reverify',id},()=>{
       if(!['needs_rework','awaiting_acceptance'].includes(m.state)||m.envelope.baseline.version!==2)throw Error('V2 failed verification required');
       const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode','cursor') AND state='completed' AND termination_verified=1 AND id IN (SELECT run_id FROM cp_dispatches WHERE mission_id=cp_runs.mission_id) ORDER BY ended_at DESC LIMIT 1").get(id);
@@ -537,7 +542,7 @@ class MissionService {
     const result=this.store.request(actor,input.request_id,{op:'answer',id,...input},()=>this.store.answerDecision(id,{option_id:input.option_id??null,free_text:input.free_text??null,actor,surface}));this.schedule();return result;
   }
   accept(id,input,owner='operator'){
-    const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
+    const m=this.require(id,owner);rollback.assertSupported(m);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);identifier(input.request_id);text(input.rationale,'acceptance rationale',2000);
     return this.store.request(owner,input.request_id,{op:'accept',id,...input},()=>{
       const authorityExpiredBlock=m.state==='blocked'&&m.reason==='Mission authority expired';
       if(m.state!=='awaiting_acceptance'&&!authorityExpiredBlock)throw Error('Mission is not awaiting acceptance');
@@ -573,7 +578,7 @@ class MissionService {
     return result;
   }
   decisionDetails(id){const d=this.store.decision(id);if(!d)throw Error('Decision not found');const m=this.detail(d.mission_id);return{decision:d,mission_objective:m.objective,result:this.db.prepare('SELECT normalized FROM cp_run_results WHERE run_id=?').get(d.run_id)?.normalized||null,verification:m.verifications,risks:['Worker rationale is untrusted; protected approvals are separate.']};}
-  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.riskAcceptance.reconcile();this.schedule();}
+  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(rollback.unsupported(m))continue;if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.riskAcceptance.reconcile();this.schedule();}
   async close(){this.stopped=true;await this._web?.close();await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();await this.bridge.workers?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
 }
 module.exports={MissionService,relative};

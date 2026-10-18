@@ -17,6 +17,7 @@ class DeterministicAcceptance {
   }
   evaluate(id) {
     const m=this.store.requireMission(id);
+    if(require('./rollback-compatibility').unsupported(m))return{accepted:false,reason:'unsupported_cognitive_source'};
     const deny=reason=>({accepted:false,reason});
     // Manual / emergency stop blocks every new automatic Acceptance decision.
     if (this.bridge.expandedAutonomy) {

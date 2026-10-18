@@ -1,0 +1,34 @@
+'use strict';
+const test=require('node:test');
+const req=p=>require('../'+p);
+const {DatabaseSync}=require('node:sqlite'),{randomUUID}=require('node:crypto');
+const {AuthorityStore}=req('./src/authority-store');
+const {AuthorityMemory}=req('./src/authority-memory');
+const {EventLedger}=req('./src/event-ledger');
+const {MissionProgram}=req('./src/mission-program');
+const content=req('./src/memory-content-erasure'),identity=req('./src/memory-identity');
+const assert=require('node:assert/strict');
+for(const legacy of [false,true])test('Specialist node erasure retains opaque replay identity: '+(legacy?'migrated':'fresh'),()=>{
+ const db=new DatabaseSync(':memory:'),store=new AuthorityStore(db),memory=new AuthorityMemory(store);new EventLedger(db);
+ const program=new MissionProgram({db,bridge:{},store:{now:()=>Date.now()}});
+ const c=memory.ingest({session_id:'review-fixture',chunk_id:'review-fixture',timestamp:1,speaker:'operator',claim:'No micro-prompts. Synthetic retained graph fixture.',kind:'personal_preference',subject_key:'workflow.micro_prompts',value:'forbidden'},store.operator);
+ const m=memory.promote(c.id,{},store.operator),graph={kind:'cognitive_specialists_v1',parent_mission_id:m.id,assignments:[{id:'review',description:'fixture-private'}]};
+ db.prepare('INSERT INTO cp_mission_programs(id,owner,graph,fingerprint,state,started_at,expires_at,request_id) VALUES(?,?,?,?,?,?,?,?)').run(m.id,'operator',JSON.stringify(graph),'test','running',1,Date.now()+60000,'fixture-program');
+ for(const id of ['review','analysis'])db.prepare('INSERT INTO cp_mission_program_nodes(program_id,node_id,mission_id,input,state,record_id) VALUES(?,?,NULL,?,?,?)').run(m.id,id,JSON.stringify({assignment:graph.assignments[0],attempts:[]}),'ready',legacy?null:randomUUID());
+ let migration=null;
+ if(legacy){assert.throws(()=>content.assertReadable(db),/explicit migration/);migration=identity.migrate(db);}
+ const ids=db.prepare('SELECT record_id FROM cp_mission_program_nodes').all().map(r=>r.record_id);
+ assert.equal(new Set(ids).size,2);assert.ok(ids.every(id=>/^[0-9a-f-]{36}$/.test(id)));
+ memory.erase(m.id,store.operator);content.assertReadable(db);
+ const rows=db.prepare('SELECT * FROM cp_mission_program_nodes').all();
+ assert.equal(JSON.stringify(rows).includes('fixture-private'),false);
+ assert.deepEqual(rows.map(r=>r.record_id).sort(),ids.sort());
+ assert.deepEqual(rows.map(r=>r.state),['ready','ready']);
+ assert.equal(db.prepare("SELECT count(*) n FROM memory_erasure_content_rows WHERE table_name='cp_mission_program_nodes'").get().n,2);
+ assert.throws(()=>db.prepare('UPDATE cp_mission_program_nodes SET input=? WHERE record_id=?').run('{"rehydrate":true}',ids[0]),/replay denied/);
+ assert.throws(()=>program.inspect(m.id),/context erased/);
+ program.tick();
+ const events=db.prepare("SELECT count(*) n FROM event_ledger_events WHERE event_type='memory.content_redacted'").get().n;
+ memory.erase(m.id,store.operator);assert.equal(db.prepare("SELECT count(*) n FROM event_ledger_events WHERE event_type='memory.content_redacted'").get().n,events);
+ db.close();
+});

@@ -55,6 +55,7 @@ function evidencePackage(bridge, missionId) {
   if (!id) throw Error('Invalid mission id');
   const mission = store.getMission(id);
   if (!mission) throw Error('Mission not found');
+  if(require('./rollback-compatibility').unsupported(mission))return require('./rollback-compatibility').evidence(bridge,mission);
   const db = store.db;
   const lineage = lineageFor(bridge, mission);
   const final = lineage[lineage.length - 1] ? store.getMission(lineage[lineage.length - 1].mission_id) : mission;

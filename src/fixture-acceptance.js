@@ -20,6 +20,7 @@ class FixtureAcceptance{
  }
  attempt(id){return transaction(this.db,()=>{
   const m=this.store.requireMission(id),a=m.envelope.fixture_auto_acceptance;
+  if(require('./rollback-compatibility').unsupported(m))return{accepted:false,reason:'unsupported_cognitive_source'};
   const deny=reason=>{this.store.event('fixture.auto_acceptance.denied',id,{reason});return{accepted:false,reason};};
   try{
     const eff=this.bridge.expandedAutonomy?.effective?.('operator');

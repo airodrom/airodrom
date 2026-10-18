@@ -554,6 +554,8 @@
     "docs/COGNITIVE-MISSION-ROUTER-V1.md",
     "docs/adr/0057-cognitive-mission-router.md",
     "docs/adr/0058-opencode-result-gateway.md",
-    "docs/LIVE-EXECUTION-MONITOR-V1.md"
+    "docs/LIVE-EXECUTION-MONITOR-V1.md",
+    "src/rollback-compatibility.js",
+    "docs/GUARDED-ROLLBACK.md"
   ]
 }

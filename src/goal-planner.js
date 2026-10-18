@@ -56,7 +56,7 @@ class AirodromGoalPlanner {
         autonomous: require('./autonomous-execution').defaultAutonomous()
       };
       this.db.prepare('INSERT INTO cp_mission_programs(id,owner,graph,fingerprint,state,started_at,expires_at,request_id,goal_plan) VALUES(?,?,?,?,?,?,?,?,?)').run(id, owner, JSON.stringify(stages), hash, 'goal_observing', now, now + input.max_runtime_hours * 3600000, input.request_id, JSON.stringify(plan));
-      for (const s of stages) this.db.prepare('INSERT INTO cp_mission_program_nodes VALUES(?,?,?,?,?)').run(id, s.id, s.mission_id, JSON.stringify(s), 'pending');
+      for (const s of stages) this.db.prepare('INSERT INTO cp_mission_program_nodes(program_id,node_id,mission_id,input,state,record_id) VALUES(?,?,?,?,?,?)').run(id, s.id, s.mission_id, JSON.stringify(s), 'pending', randomUUID());
       this.store.event('goal.plan.created', null, { plan_id: id, goal_id: goal.goalId, milestones: stages.length, authority: false });
       return this.inspect(id, owner);
     });

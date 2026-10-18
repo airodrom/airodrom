@@ -339,6 +339,7 @@ function missionView(bridge, mission) {
  view.outcome=outcomeSummary(view);
  view.next_action=nextActionFor(mission,view);
  if(view.recovery?.suppress_manual||view.autonomous_managed&&['recovering','eligible','waiting'].includes(view.recovery?.kind))view.actions.dispatch=false;
+ if(require('./rollback-compatibility').unsupported(mission)){view.compatibility=require('./rollback-compatibility').projection();view.actions.dispatch=false;view.actions.accept=false;view.next_action=view.compatibility.next_safe_action;view.recovery={kind:'unsupported',suppress_manual:true,message:view.compatibility.next_safe_action};view.acceptance.mode='not_applicable';}
  return view;
 }
 function runtimeView(ready) {
