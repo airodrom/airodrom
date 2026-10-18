@@ -621,7 +621,9 @@ class DeveloperAutonomy {
     object(input, ['policy_id', 'policy_hash', 'confirmed']);
     if (input.confirmed !== true) throw Error('Explicit revocation consent required');
     identifier(input.policy_id);
-    text(input.policy_hash, 'policy hash', 128);
+    // This is an opaque SHA-256 coordinate, not user prose. Decimal substrings
+    // in a valid digest can accidentally match the content scanner's card rule.
+    if (typeof input.policy_hash !== 'string' || input.policy_hash.length !== 64 || !/^[a-f0-9]{64}$/.test(input.policy_hash)) throw Error('Invalid policy hash');
     const r = this.readPolicy(input.policy_id);
     if (!r || r.hash !== input.policy_hash) throw Error('Exact current policy required');
     const now = Date.now();

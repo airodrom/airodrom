@@ -66,6 +66,36 @@ test('owner-only enrollment, durable inspection, and reject unconfirmed consent'
   assert.equal(f.bridge.developerAutonomy.list('operator')[0].policy_hash, policy.policy_hash);
 });
 
+test('revocation accepts an exact sealed digest with a card-like substring and rejects malformed or mismatched digests', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.enroll(f.enrollInput, 'operator');
+  const { fingerprint } = require('../src/control-plane-store');
+  const { containsSecret } = require('../src/personal-memory');
+  const record = structuredClone(da.readPolicy(policy.policy_id).record);
+  let hash;
+  // Reproducible search over harmless aliases produces a real canonical digest,
+  // while retaining all normal signing and stored-policy integrity checks.
+  for (let n = 0; n < 100000; n++) {
+    record.alias = 'digest-fixture-' + n;
+    hash = fingerprint(record);
+    if (containsSecret(hash)) break;
+  }
+  assert.equal(containsSecret(hash), true);
+  const seal = f.bridge.missionAuthority.sealManifest({ mission_id: 'developer-autonomy:' + policy.policy_id, manifest_hash: hash });
+  da.db.prepare('UPDATE cp_developer_autonomy_policies SET alias=?,record=? WHERE policy_id=?')
+    .run(record.alias, JSON.stringify({ record, hash, seal }), policy.policy_id);
+  assert.equal(da.inspect(policy.policy_id).policy_hash, hash);
+  const input = { policy_id: policy.policy_id, policy_hash: hash, confirmed: true };
+  for (const invalid of [null, {}, 7, hash.toUpperCase(), hash.slice(1), hash + 'a', hash + '\n'])
+    assert.throws(() => da.revoke({ ...input, policy_hash: invalid }, 'operator'), /Invalid policy hash/);
+  assert.throws(() => da.revoke({ ...input, policy_hash: 'a'.repeat(64) }, 'operator'), /Exact current policy/);
+  assert.throws(() => da.revoke({ ...input, confirmed: false }, 'operator'), /consent/);
+  assert.throws(() => da.revoke(input, 'mcp:fixture'), /operator/);
+  assert.equal(da.inspect(policy.policy_id).state, 'active');
+  assert.equal(da.revoke(input, 'operator').state, 'revoked');
+  assert.equal(containsSecret(hash), true); // General content filtering is unchanged.
+});
+
 test('dirty source preserves unique work and creates disposable worktree', async t => {
   const f = await setup(t);
   const da = f.bridge.developerAutonomy;
