@@ -120,7 +120,7 @@ test('unrecognized explicit worker prose blocks before planning instead of silen
 test('strict versioned schemas reject dependency cycles, unknown fields and tampered hashes', () => {
   const p = { version: 1, request_id: 'request', envelope_hash: 'a'.repeat(64), files: ['a'], tasks: [{ id: 'a', operation: 'edit', paths: ['a'], description: 'edit', depends_on: ['a'] }], verification: ['test'], complexity: 'bounded' };
   assert.throws(() => C.parse('PlanningProposal', p), /dependency/);
-  assert.throws(() => C.parse('PlanningProposal', { ...p, version: 3 }), /version/);
+  assert.throws(() => C.parse('PlanningProposal', { ...p, version: 4 }), /version/);
   assert.throws(() => C.parse('PlanningProposal', '```json\n{}\n```'), /json/);
   assert.throws(() => C.parse('PlanningProposal', { ...p, tools: ['shell'] }), /schema/);
   assert.throws(() => C.parse('RequestEnvelope', { hash: canonicalHash({}) }), /schema/);
