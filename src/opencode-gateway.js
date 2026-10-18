@@ -77,7 +77,7 @@ async function evaluate(bridge, mission, worker, verification) {
     const result = JSON.parse(row.normalized);
     const output = await bridge.opencodeAdapter.execute({ workspace: mission.envelope.workspace,
       files: mission.envelope.allowed_files, writable: [], timeoutMs: Math.min(mission.envelope.cognitive.envelope.limits.planning_ms,specialist.enabled(mission)?specialist.deadline(mission)-store.now():Infinity),
-      signal: controller.signal, coordination: { result_contract: template,
+      signal: controller.signal, evaluationRunId:runId, coordination: { result_contract: template,
         worker: { agent: worker.agent_id, summary: String(result.summary || '').slice(0, 6000), untrusted: true },
         tasks: mission.envelope.cognitive.proposal.tasks,
         ...(specialist.enabled(mission)?{specialist_return:specialist.returnPayload(bridge,mission,worker)}:{}),

@@ -124,7 +124,7 @@ async function planAttempt(zero, record, options) {
   let started = false;
   const watch = setInterval(() => { try { assertDelegation(b, record); } catch { controller.abort(); } }, 250);
   try {
-    const result = await b.opencodeAdapter.execute({ ...options, signal: controller.signal, onStart: ({ pid } = {}) => {
+    const result = await b.opencodeAdapter.execute({ ...options, planningEnvelope:record.cognitive.envelope, signal: controller.signal, onStart: ({ pid } = {}) => {
       started = true; store.updateRun(runId, { state: 'running', processState: 'alive', pid });
     } });
     if (!result.provenance?.termination_verified || result.changes?.length) C.fail('cognitive_planner_termination_or_mutation');

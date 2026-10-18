@@ -89,3 +89,47 @@ test('bounded context, changed executable and forged provenance cannot grant exe
  const output=await f.adapter.execute(f.request),run={agent_id:'opencode',state:'completed',termination_verified:true,result:{opencode_provenance:output.provenance}};
  f.adapter.assertEvidence(run);await assert.rejects(f.adapter.execute({...f.request,objective:'change-executable'}),/executable_changed/);fs.appendFileSync(f.options.executable,'\n// altered fixture\n');assert.throws(()=>f.adapter.assertEvidence(run),/provenance_unavailable/);
 });
+
+
+test('host-bound cognitive coordinates survive scanning while identical prose stays sensitive',async t=>{
+ const C=require('../src/cognitive-contracts'),{createHash,randomUUID}=require('node:crypto'),{containsSecret}=require('../src/personal-memory');
+ const digest=createHash('sha256').update('synthetic-policy-digest-fixture-508').digest('hex');assert.equal(containsSecret(digest),true);
+ const eventOf=value=>JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'m',text:JSON.stringify(value)}})+'\n';
+ const proposal={version:3,request_id:randomUUID(),envelope_hash:digest,files:['fixture.txt'],tasks:[{id:'inspect',worker:'opencode',role:'review',operation:'read',paths:['fixture.txt'],description:'Inspect supplied file',depends_on:[],verification:[]}],verification:['fixture-test'],complexity:'bounded'};
+ const echo={kind:'planning',version:3,request_id:proposal.request_id,envelope_hash:digest};
+ assert.equal(parseOutput(eventOf(proposal),[],{planning:true,echo}).result.summary,JSON.stringify(proposal));
+ assert.throws(()=>parseOutput(eventOf(proposal),[],{planning:true}),/sensitive_context/);
+ assert.throws(()=>parseOutput(eventOf(proposal),[],{planning:true,echo:{...echo,envelope_hash:'ab'.repeat(32)}}),/sensitive_context/);
+ assert.throws(()=>parseOutput(eventOf({...proposal,tasks:[{...proposal.tasks[0],description:digest}]}),[],{planning:true,echo}),/sensitive_context/);
+ assert.throws(()=>parseOutput(eventOf({...proposal,extra_hash:digest}),[],{planning:true,echo}),/sensitive_context/);
+ const evaluation={version:1,binding_hash:digest,recommendation:'ready',summary:'Reviewed host evidence'};
+ const evaluationEcho={kind:'evaluation',binding_hash:digest,specialist:true};
+ assert.equal(parseOutput(eventOf(evaluation),[],{planning:true,echo:evaluationEcho}).result.summary,JSON.stringify(evaluation));
+ assert.throws(()=>parseOutput(eventOf({...evaluation,summary:digest}),[],{planning:true,echo:evaluationEcho}),/sensitive_context/);
+ assert.throws(()=>parseOutput(eventOf(evaluation),[],{planning:true,echo:{...evaluationEcho,binding_hash:'ab'.repeat(32)}}),/sensitive_context/);
+ assert.equal(parseOutput(eventOf({summary:'Malformed planning reply'}),[],{planning:true,echo}).result.summary,JSON.stringify({summary:'Malformed planning reply'}));
+ const f=runtime(t),runtimeFile=f.options.fixtureExecutable;
+ fs.writeFileSync(runtimeFile,fs.readFileSync(runtimeFile,'utf8').replace("console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));", "if(p.result_contract.envelope_hash||p.coordination)result=p.result_contract;console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));"));
+ const body={version:3,request_id:proposal.request_id,caller:'operator',delegation:{policy_id:randomUUID(),policy_hash:'ab'.repeat(32)},repository_id:'synthetic',workspace_id:randomUUID(),git_anchor:'ab'.repeat(20),integrity:{version:1,hash:'ab'.repeat(32),entries:1,bytes:6,exclusions:'host'},permitted_paths:['fixture.txt'],denied_paths:['.git'],operations:['read'],eligible_workers:['opencode'],verification:['fixture-test'],limits:{planning_attempts:2,execution_attempts:3,repair_attempts:2,planning_ms:1000,execution_ms:1000},requested_worker:'opencode',instruction_hash:'ab'.repeat(32),expires_at:Date.now()+60000};
+ let envelope;for(let i=0;i<100000;i++){envelope=C.seal({...body,caller:'synthetic-'+i});if(containsSecret(envelope.hash))break;}assert.equal(containsSecret(envelope.hash),true);C.parse('RequestEnvelope',envelope);
+ const planning={...proposal,envelope_hash:envelope.hash};
+ const planned=await f.adapter.execute({...f.request,planning,planningEnvelope:envelope});assert.equal(JSON.parse(planned.result.summary).envelope_hash,envelope.hash);
+ await assert.rejects(f.adapter.execute({...f.request,planning}),/sensitive_context/);
+ await assert.rejects(f.adapter.execute({...f.request,planning:{...planning,tasks:[{...planning.tasks[0],description:digest}]},planningEnvelope:envelope}),/sensitive_context/);
+ await assert.rejects(f.adapter.execute({...f.request,objectiveProof:{}}),/objective_binding/);
+});
+
+test('evaluator scan coordinates require the matching durable host run',async t=>{
+ const {randomUUID}=require('node:crypto'),{canonicalHash}=require('../src/authority-hash'),{containsSecret}=require('../src/personal-memory');
+ const f=runtime(t),runtimeFile=f.options.fixtureExecutable;
+ fs.writeFileSync(runtimeFile,fs.readFileSync(runtimeFile,'utf8').replace("console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));", "if(p.coordination)result=p.result_contract;console.log(JSON.stringify({type:'text',sessionID:'ses_fixture',part:{messageID:'message_fixture',text:JSON.stringify(result)}}));"));
+ const mission={id:randomUUID(),task_id:randomUUID()},worker={id:randomUUID(),mission_id:mission.id,task_id:mission.task_id};
+ let binding;for(let i=0;i<100000;i++){binding={version:1,mission_id:mission.id,worker_run_id:worker.id,contract_hash:canonicalHash('synthetic-'+i)};if(containsSecret(canonicalHash(binding)))break;}const digest=canonicalHash(binding);assert.equal(containsSecret(digest),true);
+ const run={id:randomUUID(),mission_id:mission.id,task_id:mission.task_id,agent_id:'opencode',state:'starting',result:{gateway:{worker_run_id:worker.id,binding,binding_hash:digest}}};
+ const b={options:{allowFixtureWorker:true},controlStore:{run:id=>id===run.id?run:id===worker.id?worker:null,requireMission:id=>{assert.equal(id,mission.id);return mission;}}},a=new OpenCodeAdapter(b,f.options);
+ const coordination={result_contract:{version:1,binding_hash:digest,recommendation:'ready',summary:'Reviewed host checks'},worker:{agent:'opencode',summary:'Observed supplied file',untrusted:true},tasks:[],host_checks:[]};
+ const result=await a.execute({...f.request,coordination,evaluationRunId:run.id});assert.equal(JSON.parse(result.result.summary).binding_hash,digest);
+ await assert.rejects(a.execute({...f.request,coordination}),/sensitive_context/);
+ await assert.rejects(a.execute({...f.request,coordination,evaluationRunId:randomUUID()}),/evaluation_binding/);
+ await assert.rejects(a.execute({...f.request,coordination:{...coordination,worker:{...coordination.worker,summary:digest}},evaluationRunId:run.id}),/sensitive_context/);
+});

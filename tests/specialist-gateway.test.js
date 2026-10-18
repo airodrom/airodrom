@@ -16,7 +16,7 @@ async function setup(t,{cursor=false,repairs=2,manual=false}={}) {
  f.bindAdapter=()=>{const adapter=f.bridge.opencodeAdapter;f.worker=adapter.execute.bind(adapter);adapter.execute=async o=>{
   if(o.planning)return{result:{summary:JSON.stringify({...o.planning,tasks:f.plan})},changes:[],provenance:{termination_verified:true}};
   if(o.coordination){f.evaluations.push(o.coordination);assert.deepEqual(o.writable,[]);return{result:{summary:JSON.stringify(await f.evaluate(o))},changes:[],provenance:{runtime_id:'opencode',sandbox:'fixture',termination_verified:true,authority:false}};}
-  f.calls.push({files:o.files,writable:o.writable,input:JSON.parse(o.objective)});return f.worker(o.writable.length?o:{...o,objective:'Inspect current files without changes'});
+  f.calls.push({files:o.files,writable:o.writable,input:JSON.parse(o.objective)});return f.worker(o.writable.length?o:{...o,objective:'Inspect current files without changes',objectiveProof:null});
  };};f.bindAdapter();
  f.ask=()=>b.zeroSetupWork.ask({request_id:randomUUID(),instruction:'In Fixture project change fixture.txt from alpha to beta and independently review it.'},'operator');
  return f;
