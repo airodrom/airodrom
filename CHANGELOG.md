@@ -1,5 +1,11 @@
 ## Unreleased
 
+## Mission List Cleanup V1
+
+- Show unfinished work in Active and include archived results in searchable History.
+- Add safe terminal auto-archive, exact bulk previews, restore protection and CLI history filters.
+- Preserve Mission lifecycle, verification, Acceptance, accounting and recovery evidence.
+
 ### Added
 - Live Execution Monitor V1: active Missions open a three-column real-time activity UI on Observatory SSE/ledger; Cursor stream-json tool events project into Observatory STAGES mid-run; snapshot v2 counters distinguish real-time vs post-execution telemetry ([docs/LIVE-EXECUTION-MONITOR-V1.md](docs/LIVE-EXECUTION-MONITOR-V1.md)).
 

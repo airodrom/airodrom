@@ -861,5 +861,10 @@
   "tests/status-hotpath-cpu.test.js",
   "tests/verifier-baseline-trust.test.js",
   "tests/verifier-pending-capability-recovery.test.js",
-  "tests/worker-release-closure.test.js"
+  "tests/worker-release-closure.test.js",
+  "docs/MISSION-LIST-CLEANUP-V1.md",
+  "docs/adr/0057-mission-list-cleanup.md",
+  "tests/mission-list-cleanup.test.js",
+  "tests/mission-list-cleanup-browser.cjs",
+  "docs/LIVE-EXECUTION-MONITOR-V1.md"
 ]

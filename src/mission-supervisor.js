@@ -23,6 +23,17 @@ class MissionSupervisor {
     if (this.busy) { this.rerun = true; return; }
     this.busy = true;
     try {
+      if (b.controlStore && (!b.lifecycle || b.lifecycle.state() === 'open') && now >= (this.nextArchiveAt || 0)) {
+        const visibility = require('./mission-visibility');
+        this.nextArchiveAt = now + visibility.AUTO_ARCHIVE_INTERVAL_MS;
+        try {
+          const cleanup = visibility.autoArchive(b, {now, after: this.archiveAfter || ''});
+          this.archiveAfter = cleanup.after;
+        } catch {
+          // Housekeeping must not prevent expiry, stop or recovery processing.
+          b.supervisorError = 'Mission archive maintenance unavailable';
+        }
+      }
       for (const task of b.tasks.list()) {
         if (task.mission?.authority && !task.mission.authorityRevoked && !['cancelled','completed'].includes(task.status) && !task.safetyStop?.latched) {
           const authority = require('./mission-permissions').checkAuthority(task.mission.authority, {}, now);

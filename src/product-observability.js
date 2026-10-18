@@ -284,7 +284,8 @@ function autonomouslyCurrent(mission, view) {
 function missionView(bridge, mission) {
  const visibility = require('./mission-visibility');
  visibility.ensure(bridge.controlStore.db);
- const archived = visibility.isArchived(bridge.controlStore.db, mission.id);
+ const archiveBlockers = visibility.archiveBlockers(bridge, mission);
+ const archived = visibility.isArchived(bridge.controlStore.db, mission.id) && archiveBlockers.length === 0;
  if(mission.envelope.kind==='work_request'){
   const base={id:id(mission.id),kind:'work_request',task_id:null,state:enumValue(mission.state,STATES),revision:count(mission.revision),label:'Work Mission draft',workspace:'Scope required',runtime:null,worker_assigned:false,created_at:time(mission.created_at),started_at:null,finished_at:null,observed_at:Date.now(),authority:{status:'none; scope and registered checks required'},budget:{},memory:{selected_count:0,delivery:'not requested'},verification:{current:false,status:'not_observed',checks:[]},acceptance:{status:'not_applicable'},settlement:{status:'not_applicable'},termination:{verified:true,process_state:'not_started'},attempts:0,progress:progress({state:mission.state}),timeline:[],latest_activity:'Registered — execution not started',archived,actions:{cancel:mission.state!=='cancelled',dispatch:false,accept:false,archive:visibility.archiveEligible(mission,bridge),restore:archived}};
   base.autonomous_managed=false;base.display=displayStatus(base.state,{archived,kind:base.kind});base.recovery=recoveryStatus(bridge,mission,base);base.outcome=outcomeSummary(base);base.next_action=nextActionFor(mission,base);base.actions.dispatch=false;return base;
@@ -334,6 +335,7 @@ function missionView(bridge, mission) {
  view.recovery=recoveryStatus(bridge,mission,view);
  view.outcome=outcomeSummary(view);
  view.next_action=nextActionFor(mission,view);
+ if(['completed','cancelled'].includes(state)&&archiveBlockers.length)view.next_action='Review unresolved settlement, decisions or recovery before archiving this Mission.';
  if(view.recovery?.suppress_manual||view.autonomous_managed&&['recovering','eligible','waiting'].includes(view.recovery?.kind))view.actions.dispatch=false;
  return view;
 }
@@ -422,12 +424,14 @@ function filterView(bridge,m){
 }
 function matchesFilter(bridge,m,filter,settled,archived){
  const isArchived=archived.has(m.id);
- if(filter==='Archived')return isArchived;
- if(isArchived)return false;
  if(filter==='All')return true;
+ if(filter==='Archived')return isArchived;
+ const historical=require('./mission-visibility').isHistoricalConversationResult(m);
+ if(filter==='History')return isArchived||historical||['completed','cancelled'].includes(m.state);
+ if(isArchived)return false;
  const view=filterView(bridge,m);
  const conversationUnread=m.envelope?.kind==='conversation'&&m.state==='awaiting_acceptance';
- if(filter==='Active')return autonomouslyCurrent(m,view);
+ if(filter==='Active')return !historical&&(!['completed','cancelled'].includes(m.state)||require('./mission-visibility').archiveBlockers(bridge,m).length>0);
  if(filter==='Needs Attention')return ownerAttentionRequired(m,view);
  if(filter==='Awaiting Review')return m.state==='waiting_for_operator'||(m.state==='awaiting_acceptance'&&!conversationUnread);
  if(filter==='Unread Results')return conversationUnread;
@@ -435,14 +439,13 @@ function matchesFilter(bridge,m,filter,settled,archived){
  if(filter==='Completed')return m.state==='completed';
  if(filter==='Settled')return settled.has(m.id);
  if(filter==='Recent')return !autonomouslyCurrent(m,view)&&!ownerAttentionRequired(m,view)&&(Date.now()-(m.created_at||0)<=RECENT_MS||['completed','cancelled'].includes(m.state)||conversationUnread);
- if(filter==='History')return conversationUnread||(['completed','cancelled','draft','ready','paused','blocked','needs_rework'].includes(m.state)&&!ACTIVE.includes(m.state)&&!['awaiting_acceptance','waiting_for_operator'].includes(m.state));
  return false;
 }
 function missionCounts(bridge,missions=missionIndex(bridge)){
  // No process-global or cross-bridge cache: counts must follow canonical missions.require
  // reads (including test stubs) and must not leak between Bridge instances.
  // Menu/nativeStatus never calls this — it uses bounded SQL instead.
- const settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db);
+ const settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db,bridge);
  return Object.fromEntries(FILTERS.map(name=>[name,missions.filter(m=>matchesFilter(bridge,m,name,settled,archived)).length]));
 }
 function missionListItem(bridge,mission,{settled,archived}){
@@ -459,7 +462,7 @@ function missionListItem(bridge,mission,{settled,archived}){
   task_id:full.task_id,model:full.model?{id:full.model.id}:null
  };
 }
-function missionHistory(bridge,url){
+function missionHistory(bridge,url,{workOnly=false}={}){
  require('./memory-content-erasure').assertReadable(bridge.controlStore.db);
  require('./mission-visibility').ensure(bridge.controlStore.db);
  const filter=url.searchParams.get('filter')||'All',query=(url.searchParams.get('query')||'').trim().toLowerCase();
@@ -469,7 +472,7 @@ function missionHistory(bridge,url){
  const sort=url.searchParams.get('sort')||'newest';
  if(!FILTERS.includes(filter)||query.length>180||!Number.isSafeInteger(offset)||offset<0||!PAGE_SIZES.includes(limitRaw)||(worker&&!['opencode','host','claude_code','codex','cursor','none'].includes(worker))||!['newest','oldest'].includes(sort))throw Error('Invalid Mission history query');
  const limit=limitRaw;
- const missions=missionIndex(bridge),settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db);
+ const missions=missionIndex(bridge).filter(m=>!workOnly||m.owner==='operator'&&m.envelope.kind!=='conversation'),settled=settledIds(bridge),archived=require('./mission-visibility').archivedSet(bridge.controlStore.db,bridge);
  const ranked=sort==='oldest'?[...missions].reverse():missions;
  const matches=[];let total=0;
  for(const mission of ranked){
@@ -484,7 +487,7 @@ function missionHistory(bridge,url){
   total++;
  }
  const page=Math.floor(offset/limit)+1,pages=total?Math.ceil(total/limit):1;
- return {missions:matches,total,offset,limit,page,pages,has_more:offset+matches.length<total,filter,query,worker:worker||null,sort,counts:missionCounts(bridge,missions),observed_at:Date.now(),scope:`Missions · ${filter} · newest first · ${limit} per page · stable id tie-break`};
+ return {missions:matches,total,offset,limit,page,pages,has_more:offset+matches.length<total,filter,query,worker:worker||null,sort,counts:missionCounts(bridge,missions),observed_at:Date.now(),scope:`Missions · ${filter} · ${sort} first · ${limit} per page · stable id tie-break`};
 }
 function notificationEvents(bridge,after){
  const epoch=bridge.runtimeFingerprint?.captured_at||null,latest=bridge.controlStore.db.prepare('SELECT coalesce(max(seq),0) n FROM event_ledger_events').get().n;
@@ -503,7 +506,7 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
  const currentCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state NOT IN ('completed','cancelled')").get().n;
  const mission_counts=includeMissions?missionCounts(bridge):null;
  // Prefer canonical Mission reads for Active/Review/Failed so stale storage cannot overstate live work.
- const activeCount=mission_counts?mission_counts.Active:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
+ const activeCount=mission_counts?missionIndex(bridge).filter(m=>autonomouslyCurrent(m,filterView(bridge,m))).length:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
  // Needs Attention excludes historical conversation unread results.
  const reviewCount=mission_counts?mission_counts['Needs Attention']:db.prepare("SELECT count(*) n FROM cp_missions WHERE state='waiting_for_operator' OR (state='awaiting_acceptance' AND coalesce(json_extract(envelope,'$.kind'),'')!='conversation')").get().n;
  const failedCount=mission_counts?mission_counts.Failed:db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework')").get().n;
@@ -566,14 +569,14 @@ async function nativeStatus(bridge) {
  const s=await overview(bridge,{includeMissions:false}),db=bridge.controlStore.db;
  require('./mission-visibility').ensure(db);
  // Featured menu Mission is live execution only — awaiting_acceptance / waiting_for_operator are review, not active work.
- const live=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying') AND id NOT IN (SELECT mission_id FROM cp_mission_visibility WHERE archived=1) ORDER BY created_at DESC,id LIMIT 1").get();
+ const live=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying') ORDER BY created_at DESC,id LIMIT 1").get();
  const m=live?missionView(bridge,bridge.controlStore.requireMission(live.id)):null;
  // Hot path: bounded SQL counts only. Never missionIndex/missionCounts — that loads every
  // retained Mission graph (runs, ledger pages, recovery inspect) on each menu poll.
- // Exclude presentation-archived rows so menu counts match filter semantics.
+ // Archive flags never conceal live execution or required owner decisions.
  const notArchived="id NOT IN (SELECT mission_id FROM cp_mission_visibility WHERE archived=1)";
- const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying') AND "+notArchived).get().n;
- const reviewCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE ("+notArchived+") AND (state='waiting_for_operator' OR (state='awaiting_acceptance' AND coalesce(json_extract(envelope,'$.kind'),'')!='conversation'))").get().n;
+ const activeCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('dispatching','running','verifying')").get().n;
+ const reviewCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE (state='waiting_for_operator' OR (state='awaiting_acceptance' AND coalesce(json_extract(envelope,'$.kind'),'')!='conversation'))").get().n;
  const unreadResults=db.prepare("SELECT count(*) n FROM cp_missions WHERE ("+notArchived+") AND state='awaiting_acceptance' AND coalesce(json_extract(envelope,'$.kind'),'')='conversation'").get().n;
  const failedCount=db.prepare("SELECT count(*) n FROM cp_missions WHERE state IN ('blocked','needs_rework') AND "+notArchived).get().n;
  const {derive,menuPresentation}=require('./connection-status');

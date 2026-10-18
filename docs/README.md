@@ -60,3 +60,5 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 
 - [Developer Autonomy V1](DEVELOPER-AUTONOMY-V1.md)
 - [Global Autopilot V1](GLOBAL-AUTOPILOT-V1.md)
+
+- [Mission List Cleanup V1](MISSION-LIST-CLEANUP-V1.md): Active, retained History and safe reversible archiving.

@@ -320,19 +320,20 @@ function previewObsoleteRework(bridge, { request_id = null, limit = 50 } = {}) {
   visibility.ensure(bridge.controlStore.db);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw Error('Invalid obsolete-rework limit');
   const items = [];
+  let total = 0;
   for (const m of display.missionIndex(bridge)) {
     if (visibility.isArchived(bridge.controlStore.db, m.id)) continue;
     const view = display.missionView(bridge, m);
     if (!obsoleteRework(m, view, bridge)) continue;
     if (!visibility.archiveEligible(m, bridge)) continue;
-    items.push({
+    total++;
+    if (items.length < limit) items.push({
       id: m.id,
       label: display.operatorTitle(bridge, m).slice(0, 160),
       state: m.state,
       recovery: view.recovery?.kind || null,
       created_at: m.created_at
     });
-    if (items.length >= limit) break;
   }
   if (!items.length) {
     return {
@@ -341,6 +342,8 @@ function previewObsoleteRework(bridge, { request_id = null, limit = 50 } = {}) {
       items: [],
       total: 0,
       authority: false,
+      selected: 0,
+      truncated: false,
       note: 'No obsolete needs_rework Missions are eligible for presentation archive.'
     };
   }
@@ -358,7 +361,9 @@ function previewObsoleteRework(bridge, { request_id = null, limit = 50 } = {}) {
     preview_id,
     digest,
     items,
-    total: items.length,
+    total,
+    selected: items.length,
+    truncated: total > items.length,
     expires_at,
     authority: false,
     note: 'Presentation archive only. Durable evidence and audit history are preserved. Active Runs are never included.'

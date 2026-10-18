@@ -546,6 +546,9 @@
     "src/repair-context.js",
     "src/sandbox-containment.js",
     "src/verifier-baseline.js",
-    "src/zero-setup-terminal.js"
+    "src/zero-setup-terminal.js",
+    "docs/MISSION-LIST-CLEANUP-V1.md",
+    "docs/adr/0057-mission-list-cleanup.md",
+    "docs/LIVE-EXECUTION-MONITOR-V1.md"
   ]
 }
