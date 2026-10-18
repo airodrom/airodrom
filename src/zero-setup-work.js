@@ -293,10 +293,7 @@ class ZeroSetupWork {
         // Standing local autonomy is not external disclosure or spending consent.
         if (workSpec.worker === 'opencode' && (principal === 'operator' || (handoff && standing)))
           return await this.startBoundedProjectless(this.read(request_id));
-        return { state: 'PREPARED', projectless: true, execution_authorized: false, authority: false,
-          presentation: record.presentation,
-          blockers: workSpec.worker === 'cursor' ? ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'] : ['owner_approval_required'],
-          next_action: workSpec.worker === 'cursor' ? 'authorize_cursor_via_authenticated_local_api' : 'approve_in_terminal_or_control_center' };
+        return { ...this.statusView(this.read(request_id)), state: 'PREPARED', projectless: true };
       }
       if ((principal === 'operator' || (handoff && standing)) && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
       const record = {
@@ -305,7 +302,7 @@ class ZeroSetupWork {
         presentation: { brand: 'AIRODROM', goal: intent.objective, project_name: null, workspace_label: 'task sandbox', files: [], worker: 'task sandbox', verification: 'Host verification remains required', completion_policy: 'Automatic Acceptance still requires independent verification', status: 'Projectless task sandbox prepared' }
       };
       this.write(request_id, principal, record, 'awaiting_approval');
-      return { state: 'PREPARED', projectless: true, message: 'Prepared a task-scoped sandbox. No registered Project was required or selected.', presentation: record.presentation, authority: false, execution_authorized: false, next_action: 'approve_in_terminal_or_control_center' };
+      return { ...this.statusView(this.read(request_id)), state: 'PREPARED', projectless: true };
     }
     const { project, workspace } = scope;
     // Global Autopilot ON: ensure a standing policy for the resolved repo (owner-delegated).
@@ -465,16 +462,35 @@ class ZeroSetupWork {
     }
     const terminalStates = ['verified', 'awaiting_acceptance', 'blocked', 'failed', 'rejected', 'clarify'];
     const phaseTerminal = phase ? !require('./recovery-phase').OBSERVING.has(phase) : terminalStates.includes(state);
-    const cursorApproval = state === 'awaiting_approval' && live.work_spec?.worker === 'cursor';
+    const waiting = state === 'awaiting_approval';
+    const cursorApproval = waiting && live.work_spec?.worker === 'cursor';
+    // A generic task sandbox is not an executable Mission. Approval cannot supply
+    // missing files or verification; keep the original admission guards intact.
+    // Derive this for old durable proposals too, without rewriting their state.
+    const unboundedProjectless = waiting && live.projectless && !live.work_spec &&
+      !/change fixture\.txt from alpha to beta/i.test(live.instruction || '');
+    const ownerIntake = waiting && live.developer_autonomy_policy_id && live.principal !== 'operator';
+    const blockers = unboundedProjectless
+      ? ['projectless_scope_required', 'measurable_success_criteria_required']
+      : cursorApproval ? ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']
+      : ownerIntake ? ['standing_policy_requires_authenticated_owner_intake']
+      : waiting ? ['owner_approval_required'] : [];
+    if (unboundedProjectless) presentation.status = 'Needs bounded file scope and verification';
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
       message: state === 'awaiting_approval'
-        ? cursorApproval
+        ? unboundedProjectless
+          ? 'Prepared a task-scoped sandbox. No registered Project was selected. This request has no executable file scope or measurable success criteria; approval alone cannot start it. Provide bounded exact-result files, or name an authorized repository and its exact files. Autopilot and automatic Acceptance do not supply missing scope.'
+          : cursorApproval
           ? 'Cursor requires scoped disclosure and subscription authorization through the authenticated local operator API. The current Terminal and Control Center approval buttons cannot issue this grant.'
+          : ownerIntake
+            ? 'This repository has a standing policy, but MCP intake remains a proposal. Existing standing consent is activated through authenticated owner intake or explicit owner approval; ChatGPT text does not activate it.'
           : 'Airodrom prepared a bounded task. Confirm in the authenticated Terminal with y/N, or Approve this task in Control Center. No file writes or autonomous scheduling occur before that confirmation.'
         : presentation.status,
       presentation,
-      next_action: cursorApproval ? 'authorize_cursor_via_authenticated_local_api' : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
+      blockers,
+      admission: { standard_approval_supported: waiting && !unboundedProjectless && !cursorApproval, authority: false },
+      next_action: unboundedProjectless ? 'define_bounded_projectless_work' : cursorApproval ? 'authorize_cursor_via_authenticated_local_api' : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
       outcome,
       technical: {
         request_id: live.request_id || record.request_id,

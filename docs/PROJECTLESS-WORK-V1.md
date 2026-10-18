@@ -19,3 +19,36 @@ Cursor billing observability remains `UNKNOWN_SUBSCRIPTION`; execution requires 
 See [Worker execution recovery](WORKER-EXECUTION-RECOVERY-V1.md) for the canonical schema, authority boundaries, regression command, diagnostic guide and operational closeout checklist. The [source-validation receipt](ISSUE-142-VALIDATION.md) separates tested source from live installation evidence. Do not claim activation or close the operational issue from source tests alone.
 
 Host verification, worker qualification, sandbox isolation, and high-impact fail-closed controls remain mandatory.
+
+## Why a prepared request may not dispatch
+
+`PREPARED` (initial intake) and `WAIT` (inspection/replay) do not prove that an
+executable Mission exists. Inspect `blockers`, `next_action`, and
+`admission.standard_approval_supported`. Preparation and read-only inspection grant no
+authority. Diagnostics also apply to existing durable proposals without changing
+their state or retrying execution.
+
+The boolean describes whether ordinary approval supports this intake shape; it
+does not promise successful dispatch or waive downstream policy, qualification,
+budget, or sandbox checks. The pending-list approval UI is unchanged.
+
+| Request | Admission and next action |
+| --- | --- |
+| General projectless prose, with no declared files or exact-result specification | `projectless_scope_required` and `measurable_success_criteria_required`; define bounded work. Owner approval alone cannot compile this request. |
+| Validated local OpenCode exact-result packet | Existing authenticated owner intake, or UUID MCP handoff with effective non-manual standing mode and no STOP/expiry/manual-Acceptance flag, may dispatch within the existing finite compiler bounds. |
+| Exact `fixture.txt` alpha-to-beta shortcut | Existing narrow local standing-admission path; this is not arbitrary development authorization. |
+| Repository proposal from MCP with a standing Developer Autonomy policy | `standing_policy_requires_authenticated_owner_intake`; owner intake or explicit owner approval is still required. |
+| Explicit bounded Cursor packet | Scoped external-disclosure and subscription authorization through the authenticated local operator API. Ordinary approval buttons cannot issue that grant. |
+
+Global Autopilot creates repository policies only through authenticated owner
+intake. Routine Auto/Expanded Auto govern eligible Acceptance and the existing
+narrow local projectless admission; neither fills missing scope nor grants paid
+external execution. A Git capability's `auto_allow` decision is separate from
+Mission admission. Cursor readiness is also separate: its subscription grant
+must match the immutable contract, workspace, expiry, and remaining invocation
+and runtime budget. Never infer one from the other.
+
+These diagnostics do not enable general MCP auto-dispatch. Supporting that would
+require a separately designed, owner-enrolled delegation binding authenticated
+caller, repository, files, verifier, allowed workers, budget, expiry, revocation
+and replay identity. A generic Autopilot flag is insufficient authority.

@@ -153,6 +153,48 @@ test('manual, STOP and absent policy do not dispatch a remote local-work proposa
   assert.equal(f.dispatched.length, 0);
 });
 
+test('generic projectless requests explain missing scope with Autopilot and standing mode enabled', async t => {
+  const f = prepared(t), principal = 'mcp:' + randomUUID(), request_id = randomUUID();
+  f.b.globalAutopilot = { enabled: () => true, ensureRepositoryPolicy() { assert.fail('projectless intake cannot enroll a repository'); } };
+  const request = { instruction: 'Audit why Mission admission is waiting and implement a bounded fix.', request_id };
+  const first = await f.work.ask(request, principal);
+  assert.equal(first.state, 'PREPARED');
+  assert.equal(first.execution_authorized, false);
+  assert.equal(first.next_action, 'define_bounded_projectless_work');
+  assert.deepEqual(plain(first.blockers), ['projectless_scope_required', 'measurable_success_criteria_required']);
+  assert.equal(first.admission.standard_approval_supported, false);
+  assert.match(first.message, /approval alone cannot start/);
+  const before = f.b.controlStore.db.prepare('SELECT record,state,updated_at FROM cp_zero_setup_requests WHERE request_id=?').get(request_id);
+  const resumed = await f.work.ask(request, principal);
+  assert.equal(resumed.state, 'WAIT');
+  assert.deepEqual(plain(resumed.blockers), plain(first.blockers));
+  assert.equal(resumed.next_action, first.next_action);
+  assert.deepEqual(f.b.controlStore.db.prepare('SELECT record,state,updated_at FROM cp_zero_setup_requests WHERE request_id=?').get(request_id), before);
+  // Existing admission stays closed, including after an attempted owner approval.
+  await assert.rejects(f.work.approve({ request_id, confirmed: true }, 'operator'), /exact authorized file change/);
+  assert.equal(f.created.length, 0); assert.equal(f.dispatched.length, 0); assert.equal(f.issued.length, 0);
+});
+
+test('historical unbounded proposals receive diagnostics without a stored diagnostic field', t => {
+  const f = prepared(t), request_id = randomUUID();
+  f.work.write(request_id, 'mcp:' + randomUUID(), { projectless: true, instruction: 'Implement a parser fix.',
+    presentation: { files: [], worker: 'task sandbox' } }, 'awaiting_approval');
+  const view = f.work.statusView(f.work.read(request_id));
+  assert.equal(view.next_action, 'define_bounded_projectless_work');
+  assert.equal(view.admission.standard_approval_supported, false);
+  assert.equal(f.dispatched.length, 0);
+});
+
+test('repository MCP standing proposal identifies owner intake without activating its policy', t => {
+  const f = prepared(t), request_id = randomUUID();
+  f.work.write(request_id, 'mcp:' + randomUUID(), { developer_autonomy_policy_id: randomUUID(),
+    presentation: { files: ['one.txt'] } }, 'awaiting_approval');
+  const view = f.work.statusView(f.work.read(request_id));
+  assert.deepEqual(plain(view.blockers), ['standing_policy_requires_authenticated_owner_intake']);
+  assert.equal(view.next_action, 'approve_in_terminal_or_control_center');
+  assert.equal(f.dispatched.length, 0);
+});
+
 test('Cursor remains a populated proposal until explicit owner disclosure/spend confirmation', async t => {
   const f = prepared(t), request_id = randomUUID(), principal = 'mcp:' + randomUUID();
   const result = await ask(f, spec('cursor'), principal, request_id);
@@ -162,6 +204,9 @@ test('Cursor remains a populated proposal until explicit owner disclosure/spend 
   assert.equal(result.presentation.success_criteria.length, 2);
   const resumed = await ask(f, spec('cursor'), principal, request_id);
   assert.equal(resumed.next_action, result.next_action);
+  assert.deepEqual(plain(resumed.blockers), plain(result.blockers));
+  assert.deepEqual(plain(resumed.blockers), ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']);
+  assert.equal(resumed.admission.standard_approval_supported, false);
   assert.match(resumed.message, /approval buttons cannot issue this grant/);
   assert.equal(f.dispatched.length, 0); assert.equal(f.created.length, 0);
   await assert.rejects(f.work.approve({ request_id, confirmed: true }), /BLOCKED_SPEND_AUTHORIZATION/);
