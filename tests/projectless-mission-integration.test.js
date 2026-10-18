@@ -27,6 +27,7 @@ const { FixtureAcceptance } = require('../src/fixture-acceptance');
 const { ResultInbox } = require('../src/result-inbox');
 const { CursorWorker } = require('../src/cursor-worker');
 const { ZeroSetupWork } = require('../src/zero-setup-work');
+const { McpTools } = require('../src/mcp-tools');
 const permissions = require('../src/mission-permissions');
 const sandbox = require('../src/projectless-sandbox');
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -151,13 +152,23 @@ for (const worker of ['opencode', 'cursor']) test(worker + ': host verifier read
   assert.equal(permissions.checkAuthority(authority, { filesystem: { read: [path.dirname(workspace)] } }).allow, false);
 });
 
-for (const wrongSecondFile of [false, true]) test('canonical Cursor projectless Mission: ' + (wrongSecondFile ? 'second-file mismatch prevents Acceptance' : 'two-file result passes independent verification'), async t => {
+for (const naturalLanguage of [false, true]) for (const wrongSecondFile of [false, true]) test('canonical Cursor projectless Mission (' + (naturalLanguage ? 'natural MCP' : 'WORK_V1') + '): ' + (wrongSecondFile ? 'second-file mismatch prevents Acceptance' : 'two-file result passes independent verification'), async t => {
   const { bridge, db, calls, stagingRoots } = fixture(t, { wrongSecondFile });
   const request_id = randomUUID(), spec = work('cursor');
-  const prepared = await bridge.zeroSetupWork.ask({ request_id,
-    instruction: sandbox.WORK_MARKER + '\n' + JSON.stringify(spec) }, 'mcp:' + randomUUID());
+  const mcp = new McpTools(bridge);
+  const objective = naturalLanguage
+    ? 'Use Cursor only in a new disposable workspace to create exactly two files:\n' + spec.files.map(f => f.path + ': ' + JSON.stringify(f.content)).join('\n')
+    : sandbox.WORK_MARKER + '\n' + JSON.stringify(spec);
+  const prepared = await mcp.call('prepare_mission', { request_id, objective });
   assert.equal(prepared.state, 'PREPARED'); assert.equal(prepared.execution_authorized, false);
   assert.equal(db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+  const inspected = await mcp.call('inspect_mission_proposal', { request_id });
+  assert.deepEqual(inspected.proposal.files, spec.files.map(f => f.path));
+  assert.equal(inspected.proposal.worker, 'cursor');
+  assert.equal(inspected.proposal.measurable, true);
+  assert.equal(inspected.approval.standard_approval_supported, false);
+  await assert.rejects(bridge.zeroSetupWork.approve({ request_id, confirmed: true }), /BLOCKED_SPEND_AUTHORIZATION/);
+  assert.equal(db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 0);
   const approved = await bridge.zeroSetupWork.approve({ request_id, confirmed: true, channel: 'control_center',
     subscription_execution: { provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 1, max_runtime_ms: 10000 } }, 'operator');
   assert.equal(approved.state, 'DISPATCHED');
@@ -173,6 +184,24 @@ for (const wrongSecondFile of [false, true]) test('canonical Cursor projectless 
   assert.equal(contract.budget.max_actual_spend_usd, null);
   assert.equal(mission.envelope.risk_auto_acceptance, undefined, 'Cursor does not inherit OpenCode Acceptance');
   assert.equal(bridge.missionApprovals.view(mission.envelope.approval_id).principal, 'operator');
+  const grant = bridge.missionApprovals.view(mission.envelope.approval_id);
+  assert.equal(grant.scope_fingerprint, contract.scope_fingerprint);
+  assert.deepEqual(grant.summary.subscription_execution, { provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 1, max_runtime_ms: 10000 });
+  assert.deepEqual(mission.envelope.criteria.map(c => c.content), spec.files.map(f => f.content));
+  assert.deepEqual(contract.verification.acceptance_criteria.map(c => [c.path, c.bytes, c.content_sha256]),
+    spec.files.map(f => [f.path, Buffer.byteLength(f.content), digest(f.content)]));
+  const changedScope = structuredClone(contract);
+  changedScope.verification.acceptance_criteria[1].content_sha256 = digest('different\n');
+  changedScope.scope_fingerprint = require('../src/mission-contract').fingerprintOf(changedScope);
+  assert.throws(() => bridge.missionApprovals.assertBindable(grant.approval_id,
+    { contract: changedScope, workspace: mission.envelope.workspace }), /scope_mismatch/);
+  // A second prepared workspace cannot borrow the first one's grant.
+  assert.throws(() => bridge.missionApprovals.assertBindable(grant.approval_id,
+    { contract, workspace: path.dirname(mission.envelope.workspace) }), /scope_mismatch/);
+  const replay = await mcp.call('prepare_mission', { request_id, objective });
+  assert.equal(replay.technical.mission_id, mission.id);
+  assert.equal(db.prepare('SELECT count(*) n FROM cp_missions').get().n, 1);
+  assert.equal(db.prepare('SELECT count(*) n FROM cp_dispatches').get().n, 1);
   const dispatch = db.prepare('SELECT * FROM cp_dispatches WHERE mission_id=?').get(mission.id);
   await bridge.missions.launch(dispatch);
   const row = db.prepare('SELECT * FROM cp_run_results WHERE mission_id=?').get(mission.id);

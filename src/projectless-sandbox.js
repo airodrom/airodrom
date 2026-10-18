@@ -53,7 +53,7 @@ function exactMissionInput(workspace, requestId) {
 
 // Explicit data format for exact-result multi-file work. The caller chooses files
 // and expected bytes, NEVER permissions, arbitrary commands, grants or verifiers.
-// Existing free-form and named-repository intake is deliberately not reinterpreted.
+// Natural-language intake below compiles to this same data format, never authority.
 const WORK_MARKER = 'AIRODROM_WORK_V1';
 function normalizeWorkSpec(spec) {
   const { object, text } = require('./control-plane-store');
@@ -83,6 +83,40 @@ function parseWorkSpec(instruction) {
   const rest = instruction.trim().slice(WORK_MARKER.length).trim();
   let spec; try { spec = JSON.parse(rest); } catch { throw Error('projectless_work_spec_invalid'); }
   return normalizeWorkSpec(spec);
+}
+
+// Deliberately finite grammar: consume the entire request, including both exact
+// JSON string literals. Never guess newlines, discard trailing constraints, select
+// an existing repository, or treat prose as a grant. ADR 0051 / recovery #142.
+function parseNaturalWorkSpec(instruction) {
+  if (typeof instruction !== 'string') return null;
+  const header = /^(?:use cursor(?: only)? in a (?:new )?disposable (?:workspace|sandbox) to (?:create|write) (?:exactly )?(?:two|2) files|(?:create|write) (?:exactly )?(?:two|2) files in a (?:new )?disposable (?:workspace|sandbox) using cursor(?: only)?)\s*:\s*/i;
+  const source = instruction.trim(), prefix = header.exec(source);
+  if (!prefix) return null;
+  // Match each clause separately so the backreference to optional path ticks is
+  // local. JSON.parse interprets escapes as data, without executing source.
+  const clause = /^(?:-\s*)?(`?)([^`\s:]+)\1\s*(?::|containing|with content)\s*("(?:[^"\\\r\n]|\\[^\r\n])*")/;
+  let rest = source.slice(prefix[0].length);
+  const files = [];
+  for (let i = 0; i < 2; i++) {
+    const match = clause.exec(rest);
+    if (!match) throw Error('projectless_exact_two_file_syntax_required');
+    let content;
+    try { content = JSON.parse(match[3]); } catch { throw Error('projectless_exact_content_json_required'); }
+    files.push({ path: match[2], content });
+    rest = rest.slice(match[0].length);
+    if (i === 0) {
+      const separator = /^(?:\s+and\s+|\s*;\s*|[ \t]*\r?\n\s*)/.exec(rest);
+      if (!separator) throw Error('projectless_exact_two_file_syntax_required');
+      rest = rest.slice(separator[0].length);
+    }
+  }
+  if (!/^\s*\.?\s*$/.test(rest)) throw Error('projectless_unparsed_constraints');
+  return normalizeWorkSpec({ version: 1, worker: 'cursor', files });
+}
+
+function explicitlyRequestsCursor(instruction) {
+  return /\b(?:use|using|with|via)\s+cursor\b|\bcursor[- ]only\b/i.test(instruction);
 }
 function workPresentation(spec) {
   spec = normalizeWorkSpec(spec);
@@ -154,4 +188,4 @@ function workMissionInput(workspace, requestId, input, { externalConfirmed = fal
   };
 }
 
-module.exports = { allocate, seedExactFixture, exactMissionInput, WORK_MARKER, normalizeWorkSpec, parseWorkSpec, workPresentation, seedWork, workMissionInput };
+module.exports = { allocate, seedExactFixture, exactMissionInput, WORK_MARKER, normalizeWorkSpec, parseWorkSpec, parseNaturalWorkSpec, explicitlyRequestsCursor, workPresentation, seedWork, workMissionInput };
