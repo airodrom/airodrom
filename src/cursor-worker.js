@@ -504,6 +504,10 @@ class CursorWorker {
         onEvent: event => {
           if (count++ >= MAX_TRACE_EVENTS) return;
           try { b.controlStore.event('worker.trace', m.id, { agent_id: ID, run_id: runId, ...event, authority: false }, { runId }); } catch { /* ledger failure must not abort execution */ }
+          try {
+            require('./live-observatory').observeCursorEvent(b, { missionId: m.id, runId, event, agentId: ID });
+            b.emit('change');
+          } catch { /* observatory failure must not abort execution */ }
           if (event.kind === 'worker.started') { try { b.controlStore.event('runtime.execution.started', m.id, { agent_id: ID }, { runId }); b.emit('change'); } catch { /* observational */ } }
         },
       });
@@ -511,7 +515,13 @@ class CursorWorker {
       if (controller.signal.aborted) fail('cursor_cancelled');
       b.missions.assertAuthority(b.controlStore.requireMission(m.id));
       outcome = 'completed';
-      try { require('./live-observatory').record(b, { eventType: 'worker.terminated', missionId: m.id, runId, metadata: { agent_id: ID, status: result.result.status, sandbox_id: result.provenance.sandbox_id }, idempotencyKey: `obs-worker-term:${m.id}:${runId}` }); } catch { /* observational */ }
+      try {
+        // Host-measured file changes after the Cursor turn. Termination is recorded from worker.exited mid-stream.
+        require('./live-observatory').observeCursorResult(b, {
+          missionId: m.id, runId, changes: result.changes || [], agentId: ID, status: result.result.status, terminate: false
+        });
+        b.emit('change');
+      } catch { /* observational */ }
       return result;
     } catch (error) {
       dispatchError = error;

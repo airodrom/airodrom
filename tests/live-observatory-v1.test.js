@@ -173,9 +173,65 @@ test('8. Control Center rendering exposes Observatory UX contracts', () => {
   assert.match(js, /mission-detail/);
   assert.match(js, /\/api\/product\/observatory/);
   assert.match(js, /observation_boundary|Observatory shows sanitized/);
+  assert.match(js, /function executionMonitor/);
+  assert.match(js, /Live Execution Monitor/);
+  assert.match(js, /ACTIVE_UI\(m\.state\)[\s\S]*executionMonitor/);
+  assert.match(js, /No further telemetry is available/);
+  assert.equal(js.includes('Cursor Agent is unqualified'), false);
   assert.match(css, /\.obs-grid/);
   assert.equal(css.includes('obs-enter'), false);
   assert.equal(css.includes('obs-glow'), false);
+});
+
+test('Cursor stream-json events appear progressively before post-execution files', async t => {
+  const f = await withMission(t);
+  const created = f.create({ objective: 'Synthetic Cursor progressive capture' });
+  const mid = created.mission_id || created.id;
+  const runId = randomUUID();
+
+  observatory.observeCursorEvent(f.bridge, {
+    missionId: mid, runId, agentId: 'cursor',
+    event: { kind: 'worker.started', provenance: 'HOST_MEDIATED', pid_observed: true }
+  });
+  let snap = observatory.snapshot(f.bridge, mid);
+  assert.equal(snap.version, 2);
+  assert.equal(snap.activity.telemetry, 'mid_run_events');
+  assert.match(snap.observation_boundary.worker_tools, /cursor_stream_json|cursor_end/);
+  assert.ok(snap.worker.some(e => e.event_type === 'worker.started' && e.agent_id === 'cursor' && e.timing === 'mid_run'));
+
+  const afterStart = observatory.liveEvents(f.bridge, new URL('http://local/api/product/live-events?mission=' + mid)).cursor;
+  observatory.observeCursorEvent(f.bridge, {
+    missionId: mid, runId, agentId: 'cursor',
+    event: {
+      kind: 'worker.tool_started', provenance: 'WORKER_REPORTED', tool: 'write',
+      path: 'fixture.txt', scope: 'workspace', subtype: 'started',
+      prompt: 'PRIVATE_REASONING', args: { content: 'SECRET_BODY' }
+    }
+  });
+  const midPage = observatory.liveEvents(f.bridge, new URL('http://local/api/product/live-events?mission=' + mid + '&after=' + afterStart));
+  assert.ok(midPage.events.some(e => e.event_type === 'worker.tool_requested' && e.tool === 'write'));
+  assert.ok(midPage.events.every(e => !JSON.stringify(e).includes('PRIVATE_REASONING')));
+  assert.ok(midPage.events.every(e => !JSON.stringify(e).includes('SECRET_BODY')));
+  assert.ok(!midPage.events.some(e => String(e.event_type || '').startsWith('fs.')));
+
+  observatory.observeCursorEvent(f.bridge, {
+    missionId: mid, runId, agentId: 'cursor',
+    event: { kind: 'worker.exited', provenance: 'HOST_MEDIATED', exit_code: 0, termination_verified: true }
+  });
+  observatory.observeCursorResult(f.bridge, {
+    missionId: mid, runId, agentId: 'cursor', terminate: false,
+    changes: [{ path: 'fixture.txt', sha256: 'c'.repeat(64), content: 'cursor-write\n' }],
+    status: 'completed'
+  });
+  snap = observatory.snapshot(f.bridge, mid);
+  assert.ok(snap.files.some(e => e.path === 'fixture.txt' && e.timing === 'post_execution'));
+  assert.ok(snap.worker.some(e => e.event_type === 'worker.terminated'));
+  assert.equal(snap.activity.files_changed >= 1, true);
+  assert.equal(snap.observation_boundary.real_time_vs_post, 'includes_real_time_worker_events');
+  // system/diag noise must not become Observatory STAGES
+  assert.equal(observatory.observeCursorEvent(f.bridge, {
+    missionId: mid, runId, event: { kind: 'worker.system', subtype: 'init' }
+  }), null);
 });
 
 test('9. fixture Mission end-to-end Observatory APIs and observation boundary', async t => {

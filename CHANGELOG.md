@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Live Execution Monitor V1: active Missions open a three-column real-time activity UI on Observatory SSE/ledger; Cursor stream-json tool events project into Observatory STAGES mid-run; snapshot v2 counters distinguish real-time vs post-execution telemetry ([docs/LIVE-EXECUTION-MONITOR-V1.md](docs/LIVE-EXECUTION-MONITOR-V1.md)).
+
 ### Fixed
 - Route `AIRODROM_WORK_V1` packets as WORK in chat intent; probe Cursor readiness before projectless dispatch; treat unprobed `lastReadiness` as contract-ok until launch/execute; write settlement receipts for projectless Acceptance so Control Center can show settled; cache Cursor readiness from product status.
 - Classify Expanded Autonomy control-plane tables in the Memory retention registry so identity validation no longer treats `cp_expanded_autonomy*` as unclassified stores after schema ensure.

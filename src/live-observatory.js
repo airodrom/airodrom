@@ -102,6 +102,7 @@ function observeHostFileChanges(bridge, { missionId, runId, changes = [], agentI
       metadata: {
         agent_id: agentId,
         path: file,
+        timing: 'post_execution',
         writer_class: agentId === 'opencode' ? 'OPENCODE_WRITE' : 'UNKNOWN_WRITER',
         ...(linesAdded !== null ? { lines_added: linesAdded } : {}),
         ...(linesRemoved !== null ? { lines_removed: linesRemoved } : {}),
@@ -126,7 +127,7 @@ function lineStats(before, after) {
   return { lines_added: added, lines_removed: removed };
 }
 
-function observeOpenCodeResult(bridge, { missionId, runId, changes = [], agentId = 'opencode' }) {
+function observeWorkerResult(bridge, { missionId, runId, changes = [], agentId = 'opencode', status = 'completed', terminate = true } = {}) {
   const enriched = changes.map(c => {
     const file = safeRel(c.path);
     if (!file) return null;
@@ -145,16 +146,75 @@ function observeOpenCodeResult(bridge, { missionId, runId, changes = [], agentId
   if (enriched.length) {
     recorded.push(record(bridge, {
       eventType: 'git.diff_observed', missionId, runId,
-      metadata: { agent_id: agentId, files_changed: enriched.length, paths: enriched.map(e => e.path).slice(0, 16) },
+      metadata: {
+        agent_id: agentId, timing: 'post_execution',
+        files_changed: enriched.length, paths: enriched.map(e => e.path).slice(0, 16)
+      },
       idempotencyKey: `obs-diff:${missionId}:${runId || 'na'}:${enriched.map(e => e.sha256 || e.path).join(':').slice(0, 120)}`
     }));
   }
-  recorded.push(record(bridge, {
-    eventType: 'worker.terminated', missionId, runId,
-    metadata: { agent_id: agentId, status: 'completed' },
-    idempotencyKey: `obs-worker-term:${missionId}:${runId || 'na'}`
-  }));
+  if (terminate) {
+    recorded.push(record(bridge, {
+      eventType: 'worker.terminated', missionId, runId,
+      metadata: { agent_id: agentId, status, timing: 'end_of_run' },
+      idempotencyKey: `obs-worker-term:${missionId}:${runId || 'na'}`
+    }));
+  }
   return recorded;
+}
+
+function observeOpenCodeResult(bridge, opts) {
+  return observeWorkerResult(bridge, { ...opts, agentId: opts?.agentId || 'opencode' });
+}
+
+/** Map Cursor stream-json / host-mediated onEvent traces into Observatory STAGES. */
+function observeCursorEvent(bridge, { missionId, runId, event, agentId = 'cursor' } = {}) {
+  if (!event || typeof event !== 'object' || typeof event.kind !== 'string') return null;
+  const kind = event.kind;
+  const provenance = event.provenance === 'HOST_MEDIATED' || event.provenance === 'WORKER_REPORTED'
+    ? event.provenance : 'WORKER_REPORTED';
+  if (kind === 'worker.started') {
+    return record(bridge, {
+      eventType: 'worker.started', missionId, runId,
+      metadata: { agent_id: agentId, provenance, timing: 'mid_run' },
+      idempotencyKey: `obs-cursor-start:${missionId}:${runId || 'na'}:${event.pid_observed ? 'pid' : Date.now()}`
+    });
+  }
+  if (kind.startsWith('worker.tool_')) {
+    const tool = safeTool(event.tool);
+    if (!tool) return null;
+    const completed = /completed|success|finished/i.test(kind) || event.subtype === 'completed';
+    const file = safeRel(event.path);
+    return record(bridge, {
+      eventType: completed ? 'worker.tool_completed' : 'worker.tool_requested',
+      missionId, runId,
+      metadata: {
+        agent_id: agentId, tool, provenance, timing: 'mid_run',
+        ...(file ? { path: file } : {}),
+        ...(event.scope === 'workspace' || event.scope === 'brief' || event.scope === 'outside' ? { scope: event.scope } : {})
+      },
+      idempotencyKey: `obs-cursor-tool:${missionId}:${runId || 'na'}:${tool}:${kind}:${file || 'na'}:${Date.now()}`
+    });
+  }
+  if (kind === 'worker.exited') {
+    return record(bridge, {
+      eventType: 'worker.terminated', missionId, runId,
+      metadata: {
+        agent_id: agentId, provenance, timing: 'end_of_run',
+        status: event.cancelled ? 'cancelled' : event.timed_out ? 'timeout' : (event.exit_code === 0 ? 'completed' : 'failed'),
+        ...(Number.isInteger(event.exit_code) ? { exit_code: event.exit_code } : {}),
+        ...(event.termination_verified === true || event.termination_verified === false
+          ? { termination_verified: event.termination_verified } : {})
+      },
+      idempotencyKey: `obs-cursor-exit:${missionId}:${runId || 'na'}`
+    });
+  }
+  // system / diag / proxy noise is not an Observatory STAGE.
+  return null;
+}
+
+function observeCursorResult(bridge, opts) {
+  return observeWorkerResult(bridge, { ...opts, agentId: opts?.agentId || 'cursor', terminate: opts?.terminate !== false });
 }
 
 function projectEvent(event) {
@@ -164,6 +224,8 @@ function projectEvent(event) {
   const extra = {};
   if (safeRel(meta.path)) extra.path = meta.path;
   if (safeTool(meta.tool)) extra.tool = meta.tool;
+  if (typeof meta.agent_id === 'string' && TOOL_NAME.test(meta.agent_id)) extra.agent_id = meta.agent_id;
+  if (meta.timing === 'mid_run' || meta.timing === 'end_of_run' || meta.timing === 'post_execution') extra.timing = meta.timing;
   if (typeof meta.job_name === 'string' && TOOL_NAME.test(meta.job_name)) extra.job = meta.job_name;
   if (Number.isInteger(meta.exit_code) && meta.exit_code >= 0 && meta.exit_code <= 255) extra.exit_code = meta.exit_code;
   if (count(meta.lines_added) !== null) extra.lines_added = meta.lines_added;
@@ -238,8 +300,14 @@ function snapshot(bridge, missionId) {
   const heartbeat = projected.filter(e => e.event_type === 'observatory.heartbeat' || e.category === 'Worker' || e.category === 'Runtime').at(-1);
   const midRunWorker = worker.some(e => ['worker.tool_requested', 'worker.started', 'runtime.execution.started'].includes(e.event_type));
   const postRunFiles = files.some(e => String(e.event_type || '').startsWith('fs.') || e.event_type === 'git.diff_observed' || e.event_type === 'git.diff.observed');
+  const preferred = mission.envelope?.preferred_agent || (typeof view.runtime === 'string' && /cursor/i.test(view.runtime) ? 'cursor' : null);
+  const openCodeMid = worker.some(e => e.event_type === 'worker.tool_requested' && e.agent_id !== 'cursor');
+  const cursorMid = worker.some(e => (e.agent_id === 'cursor' || preferred === 'cursor') && ['worker.tool_requested', 'worker.started'].includes(e.event_type));
+  const fileCount = new Set(files.map(e => e.path).filter(Boolean)).size;
+  const testPass = tests.filter(e => e.event_type === 'test.completed' && (e.exit_code === 0 || /passed/i.test(e.label || ''))).length;
+  const testFail = tests.filter(e => e.event_type === 'test.completed' && e.exit_code != null && e.exit_code !== 0).length;
   return {
-    version: 1,
+    version: 2,
     mission: view,
     activity: {
       current_label: latest?.label || view.timeline.at(-1)?.label || null,
@@ -250,17 +318,26 @@ function snapshot(bridge, missionId) {
       last_heartbeat_ms: heartbeat?.timestamp_ms || latest?.timestamp_ms || view.observed_at,
       advancing,
       error: latest?.branch === 'attention' ? latest.label : null,
-      detail_available: projected.length > 0
+      detail_available: projected.length > 0,
+      files_changed: fileCount,
+      tests_passed: testPass,
+      tests_failed: testFail,
+      telemetry: midRunWorker ? 'mid_run_events' : (postRunFiles || projected.length ? 'post_execution_observations' : 'none')
     },
     observation_boundary: {
-      worker_tools: 'openCode_ndjson_mid_run',
+      worker_tools: cursorMid
+        ? 'cursor_stream_json_mid_run_tool_names'
+        : openCodeMid
+          ? 'opencode_ndjson_mid_run'
+          : (preferred === 'cursor' ? 'cursor_end_of_run_or_host_only' : 'host_lifecycle_only'),
       files: 'host_measured_after_turn_or_saved_watch',
       git_diff: 'host_measured_authorized_paths',
       commands_tests: 'governed_job_ledger',
       continuous_filesystem_watch: !!bridge.workspaceActivityWatch?.status?.()?.continuous_filesystem_watch,
       unsaved_typing_observable: false,
       authorship_without_evidence: false,
-      hidden_reasoning: false
+      hidden_reasoning: false,
+      real_time_vs_post: midRunWorker ? 'includes_real_time_worker_events' : 'post_execution_or_lifecycle_only'
     },
     files: files.slice(-64),
     commands: commands.slice(-64),
@@ -272,12 +349,12 @@ function snapshot(bridge, missionId) {
     observed_at: Date.now(),
     signals: { mid_run_worker: midRunWorker, post_run_files: postRunFiles },
     limitations: [
-      'Observatory shows host-observed sanitized events only.',
-      'OpenCode tool names are observed from mid-run NDJSON; arguments and reasoning are never stored.',
-      'Saved file changes may be observed by a lightweight workspace watcher; unsaved typing is not observable.',
-      'Writer class is SAVED_FILE_CHANGE unless OpenCode evidence proves OPENCODE_WRITE; process authorship is never invented.',
+      'Execution Monitor shows host-observed sanitized events only.',
+      'OpenCode tool names come from mid-run NDJSON; Cursor tool names come from stream-json when emitted — arguments and reasoning are never stored.',
+      'File creates/modifies are host-measured after the worker turn unless a saved-file watcher fires.',
+      'Unsaved typing is not observable. Progress percentages are never invented.',
       'File contents appear only for authorized workspace paths via bounded Git diff.',
-      'Model reasoning and prompts remain private.'
+      'When no further telemetry is available, the monitor says so explicitly.'
     ]
   };
 }
@@ -390,6 +467,9 @@ module.exports = {
   observeOpenCodeLine,
   observeHostFileChanges,
   observeOpenCodeResult,
+  observeWorkerResult,
+  observeCursorEvent,
+  observeCursorResult,
   lineStats,
   projectEvent,
   liveEvents,
