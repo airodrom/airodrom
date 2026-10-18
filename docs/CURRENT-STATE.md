@@ -1,5 +1,14 @@
 # Current state (2026-10-10)
 
+## Cognitive Mission Router V1 — SOURCE IMPLEMENTATION, RELEASE HOLD (2026-10-18)
+
+- Implemented over ZeroSetupWork, Developer Autonomy, OpenCode and existing Mission machinery; [ADR 0057](adr/0057-cognitive-mission-router.md).
+- Four strict contracts, scoped read-only planning, content integrity, deterministic routing, standing caller delegation, bounded Cursor approval and durable evidence.
+- Real local OpenCode/Qwen planning plus bounded execution verified in an isolated disposable fixture; host checks and termination passed, Acceptance pending. Cursor fixture coverage is not paid-worker acceptance.
+- Not merged or installed. Required regression/security gates and independent authority review remain release gates; pristine-main regressions must not be presented as passing.
+- PR #150 includes #149's diagnostic changes without commit ancestry; preserve #148 independently. Merge #150 first only when its gates pass, then the router; no duplicate merge of #149 is needed once superseded.
+- Operator instructions and limitations: [COGNITIVE-MISSION-ROUTER-V1.md](COGNITIVE-MISSION-ROUTER-V1.md). Older entries below are historical and do not establish today's installed state.
+
 ## Unified Autonomous Development V1 — SOURCE IMPLEMENTATION, PR PENDING (2026-10-12)
 
 - **Branch:** `feat/unified-autonomous-development-v1` (fresh worktree from `origin/main` `079eee9`, which is also the installed service)

@@ -370,7 +370,7 @@ class DeveloperAutonomy {
     if (!grant || grant.state !== 'active') throw Error('Developer Autonomy grant unavailable');
     return { identity: { expires_at: grant.expires_at },
       objective: { original_instruction: input.objective },
-      permissions: { allowed_write_paths: [...input.allowed_files] },
+      permissions: { allowed_write_paths: input.cognitive_request_id && input.preferred_agent === 'host' ? [] : [...input.allowed_files], ...(input.cognitive_request_id && input.preferred_agent === 'host' ? { allowed_tools: ['read'] } : {}) },
       budget: { risk_class: 'normal', max_repair_attempts: grant.repair_budget,
         max_wall_clock_ms: Math.min(grant.expires_at - grant.created_at, grant.manifest.mission.budget.max_runtime_hours * 3600000),
         max_worker_invocations: grant.repair_budget + 1 } };
@@ -419,7 +419,7 @@ class DeveloperAutonomy {
     this.owner(owner);
     object(input, [
       'alias', 'repository', 'project_id', 'goal_id', 'workflows', 'budgets',
-      'workers', 'duration_days', 'confirmed', 'diff_check', 'default_tests'
+      'workers', 'duration_days', 'confirmed', 'diff_check', 'default_tests', 'cognitive'
     ]);
     if (input.confirmed !== true) throw Error('Explicit owner enrollment consent required');
     ALIAS(input.alias);
@@ -506,6 +506,7 @@ class DeveloperAutonomy {
       goal_id: input.goal_id,
       repository,
       identity: { dev: s.dev, ino: s.ino },
+      ...(input.cognitive === undefined ? {} : { cognitive: require('./cognitive-router').enrollment(input.cognitive, repository) }),
       workflows: [...input.workflows].sort(),
       budgets,
       workers: [...workers],
@@ -1145,7 +1146,8 @@ class DeveloperAutonomy {
   assertInput(input) {
     const ref = input.developer_autonomy;
     object(ref, ['policy_id', 'grant_id', 'hash', 'workspace_id', 'repair_budget']);
-    const t = this.grantScope(ref.grant_id);
+    let t = this.grantScope(ref.grant_id);
+    if (t && input.cognitive_request_id && input.preferred_agent === 'host') t = require('./cognitive-router').readScope(t, this.bridge.zeroSetupWork.read(input.cognitive_request_id));
     if (!t || fingerprint(ref) !== fingerprint(t.developer_autonomy)) {
       throw Error('Developer Autonomy grant expired, revoked or changed');
     }
@@ -1326,7 +1328,8 @@ class DeveloperAutonomy {
         expires_at: p.expires_at || null,
         workflows: p.workflows || [],
         workers: p.workers || ['opencode'],
-        budgets: p.budgets || null
+        budgets: p.budgets || null,
+        cognitive: p.cognitive || null
       })),
       never_auto: NEVER_AUTO,
       note: active.length

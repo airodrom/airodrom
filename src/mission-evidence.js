@@ -101,6 +101,7 @@ function evidencePackage(bridge, missionId) {
   const nextSafeAction = final.state === 'awaiting_acceptance' ? 'Owner reviews evidence and records Acceptance (accept or rework) in Control Center or Terminal.' : final.state === 'completed' ? 'None required for this Mission. Merge, installation and production remain separate owner-controlled actions.' : phase?.observing ? 'Wait; Airodrom is still executing or repairing within the approved scope.' : phase?.message || 'Owner inspects diagnostics; no automatic retry is pending.';
   return {
     schema_version: 1,
+    ...(final.envelope.cognitive ? { cognitive: require('./cognitive-router').evidence(bridge, final, detail, latestVerification, changedFiles) } : {}),
     mission_id: final.id,
     root_mission_id: root.id,
     goal_id: final.goal_id,

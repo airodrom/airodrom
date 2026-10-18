@@ -861,5 +861,14 @@
   "tests/status-hotpath-cpu.test.js",
   "tests/verifier-baseline-trust.test.js",
   "tests/verifier-pending-capability-recovery.test.js",
-  "tests/worker-release-closure.test.js"
+  "tests/worker-release-closure.test.js",
+  "docs/COGNITIVE-MISSION-ROUTER-V1.md",
+  "docs/LIVE-EXECUTION-MONITOR-V1.md",
+  "docs/adr/0057-cognitive-mission-router.md",
+  "src/cognitive-contracts.js",
+  "src/cognitive-integrity.js",
+  "src/cognitive-router.js",
+  "tests/cognitive-router-browser.cjs",
+  "tests/cognitive-router-live.cjs",
+  "tests/cognitive-router.test.js"
 ]

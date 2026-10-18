@@ -14,7 +14,7 @@ function dispatchPolicy(input={}){
  if(p.max_backoff_ms<p.initial_backoff_ms||!['focused_coding','large_coding','research','deterministic_files'].includes(p.task_category)||!['unspecified','local_only','cloud_allowed'].includes(p.privacy))throw Error('Invalid dispatch policy');
  for(const [key,allowed]of [['billing_classes',['local','subscription']],['providers',['local','anthropic_subscription','codex_openai','cursor_runtime']]])if(!Array.isArray(p[key])||p[key].length>3||p[key].some(v=>!allowed.includes(v)))throw Error('Invalid fallback policy');
  if(!Array.isArray(p.native_actions)||p.native_actions.length>10)throw Error('Invalid native action plan');
- for(const a of p.native_actions){object(a,['name','path','content']);if(a.name!=='file_write'||typeof a.path!=='string'||!a.path||a.path.split(/[\\/]/).some(s=>!s||s==='.'||s==='..')||typeof a.content!=='string'||Buffer.byteLength(a.content)>12000)throw Error('Invalid deterministic file action');if(a.content)text(a.content,'native action content',12000);}
+ for(const a of p.native_actions){object(a,a.name==='file_read'?['name','path']:['name','path','content']);if(!['file_write','file_read'].includes(a.name)||typeof a.path!=='string'||!a.path||a.path.split(/[\\/]/).some(s=>!s||s==='.'||s==='..')||(a.name==='file_write'&&(typeof a.content!=='string'||Buffer.byteLength(a.content)>12000)))throw Error('Invalid deterministic file action');if(a.content)text(a.content,'native action content',12000);}
  return p;
 }
 class AgentDispatch {

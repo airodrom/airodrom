@@ -228,6 +228,10 @@ class ZeroSetupWork {
       throw Error('Secrets and private identifiers cannot be work instructions. Use the vault flows.');
     }
     const prior = this.read(request_id);
+    if (!prior || prior.cognitive) {
+      const cognitive = await require('./cognitive-router').prepare(this, { instruction, request_id }, principal);
+      if (cognitive) return cognitive;
+    }
     if (prior) {
       if (prior.principal !== principal) throw Error('Resume the original authenticated handoff session; duplicate execution denied');
       if ((prior.work_spec || prior.projectless || prior.intake_blockers) && prior.instruction !== instruction)
@@ -429,6 +433,7 @@ class ZeroSetupWork {
   }
 
   statusView(record) {
+    if (record.cognitive) return require('./cognitive-router').view(record, this.bridge);
     const live = record.request_id ? this.read(record.request_id) : record;
     const state = live.state || record.state || 'awaiting_approval';
     let outcome = null;
@@ -661,6 +666,7 @@ class ZeroSetupWork {
     if (!live) throw Error('Prepared task unavailable');
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
+    if (live.cognitive) return await require('./cognitive-router').approve(this, live, { ...input, channel: input.channel || 'terminal' }, owner);
     if (live.work_spec) return await this.startBoundedProjectless(live, { ...input, owner,
       channel: input.channel || 'terminal' });
     if (input.subscription_execution !== undefined) throw Error('Subscription permission requires an explicit bounded Cursor task');
@@ -781,6 +787,7 @@ class ZeroSetupWork {
     if (live.proposal) {
       try { this.bridge.workTemplates.rejectProposal({ project: live.proposal.project, workspace_alias: live.proposal.workspace_alias, confirmed: true }, 'operator'); } catch { /* optional */ }
     }
+    if (live.cognitive && live.mission_id) this.bridge.missions.cancel(live.mission_id, { request_id: 'cognitive-cancel:' + input.request_id }, owner);
     live.state = 'rejected';
     live.presentation = { ...live.presentation, status: 'Cancelled' };
     this.write(input.request_id, live.principal, live, 'rejected');

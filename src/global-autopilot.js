@@ -127,8 +127,12 @@ class GlobalAutopilot {
       .run(now, owner, requestId, kind === 'stopped' ? 1 : 0, now);
     let cancelled = 0;
     if (cancelActive) {
+      // Emergency STOP also revokes explicitly delegated cognitive planning.
+      for (const p of this.bridge.developerAutonomy.list('operator').filter(p => p.state === 'active' && p.cognitive)) {
+        this.bridge.developerAutonomy.revoke({ policy_id: p.policy_id, policy_hash: p.policy_hash, confirmed: true }, 'operator');
+      }
       for (const m of this.bridge.controlStore.listMissions?.() || []) {
-        if (!m.envelope?.autopilot) continue;
+        if (!m.envelope?.autopilot && !m.envelope?.cognitive) continue;
         if (['completed', 'cancelled'].includes(m.state)) continue;
         try {
           this.bridge.missions.cancel(m.id, { request_id: randomUUID() }, owner);

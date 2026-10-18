@@ -546,6 +546,12 @@
     "src/repair-context.js",
     "src/sandbox-containment.js",
     "src/verifier-baseline.js",
-    "src/zero-setup-terminal.js"
+    "src/zero-setup-terminal.js",
+    "src/cognitive-contracts.js",
+    "src/cognitive-integrity.js",
+    "src/cognitive-router.js",
+    "docs/COGNITIVE-MISSION-ROUTER-V1.md",
+    "docs/adr/0057-cognitive-mission-router.md",
+    "docs/LIVE-EXECUTION-MONITOR-V1.md"
   ]
 }

@@ -28,6 +28,8 @@ class AuthorityRuntime {
     // The full host-produced repository manifest stays in the immutable legacy
     // envelope. The portable revision commits to it without copying Git internals.
     if(envelope.baseline)envelope.baseline={version:envelope.baseline.version||1,manifest_hash:canonicalHash(envelope.baseline)};
+    // Cognitive data remains in the canonical Mission; the portable authority revision commits to all bytes.
+    if(envelope.cognitive)envelope.cognitive={version:1,manifest_hash:canonicalHash(envelope.cognitive)};
     return this.store.createMission({id:m.id,project_id:m.project_id,goal_id:m.goal_id,task_id:m.task_id,owner:m.owner,acceptance_strength:m.acceptance_strength,envelope},this.store.host);
   }
   recordResult(runId,result) {
@@ -70,7 +72,8 @@ class AuthorityRuntime {
     const envelope=mission.envelope,pack=this.buildContext(mission),policy=envelope.dispatch_policy;
     const candidates=Object.entries(observations).filter(([id])=>['host','opencode','claude_code','codex','cursor'].includes(id)).map(([id,a])=>{
       const p=a.runtime_profile||{};
-      return {agent_id:id==='claude_code'?'claude':id,runtime_id:id,enabled:a.implemented===true,capabilities:a.capabilities||[],assurance:id==='host'?2:1,locality:['host','opencode'].includes(id)?'local':'external',isolation_verified:a.bounded_worker===true||['host','opencode'].includes(id),availability:p.availability||a.availability||'unknown',observed_at:Date.now(),auth_state:p.auth_state||'unknown',quota_state:p.quota_state||'unknown',circuit_state:p.circuit_state||'unknown',cost_class:p.cost_class||'unknown',transport:p.transport||'unknown',execution_qualified:a.bounded_worker?a.qualified===true:id!=='cursor',policy_provider_alias:{claude_code:'anthropic_subscription',codex:'codex_openai',cursor:'cursor_runtime'}[id]||'local'};
+      const governedCursor=id==='cursor'&&a.governed_worker===true&&this.bridge.cursorWorker?.qualifiedFor(mission,{readiness:{ready:a.available===true}})===true;
+      return {agent_id:id==='claude_code'?'claude':id,runtime_id:id,enabled:a.implemented===true,capabilities:a.capabilities||[],assurance:id==='host'?2:1,locality:['host','opencode'].includes(id)?'local':'external',isolation_verified:a.bounded_worker===true||governedCursor||['host','opencode'].includes(id),availability:p.availability||a.availability||'unknown',observed_at:Date.now(),auth_state:p.auth_state||'unknown',quota_state:p.quota_state||'unknown',circuit_state:p.circuit_state||'unknown',cost_class:p.cost_class||'unknown',transport:p.transport||'unknown',execution_qualified:id==='cursor'?governedCursor:a.bounded_worker?a.qualified===true:true,policy_provider_alias:{claude_code:'anthropic_subscription',codex:'codex_openai',cursor:'cursor_runtime'}[id]||'local'};
     });
     // Preserve immutable legacy billing/provider restrictions without treating
     // a runtime's vendor alias as a selected reasoning provider.
