@@ -57,3 +57,10 @@ condition = "AND"
 paths = ["(^|/)tests/capability\\-expansion\\-v2\\.test\\.js$"]
 regexTarget = "secret"
 regexes = ["^ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210$"]
+
+[[allowlists]]
+description = "Non-secret JavaScript comparison of the host idempotency coordinate; exact expression only"
+condition = "AND"
+paths = ["(^|/)src/apps/opencode\\-adapter\\.js$"]
+regexTarget = "secret"
+regexes = ["^a[.]idempotency_key===$"]
