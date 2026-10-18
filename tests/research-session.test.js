@@ -70,9 +70,18 @@ test('delayed dispatch closes an idle login browser at the signed Mission deadli
  const f=await require('./fixtures/mission-fixture.cjs').fixture(t),b=f.bridge;let closed=false;
  b.options.researchMission={workspace:f.repo,synthetic:true,maxPages:2,maxActions:20,timeoutMs:2500,baselineFiles:['docs/README.md'],browserFactory:()=>({qualify:async()=>({available:true}),execute:async()=>({state:'navigated',authority:false}),close:async()=>{closed=true;return {closed:true,termination_verified:true,owned_process_termination:'verified'};}})};
  f.host.researchAssess=(task,input)=>b.missions.research.assess(task,input);f.host.researchExecute=(task,input,signal)=>b.missions.research.perform(task,input,signal);
- const r=b.missions.research.create({request_id:randomUUID(),objective:'Inspect synthetic account within the signed deadline.',entry_url:ORIGIN+'/',session_authorization:{mode:'dedicated_manual',confirmed:true}}),m=b.controlStore.requireMission(r.mission_id),deadline=m.envelope.manifest.expires_at;
- await new Promise(r=>setTimeout(r,1000));b.missions.dispatch(m.id,{request_id:randomUUID()});for(let i=0;i<150&&!b.missions.research.active.get(m.id)?.waitingHandoff;i++)await new Promise(r=>setTimeout(r,5));assert.equal(b.missions.research.active.get(m.id)?.waitingHandoff,true);
- await new Promise(r=>setTimeout(r,Math.max(0,deadline-Date.now()+200)));assert.equal(closed,true);assert.equal(b.missions.research.active.has(m.id),false);assert.throws(()=>b.missions.research.ready(m.id,{request_id:randomUUID(),confirmed:true}));assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(m.id).n,0);
+ // Advance the signed clock explicitly, so host load cannot consume the handoff window.
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:Date.now()});
+ try{
+  const r=b.missions.research.create({request_id:randomUUID(),objective:'Inspect synthetic account within the signed deadline.',entry_url:ORIGIN+'/',session_authorization:{mode:'dedicated_manual',confirmed:true}}),m=b.controlStore.requireMission(r.mission_id),deadline=m.envelope.manifest.expires_at;
+  t.mock.timers.tick(1000);b.missions.dispatch(m.id,{request_id:randomUUID()});
+  for(let i=0;i<150&&!b.missions.research.active.get(m.id)?.waitingHandoff;i++)await new Promise(r=>setImmediate(r));
+  assert.equal(b.missions.research.active.get(m.id)?.waitingHandoff,true);
+  t.mock.timers.tick(deadline-Date.now()-1);await new Promise(r=>setImmediate(r));assert.equal(closed,false,'Browser stays open immediately before the signed deadline');
+  t.mock.timers.tick(1);
+  for(let i=0;i<150&&b.missions.research.active.has(m.id);i++)await new Promise(r=>setImmediate(r));
+  assert.equal(closed,true);assert.equal(b.missions.research.active.has(m.id),false);assert.throws(()=>b.missions.research.ready(m.id,{request_id:randomUUID(),confirmed:true}));assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(m.id).n,0);
+ }finally{t.mock.timers.reset();}
 });
 test('synthetic visible persistent-browser smoke sanitizes finance, closes cleanly and reuses only its own profile',async t=>{
  const d=dir(t),events=[],a=consent();
