@@ -21,6 +21,8 @@
 **Control Center & Premium macOS Experience V4** (SHIPPED + INSTALLED): [CONTROL-CENTER-MACOS-UX-V4.md](CONTROL-CENTER-MACOS-UX-V4.md).
 **Live Execution Monitor V1** (source candidate): [LIVE-EXECUTION-MONITOR-V1.md](LIVE-EXECUTION-MONITOR-V1.md) — active-Mission three-column Observatory UI; see also [Live Agent Observatory](LIVE-AGENT-OBSERVATORY-V1.md).
 
+**Operational recovery V1:** [OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](OPERATIONAL-RECOVERY-LIFECYCLE-V1.md) — bounded identity reads, writer-death reconciliation, checkpoint copy modes.
+
 **macOS Desktop Activation V1** (Menu V3 + login startup — SHIPPED + INSTALLED): [MACOS-DESKTOP-ACTIVATION-V1.md](MACOS-DESKTOP-ACTIVATION-V1.md).
 
 **Final Product Consolidation V1** (local usable release stop line): [FINAL-PRODUCT-CONSOLIDATION-V1.md](FINAL-PRODUCT-CONSOLIDATION-V1.md).
