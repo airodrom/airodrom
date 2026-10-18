@@ -170,7 +170,7 @@ test('deterministic two-process adapter fixture restores only durable state', ()
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'project-memory-v2-adapter-fixture-'));
   const dbPath = path.join(directory, 'memory.sqlite');
   const missionId = `adapter-fixture-${randomUUID()}`;
-  const objective = `Adapter durable objective ${randomUUID()}`;
+  const objective = 'Adapter durable synthetic objective';
   const invoke = (...args) => spawnSync(process.execPath, [fixturePath, ...args], { encoding: 'utf8' });
   const recorded = invoke('record', dbPath, missionId, objective);
   assert.equal(recorded.status, 0, recorded.stderr);

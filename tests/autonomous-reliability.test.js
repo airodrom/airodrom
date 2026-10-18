@@ -7,7 +7,9 @@ const {flightRecorder,eventView}=require('../src/mission-flight-recorder');
 const {measure,compare}=require('../src/memory-quality');
 const {AirodromEvaluationEngine,score,scenario}=require('../src/evaluation-engine');
 const {diagnose,advertisedCatalog}=require('../src/mcp-discovery');
-function native(f,extra={}) { return f.create({objective:'Synthetic step '+require('node:crypto').randomUUID(),task_type:'local_files',manifest:manifest(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]},...extra}); }
+// Objectives are human-readable fixture labels, not random identifiers.
+let objectiveSequence=0;
+function native(f,extra={}) { return f.create({objective:'Synthetic step '+(++objectiveSequence),task_type:'local_files',manifest:manifest(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]},...extra}); }
 function additional(f,file){const mf=manifest(f.repo);mf.mission.scope.include=[file];return native(f,{manifest:mf,allowed_files:[file],criteria:[{id:'expected_file',type:'exact_file',path:file,content:'beta\n'}],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:file,content:'beta\n'}]}});}
 function stage(m,id='one',deps=[]) { return {id,depends_on:deps,mission_id:m?.id,objective:'Synthetic bounded step',acceptance_criteria:['Registered file criterion passes'],verification_requirements:['Independent registered tests'],human_checkpoint:false}; }
 function plan(f,stages,extra={}) { const m=f.bridge.controlStore.listMissions()[0]; return f.bridge.missions.goalPlanner.create({request_id:require('node:crypto').randomUUID(),goal_id:m.goal_id,stages,max_runtime_hours:1,max_attempts:2,...extra}); }

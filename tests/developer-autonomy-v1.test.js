@@ -9,6 +9,8 @@ const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { runtime, qualifyCanonical } = require('./fixtures/opencode-fixture.cjs');
 const ControlServer = require('../src/control-server');
 
+// Objectives are human-readable fixture labels, not random identifiers.
+let objectiveSequence = 0;
 async function setup(t) {
   const f = await fixture(t, { opencode: runtime(t).options });
   f.bridge.missionAuthority.initializeOperatorKey();
@@ -128,7 +130,7 @@ test('revoked and expired policy/grant fail closed at dispatch', async t => {
   const auth = da.authorizeRoutine({
     policy_id: policy.policy_id,
     request_id: randomUUID(),
-    objective: 'DA revoke probe ' + randomUUID(),
+    objective: 'DA revoke probe ' + (++objectiveSequence),
     allowed_files: ['fixture.txt'],
     workflow: 'routine_edit',
     criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }]
@@ -143,7 +145,7 @@ test('revoked and expired policy/grant fail closed at dispatch', async t => {
   const grant = da.authorizeRoutine({
     policy_id: policy2.policy_id,
     request_id: randomUUID(),
-    objective: 'DA expiry probe ' + randomUUID(),
+    objective: 'DA expiry probe ' + (++objectiveSequence),
     allowed_files: ['fixture.txt'],
     workflow: 'routine_edit',
     criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }]
@@ -169,7 +171,7 @@ test('authorizeRoutine Mission completes with OpenCode fixture without WORK temp
   const auth = da.authorizeRoutine({
     policy_id: policy.policy_id,
     request_id: randomUUID(),
-    objective: 'Change fixture.txt from alpha to beta. DA acceptance ' + randomUUID(),
+    objective: 'Change fixture.txt from alpha to beta. DA acceptance ' + (++objectiveSequence),
     allowed_files: ['fixture.txt'],
     workflow: 'routine_edit',
     criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }]
@@ -359,7 +361,7 @@ test('supervisor standingAuthorization surfaces Developer Autonomy', async t => 
 
 function routine(da, policy, extra = {}) {
   return da.authorizeRoutine({ policy_id: policy.policy_id, request_id: randomUUID(),
-    objective: 'Change fixture.txt from alpha to beta. ' + randomUUID(), allowed_files: ['fixture.txt'],
+    objective: 'Change fixture.txt from alpha to beta. ' + (++objectiveSequence), allowed_files: ['fixture.txt'],
     workflow: 'routine_edit', ...extra }, 'operator');
 }
 

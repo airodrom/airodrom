@@ -10,9 +10,11 @@ const { flightRecorder } = require('../src/mission-flight-recorder');
 const TestBridge = require('./fixtures/test-bridge.cjs');
 const { SYNTHETIC_FIXTURE_DISPOSE } = TestBridge;
 
+// Objectives are human-readable fixture labels, not random identifiers.
+let objectiveSequence = 0;
 function native(f, extra = {}) {
   return f.create({
-    objective: 'Synthetic CAE step ' + randomUUID(),
+    objective: 'Synthetic CAE step ' + (++objectiveSequence),
     task_type: 'local_files',
     manifest: manifest(f.repo),
     dispatch_policy: {
@@ -305,7 +307,7 @@ test('24 scheduler fairness: one blocked plan does not prevent another', async t
   authorize(f, blocked.id);
   f.bridge.controlStore.db.prepare("INSERT INTO cp_dispatches VALUES(?,?,?,'unknown',NULL,NULL,NULL,?,?)")
     .run(randomUUID(), a.id, a.task_id, Date.now(), Date.now());
-  const b = native(f, { objective: 'Independent synthetic goal mission ' + randomUUID() });
+  const b = native(f, { objective: 'Independent synthetic goal mission ' + (++objectiveSequence) });
   // Second plan on same goal — bind fresh mission
   const g2 = plan(f, [stage(b, 'solo')]);
   authorize(f, g2.id);
