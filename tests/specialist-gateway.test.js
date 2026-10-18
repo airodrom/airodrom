@@ -102,3 +102,13 @@ test('whole-graph deadline uses immutable contract time and prevents a late host
  const v=new(require('../src/mission-verifier').MissionVerifier)(b,{});
  await assert.rejects(v.invokeVerificationCapability({id:'test'},m,{id:'run'},'vscode_run_task',{timeoutSeconds:60}),/runtime_exhausted/);assert.equal(calls,0);
 });
+
+test('pending host check is cancelled synchronously when the graph deadline wins the recovery race',async()=>{
+ const S=require('../src/specialist-gateway'),oldAssert=S.assertRoot,now=Date.now();
+ const m={id:'synthetic-deadline',created_at:now,envelope:{cognitive:{envelope:{version:3,expires_at:now+600000}},contract:{identity:{created_at:now-58950,expires_at:now+600000},budget:{max_wall_clock_ms:60000}}}};
+ let cancelled=0;const job={taskId:'synthetic-task'},inflight=new Map();
+ const b={missions:{assertAuthority(){}},orchestrator:{inflight},capabilityHost:{jobs:{jobs:new Map([['synthetic-job',job]]),cancel(j){assert.equal(j,job);cancelled++;}}},invokeCapability:async(id,call)=>{inflight.set(call.requestId,new Promise(()=>{}));return{status:'pending'};}};
+ const v=new(require('../src/mission-verifier').MissionVerifier)(b,{requireMission:()=>m});
+ const keep=setTimeout(()=>{},3000);S.assertRoot=()=>{};
+ try{await assert.rejects(v.invokeVerificationCapability({id:job.taskId},m,{id:'synthetic-run'},'vscode_run_task',{timeoutSeconds:60}),/deadline exceeded/);assert.ok(cancelled>0);}finally{S.assertRoot=oldAssert;clearTimeout(keep);}
+});

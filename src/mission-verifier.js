@@ -79,6 +79,12 @@ class MissionVerifier {
     }
     if(bounded)current();
     return response.result;
+    }catch(error){
+      // A deadline race may win between watcher ticks. Request cancellation
+      // synchronously before dropping the watcher; job ownership remains until
+      // its existing termination/reconciliation path releases it.
+      if(bounded)for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(job.taskId===task.id)this.bridge.capabilityHost.jobs.cancel(job);
+      throw error;
     }finally{if(watch)clearInterval(watch);}
   }
   async verify(mission,run,assignmentCheck=null){
