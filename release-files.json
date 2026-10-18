@@ -870,5 +870,8 @@
   "src/cognitive-router.js",
   "tests/cognitive-router-browser.cjs",
   "tests/cognitive-router-live.cjs",
-  "tests/cognitive-router.test.js"
+  "tests/cognitive-router.test.js",
+  "docs/adr/0058-opencode-result-gateway.md",
+  "src/opencode-gateway.js",
+  "tests/cognitive-gateway.test.js"
 ]

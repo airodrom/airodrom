@@ -70,3 +70,58 @@ test('typed Git revision digits never masquerade as card text; secret content st
  assert.equal(s.db.prepare('SELECT count(*) n FROM authority_missions').get().n, 2);
  assert.equal(s.integrity().ok, true);
 });
+
+test('typed contract Git anchors accept card-shaped hashes without exempting text or spoofed paths', t => {
+ const { s } = fixture(t), { safe } = require('../src/authority-store');
+ const head = 'a4111111111111111' + 'b'.repeat(23);
+ const coordinates = [
+  revision => ({ project: { base_commit_sha: revision } }),
+  revision => ({ audit: { verifier_baseline: { base_commit_sha: revision } } }),
+ ];
+ for (const coordinate of coordinates) for (const revision of [head, head + 'c'.repeat(24)]) {
+  const envelope = { objective: 'Typed contract coordinate', contract: coordinate(revision) };
+  assert.doesNotThrow(() => safe(envelope));
+  assert.doesNotThrow(() => safe({ envelope }));
+  const mission = s.createMission({ envelope });
+  assert.deepEqual(s.getMissionRevision(mission.id, 1).envelope.contract, envelope.contract);
+ }
+ for (const contract of [
+  { 'project.base_commit_sha': head },
+  { project: { 'base_commit_sha.extra': head } },
+  { project: [{ base_commit_sha: head }] },
+  { project: { base_commit_sha: [head] } },
+  { project: { base_commit_sha: '4111111111111111' } },
+  { project: { description: head } },
+  { 'audit.verifier_baseline': { base_commit_sha: head } },
+  { audit: { 'verifier_baseline.base_commit_sha': head } },
+  { audit: { verifier_baseline: [{ base_commit_sha: head }] } },
+  { audit: { verifier_baseline: { base_commit_sha: '4111111111111111' } } },
+  { audit: { verifier_baseline: { description: head } } },
+  { project: { base_commit_sha: head }, objective: 'sk-fixtureprivatecredential' },
+ ]) {
+  for (const value of [{ contract }, { envelope: { contract } }, { envelope: [{ contract }] }])
+   assert.throws(() => safe(value), /Sensitive authority data rejected/);
+ }
+ assert.throws(() => safe({ 'envelope.contract.project.base_commit_sha': head }), /Sensitive authority data rejected/);
+ assert.equal(s.db.prepare('SELECT count(*) n FROM authority_missions').get().n, 4);
+ assert.equal(s.integrity().ok, true);
+});
+
+test('generated grant manifest UUID is opaque only at its exact typed coordinate', t => {
+ const { s } = fixture(t), { safe } = require('../src/authority-store');
+ const { containsSecret } = require('../src/personal-memory');
+ const id = Array.from({ length: 100 }, (_, n) => 'da-grant-41111111-1111-4' + String(n).padStart(3, '0') + '-8111-abcdefabcdef').find(containsSecret);
+ assert.ok(id);
+ const envelope = { objective: 'Generated manifest identity', manifest: { id } };
+ assert.doesNotThrow(() => safe(envelope));
+ const mission = s.createMission({ envelope });
+ assert.equal(s.getMissionRevision(mission.id, 1).envelope.manifest.id, id);
+ for (const value of [
+  { objective: id }, { id }, { 'manifest.id': id },
+  { envelope: { 'manifest.id': id } }, { envelope: { manifest: [{ id }] } },
+  { manifest: { id: [id] } }, { manifest: { description: id } },
+  { manifest: { id: id + '-extra' } }, { manifest: { id: 'da-grant-4111111111111111' } },
+  { manifest: { id }, objective: 'sk-fixtureprivatecredential' },
+ ]) assert.throws(() => safe(value), /Sensitive authority data rejected/);
+ assert.equal(s.integrity().ok, true);
+});

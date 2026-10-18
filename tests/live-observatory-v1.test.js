@@ -15,6 +15,17 @@ async function withMission(t) {
   return fixture(t, { defaultRuntime: 'opencode' });
 }
 
+test('OpenCode return and evaluation are visible without exposing worker prose', () => {
+  const { eventView } = require('../src/product-observability');
+  for (const event_type of ['gateway.result_received', 'gateway.evaluated', 'gateway.unavailable']) {
+    const event = eventView({ event_type, metadata: { summary: 'UNTRUSTED_PRIVATE_WORKER_PROSE', authorization: 'not-a-grant' } });
+    assert.equal(event.stage, 'verification');
+    assert.match(event.label, /OpenCode/);
+    assert.equal(JSON.stringify(event).includes('UNTRUSTED_PRIVATE_WORKER_PROSE'), false);
+    assert.equal(Object.hasOwn(event, 'authorization'), false);
+  }
+});
+
 test('1. event capture and delivery projects only allowlisted sanitized fields', async t => {
   const f = await withMission(t);
   const created = f.create({ objective: 'Synthetic observatory capture' });

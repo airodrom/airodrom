@@ -133,14 +133,14 @@ test('Slack bot gateway delivery and validated answer resume use no unavailable 
 });
 
 test('declared agent fallback remains explicit and policy-bound without inference', async t => {
-  const f = await fixture(t); f.bridge.config.provider = 'ollama';
+  const f = await fixture(t); f.bridge.config.provider = 'ollama'; f.bridge.cursorWorker.readiness=async()=>({installed:false,ready:false,available:false,availability:'unavailable',reason:'fixture_worker_unavailable',tiers:{authenticated:false,qualified:false}});
   const m = f.create({ preferred_agent: 'cursor', fallback_agents: ['claude_code'] });
   f.bridge.missions.dispatch(m.id, { request_id: 'fallback-native' });
   await f.settle(m.id);
   const route = JSON.parse(f.bridge.memory.db.prepare('SELECT route FROM cp_dispatches WHERE mission_id=?').get(m.id).route);
   assert.equal(route.selected, 'claude_code');
   assert.equal(f.inference(), 0);
-  const g = await fixture(t); g.bridge.config.provider = 'ollama';
+  const g = await fixture(t); g.bridge.config.provider = 'ollama'; g.bridge.cursorWorker.readiness=async()=>({installed:false,ready:false,available:false,availability:'unavailable',reason:'fixture_worker_unavailable',tiers:{authenticated:false,qualified:false}});
   const denied = g.create({ preferred_agent: 'cursor' });
   g.bridge.missions.dispatch(denied.id, { request_id: 'no-fallback-native' });
   assert.equal((await g.settle(denied.id, 'blocked')).reason, 'no_compatible_available_agent');

@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const {fixture,wait}=require('./fixtures/mission-fixture.cjs');
 const {redactText,safeValue,observeProcesses}=require('../src/secret-observation');
-function authorize(f){const p=f.bridge.projects.listProjects()[0];f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});f.bridge.projects.updateProject(p.projectId,{autonomyLevel:'auto_development'});return p;}
+function authorize(f){const p=f.bridge.projects.listProjects()[0];f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});f.bridge.projects.updateProject(p.projectId,{autonomyLevel:'auto_development'});return p;}
 test('secret observation excludes argv and environment; redacts credential text before evidence export',async()=>{
  const seeds=['xoxb-seededSecret123','xapp-seededSecret456','plainToken789','bearerSeed123','envSeed456','cookieSeed789'];
  const raw=`${seeds[0]} ${seeds[1]} --token=${seeds[2]} Authorization: Bearer ${seeds[3]} SLACK_BOT_TOKEN=${seeds[4]} COOKIE=${seeds[5]}`;

@@ -18,6 +18,8 @@ test('exact-file natural language intent is recognized without IDs', () => {
 
 test('ask prepares WAIT approval without writing or dispatching; approve runs once', async t => {
   const f = await fixture(t, { opencode: runtime(t).options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   f.bridge.missionAuthority.initializeOperatorKey();
   qualifyCanonical(f.bridge);
   const project = f.bridge.projects.createProject({ name: 'Human Acceptance Exact File', repositories: [f.repo], privacyPolicy: 'local_only' });

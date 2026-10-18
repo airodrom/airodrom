@@ -51,6 +51,8 @@ test('discovery advertises the coordinator catalog version and honest client lim
 
 test('prepare_mission → inspect_mission_proposal returns a measurable, approval-gated proposal; ChatGPT text cannot approve', async t => {
   const f = await fixture(t, { opencode: runtime(t).options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   f.bridge.missionAuthority.initializeOperatorKey();
   qualifyCanonical(f.bridge);
   const project = f.bridge.projects.createProject({ name: 'Human Acceptance Exact File', repositories: [f.repo], privacyPolicy: 'local_only' });

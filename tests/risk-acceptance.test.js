@@ -25,6 +25,8 @@ function riskCreate(f, extra = {}) {
 test('eligible low-risk OpenCode WORK auto-accepts, settles, and is idempotent after reopen', async t => {
   const r = runtime(t);
   const f = await fixture(t, { opencode: r.options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   const m = riskCreate(f, { manifest: manifest(f.repo) });
   assert.equal(m.envelope.risk_auto_acceptance.authorized, true);
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
@@ -45,6 +47,8 @@ test('eligible low-risk OpenCode WORK auto-accepts, settles, and is idempotent a
 test('pending approval and high-risk shapes stay awaiting with durable review_reason', async t => {
   const r = runtime(t);
   const f = await fixture(t, { opencode: r.options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   assert.throws(() => riskCreate(f, { criteria: [{ id: 'review', type: 'operator_review', description: 'Human review' }] }), /operator_review/);
   assert.throws(() => riskCreate(f, {
     preferred_agent: 'claude_code',
@@ -107,6 +111,8 @@ test('MCP owner cannot authorize risk auto acceptance', async t => {
 test('operator preference enables new WORK only; historical awaits require authorizeExisting', async t => {
   const r = runtime(t);
   const f = await fixture(t, { opencode: r.options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   const risk = f.bridge.missions.riskAcceptance;
   assert.equal(risk.preference().enabled, false);
   assert.throws(() => risk.setPreference({ enabled: true, confirmed: false }, 'operator'), /confirmation/);
@@ -153,6 +159,8 @@ test('operator preference enables new WORK only; historical awaits require autho
 
 test('template WORK cannot inherit standing auto Acceptance or bypass exact-file preauthorization', async t => {
   const f = await fixture(t, { opencode: runtime(t).options });
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   const risk = f.bridge.missions.riskAcceptance;
   risk.setPreference({ enabled: true, confirmed: true }, 'operator');
   assert.equal(risk.validateCreation({

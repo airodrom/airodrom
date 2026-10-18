@@ -63,7 +63,7 @@ function evidencePackage(bridge, missionId) {
   const verifications = detail.verifications || [];
   const latestVerification = verifications[0] || null;
   // Worker runs: coding agents, or host native-plan runs with execution evidence. Bridge/verifier bookkeeping runs are excluded.
-  const workerRuns = (detail.runs || []).filter(r => ['opencode', 'cursor', 'claude_code', 'codex'].includes(r.agent_id) || (r.agent_id === 'host' && r.result?.native_execution_evidence));
+  const workerRuns = (detail.runs || []).filter(r => !r.result?.gateway && (['opencode', 'cursor', 'claude_code', 'codex'].includes(r.agent_id) || (r.agent_id === 'host' && r.result?.native_execution_evidence)));
   const lastWorkerRun = workerRuns[workerRuns.length - 1] || null;
   const planId = planFor(bridge, final.id) || planFor(bridge, root.id);
   let autonomous = null, phase = null;
@@ -101,7 +101,8 @@ function evidencePackage(bridge, missionId) {
   const nextSafeAction = final.state === 'awaiting_acceptance' ? 'Owner reviews evidence and records Acceptance (accept or rework) in Control Center or Terminal.' : final.state === 'completed' ? 'None required for this Mission. Merge, installation and production remain separate owner-controlled actions.' : phase?.observing ? 'Wait; Airodrom is still executing or repairing within the approved scope.' : phase?.message || 'Owner inspects diagnostics; no automatic retry is pending.';
   return {
     schema_version: 1,
-    ...(final.envelope.cognitive ? { cognitive: require('./cognitive-router').evidence(bridge, final, detail, latestVerification, changedFiles) } : {}),
+    ...(final.envelope.cognitive ? { gateway: require('./opencode-gateway').evidence(bridge, final),
+    cognitive: require('./cognitive-router').evidence(bridge, final, detail, latestVerification, changedFiles) } : {}),
     mission_id: final.id,
     root_mission_id: root.id,
     goal_id: final.goal_id,
@@ -170,7 +171,7 @@ function missionEvents(bridge, missionId, { limit = 100 } = {}) {
 
 function compactMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') return {};
-  const keep = ['state', 'previous', 'reason', 'kind', 'provenance', 'agent_id', 'plan_id', 'stage_id', 'repair_mission_id', 'parent_mission_id', 'diagnosis', 'classification', 'attempt', 'max_repairs', 'approval_id', 'result', 'phase', 'tool', 'scope', 'path', 'exit_code', 'termination_verified', 'dispatch_path'];
+  const keep = ['worker_run_id', 'binding_hash', 'result_hash', 'recommendation', 'state', 'previous', 'reason', 'kind', 'provenance', 'agent_id', 'plan_id', 'stage_id', 'repair_mission_id', 'parent_mission_id', 'diagnosis', 'classification', 'attempt', 'max_repairs', 'approval_id', 'result', 'phase', 'tool', 'scope', 'path', 'exit_code', 'termination_verified', 'dispatch_path'];
   return Object.fromEntries(Object.entries(metadata).filter(([k]) => keep.includes(k)));
 }
 

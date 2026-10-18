@@ -58,6 +58,8 @@ test('assistant submit prepares zero_setup WAIT and never creates a draft work_r
 
 test('terminal y/N consent authorizes once; n cancels without writes', async t => {
   const f = await setup(t);
+  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
+  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   const request_id = randomUUID();
   const prepared = await f.bridge.zeroSetupWork.ask({
     instruction: 'Change the test file from alpha to beta, verify the result, and tell me when finished.',

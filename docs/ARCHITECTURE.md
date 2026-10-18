@@ -21,3 +21,14 @@ Local [Reliability & Intelligence V1](AUTONOMOUS-RELIABILITY-V1.md) adds scenari
 ### Developer Autonomy V1
 
 Standing per-repository owner enrollment issues short-lived Mission grants, prepares disposable local clones, and validates grants at dispatch. WORK templates remain available and mutually exclusive on a Mission. See [DEVELOPER-AUTONOMY-V1.md](DEVELOPER-AUTONOMY-V1.md) and ADR 0053.
+
+### OpenCode result gateway
+
+[Cognitive V2](adr/0058-opencode-result-gateway.md) adds a mandatory read-only
+OpenCode evaluation return leg to explicitly enrolled Missions. Airodrom passes
+actual worker result data and independent check outcomes to OpenCode, binds the
+returned recommendation to immutable host evidence, and gates Acceptance on that
+receipt. Optional local repair reuses the existing transactional corrective Mission
+path and the signed finite grant. V1 policies are not silently expanded. One
+execution adapter per Mission is supported; separate specialist task assignment
+within one Mission remains an explicit limitation.

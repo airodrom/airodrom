@@ -26,9 +26,9 @@ function list(v, fn = string, max = 40, min = 1) {
 function digest(v) { if (typeof v !== 'string' || !/^[a-f0-9]{64}$/.test(v)) fail('cognitive_hash_invalid'); return v; }
 function choice(v, values) { if (!values.includes(v)) fail('cognitive_enum_invalid'); return v; }
 function relative(v) { safePath(v); if (/[:*?\[\]{}]/.test(v)) fail('cognitive_path_invalid'); return v; }
-function limits(v) {
+function limits(v, version = 1) {
   object(v, ['planning_attempts', 'execution_attempts', 'repair_attempts', 'planning_ms', 'execution_ms']);
-  integer(v.planning_attempts, 1, 2); integer(v.execution_attempts, 1, 1); integer(v.repair_attempts, 0, 0);
+  integer(v.planning_attempts, 1, 2); integer(v.execution_attempts, 1, 1); integer(v.repair_attempts, 0, version === 2 ? 2 : 0);
   integer(v.planning_ms, 1000, 120000); integer(v.execution_ms, 1000, 120000);
 }
 function integrity(v) {
@@ -46,14 +46,14 @@ function parse(kind, data) {
   }
   if (!schemas[kind]) fail('cognitive_contract_unknown');
   object(data, schemas[kind]);
-  if (data.version !== VERSION) fail('cognitive_version_unsupported');
+  if (![1, 2].includes(data.version)) fail('cognitive_version_unsupported');
   if (kind === 'RequestEnvelope') {
     string(data.request_id); string(data.caller); object(data.delegation, ['policy_id', 'policy_hash']);
     string(data.delegation.policy_id); digest(data.delegation.policy_hash); string(data.repository_id); string(data.workspace_id);
     if (!/^[a-f0-9]{40}$/.test(data.git_anchor)) fail('cognitive_git_anchor_invalid');
     integrity(data.integrity); list(data.permitted_paths, relative, 8); list(data.denied_paths, string, 80);
     list(data.operations, x => choice(x, ['read', 'edit']), 2); list(data.eligible_workers, x => choice(x, ['host', 'opencode', 'cursor']), 3);
-    list(data.verification, string, 5); limits(data.limits); choice(data.requested_worker, ['auto', 'host', 'opencode', 'cursor']);
+    list(data.verification, string, 5); limits(data.limits, data.version); choice(data.requested_worker, ['auto', 'host', 'opencode', 'cursor']);
     digest(data.instruction_hash); integer(data.expires_at, 1, Number.MAX_SAFE_INTEGER); checkHash(data);
   } else if (kind === 'PlanningProposal') {
     string(data.request_id); digest(data.envelope_hash); list(data.files, relative, 8);
@@ -81,12 +81,12 @@ function parse(kind, data) {
     if (!/^[a-f0-9]{40}$/.test(data.git_anchor)) fail('cognitive_git_anchor_invalid');
     list(data.paths, relative, 8); choice(data.worker, ['host', 'opencode', 'cursor']); list(data.verification, string, 5);
     object(data.authorization, ['policy_id', 'policy_hash', 'grant_id']); string(data.authorization.policy_id); digest(data.authorization.policy_hash); string(data.authorization.grant_id);
-    limits(data.limits); checkHash(data);
+    limits(data.limits, data.version); checkHash(data);
   } else {
     string(data.mission_id); list(data.run_ids, string, 20, 0); digest(data.envelope_hash); digest(data.contract_hash);
     choice(data.worker, ['host', 'opencode', 'cursor']); list(data.changes, relative, 40, 0);
     object(data.verification, ['id', 'result']); if (data.verification.id !== null) string(data.verification.id);
-    choice(data.verification.result, ['passed', 'operator_review', 'failed', 'pending']);
+    choice(data.verification.result, ['passed', 'operator_review', 'failed', 'unavailable', 'pending']);
     choice(data.termination, ['verified', 'unverified', 'not_started']);
     list(data.leases, x => { object(x, ['id', 'state']); string(x.id); string(x.state); }, 40, 0);
     object(data.accounting, ['class', 'observed_cost']); choice(data.accounting.class, ['LOCAL_NO_SPEND', 'UNKNOWN_SUBSCRIPTION']);
@@ -95,7 +95,7 @@ function parse(kind, data) {
     choice(data.state, ['BLOCKED', 'PLANNING', 'SEALED', 'RUNNING', 'NEEDS_REWORK', 'VERIFIED', 'AWAITING_ACCEPTANCE', 'ACCEPTED', 'CANCELLED']);
     list(data.errors, string, 20, 0); list(data.references, string, 30);
     object(data.counts, ['planning', 'execution', 'repair']);
-    integer(data.counts.planning, 0, 2); integer(data.counts.execution, 0, 1); integer(data.counts.repair, 0, 0);
+    integer(data.counts.planning, 0, 2); integer(data.counts.execution, 0, 1); integer(data.counts.repair, 0, data.version === 2 ? 2 : 0);
   }
   return JSON.parse(JSON.stringify(data));
 }

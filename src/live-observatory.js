@@ -225,6 +225,7 @@ function projectEvent(event) {
   if (safeRel(meta.path)) extra.path = meta.path;
   if (safeTool(meta.tool)) extra.tool = meta.tool;
   if (typeof meta.agent_id === 'string' && TOOL_NAME.test(meta.agent_id)) extra.agent_id = meta.agent_id;
+  if (event.event_type === 'gateway.evaluated' && ['ready', 'repair', 'blocked'].includes(meta.recommendation)) extra.recommendation = meta.recommendation;
   if (meta.timing === 'mid_run' || meta.timing === 'end_of_run' || meta.timing === 'post_execution') extra.timing = meta.timing;
   if (typeof meta.job_name === 'string' && TOOL_NAME.test(meta.job_name)) extra.job = meta.job_name;
   if (Number.isInteger(meta.exit_code) && meta.exit_code >= 0 && meta.exit_code <= 255) extra.exit_code = meta.exit_code;

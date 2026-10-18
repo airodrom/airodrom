@@ -32,6 +32,23 @@ async function setup(t) {
   return f;
 }
 
+test('generated manifest UUID avoids card-text false positives without allowing secret titles or malformed IDs', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.enroll(f.enrollInput, 'operator');
+  const auth = da.authorizeRoutine({ policy_id: policy.policy_id, request_id: randomUUID(), objective: 'Manifest identity fixture', allowed_files: ['fixture.txt'] }, 'operator');
+  const { containsSecret } = require('../src/personal-memory');
+  const id = Array.from({ length: 100 }, (_, n) => 'da-grant-41111111-1111-4' + String(n).padStart(3, '0') + '-8111-abcdefabcdef').find(containsSecret);
+  assert.ok(id);
+  const manifest = structuredClone(auth.mission_input.manifest);
+  const options = { workspace: auth.mission_input.workspace, allowedFiles: auth.mission_input.allowed_files, verification: auth.mission_input.verification };
+  manifest.mission.id = id;
+  const normalize = require('../src/mission-manifest').normalizeManifest;
+  assert.equal(normalize(manifest, options).id, id);
+  for (const invalid of [id + '-extra', 'da-grant-4111111111111111', 'sk-fixtureprivatecredential'])
+    assert.throws(() => normalize({ mission: { ...manifest.mission, id: invalid } }, options), /sensitive manifest id/);
+  assert.throws(() => normalize({ mission: { ...manifest.mission, title: 'sk-fixtureprivatecredential' } }, options), /sensitive manifest title/);
+});
+
 test('owner-only enrollment, durable inspection, and reject unconfirmed consent', async t => {
   const f = await setup(t);
   const da = f.bridge.developerAutonomy;
@@ -462,10 +479,10 @@ test('repair keeps grant lineage and rejects zero budget and revocation', async 
   assert.throws(()=>b.missions.create(input,'operator'),/revoked|expired|changed/);
 });
 
-test('ordinary enrolled requests retain the full instruction beyond the plan display limit', async t => {
+test('explicitly named enrolled requests retain the full instruction beyond the plan display limit', async t => {
   const f=await setup(t),b=f.bridge,da=b.developerAutonomy;
   da.enroll({...f.enrollInput,workflows:['routine_edit'],budgets:{...f.enrollInput.budgets,max_repairs:0}},'operator');
-  const instruction='Fix fixture.txt with these requirements: '+ 'Preserve existing content. '.repeat(45) + 'Final requirement: keep the trailing newline.';
+  const instruction='For Fixture project, fix fixture.txt with these requirements: '+ 'Preserve existing content. '.repeat(45) + 'Final requirement: keep the trailing newline.';
   assert.ok(instruction.length>1000);
   const request_id=randomUUID();
   const result=await b.zeroSetupWork.ask({instruction,request_id},'operator');
@@ -580,15 +597,15 @@ test('alternate registered test cannot broaden enrolled verification', async t =
   assert.throws(()=>routine(da,policy,{tests:['alternate-check'],allowed_files:['custom-validator.cjs']}),/enrolled tasks/);
 });
 
-test('Developer Autonomy never inherits or enables automatic Acceptance', async t => {
+test('MANUAL Developer Autonomy cannot enable or inherit automatic Acceptance', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
-  b.missions.riskAcceptance.setPreference({enabled:true,confirmed:true},'operator');
+  assert.throws(()=>b.missions.riskAcceptance.setPreference({enabled:true,confirmed:true},'operator'),/MANUAL/);
   const auth = routine(da,policy,{criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   assert.throws(()=>b.missions.create({...auth.mission_input,risk_auto_acceptance:true},'operator'),/explicit Acceptance/);
   const m=b.missions.create(auth.mission_input,'operator');
   assert.equal(m.envelope.risk_auto_acceptance,undefined);
   assert.throws(()=>b.missions.riskAcceptance.authorizeExisting(m.id,{request_id:randomUUID(),confirmed:true},'operator'),/explicit Acceptance/);
-  assert.equal(b.missions.riskAcceptance.evaluate(m.id).reason,'developer_autonomy_requires_owner_acceptance');
+  assert.equal(b.missions.riskAcceptance.evaluate(m.id).reason,'expanded_autonomy_manual_or_stopped');
   b.missions.dispatch(m.id,{request_id:randomUUID()});
   const done=await f.settle(m.id);
   assert.equal(done.state,'awaiting_acceptance');

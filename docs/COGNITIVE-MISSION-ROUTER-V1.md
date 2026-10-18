@@ -168,3 +168,19 @@ stop, align source and CLI, start, verify actual running source/health/MCP/worke
 then inspect durable recovery. Keep the prior installation as rollback, preserving
 subscription accounting and compatible data. No installation is authorized by a
 model proposal or this document.
+
+## Opt-in V2 result evaluation
+
+New Control Center enrollments with planning files use cognitive version 2 and a
+visible repair ceiling (default zero, maximum two). Existing version 1 policies
+retain their original limits. V2 adds the worker → OpenCode → host return leg;
+see [ADR 0058](adr/0058-opencode-result-gateway.md) for authority, supported worker
+scope and downgrade constraints. The cognitive `repair_attempts` field requires
+both the `repair` workflow and a sufficient signed Developer Autonomy budget.
+
+`get_mission_evidence` includes `gateway.evaluations`, with run and worker IDs,
+termination, binding hash and advisory recommendation. `gateway.result_received`,
+`gateway.evaluated` and `gateway.unavailable` use the existing Flight Recorder and
+Live Monitor event path. Worker claims never become test evidence or Acceptance.
+Failed evaluation preserves host verification and blocks completion. Named workers
+without a supported admitted cognitive path are rejected explicitly.

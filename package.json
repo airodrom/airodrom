@@ -406,6 +406,7 @@
     "src/notion-documentation-routing.js",
     "src/openai-compatible-provider.js",
     "src/opencode-adapter.js",
+    "src/opencode-gateway.js",
     "src/orchestrator.js",
     "src/personal-memory.js",
     "src/personal-ops.js",
@@ -552,6 +553,7 @@
     "src/cognitive-router.js",
     "docs/COGNITIVE-MISSION-ROUTER-V1.md",
     "docs/adr/0057-cognitive-mission-router.md",
+    "docs/adr/0058-opencode-result-gateway.md",
     "docs/LIVE-EXECUTION-MONITOR-V1.md"
   ]
 }

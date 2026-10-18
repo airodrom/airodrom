@@ -92,7 +92,7 @@ class MissionService {
       if(owner!=='operator')throw Error('Only operator may register a corrective Mission');
       identifier(input.repair_of);
       const parent=this.store.requireMission(input.repair_of);
-      if(parent.envelope.cognitive)throw Error('cognitive_repairs_disabled');
+      if(parent.envelope.cognitive)require('./opencode-gateway').assertRepair(this.bridge,parent);
       if(parent.envelope.developer_autonomy&&fingerprint(input.developer_autonomy||null)!==fingerprint(parent.envelope.developer_autonomy))throw Error('Corrective Mission must retain Developer Autonomy grant');
       if(parent.state!=='needs_rework')throw Error('Corrective Mission requires a failed parent Mission');
       if(parent.project_id!==input.project_id||parent.goal_id!==input.goal_id)throw Error('Corrective Mission Goal scope mismatch');
@@ -142,7 +142,13 @@ class MissionService {
       // worker's tampering can never be re-blessed by re-capturing after the failure.
       contract.audit.verifier_baseline=parentContract?.audit?.verifier_baseline||require('./verifier-baseline').capture(workspace,{allowedFiles:input.allowed_files,verification,baseline});
     }
-    const cognitive=input.cognitive_request_id===undefined?null:require('./cognitive-router').bind(this.bridge,input.cognitive_request_id,input,contract);
+    let cognitive=input.cognitive_request_id===undefined?null:require('./cognitive-router').bind(this.bridge,input.cognitive_request_id,input,contract);
+    if(repairOf&&this.store.requireMission(repairOf).envelope.cognitive){
+      const parent=this.store.requireMission(repairOf);
+      const repairBinding=require('./opencode-gateway').assertRepair(this.bridge,parent);
+      const captured=require('./cognitive-integrity').capture(workspace,parent.envelope.cognitive.envelope.permitted_paths);
+      cognitive={...parent.envelope.cognitive,repair_binding:repairBinding,repair_baseline:{permitted_paths:parent.envelope.cognitive.envelope.permitted_paths,git_anchor:captured.head,integrity:captured.integrity},workspace_identity:captured.workspace_identity};
+    }
     const approvalId=input.approval_id||contract?.audit?.approval_id||null;
     if(approvalId&&this.bridge.missionApprovals)this.bridge.missionApprovals.assertBindable(approvalId,{contract,workspace,repair_of:repairOf});
     return this.store.request(owner,input.request_id,{op:'create_mission',...input},()=>{
@@ -476,7 +482,19 @@ class MissionService {
         this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id,mode:m.envelope.kind==='browser_research'?'read':'write'});
         // Disposable self-repair marker: at most one intentional exact-file mismatch before host verify.
         try{const injected=require('./self-repair-fixture').applyControlledFailure(this.store.getMission(m.id));if(injected.applied)this.store.event('self_repair.controlled_failure',m.id,{file:injected.file,authority:false},{runId:run.id});}catch{/* marker absent or invalid */}
-        verified=await this.verifier.verify(this.store.getMission(m.id),run);if(this.store.getMission(m.id).state==='verifying')this.verifier.persist(m,run,verified);
+        verified=await this.verifier.verify(this.store.getMission(m.id),run);
+        let evaluationFailed=false,evaluation=null;
+        if(require('./opencode-gateway').enabled(m))try{evaluation=await require('./opencode-gateway').evaluate(this.bridge,this.store.getMission(m.id),run,verified);}catch{evaluationFailed=true;}
+        if(this.store.getMission(m.id).state==='verifying'){
+          this.verifier.persist(m,run,verified);
+          // Failed/unavailable verification already retains the canonical
+          // needs_rework state. Only an otherwise acceptable result can move
+          // from awaiting_acceptance to blocked; no lifecycle bypass is needed.
+          if(this.store.getMission(m.id).state==='awaiting_acceptance'){
+            if(evaluationFailed)this.store.state(m.id,'blocked','OpenCode evaluation unavailable; host verification retained');
+            else if(evaluation&&evaluation.evaluation.recommendation!=='ready')this.store.state(m.id,'blocked','OpenCode requested '+evaluation.evaluation.recommendation+'; no host-verified repair is authorized');
+          }
+        }
       }
       catch(error){if(this.store.getMission(m.id).state==='verifying')this.store.state(m.id,'blocked','Independent verification unavailable');}
       finally{this.store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
@@ -498,7 +516,7 @@ class MissionService {
     const m=this.require(id,owner);if(m.envelope.kind==='work_request')throw Error('Work request draft is not executable');require('./removed-runtime').assertExecutable(m);
     const receipt=this.store.request(owner,input.request_id,{op:'reverify',id},()=>{
       if(!['needs_rework','awaiting_acceptance'].includes(m.state)||m.envelope.baseline.version!==2)throw Error('V2 failed verification required');
-      const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode','cursor') AND state='completed' AND termination_verified=1 ORDER BY ended_at DESC LIMIT 1").get(id);
+      const run=this.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id IN ('claude_code','opencode','cursor') AND state='completed' AND termination_verified=1 AND id IN (SELECT run_id FROM cp_dispatches WHERE mission_id=cp_runs.mission_id) ORDER BY ended_at DESC LIMIT 1").get(id);
       // Unavailable means the verifier did not run. A later pass requires a new implementation dispatch; the unavailable row stays unavailable.
       if(!run||!this.db.prepare("SELECT 1 FROM cp_verifications WHERE mission_id=? AND run_id=? AND result='failed'").get(id,run.id))throw Error('Settled implementation with failed verification required');
       const verificationRun=randomUUID();this.store.startRun({id:verificationRun,taskId:run.task_id,missionId:id,agentId:'host',role:'verifier'});
@@ -529,6 +547,7 @@ class MissionService {
       const workspaceHash=(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash;
       const revisionOk=v&&(v.revision===m.revision||(authorityExpiredBlock&&v.revision<m.revision&&['passed','operator_review'].includes(v.result)));
       if(!v||!revisionOk||workspaceHash!==v.workspace_hash)throw Error('Acceptance evidence is stale');
+      if(input.decision==='accept')require('./opencode-gateway').assertAcceptance(this.bridge,m,v);
       if(input.decision==='accept')this.bridge.workExecution?.assertEvidence(m.id,v.run_id);
       if(input.decision==='accept'){this.bridge.opencodeAdapter?.assertEvidence(this.store.run(v.run_id));this.bridge.workers?.assertEvidence(this.store.run(v.run_id));this.bridge.cursorWorker?.assertEvidence(this.store.run(v.run_id));this._web?.verify(m,this.store.run(v.run_id));}
       if(!['accept','rework'].includes(input.decision))throw Error('Invalid acceptance decision');

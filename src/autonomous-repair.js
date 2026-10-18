@@ -467,6 +467,7 @@ function considerVerifiedRepairBody(bridge, parentId) {
   const parent = store.getMission(parentId);
   if (!parent || parent.state !== 'needs_rework') return finish({ action: 'skipped', reason: 'not_needs_rework' });
   const env = parent.envelope || {};
+  if (env.cognitive) { try { require('./opencode-gateway').assertRepair(bridge, parent); } catch { return finish({ action: 'skipped', reason: 'gateway_repair_evidence_required' }); } }
   if (env.preferred_agent !== 'opencode' || (env.fallback_agents || []).length) return finish({ action: 'skipped', reason: 'worker_not_authorized' });
   if ((env.dispatch_policy?.privacy || 'local_only') !== 'local_only') return finish({ action: 'skipped', reason: 'privacy_not_local' });
   if (env.model_provider && env.model_provider !== 'ollama') return finish({ action: 'skipped', reason: 'external_provider' });
