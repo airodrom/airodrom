@@ -37,7 +37,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list [active|history|all] [search] · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
@@ -170,7 +170,11 @@ function pastePreview(text, { maxLines = 6, maxChars = 480 } = {}) {
 }
 function missionReceipt(data) {
   const items = data.missions || (data.kind === 'missions' ? data.items : null);
-  if (items) return items.length ? items.map(m => `${m.id || m.mission_id} · ${m.state}\n${m.objective || m.label || 'Work Mission'}`).join('\n\n') + '\n' : 'No active Missions.\n';
+  if (items) {
+    const heading=data.filter?`${data.filter} · ${data.total} matching · showing ${items.length}\n\n`:'';
+    const more=data.has_more?'More Missions are retained. Narrow the search to find older results.\n':'';
+    return heading+(items.length?items.map(m => `${m.id || m.mission_id} · ${m.state}\n${m.objective || m.label || 'Work Mission'}`).join('\n\n')+'\n':'No matching Missions.\n')+more;
+  }
   const mission = data.mission || data;
   return `Mission ${mission.id || mission.mission_id}${mission.state ? ' · ' + mission.state : ''}\n${mission.message || data.message || mission.objective || 'Use /mission status or /details to inspect the governed work.'}\n`;
 }
@@ -576,7 +580,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         }
         else if (command === 'task') { lastMission = await scopedTask(home, arg,{model,worker}); output.write('Scoped Mission dispatched: ' + lastMission + '\n'); }
         else if (command === 'mission') {
-          if (!arg) output.write('/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id]\n');
+          if (!arg) output.write('/mission new [objective] · /mission list [active|history|all] [search] · /mission status [id] · /mission cancel [id]\n');
           else {
             const [action, ...parts] = arg.split(/\s+/);
             if(action==='web'){
@@ -588,9 +592,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
               const offer={mode,entries:parts.length?parts:proposal.entries,...(!parts.length&&!proposal.entries.length?{query:status.mission.objective}:{})};
               await detachReader();let receipt;try{receipt=await require('./mission-web-guide').guide({offer,mission_id:id,input,output,home});}finally{await attachReader();}output.write(receipt.message+'\n');active=null;readerLocked=false;showPrompt();continue;
             }
-            if (!['new','list','status','cancel','run'].includes(action) || action==='list'&&parts.length || ['status','cancel','run'].includes(action)&&parts.length>1) throw Error('Use /mission new [objective], list, status [id], or cancel [id].');
+            if (!['new','list','status','cancel','run'].includes(action) || action==='list'&&parts.length>0&&!['active','history','all'].includes(parts[0]) || ['status','cancel','run'].includes(action)&&parts.length>1) throw Error('Use /mission new [objective], list, status [id], or cancel [id].');
             active=new AbortController();
-            const receipt=await local.request(home,'/api/assistant/mission',{action,request_id:randomUUID(),...(action==='new'?{workspace:fs.realpathSync(process.cwd()),objective:parts.join(' '),model,worker}:['status','cancel','run'].includes(action)&& (parts[0]||lastMission)?{mission_id:parts[0]||lastMission}: {})});
+            const receipt=await local.request(home,'/api/assistant/mission',{action,request_id:randomUUID(),...(action==='list'?{filter:({active:'Active',history:'History',all:'All'})[parts[0]||'active'],query:parts.slice(1).join(' ')}:{}),...(action==='new'?{workspace:fs.realpathSync(process.cwd()),objective:parts.join(' '),model,worker}:['status','cancel','run'].includes(action)&& (parts[0]||lastMission)?{mission_id:parts[0]||lastMission}: {})});
             await handleReceipt(receipt);active=null;
           }
         }

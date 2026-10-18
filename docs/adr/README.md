@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+- [0057 Mission list cleanup](0057-mission-list-cleanup.md): Proposed; actionable Active, searchable retained History and reversible terminal housekeeping.
+
 - [0052 Autonomous Supervisor V1](0052-autonomous-supervisor.md): Proposed; Live Activity / CLI projection over Mission V2 + CAE without a second scheduler; AUTO admission honesty; obsolete rework presentation archive; standing WORK templates.
 
 - [0053 Developer Autonomy V1](0053-developer-autonomy.md): Proposed; standing per-repository enrollment, short-lived Mission grants, disposable worktrees, draft-PR prep; never merge/deploy.

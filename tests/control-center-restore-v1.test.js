@@ -45,15 +45,16 @@ test('historical conversation results can be archived and restored without Accep
   const research = f.create({ objective: 'Keep research review' });
   b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance', envelope=json_set(envelope,'$.kind','browser_research') WHERE id=?").run(research.id);
 
+  b.controlStore.db.prepare("UPDATE cp_effect_outbox SET status='sent' WHERE status='pending'").run();
   assert.equal(visibility.isHistoricalConversationResult(b.missions.require(conv.id, 'operator')), true);
   assert.equal(visibility.archiveEligible(b.missions.require(conv.id, 'operator'), b), true);
-  assert.equal(visibility.organizeEligible(b.missions.require(conv.id, 'operator'), b), true);
+  assert.equal(visibility.organizeEligible(b.missions.require(conv.id, 'operator'), b), false);
   assert.equal(visibility.archiveEligible(b.missions.require(research.id, 'operator'), b), false);
 
-  const preview = visibility.previewOrganize(b, {});
+  const preview = visibility.previewArchive(b, {});
   assert.ok(preview.items.some(i => i.id === conv.id));
   assert.equal(preview.items.some(i => i.id === research.id), false);
-  const archived = visibility.organizeHistory(b, {
+  const archived = visibility.archiveMissions(b, {
     preview_id: preview.preview_id,
     digest: preview.digest,
     confirmed: true,

@@ -163,7 +163,7 @@
   const status=node('select');status.setAttribute('aria-label','Status filter');status.dataset.focusKey='mission-filter';
   for(const name of ['Active','Needs Attention','Unread Results','Recent','History','Archived','All','Awaiting Review','Completed','Failed','Settled']){const o=node('option',name+(counts[name]===undefined?'':' ('+counts[name]+')'));o.value=name;status.append(o);}status.value=missionFilter;
   const worker=node('select');worker.setAttribute('aria-label','Worker filter');worker.dataset.focusKey='mission-worker';
-  for(const [value,label]of [['','Any worker'],['opencode','OpenCode'],['host','Host'],['codex','Codex'],['claude_code','Claude Code'],['none','No worker assigned']]){const o=node('option',label);o.value=value;worker.append(o);}worker.value=missionWorker;
+  for(const [value,label]of [['','Any worker'],['opencode','OpenCode'],['host','Host'],['cursor','Cursor'],['codex','Codex'],['claude_code','Claude Code'],['none','No worker assigned']]){const o=node('option',label);o.value=value;worker.append(o);}worker.value=missionWorker;
   const sort=node('select');sort.setAttribute('aria-label','Sort Missions');sort.dataset.focusKey='mission-sort';
   for(const [value,label]of [['newest','Newest first'],['oldest','Oldest first']]){const o=node('option',label);o.value=value;sort.append(o);}sort.value=missionSort;
   const size=node('select');size.setAttribute('aria-label','Page size');size.dataset.focusKey='mission-limit';
@@ -175,20 +175,21 @@
   sort.onchange=()=>{missionSort=sort.value;changed();};
   size.onchange=()=>{missionLimit=Number(size.value)||15;changed();};
   controls.append(search,status,worker,sort,size);
-  const organize=button('Organize history…',async()=>{
+  const organize=button('Clean up history…',async()=>{
    try{
     const preview=await api('/api/product/organize-missions-preview',{older_than_ms:0,limit:200,request_id:crypto.randomUUID()});
     if(!preview.items?.length||!preview.preview_id){$('notice').textContent=preview.note||'No settled or cancelled history ready to organize.';return;}
     const lines=preview.items.slice(0,40).map(i=>`• ${i.label} · ${i.state}${i.settled?' · settled':''} · ${i.id.slice(0,8)}`).join('\n');
     const more=preview.items.length>40?`\n…and ${preview.items.length-40} more`:'';
-    if(!window.confirm(`Organize ${preview.items.length} historical Mission${preview.items.length===1?'':'s'} into Archive?\n\n${lines}${more}\n\nThis only changes list visibility for the exact Missions listed. Unresolved Acceptance and active execution are never included.`))return;
-    await api('/api/product/organize-missions',{confirmed:true,request_id:crypto.randomUUID(),preview_id:preview.preview_id,digest:preview.digest,reason:'outcome_first_organize'});
+    if(!window.confirm(`Archive ${preview.items.length} of ${preview.total} eligible historical Mission${preview.items.length===1?'':'s'} into Archive?\n\n${lines}${more}\n\nThis only changes list visibility for the exact Missions listed. Unresolved Acceptance and active execution are never included.`))return;
+    const cleanup=await api('/api/product/organize-missions',{confirmed:true,request_id:crypto.randomUUID(),preview_id:preview.preview_id,digest:preview.digest,reason:'terminal_history_cleanup_v1'});
+    $('notice').textContent=`Archived ${cleanup.archived.length} Missions. All records remain searchable in History.`;
     missionPage=null;await refresh();
    }catch(e){$('notice').textContent=e.message;}
   });
   organize.dataset.focusKey='mission-organize';
   controls.append(organize);
-  result.append(controls,node('p','Outcome-first: live progress and owner decisions stay primary. Historical Missions can be organized into Archive without deleting evidence.','muted'));
+  result.append(controls,node('p','Active shows unfinished work and unresolved obligations. History includes archived Missions. Settled and cancelled Missions archive automatically after 24 hours when safe; restored Missions stay visible. No evidence is deleted.','muted'));
   if(!snapshot.mission_counts){result.append(empty('The running service predates full Mission history.'));for(const m of snapshot.missions)result.append(missionRow(m));return result;}
   if(!missionPage){result.append(empty(failures?'Mission history unavailable. Retry when the local service reconnects.':'Loading Missions…'));return result;}
   const page=missionPage.page||Math.floor(missionOffset/missionLimit)+1;

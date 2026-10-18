@@ -12,10 +12,15 @@ function projection(server,m){
  const draft=m.envelope.kind==='work_request';
  return {id:m.id,objective:m.envelope.objective,state:m.state,created_at:m.created_at,scope_registered:!draft,...(!draft&&['coding','browser_research'].includes(m.envelope.kind)?{web:server.bridge.missions.web.status(m.id)}:{}),...(m.envelope.kind==='browser_research'?{research:server.bridge.missions.research.progress(m)}:{}),...(draft?{execution_authorized:false,message:m.reason||'Choose a bounded workspace, allowed files and registered verification before execution.',requested_capabilities:m.envelope.requested_capabilities||[],capability_classes:[],authority:false}:{verification:require('./product-observability').missionView(server.bridge,m).verification})};
 }
-function list(server,{active=false}={}){
+function list(server,{active=false,filter=null,query='',offset=0}={}){
  if(typeof active!=='boolean')throw Error('Invalid Mission list filter');
- const items=server.bridge.controlStore.listMissions({owner:'operator',limit:100}).filter(workMission).filter(m=>!active||!TERMINAL.has(m.state)).map(m=>projection(server,m));
- return {kind:'missions',items,authority:false};
+ const selectedFilter=filter??(active?'Active':'All');
+ if(!['Active','History','All'].includes(selectedFilter)||typeof query!=='string'||query.length>180||!Number.isSafeInteger(offset)||offset<0)throw Error('Invalid Mission list filter');
+ const url=new URL('http://localhost/api/product/missions');
+ for(const [key,value] of Object.entries({filter:selectedFilter,query,offset,limit:50}))url.searchParams.set(key,String(value));
+ const page=require('./product-observability').missionHistory(server.bridge,url,{workOnly:true});
+ const items=page.missions.map(row=>server.bridge.missions.require(row.id,'operator')).filter(workMission).map(m=>projection(server,m));
+ return {kind:'missions',items,filter:selectedFilter,total:page.total,has_more:page.has_more,next_offset:page.has_more?offset+50:null,authority:false};
 }
 function selected(server,mission_id){
  if(mission_id){const m=server.bridge.missions.require(identifier(mission_id),'operator');if(!workMission(m))throw Error('Choose a Work Mission; ordinary conversations have no Mission.');return m;}

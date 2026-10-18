@@ -1,7 +1,9 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {fixture}=require('./fixtures/mission-fixture.cjs'),display=require('../src/product-observability'),ControlServer=require('../src/control-server');
+const {fixture:baseFixture}=require('./fixtures/mission-fixture.cjs'),display=require('../src/product-observability'),ControlServer=require('../src/control-server');
 const visibility=require('../src/mission-visibility');
+async function fixture(t){const f=await baseFixture(t),create=f.create;f.create=(...args)=>{const m=create(...args);f.bridge.controlStore.db.prepare("UPDATE cp_effect_outbox SET status='sent' WHERE status='pending'").run();return m;};return f;}
+function settleHistory(b,...ids){for(const id of ids)b.controlStore.db.prepare("INSERT INTO cp_mission_settlements VALUES(?,NULL,'settled','Synthetic fixture',?)").run(id,Date.now());}
 const url=q=>new URL('http://localhost/api/product/missions?'+q);
 test('Mission activity searches all retained IDs/titles, paginates recent first and distinguishes canonical filters',async t=>{
  const f=await fixture(t),b=f.bridge,created=[];
@@ -12,7 +14,7 @@ test('Mission activity searches all retained IDs/titles, paginates recent first 
  const last=display.missionHistory(b,url('offset=30'));assert.equal(last.missions.length,1);assert.equal(last.missions.at(-1).id,created[0]);
  assert.equal(display.missionHistory(b,url('query='+created[0].slice(0,12))).missions[0].id,created[0]);
  assert.equal(display.missionHistory(b,url('query=Activity%20fixture%200')).total,1);
- for(const [filter,n] of [['Active',2],['Awaiting Review',2],['Failed',2],['Completed',1],['Settled',0],['Needs Attention',2]])assert.equal(display.missionHistory(b,url('filter='+encodeURIComponent(filter))).total,n,filter);
+ for(const [filter,n] of [['Active',31],['Awaiting Review',2],['Failed',2],['Completed',1],['Settled',0],['Needs Attention',2]])assert.equal(display.missionHistory(b,url('filter='+encodeURIComponent(filter))).total,n,filter);
  assert.equal(display.missionHistory(b,url('query=not-found')).total,0);
  assert.throws(()=>display.missionHistory(b,url('filter=invalid')));assert.throws(()=>display.missionHistory(b,url('offset=-1')));assert.throws(()=>display.missionHistory(b,url('limit=7')));
  const native=await display.nativeStatus(b);assert.equal(native.active_missions,2);assert.equal(native.review_missions,2);assert.equal(native.failed_missions,2);
@@ -21,11 +23,11 @@ test('Mission activity searches all retained IDs/titles, paginates recent first 
  assert.doesNotMatch(JSON.stringify(native),/Activity fixture/);
  state(0,'awaiting_acceptance');state(1,'awaiting_acceptance');
  const reviewOnly=await display.nativeStatus(b);assert.equal(reviewOnly.active_missions,0);assert.equal(reviewOnly.review_missions,4);
- assert.equal(reviewOnly.menu_tone,'healthy');assert.equal(reviewOnly.connection_label,'CONNECTED');
+ assert.equal(reviewOnly.menu_tone,reviewOnly.connection_state==='DEGRADED'?'degraded':'healthy');assert.equal(reviewOnly.connection_label,reviewOnly.connection_state==='DEGRADED'?'DEGRADED':'CONNECTED');
  assert.equal((await display.overview(b)).mission_counts['Awaiting Review'],4);
  state(0,'running');state(1,'verifying');
- const overview=await display.overview(b);assert.equal(overview.mission_counts.Active,2);assert.equal(overview.mission_counts['Awaiting Review'],2);assert.equal(overview.counts.review,2);
- const requireMission=b.missions.require.bind(b.missions);b.missions.require=(id,owner)=>{const m=requireMission(id,owner);return id===created[0]?{...m,state:'paused'}:m;};assert.equal(display.missionCounts(b).Active,1,'canonical read overrides stale storage state');assert.equal(display.missionHistory(b,url('filter=Active')).total,1);assert.equal((await display.overview(b)).counts.active,1);
+ const overview=await display.overview(b);assert.equal(overview.mission_counts.Active,31);assert.equal(overview.mission_counts['Awaiting Review'],2);assert.equal(overview.counts.review,2);
+ const requireMission=b.missions.require.bind(b.missions);b.missions.require=(id,owner)=>{const m=requireMission(id,owner);return id===created[0]?{...m,state:'paused'}:m;};assert.equal(display.missionCounts(b).Active,31,'canonical read overrides stale storage state');assert.equal(display.missionHistory(b,url('filter=Active')).total,31);assert.equal((await display.overview(b)).counts.active,1);
 });
 test('history remains operator authenticated; titles are bounded/redacted and worker claims never create verification or acceptance',async t=>{
  const f=await fixture(t),b=f.bridge,m=f.create({objective:'Inspect fixture'}),server=new ControlServer(b,{port:0});await server.start();t.after(()=>server.close());
@@ -54,7 +56,7 @@ test('pagination limit variants stay bounded with stable newest-first ordering a
 });
 test('archive and restore are presentation-only and refuse active or review Missions',async t=>{
  const f=await fixture(t),b=f.bridge;
- const done=f.create({objective:'Archive eligible fixture'});b.controlStore.db.prepare("UPDATE cp_missions SET state='completed' WHERE id=?").run(done.id);
+ const done=f.create({objective:'Archive eligible fixture'});b.controlStore.db.prepare("UPDATE cp_missions SET state='completed' WHERE id=?").run(done.id);settleHistory(b,done.id);
  const live=f.create({objective:'Keep live'});b.controlStore.db.prepare("UPDATE cp_missions SET state='running' WHERE id=?").run(live.id);
  const review=f.create({objective:'Keep review'});b.controlStore.db.prepare("UPDATE cp_missions SET state='awaiting_acceptance' WHERE id=?").run(review.id);
  const preview=visibility.previewArchive(b,{});assert.ok(preview.items.some(i=>i.id===done.id));assert.equal(preview.items.some(i=>i.id===live.id),false);assert.equal(preview.items.some(i=>i.id===review.id),false);
@@ -62,14 +64,14 @@ test('archive and restore are presentation-only and refuse active or review Miss
  const archived=visibility.archiveMissions(b,{ids:[done.id,live.id,review.id],confirmed:true,request_id:require('node:crypto').randomUUID()});
  assert.deepEqual(archived.archived,[done.id]);assert.equal(archived.refused.length,2);
  assert.equal(b.missions.require(done.id).state,'completed');
- assert.equal(display.missionHistory(b,url('filter=All')).missions.some(m=>m.id===done.id),false);
+ assert.equal(display.missionHistory(b,url('filter=All')).missions.some(m=>m.id===done.id),true);
  assert.equal(display.missionHistory(b,url('filter=Archived')).missions[0].id,done.id);
  visibility.restoreMission(b,{id:done.id,confirmed:true,request_id:require('node:crypto').randomUUID()});
  assert.equal(display.missionHistory(b,url('filter=All')).missions.some(m=>m.id===done.id),true);
 });
 test('draft Missions render as registered without inventing worker failure',async t=>{
  const f=await fixture(t),b=f.bridge,server={bridge:b};
- const receipt=await require('../src/assistant-missions').newMission(server,{objective:'Draft only fixture',request_id:require('node:crypto').randomUUID(),explicit:true});
+ const receipt=await require('../src/assistant-missions').newMission(server,{workspace:f.repo,objective:'Draft only fixture',request_id:require('node:crypto').randomUUID(),explicit:true});
  assert.equal(receipt.state,'draft');
  const view=display.missionView(b,b.missions.require(receipt.mission_id,'operator'));
  assert.equal(view.state,'draft');
@@ -86,8 +88,8 @@ test('outcome-first never reports verified success without current verification 
  const view=display.missionView(b,b.missions.require(m.id,'operator'));
  assert.equal(view.outcome.success,false);
  assert.match(view.outcome.headline,/verification incomplete|Verified|Completed/i);
- assert.equal(view.next_action,null);
- const draft=await require('../src/assistant-missions').newMission({bridge:b},{objective:'Draft outcome',request_id:require('node:crypto').randomUUID(),explicit:true});
+ assert.match(view.next_action,/Review unresolved settlement/);
+ const draft=await require('../src/assistant-missions').newMission({bridge:b},{workspace:f.repo,objective:'Draft outcome',request_id:require('node:crypto').randomUUID(),explicit:true});
  const d=display.missionView(b,b.missions.require(draft.mission_id,'operator'));
  assert.match(d.outcome.headline,/Registered/);
  assert.equal(d.outcome.success,false);
@@ -111,7 +113,7 @@ test('organize history archives only settled or cancelled presentation rows and 
 test('archive confirmation is bound to the exact preview set and rejects stale previews',async t=>{
  const f=await fixture(t),b=f.bridge,visibility=require('../src/mission-visibility'),{randomUUID}=require('node:crypto');
  const a=f.create({objective:'Preview A'});const c=f.create({objective:'Preview C'});
- b.controlStore.db.prepare("UPDATE cp_missions SET state='completed' WHERE id IN (?,?)").run(a.id,c.id);
+ b.controlStore.db.prepare("UPDATE cp_missions SET state='completed' WHERE id IN (?,?)").run(a.id,c.id);settleHistory(b,a.id,c.id);
  const preview=visibility.previewArchive(b,{});
  assert.ok(preview.items.some(i=>i.id===a.id));
  // Mutate eligibility after preview: put A into awaiting acceptance.

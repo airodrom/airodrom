@@ -498,10 +498,11 @@ class ControlServer {
           }
           if(action==='archive-missions-preview'){
             require('./control-plane-store').object(body,['query','limit','request_id']);
-            return this.json(res,200,require('./mission-visibility').previewArchive(this.bridge,{query:body.query||'',limit:body.limit}));
+            return this.json(res,200,require('./mission-visibility').previewArchive(this.bridge,{query:body.query||'',limit:body.limit,request_id:body.request_id}));
           }
           if(action==='archive-missions'){
-            require('./control-plane-store').object(body,['ids','confirmed','request_id','reason']);
+            require('./control-plane-store').object(body,['ids','confirmed','request_id','reason','preview_id','digest']);
+            if(body.ids?.length>1&&!body.preview_id)throw Error('Bulk archive requires an exact preview');
             return this.json(res,200,require('./mission-visibility').archiveMissions(this.bridge,body));
           }
           if(action==='restore-mission'){
@@ -510,7 +511,7 @@ class ControlServer {
           }
           if(action==='organize-missions-preview'){
             require('./control-plane-store').object(body,['older_than_ms','limit','request_id']);
-            return this.json(res,200,require('./mission-visibility').previewOrganize(this.bridge,{older_than_ms:body.older_than_ms||0,limit:body.limit}));
+            return this.json(res,200,require('./mission-visibility').previewOrganize(this.bridge,{older_than_ms:body.older_than_ms??0,limit:body.limit,request_id:body.request_id}));
           }
           if(action==='organize-missions'){
             require('./control-plane-store').object(body,['confirmed','request_id','older_than_ms','limit','reason','preview_id','digest']);
@@ -685,9 +686,9 @@ class ControlServer {
         return this.json(res,202,{kind:'mission',mission_id:missionId,state:this.bridge.missions.require(missionId,'operator').state,browser_research_available:true,message:'Purpose-bound account research Mission created. Credential values remain in the secure host path; account screenshots are disabled.',authority:false});
       }
       if(url.pathname==='/api/assistant/mission'){
-        require('./control-plane-store').object(body,['action','objective','mission_id','request_id','workspace','model','worker']);const missions=require('./assistant-missions');
+        require('./control-plane-store').object(body,['action','objective','mission_id','request_id','workspace','model','worker','filter','query','offset']);const missions=require('./assistant-missions');
         if(body.action==='new')return this.json(res,202,await missions.newMission(this,{objective:body.objective||null,request_id:body.request_id,workspace:body.workspace,model:body.model,worker:body.worker,explicit:true}));
-        if(body.action==='list')return this.json(res,200,missions.list(this));
+        if(body.action==='list')return this.json(res,200,missions.list(this,{filter:body.filter??'Active',query:body.query??'',offset:body.offset??0}));
         if(body.action==='status')return this.json(res,200,missions.status(this,{mission_id:body.mission_id}));
         if(body.action==='run')return this.json(res,202,{kind:'mission',...this.bridge.missions.dispatch(body.mission_id,{request_id:body.request_id}),browser_research_available:this.bridge.missions.require(body.mission_id).envelope.kind==='browser_research'});
         if(body.action==='cancel')return this.json(res,200,missions.cancel(this,{mission_id:body.mission_id,request_id:body.request_id}));
