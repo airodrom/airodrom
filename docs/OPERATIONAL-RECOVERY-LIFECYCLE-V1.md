@@ -4,7 +4,7 @@
 
 Every retained read called `memory-identity` validation. Inside a write transaction the validation cache is bypassed. The previous check loaded every ledger correlation column, and every JSON value, into the process. A live database with tens of thousands of ledger rows made `ask_airodrom` stop answering; the process stayed inside synchronous SQLite until it was force-stopped.
 
-Validation now asks SQLite for the first unsafe row only. Payload columns are returned only when the value is already legacy-shaped. A legacy correlation still denies the read. Successful unchanged reads still reuse the autocommit stamp.
+Validation now asks SQLite for the first unsafe row only. Values shorter than 64 characters cannot be a legacy content identifier and are not passed to the checker. Longer payload columns are returned only when they are already legacy-shaped. A legacy correlation still denies the read. Successful unchanged reads still reuse the autocommit stamp.
 
 ## Writer-death reconciliation
 

@@ -328,17 +328,17 @@ function assertReadable(db) {
   const unsafe=sql=>db.prepare(sql).get();
   for(const table of ['cp_invocations','cp_provider_requests','cp_mission_budget_usage','cp_mission_program_nodes'])if(present(table)){const key=CONTENT_IDS[table],cols=tableColumns.get(table);if(!cols.some(c=>c.name===key)||unsafe(`SELECT 1 FROM ${q(table)} WHERE memory_identity_uuid(${q(key)})=0 LIMIT 1`))throw Error('Retained request origin unavailable; explicit migration required');}
   if(present('cp_requests')){const cols=tableColumns.get('cp_requests');if(!cols.some(c=>c.name==='record_id')||unsafe('SELECT 1 FROM cp_requests WHERE memory_identity_uuid(record_id)=0 LIMIT 1'))throw Error('Request origin unavailable; explicit source migration required');}
-  for(const [table,column]of Object.entries(CONTENT_IDS))if(present(table)&&unsafe(`SELECT ${q(column)} value FROM ${q(table)} WHERE memory_identity_legacy(${q(column)})=1 LIMIT 1`))throw Error('Legacy content-derived identity requires migration');
+  for(const [table,column]of Object.entries(CONTENT_IDS))if(present(table)&&unsafe(`SELECT ${q(column)} value FROM ${q(table)} WHERE length(${q(column)})>=64 AND memory_identity_legacy(${q(column)})=1 LIMIT 1`))throw Error('Legacy content-derived identity requires migration');
   const literal=value=>"'"+String(value).replaceAll("'","''")+"'";
   for(const [table,cols]of tableColumns){
     const keys=cols.map(c=>c.name).filter(k=>['request_id','lifecycle_request_id','idempotency_key','event_key'].includes(k));if(!keys.length)continue;
     const projection=[...keys,...(table==='event_ledger_events'?['event_type']:[])];
     const eventType=table==='event_ledger_events'?'event_type':'NULL';
-    const where=keys.map(key=>`memory_identity_bad_correlation(${literal(table)},${literal(key)},${q(key)},${eventType})=1`).join(' OR ');
+    const where=keys.map(key=>`(length(${q(key)})>=64 AND memory_identity_bad_correlation(${literal(table)},${literal(key)},${q(key)},${eventType})=1)`).join(' OR ');
     if(unsafe(`SELECT ${projection.map(q).join(',')} FROM ${q(table)} WHERE ${where} LIMIT 1`))throw Error('Legacy content-derived correlation requires migration');
   }
   const allowed=nonContentIds(db);
-  for(const [t,cols]of tableColumns)if(!t.startsWith('memory_identity_'))for(const c of cols.map(c=>c.name).filter(k=>jsonColumn(t,k)))for(const r of db.prepare(`SELECT ${q(c)} value FROM ${q(t)} WHERE ${q(c)} IS NOT NULL AND memory_identity_legacy(${q(c)})=1`).all()){
+  for(const [t,cols]of tableColumns)if(!t.startsWith('memory_identity_'))for(const c of cols.map(c=>c.name).filter(k=>jsonColumn(t,k)))for(const r of db.prepare(`SELECT ${q(c)} value FROM ${q(t)} WHERE ${q(c)} IS NOT NULL AND length(${q(c)})>=64 AND memory_identity_legacy(${q(c)})=1`).all()){
     let obj;try{obj=JSON.parse(r.value);}catch{throw Error('Unknown identity reference shape');}
     if(hasLegacyIdentifiers(obj,'',allowed))throw Error('Legacy retained reference requires migration');
   }
