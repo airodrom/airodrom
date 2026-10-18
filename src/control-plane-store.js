@@ -66,7 +66,7 @@ function prepareLegacyInvocationOrigins(db,{sourceDb=null}={}) {
     if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cp_invocations'").get())return {assigned_records:0,verified_origins:0,authority:false};
     const invocations=db.prepare('SELECT request_id,task_id,created_at,origin_event_id FROM cp_invocations ORDER BY created_at,request_id').all();
     if(!invocations.length)return {assigned_records:0,verified_origins:0,authority:false};
-    const archived=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_ledger_events'").get()?db.prepare("SELECT * FROM event_ledger_events WHERE event_type='orchestrator.invocation.persisted' ORDER BY seq").all():[];
+    const archived=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_ledger_events'").get()?db.prepare("SELECT event_id,event_type,timestamp,timestamp_ms,task_id,run_id,mission_id,session_id,trace_id,span_id,parent_event_id,agent,direction,status,protected,request_id,metadata FROM event_ledger_events WHERE event_type='orchestrator.invocation.persisted' ORDER BY seq").all():[];
     if(sourceDb&&(!sourceDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cp_invocations'").get()||!sourceDb.prepare('PRAGMA table_info(cp_invocations)').all().some(field=>field.name==='origin_event_id')||!sourceDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_ledger_events'").get()))throw Error('Current invocation origin evidence unavailable');
     const safeFields=['event_id','event_type','timestamp','timestamp_ms','task_id','run_id','mission_id','session_id','trace_id','span_id','parent_event_id','agent','direction','status','protected'];
     const seen=new Set(),plans=[];

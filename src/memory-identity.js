@@ -36,6 +36,11 @@ function install(db) {
     CREATE TRIGGER IF NOT EXISTS memory_identity_lineage_no_update BEFORE UPDATE ON memory_identity_lineage BEGIN SELECT RAISE(ABORT,'Immutable opaque identity lineage');END;
     CREATE TRIGGER IF NOT EXISTS memory_identity_lineage_no_delete BEFORE DELETE ON memory_identity_lineage BEGIN SELECT RAISE(ABORT,'Durable opaque identity lineage');END;`);
   if(db.prepare('SELECT version FROM memory_identity_meta WHERE id=1').get()?.version!==1)throw Error('Unsupported identity migration version');
+  if(!s.probes){
+    s.probes=true;
+    db.function('memory_identity_uuid',v=>UUID.test(String(v??''))?1:0);
+    db.function('memory_identity_bad_correlation',(table,column,value,eventType)=>legacy(value)&&!safeCorrelation(table,{[column]:value,event_type:eventType},column)?1:0);
+  }
   return s;
 }
 function columns(db,t) {
@@ -317,20 +322,23 @@ function assertReadable(db) {
   }
   // The schema map belongs to this validation only; payload is never retained.
   const tableColumns=new Map(tables(db).map(t=>[t,columns(db,t)])),present=t=>tableColumns.has(t);
-  if(exists(db,'memory_identity_meta')){if(db.prepare('SELECT version FROM memory_identity_meta WHERE id=1').get()?.version!==1)throw Error('Unsupported identity migration version');validateLineage(db);if(db.prepare('SELECT state FROM memory_identity_progress WHERE id=1').get()?.state!=='complete')throw Error('Identity migration incomplete; retained reads denied');}
+  if(exists(db,'memory_identity_meta')){if(db.prepare('SELECT version FROM memory_identity_meta WHERE id=1').get()?.version!==1)throw Error('Unsupported identity migration version');validateLineage(db);if(db.prepare('SELECT state FROM memory_identity_progress WHERE id=1').get()?.state!=='complete')throw Error('Identity migration incomplete; retained reads denied');install(db);}
   // Never trust a copied COMPLETE disposition without examining identities.
-  for(const table of ['cp_invocations','cp_provider_requests','cp_mission_budget_usage','cp_mission_program_nodes'])if(present(table)){const key=CONTENT_IDS[table],cols=tableColumns.get(table);if(!cols.some(c=>c.name===key)||db.prepare(`SELECT ${q(key)} id FROM ${q(table)}`).all().some(r=>!UUID.test(r.id||'')))throw Error('Retained request origin unavailable; explicit migration required');}
-  if(present('cp_requests')){const cols=tableColumns.get('cp_requests');if(!cols.some(c=>c.name==='record_id')||db.prepare('SELECT record_id FROM cp_requests').all().some(r=>!UUID.test(r.record_id||'')))throw Error('Request origin unavailable; explicit source migration required');}
-  for(const [table,column]of Object.entries(CONTENT_IDS))if(present(table))for(const row of db.prepare(`SELECT ${q(column)} value FROM ${q(table)}`).all())if(legacy(row.value))throw Error('Legacy content-derived identity requires migration');
+  // Probes stop at the first unsafe row. They do not materialize historical payloads.
+  const unsafe=sql=>db.prepare(sql).get();
+  for(const table of ['cp_invocations','cp_provider_requests','cp_mission_budget_usage','cp_mission_program_nodes'])if(present(table)){const key=CONTENT_IDS[table],cols=tableColumns.get(table);if(!cols.some(c=>c.name===key)||unsafe(`SELECT 1 FROM ${q(table)} WHERE memory_identity_uuid(${q(key)})=0 LIMIT 1`))throw Error('Retained request origin unavailable; explicit migration required');}
+  if(present('cp_requests')){const cols=tableColumns.get('cp_requests');if(!cols.some(c=>c.name==='record_id')||unsafe('SELECT 1 FROM cp_requests WHERE memory_identity_uuid(record_id)=0 LIMIT 1'))throw Error('Request origin unavailable; explicit source migration required');}
+  for(const [table,column]of Object.entries(CONTENT_IDS))if(present(table)&&unsafe(`SELECT ${q(column)} value FROM ${q(table)} WHERE memory_identity_legacy(${q(column)})=1 LIMIT 1`))throw Error('Legacy content-derived identity requires migration');
+  const literal=value=>"'"+String(value).replaceAll("'","''")+"'";
   for(const [table,cols]of tableColumns){
     const keys=cols.map(c=>c.name).filter(k=>['request_id','lifecycle_request_id','idempotency_key','event_key'].includes(k));if(!keys.length)continue;
     const projection=[...keys,...(table==='event_ledger_events'?['event_type']:[])];
-    for(const row of db.prepare(`SELECT ${projection.map(q).join(',')} FROM ${q(table)}`).all())if(keys.some(k=>legacy(row[k])&&!safeCorrelation(table,row,k)))throw Error('Legacy content-derived correlation requires migration');
+    const eventType=table==='event_ledger_events'?'event_type':'NULL';
+    const where=keys.map(key=>`memory_identity_bad_correlation(${literal(table)},${literal(key)},${q(key)},${eventType})=1`).join(' OR ');
+    if(unsafe(`SELECT ${projection.map(q).join(',')} FROM ${q(table)} WHERE ${where} LIMIT 1`))throw Error('Legacy content-derived correlation requires migration');
   }
   const allowed=nonContentIds(db);
-  for(const [t,cols]of tableColumns)if(!t.startsWith('memory_identity_'))for(const c of cols.map(c=>c.name).filter(k=>jsonColumn(t,k)))for(const r of db.prepare(`SELECT ${q(c)} value FROM ${q(t)} WHERE ${q(c)} IS NOT NULL`).all()){
-    // Parse only possible legacy identifiers; normal payload reads stay bounded.
-    if(!legacy(r.value))continue;
+  for(const [t,cols]of tableColumns)if(!t.startsWith('memory_identity_'))for(const c of cols.map(c=>c.name).filter(k=>jsonColumn(t,k)))for(const r of db.prepare(`SELECT ${q(c)} value FROM ${q(t)} WHERE ${q(c)} IS NOT NULL AND memory_identity_legacy(${q(c)})=1`).all()){
     let obj;try{obj=JSON.parse(r.value);}catch{throw Error('Unknown identity reference shape');}
     if(hasLegacyIdentifiers(obj,'',allowed))throw Error('Legacy retained reference requires migration');
   }

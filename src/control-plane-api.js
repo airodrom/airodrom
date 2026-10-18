@@ -159,6 +159,7 @@ function controlPlaneWrite(bridge, action, input) {
   if(action==='web-boot-recovery-prepare'){object(input,['run_id','request_id','lease_id']);const result=bridge.missions.web.prepareBootRecovery(input);return result;}
   if(action==='web-reconcile-boot'){object(input,['run_id','mission_id','lease_id','evidence_id','sha256','termination_verified','request_id','recovery_kind']);const result=bridge.missions.web.reconcileBootRecovery(input);bridge.missions.schedule();return result;}
   if(action==='bridge-invocation-reconcile-boot'){object(input,['run_id','mission_id','invocation_id','boot_boundary_evidence_id','boot_boundary_sha256','termination_verified','request_id','recovery_kind']);const result=bridge.missions.bridgeInvocation.reconcileBoot(input);bridge.missions.schedule();return result;}
+  if(action==='writer-death-reconcile'){object(input,['mission_id','request_id','writer_pid','termination_verified','recovery_kind']);return require('./writer-death-recovery').reconcile(bridge.controlStore,input);}
 
   if(action==='supersede-decision'){object(input,['id','request_id','question','options','allow_free_text','expires_at']);identifier(input.id);identifier(input.request_id);const {id,request_id,...question}=input;return bridge.controlStore.request('operator',request_id,{action,...input},()=>bridge.controlStore.supersedeDecision(id,question,'operator'));}
   if(action==='slack-credential-probe')return bridge.slackRuntime.credentialProbe(input);

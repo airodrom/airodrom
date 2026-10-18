@@ -1,5 +1,11 @@
 # Known limitations
 
+## Operational recovery V1
+
+- Writer-death reconciliation attests that the in-process writer is gone. It does not attest that a read-only git inspection succeeded, and it does not apply to a run that recorded a pid or an external worker event.
+- No Cursor spending grant is present. Live acceptance for this recovery uses local OpenCode only.
+- Hosted CI remains disabled and `main` has no required rules. Local focused tests are the gate for this change.
+
 ## Unified Autonomous Development V1 (2026-10-12)
 
 - Cursor live execution is **UNQUALIFIED**: the CLI login lives in the macOS Keychain, which the worker sandbox correctly denies. Owner step: `AGENT_CLI_CREDENTIAL_STORE=file agent login` (writes `~/.cursor/auth.json`) or an API-key file, then `npm run qualify:cursor`; `execution_qualified` stays `false` until reviewed. Cursor spend is unobservable (subscription); time/invocation ceilings are compensating controls.
