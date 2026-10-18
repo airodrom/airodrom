@@ -154,11 +154,15 @@ test('manual, STOP and absent policy do not dispatch a remote local-work proposa
 });
 
 test('Cursor remains a populated proposal until explicit owner disclosure/spend confirmation', async t => {
-  const f = prepared(t), request_id = randomUUID();
-  const result = await ask(f, spec('cursor'), 'mcp:' + randomUUID(), request_id);
+  const f = prepared(t), request_id = randomUUID(), principal = 'mcp:' + randomUUID();
+  const result = await ask(f, spec('cursor'), principal, request_id);
   assert.equal(result.execution_authorized, false); assert.equal(result.presentation.worker, 'cursor');
+  assert.equal(result.next_action, 'authorize_cursor_via_authenticated_local_api');
   assert.deepEqual(plain(result.presentation.files), ['first.txt', 'second.txt']);
   assert.equal(result.presentation.success_criteria.length, 2);
+  const resumed = await ask(f, spec('cursor'), principal, request_id);
+  assert.equal(resumed.next_action, result.next_action);
+  assert.match(resumed.message, /approval buttons cannot issue this grant/);
   assert.equal(f.dispatched.length, 0); assert.equal(f.created.length, 0);
   await assert.rejects(f.work.approve({ request_id, confirmed: true }), /BLOCKED_SPEND_AUTHORIZATION/);
   await assert.rejects(f.work.approve({ request_id, confirmed: true }, 'mcp:' + randomUUID()), /Authenticated local operator/);

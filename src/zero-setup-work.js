@@ -296,7 +296,7 @@ class ZeroSetupWork {
         return { state: 'PREPARED', projectless: true, execution_authorized: false, authority: false,
           presentation: record.presentation,
           blockers: workSpec.worker === 'cursor' ? ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'] : ['owner_approval_required'],
-          next_action: 'approve_in_terminal_or_control_center' };
+          next_action: workSpec.worker === 'cursor' ? 'authorize_cursor_via_authenticated_local_api' : 'approve_in_terminal_or_control_center' };
       }
       if ((principal === 'operator' || (handoff && standing)) && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
       const record = {
@@ -465,13 +465,16 @@ class ZeroSetupWork {
     }
     const terminalStates = ['verified', 'awaiting_acceptance', 'blocked', 'failed', 'rejected', 'clarify'];
     const phaseTerminal = phase ? !require('./recovery-phase').OBSERVING.has(phase) : terminalStates.includes(state);
+    const cursorApproval = state === 'awaiting_approval' && live.work_spec?.worker === 'cursor';
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
       message: state === 'awaiting_approval'
-        ? 'Airodrom prepared a bounded task. Confirm in the authenticated Terminal with y/N, or Approve this task in Control Center. No file writes or autonomous scheduling occur before that confirmation.'
+        ? cursorApproval
+          ? 'Cursor requires scoped disclosure and subscription authorization through the authenticated local operator API. The current Terminal and Control Center approval buttons cannot issue this grant.'
+          : 'Airodrom prepared a bounded task. Confirm in the authenticated Terminal with y/N, or Approve this task in Control Center. No file writes or autonomous scheduling occur before that confirmation.'
         : presentation.status,
       presentation,
-      next_action: state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
+      next_action: cursorApproval ? 'authorize_cursor_via_authenticated_local_api' : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
       outcome,
       technical: {
         request_id: live.request_id || record.request_id,

@@ -145,7 +145,10 @@ function workMissionInput(workspace, requestId, input, { externalConfirmed = fal
     task_type: 'focused_refactor',
     authority: { level: 'development', permissions: { repository: ['read', 'write'], runtime: ['diagnostic', 'test'],
       network: external ? ['internet', 'localhost'] : ['localhost'], secrets: [], data: ['read', 'workspace_write'] },
-      filesystem: { read: files.map(f => path.join(workspace, f)), write: files.map(f => path.join(workspace, f)) }, expiresAt: now + 900000 },
+      // The host verifier reads the repository and its protected test definitions.
+      // Worker reads remain the contract's declared files in a separate staging
+      // tree; this host ceiling never expands provider disclosure or writes.
+      filesystem: { read: [workspace], write: files.map(f => path.join(workspace, f)) }, expiresAt: now + 900000 },
     contract: { permissions, identity: { expires_at: now + 900000 },
       budget: { risk_class: 'low', max_worker_invocations: 1, max_repair_attempts: 0, max_wall_clock_ms: 180000 } },
   };

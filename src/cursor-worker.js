@@ -46,7 +46,7 @@ function redactDiagnostic(text) {
     .replace(/\b(?:authId|userId|accountId)\b\s*[:=]\s*["']?[^"'\s,}]+/gi, m => m.replace(/[:=]\s*["']?[^"'\s,}]+/, '=<redacted>'))
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '<redacted-jwt>')
     .replace(/\b[a-f0-9]{32,}\b/gi, '<redacted-hex>')
-    .replace(/\/Users\/[^/\s]+/g, '/Users/<redacted>')
+    .replace(/\/Users\/[^/\s]+/g, '<redacted-home>')
     .replace(/github\|[A-Za-z0-9_]+/g, 'github|<redacted>');
 }
 
@@ -474,7 +474,7 @@ class CursorWorker {
     const model = m.envelope.model && !/^(auto|cursor:auto)$/.test(m.envelope.model)
       ? String(m.envelope.model).replace(/^cursor:/, '') : null;
     let count = 0, reservation = null, deadlineTimer = null, grantMonitor = null;
-    let outcome = 'failed';
+    let outcome = 'failed', dispatchError = null;
     const ticket = Object.freeze({});
     try {
       if (!this.options.fixtureExecutable) {
@@ -508,12 +508,27 @@ class CursorWorker {
       outcome = 'completed';
       try { require('./live-observatory').record(b, { eventType: 'worker.terminated', missionId: m.id, runId, metadata: { agent_id: ID, status: result.result.status, sandbox_id: result.provenance.sandbox_id }, idempotencyKey: `obs-worker-term:${m.id}:${runId}` }); } catch { /* observational */ }
       return result;
+    } catch (error) {
+      dispatchError = error;
+      if (['cursor_termination_unverified', 'cursor_spawn_failed'].includes(error.code || error.message)) outcome = 'unknown';
+      throw error;
     } finally {
       executionTickets.delete(ticket);
       clearTimeout(deadlineTimer); clearInterval(grantMonitor);
       this.active.delete(task.id);
       // No automatic refunds; a failed/unknown launch still consumes its slot.
-      if (reservation) b.missionApprovals.settleSubscription(reservation, controller.signal.aborted ? 'cancelled' : outcome);
+      if (reservation) {
+        try { b.missionApprovals.settleSubscription(reservation, outcome === 'unknown' ? outcome : controller.signal.aborted ? 'cancelled' : outcome); }
+        catch {
+          // Preserve the original termination class: MissionService uses it to
+          // quarantine uncertain ownership. Accounting failure cannot prove exit.
+          try { b.controlStore.event('subscription.execution.settlement_failed', m.id, {
+            approval_id: reservation.approval_id, request_id: reservation.request_id,
+            outcome, reconciliation_required: true, authority: false,
+          }); } catch { /* the durable reservation remains consumed */ }
+          if (!dispatchError) fail('cursor_subscription_settlement_failed');
+        }
+      }
     }
   }
 

@@ -88,14 +88,19 @@ function fixture(t) {
   const install = path.join(root, 'install'); fs.mkdirSync(install);
   for (const f of ['agent', 'node', 'index.js']) fs.writeFileSync(path.join(install, f), 'not executed\n');
   const credential = path.join(root, 'dummy-auth.json'); fs.writeFileSync(credential, '{"synthetic":true}', { mode: 0o600 });
-  const io = { spawns: 0, closes: 0, beforeClose: null, hold: false, interval: null };
+  const io = { spawns: 0, closes: 0, beforeClose: null, hold: false, interval: null, terminationUnverified: false, spawnError: false, stagingRoots: [] };
+  // No provider process exists in this transport fixture; dispose only its own
+  // captured staging roots, including synthetic unverified-termination cases.
+  t.after(() => { for (const staged of io.stagingRoots) fs.rmSync(staged, { recursive: true, force: true }); });
   const childProcess = {
     spawnSync: () => ({ status: 0, stdout: '2026.09.28-64d2043\n' }),
     spawn(_command, _argv, options) {
       io.spawns++;
+      io.stagingRoots.push(path.dirname(options.cwd));
       const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.pid = 991122;
       child.kill = () => {};
       queueMicrotask(() => {
+        if (io.spawnError) { child.emit('error', Error('Synthetic spawn outcome')); return; }
         child.emit('spawn');
         if (io.hold) return;
         fs.writeFileSync(path.join(options.cwd, 'first.txt'), 'one\n');
@@ -111,7 +116,10 @@ function fixture(t) {
   const fsProbe = { ...fs, statSync(p, ...args) { return p === '/usr/bin/sandbox-exec' ? { isFile: () => true } : fs.statSync(p, ...args); } };
   const proc = Object.create(process);
   Object.defineProperty(proc, 'platform', { value: 'darwin' });
-  Object.defineProperty(proc, 'kill', { value() { throw Object.assign(Error('Synthetic process already terminated'), { code: 'ESRCH' }); } });
+  Object.defineProperty(proc, 'kill', { value(_pid, signal) {
+    if (io.terminationUnverified && signal === 0) return true;
+    throw Object.assign(Error('Synthetic process already terminated'), { code: 'ESRCH' });
+  } });
   const { CursorWorker } = loadSource('cursor-worker.js', { ...shared, 'node:fs': fsProbe, 'node:child_process': childProcess,
     './agent-adapter': { AgentAdapterError: class extends Error { constructor(code, message) { super(message); this.code = code; } } },
     './memory-content-erasure': { assertContext() {} }, './personal-memory': { containsSecret: () => false },
@@ -247,4 +255,34 @@ test('an explicit monetary ceiling cannot be replaced with unknown-cost acknowle
   const g = fixture(t); g.authorize(); g.m.envelope.maxCostUsdBoundary = 0;
   await assert.rejects(g.worker.dispatch(g.args), /monetary_cap_unenforceable/);
   assert.equal(g.io.spawns, 0);
+});
+
+test('unverified process termination is recorded as unknown subscription consumption', async t => {
+  const f = fixture(t); f.authorize(); f.io.terminationUnverified = true;
+  await assert.rejects(f.worker.dispatch(f.args), error => error.code === 'cursor_termination_unverified');
+  assert.equal(f.db.prepare('SELECT outcome FROM cp_subscription_invocations').get().outcome, 'unknown');
+  assert.equal(f.worker.active.size, 0);
+});
+
+for (const code of ['cursor_termination_unverified', 'cursor_spawn_failed']) {
+  test('accounting failure cannot mask ' + code + ' and release uncertain ownership', async t => {
+    const f = fixture(t); f.authorize();
+    f.io.terminationUnverified = code === 'cursor_termination_unverified';
+    f.io.spawnError = code === 'cursor_spawn_failed';
+    f.db.exec("CREATE TRIGGER injected_settlement_failure BEFORE UPDATE ON cp_subscription_invocations BEGIN SELECT RAISE(ABORT,'Synthetic settlement failure'); END");
+    await assert.rejects(f.worker.dispatch(f.args), error => error.code === code);
+    assert.equal(f.db.prepare('SELECT state FROM cp_subscription_invocations').get().state, 'reserved');
+    await assert.rejects(f.worker.dispatch({ ...f.args, requestId: randomUUID() }), /exhausted/);
+    assert.equal(f.io.spawns, 1, 'an accounting failure never refunds the consumed invocation');
+    assert.equal(f.worker.active.size, 0);
+  });
+}
+
+test('successful worker output is not published when subscription settlement fails', async t => {
+  const f = fixture(t); f.authorize();
+  f.db.exec("CREATE TRIGGER injected_settlement_failure BEFORE UPDATE ON cp_subscription_invocations BEGIN SELECT RAISE(ABORT,'Synthetic settlement failure'); END");
+  await assert.rejects(f.worker.dispatch(f.args), error => error.code === 'cursor_subscription_settlement_failed');
+  assert.equal(f.db.prepare('SELECT state FROM cp_subscription_invocations').get().state, 'reserved');
+  assert.equal(fs.readFileSync(path.join(f.args.repo, 'first.txt'), 'utf8'), 'pending\n');
+  assert.equal(f.worker.active.size, 0);
 });
