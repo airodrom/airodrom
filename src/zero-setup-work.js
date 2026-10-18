@@ -122,7 +122,7 @@ class ZeroSetupWork {
       if (authorized) return { ok: true, project: authorized.project, workspace: authorized.workspace };
       if (explicitUnauthorizedPath(instruction, projects)) return { ok: false, clarify: true, message: 'That repository is not authorized. No files were opened.', choices: [] };
       const sandbox = require('./projectless-sandbox').allocate();
-      return { ok: true, projectless: true, project: null, workspace: sandbox.workspace, filesystem: sandbox.filesystem };
+      return { ok: true, projectless: true, project: null, workspace: sandbox.workspace, filesystem: 'task_sandbox_only' };
     }
     if (matches.length === 1) return { ok: true, project: matches[0].project, workspace: matches[0].workspace };
     if (matches.length > 1) {
@@ -230,12 +230,16 @@ class ZeroSetupWork {
     const prior = this.read(request_id);
     if (prior) {
       if (prior.principal !== principal) throw Error('Resume the original authenticated handoff session; duplicate execution denied');
+      if (prior.work_spec && prior.instruction !== instruction) throw Error('projectless_request_replay_mismatch');
       if (principal === 'operator' && prior.developer_autonomy_policy_id && prior.state === 'awaiting_approval') return this.activateAutonomy(prior);
       return this.statusView(prior);
     }
     // ask_airodrom / prepare_mission prepare WORK only. Ordinary chat and public-research
     // consent stay on host conversation / Terminal flows; never auto-prepare from chat text.
-    const routed = require('./assistant-intent').parse(instruction);
+    const workSpec = require('./projectless-sandbox').parseWorkSpec(instruction);
+    // A strictly validated data packet is bounded work, not conversational text.
+    // The same secret/private-content and authenticated-session gates still apply.
+    const routed = workSpec ? { kind: 'work' } : require('./assistant-intent').parse(instruction);
     if (routed.kind === 'operator_control') {
       const record = { version: 1, instruction, routed: { kind: routed.kind }, clarify: false, authority: false, workspace: null };
       this.write(request_id, principal, record, 'clarify');
@@ -263,8 +267,10 @@ class ZeroSetupWork {
         next_action: 'use_terminal_public_web_or_research_consent',
       };
     }
-    const intent = parseExactFileIntent(instruction) || { kind: 'general', objective: instruction.trim() };
-    const scope = this.resolveScope(instruction, intent);
+    const intent = workSpec ? { kind: 'general', objective: require('./projectless-sandbox').workPresentation(workSpec).goal }
+      : parseExactFileIntent(instruction) || { kind: 'general', objective: instruction.trim() };
+    const scope = workSpec ? { ok: true, ...require('./projectless-sandbox').allocate(), work_spec: workSpec }
+      : this.resolveScope(instruction, intent);
     if (!scope.ok) {
       const record = { version: 1, instruction, intent, clarify: scope, authority: false };
       this.write(request_id, principal, record, 'clarify');
@@ -276,8 +282,21 @@ class ZeroSetupWork {
       if (handoff) {
         try {
           const mode = this.bridge.expandedAutonomy?.effective?.('operator');
-          standing = !!(mode && mode.mode !== 'manual' && !mode.emergency_stop && mode.flags?.manual_acceptance !== true);
+          standing = !!(mode && mode.mode !== 'manual' && !mode.emergency_stop && !mode.expired && mode.flags?.manual_acceptance !== true);
         } catch { standing = false; }
+      }
+      if (workSpec) {
+        const record = { version: 1, instruction, intent, work_spec: workSpec, projectless: true,
+          project_id: null, goal_id: null, workspace: scope.workspace, authority: false, execution_enabled: false,
+          presentation: require('./projectless-sandbox').workPresentation(workSpec) };
+        this.write(request_id, principal, record, 'awaiting_approval');
+        // Standing local autonomy is not external disclosure or spending consent.
+        if (workSpec.worker === 'opencode' && (principal === 'operator' || (handoff && standing)))
+          return this.startBoundedProjectless(this.read(request_id));
+        return { state: 'PREPARED', projectless: true, execution_authorized: false, authority: false,
+          presentation: record.presentation,
+          blockers: workSpec.worker === 'cursor' ? ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'] : ['owner_approval_required'],
+          next_action: 'approve_in_terminal_or_control_center' };
       }
       if ((principal === 'operator' || (handoff && standing)) && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
       const record = {
@@ -550,9 +569,51 @@ class ZeroSetupWork {
     return { state: 'DISPATCHED', projectless: true, execution_authorized: true, mission_id: mission.id, workspace: scope.workspace, presentation: record.presentation, authority: false, message: 'Projectless mission dispatched to OpenCode. No registered Project was created.' };
   }
 
+  startBoundedProjectless(live, confirmation = null) {
+    const sandbox = require('./projectless-sandbox');
+    const spec = sandbox.normalizeWorkSpec(live.work_spec);
+    const external = spec.worker === 'cursor';
+    if (!external && confirmation?.subscription_execution !== undefined) throw Error('Subscription permission requires Cursor');
+    if (external && (!confirmation || confirmation.owner !== 'operator' || confirmation.confirmed !== true ||
+        !['terminal', 'control_center'].includes(confirmation.channel) || !confirmation.subscription_execution))
+      throw Error('BLOCKED_SPEND_AUTHORIZATION');
+    if (live.mission_id) return this.statusView(live);
+    const before = (this.bridge.projects.listProjects() || []).length;
+    try {
+      sandbox.seedWork(live.workspace, spec);
+      const mission = this.bridge.missions.create(sandbox.workMissionInput(live.workspace, 'work:' + live.request_id,
+        spec, { externalConfirmed: external && confirmation.confirmed === true }), 'operator');
+      // Persist the identity BEFORE any dispatch; ambiguous responses must recover
+      // this Mission rather than allocate another sandbox or worker run.
+      live.mission_id = mission.id;
+      this.write(live.request_id, live.principal, live, 'approved');
+      if (external) {
+        const approval = this.bridge.missionApprovals.issue({ request_id: 'work-approval:' + live.request_id,
+          contract: mission.envelope.contract, channel: confirmation.channel, confirmed: true,
+          subscription_execution: confirmation.subscription_execution }, 'operator');
+        this.bridge.missionApprovals.bind(approval.approval_id, mission.id, 'operator');
+        live.approval_id = approval.approval_id;
+      }
+      if ((this.bridge.projects.listProjects() || []).length !== before) throw Error('Projectless execution must not register a Project');
+      live.dispatch_attempted = true;
+      this.write(live.request_id, live.principal, live, 'approved');
+      this.bridge.missions.dispatch(mission.id, { request_id: 'work-dispatch:' + live.request_id });
+      live.execution_enabled = true;
+      live.presentation = { ...sandbox.workPresentation(spec), status: 'Projectless ' + spec.worker + ' Mission dispatched' };
+      this.write(live.request_id, live.principal, live, 'running');
+      return { state: 'DISPATCHED', projectless: true, execution_authorized: true, mission_id: mission.id,
+        presentation: live.presentation, authority: false };
+    } catch (error) {
+      live.execution_enabled = false;
+      live.blocker_message = (live.dispatch_attempted ? 'Dispatch outcome requires reconciliation: ' : '') + String(error.message).slice(0, 400);
+      this.write(live.request_id, live.principal, live, 'blocked');
+      throw error;
+    }
+  }
+
   async approve(input, owner = 'operator') {
     if (owner !== 'operator') throw Error('Authenticated local operator required');
-    object(input, ['request_id', 'confirmed', 'channel']);
+    object(input, ['request_id', 'confirmed', 'channel', 'subscription_execution']);
     identifier(input.request_id);
     if (input.confirmed !== true) throw Error('Explicit owner approval required');
     const request_id = input.request_id;
@@ -560,6 +621,9 @@ class ZeroSetupWork {
     if (!live) throw Error('Prepared task unavailable');
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
+    if (live.work_spec) return this.startBoundedProjectless(live, { ...input, owner,
+      channel: input.channel || 'terminal' });
+    if (input.subscription_execution !== undefined) throw Error('Subscription permission requires an explicit bounded Cursor task');
     if (live.developer_autonomy_policy_id) return this.activateAutonomy(live);
     if (live.projectless) return this.startProjectless(live.request_id, live.principal, live.instruction, live.intent, { workspace: live.workspace, exact_fixture: /change fixture\.txt from alpha to beta/i.test(live.instruction || '') });
     // Distinct security decisions, presented as one coherent approval experience.

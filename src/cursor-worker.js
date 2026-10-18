@@ -18,6 +18,9 @@ const { AgentAdapterError } = require('./agent-adapter');
 const { object, redactValue } = require('./control-plane-store');
 
 const ID = 'cursor';
+// Only dispatch() can mint a one-use ticket after durable host admission. A
+// request/body, worker output, or forged readiness string cannot manufacture one.
+const executionTickets = new WeakMap();
 const MAX_OUTPUT = 2 * 1024 * 1024;
 const MAX_FILE = 262144;
 const MAX_PROMPT = 24000;
@@ -259,6 +262,7 @@ class CursorWorker {
       reason: ready ? null : !install ? 'cursor_agent_not_installed' : !observed ? 'cursor_version_unavailable' : !pinned ? 'cursor_version_unqualified' : !credential.available ? credential.reason : !executionQualified ? 'cursor_execution_unqualified' : !platform ? 'cursor_platform_unqualified' : 'cursor_sandbox_unavailable',
       owner_step: credential.available ? null : credential.owner_step,
       spend: 'UNKNOWN_SUBSCRIPTION',
+      spend_authorization: 'mission_scoped_owner_grant_required',
     };
   }
 
@@ -299,12 +303,24 @@ class CursorWorker {
    * Execute one bounded Cursor run.
    * @returns {{result, changes, provenance, trace}}
    */
-  async execute({ workspace, files, writable = [], objective, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onEvent = null, model = null, hosts = null } = {}) {
+  async execute({ workspace, files, writable = [], objective, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onEvent = null, model = null, hosts = null, admission = null } = {}) {
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > MAX_TIMEOUT_MS || signal?.aborted) fail('cursor_timeout_or_cancel_bound');
     const readiness = await this.readiness();
     this.lastReadiness = readiness;
     if (!readiness.ready) fail(readiness.reason || 'cursor_unavailable');
-    if (!this.options.fixtureExecutable && readiness.spend !== 'authorized_subscription') fail('BLOCKED_SPEND_AUTHORIZATION');
+    let admitted = null;
+    if (!this.options.fixtureExecutable) {
+      admitted = admission && executionTickets.get(admission);
+      if (!admitted || admitted.worker !== this || admitted.workspace !== workspace || admitted.signal !== signal ||
+          admitted.files !== JSON.stringify(files) || admitted.writable !== JSON.stringify(writable) ||
+          typeof objective !== 'string' || admitted.objective_hash !== hash(objective) ||
+          admitted.model !== model || admitted.hosts !== JSON.stringify(hosts))
+        fail('BLOCKED_SPEND_AUTHORIZATION');
+      executionTickets.delete(admission);
+      this.bridge.missionApprovals.assertSubscription(admitted.reservation);
+      timeoutMs = Math.min(timeoutMs, admitted.reservation.deadline_at - this.bridge.controlStore.now());
+      if (timeoutMs < 1000) fail('subscription_expired');
+    }
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || fs.realpathSync(workspace) !== workspace || !Array.isArray(files) || !files.length || files.length > 8 || new Set(files).size !== files.length || !Array.isArray(writable) || new Set(writable).size !== writable.length || writable.some(f => !files.includes(f))) fail('cursor_workspace_binding');
     files.forEach(relative); writable.forEach(relative);
     if (typeof objective !== 'string' || !objective.trim() || Buffer.byteLength(objective) > MAX_PROMPT || /\0/.test(objective)) fail('cursor_prompt_bound');
@@ -364,6 +380,9 @@ class CursorWorker {
       const argv = fixture ? [this.options.fixtureExecutable, ...cliArgs]
         : ['-c', 'ulimit -t ' + cpuSeconds + ' -f 524288 -n 1024; prof="$0"; node="$1"; idx="$2"; shift 2; exec /usr/bin/sandbox-exec -p "$prof" "$node" --use-system-ca "$idx" "$@"', sandboxProfile({ install, root, writable, port: proxy.port }), install.node, install.index, ...cliArgs];
       emit({ provenance: 'HOST_MEDIATED', kind: 'worker.launch', sandbox_id: sandboxId, credential: credential.kind, hosts: allowedHosts.length, writable: writable.length, files: files.length, model: model || 'auto' });
+      // Revalidate after staging and immediately before launching the paid process.
+      if (admitted) this.bridge.missionApprovals.assertSubscription(admitted.reservation);
+      if (signal?.aborted) fail('cursor_cancelled');
       const outcome = await new Promise((resolve, reject) => {
         let child;
         try { child = spawn(command, argv, { cwd: path.join(root, 'workspace'), env: fixture ? { ...env, AIRODROM_FIXTURE_ROOT: root, ...(process.env.AIRODROM_CURSOR_FIXTURE_MODE ? { AIRODROM_CURSOR_FIXTURE_MODE: process.env.AIRODROM_CURSOR_FIXTURE_MODE } : {}) } : env, shell: false, detached: true, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return reject(new AgentAdapterError('cursor_spawn_failed', 'cursor_spawn_failed')); }
@@ -447,15 +466,35 @@ class CursorWorker {
     if (!this.qualifiedFor(m, { readiness })) fail('cursor_mission_unqualified');
     b.missions.assertAuthority(m);
     require('./memory-content-erasure').assertContext(b.controlStore.db, task.contextPackId);
-    const controller = new AbortController(); this.active.set(task.id, controller);
+    if (this.active.size) fail('cursor_worker_busy');
+    const controller = new AbortController();
     const runId = b.controlContext.inspect(context.id).run_id;
     const contract = m.envelope.contract;
     const timeoutMs = Math.min(MAX_TIMEOUT_MS, this.options.timeoutMs || DEFAULT_TIMEOUT_MS, Math.max(1000, contract.budget.max_wall_clock_ms || DEFAULT_TIMEOUT_MS));
-    let count = 0;
+    const model = m.envelope.model && !/^(auto|cursor:auto)$/.test(m.envelope.model)
+      ? String(m.envelope.model).replace(/^cursor:/, '') : null;
+    let count = 0, reservation = null, deadlineTimer = null, grantMonitor = null;
+    let outcome = 'failed';
+    const ticket = Object.freeze({});
     try {
+      if (!this.options.fixtureExecutable) {
+        if (!b.missionApprovals?.reserveSubscription) fail('BLOCKED_SPEND_AUTHORIZATION');
+        reservation = b.missionApprovals.reserveSubscription(m.id, requestId, timeoutMs);
+        executionTickets.set(ticket, { worker: this, reservation, workspace: repo, signal: controller.signal,
+          files: JSON.stringify(m.envelope.allowed_files), writable: JSON.stringify(contract.permissions.allowed_write_paths),
+          objective_hash: hash(prompt), model, hosts: JSON.stringify(contract.permissions.network.allow) });
+        deadlineTimer = setTimeout(() => controller.abort(), Math.max(0, reservation.deadline_at - b.controlStore.now()));
+        deadlineTimer.unref?.();
+        grantMonitor = setInterval(() => {
+          try { b.missionApprovals.assertSubscription(reservation); b.missions.assertAuthority(b.controlStore.requireMission(m.id)); }
+          catch { controller.abort(); }
+        }, 250);
+        grantMonitor.unref?.();
+      }
+      this.active.set(task.id, controller);
       const result = await this.execute({
         workspace: repo, files: m.envelope.allowed_files, writable: contract.permissions.allowed_write_paths, objective: prompt, timeoutMs, signal: controller.signal,
-        model: m.envelope.model && !/^(auto|cursor:auto)$/.test(m.envelope.model) ? String(m.envelope.model).replace(/^cursor:/, '') : null,
+        model, admission: ticket,
         hosts: contract.permissions.network.allow,
         onEvent: event => {
           if (count++ >= MAX_TRACE_EVENTS) return;
@@ -463,9 +502,19 @@ class CursorWorker {
           if (event.kind === 'worker.started') { try { b.controlStore.event('runtime.execution.started', m.id, { agent_id: ID }, { runId }); b.emit('change'); } catch { /* observational */ } }
         },
       });
+      if (reservation) b.missionApprovals.assertSubscription(reservation);
+      if (controller.signal.aborted) fail('cursor_cancelled');
+      b.missions.assertAuthority(b.controlStore.requireMission(m.id));
+      outcome = 'completed';
       try { require('./live-observatory').record(b, { eventType: 'worker.terminated', missionId: m.id, runId, metadata: { agent_id: ID, status: result.result.status, sandbox_id: result.provenance.sandbox_id }, idempotencyKey: `obs-worker-term:${m.id}:${runId}` }); } catch { /* observational */ }
       return result;
-    } finally { this.active.delete(task.id); }
+    } finally {
+      executionTickets.delete(ticket);
+      clearTimeout(deadlineTimer); clearInterval(grantMonitor);
+      this.active.delete(task.id);
+      // No automatic refunds; a failed/unknown launch still consumes its slot.
+      if (reservation) b.missionApprovals.settleSubscription(reservation, controller.signal.aborted ? 'cancelled' : outcome);
+    }
   }
 
   assertEvidence(run) {

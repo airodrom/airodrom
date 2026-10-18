@@ -6,6 +6,14 @@ When a request does not name an authorized repository, Airodrom prepares a new p
 
 An enrolled repository is used only when the request names that Project or its authorized path. An unrecognized path is refused. Existing Projects remain available for organization and for work that names them.
 
-An operator request that names a projectless task sandbox and an exact `fixture.txt` change dispatches OpenCode in that sandbox. The host verifier checks the file bytes. Automatic Acceptance runs only after that verification passes and the existing OpenCode risk policy allows it. No Project or user Goal is registered. Cursor remains selectable only when qualified; live Cursor dispatch stays blocked while subscription spend is `UNKNOWN_SUBSCRIPTION`.
+The original exact `fixture.txt` alpha-to-beta shortcut dispatches OpenCode. Its successful execution is not proof that arbitrary projectless development or automatic Git merge/installation is supported.
 
-Host verification, worker qualification, sandbox isolation, and high-impact fail-closed controls are unchanged.
+## Bounded multi-file exact-result work
+
+The `AIRODROM_WORK_V1` data format compiles 1–8 explicitly declared files and exact expected bytes into the existing Mission contract and worker launcher, without a persistent Project or user Goal. Local OpenCode follows existing standing-admission and independent-verification/Acceptance rules. Explicit Cursor requests never silently fall back to OpenCode.
+
+Cursor billing observability remains `UNKNOWN_SUBSCRIPTION`; execution requires a separate explicit, scoped operator subscription grant with finite invocation/runtime limits. Unknown cost is not an authorization, and an unenforceable monetary ceiling is not presented as a guarantee. Cursor Acceptance remains separate from the OpenCode-only automatic-Acceptance preference.
+
+See [Worker execution recovery](WORKER-EXECUTION-RECOVERY-V1.md) for the canonical schema, authority boundaries, regression command, diagnostic guide and operational closeout checklist. The [source-validation receipt](ISSUE-142-VALIDATION.md) separates tested source from live installation evidence. Do not claim activation or close the operational issue from source tests alone.
+
+Host verification, worker qualification, sandbox isolation, and high-impact fail-closed controls remain mandatory.
