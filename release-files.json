@@ -873,5 +873,11 @@
   "tests/cognitive-router.test.js",
   "docs/adr/0058-opencode-result-gateway.md",
   "src/opencode-gateway.js",
-  "tests/cognitive-gateway.test.js"
+  "tests/cognitive-gateway.test.js",
+  "docs/SPECIALIST-GATEWAY-V1.md",
+  "docs/adr/0059-specialist-gateway.md",
+  "src/specialist-gateway.js",
+  "tests/specialist-erasure.test.js",
+  "tests/specialist-gateway-live.cjs",
+  "tests/specialist-gateway.test.js"
 ]

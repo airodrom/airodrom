@@ -184,3 +184,12 @@ termination, binding hash and advisory recommendation. `gateway.result_received`
 Live Monitor event path. Worker claims never become test evidence or Acceptance.
 Failed evaluation preserves host verification and blocks completion. Named workers
 without a supported admitted cognitive path are rejected explicitly.
+
+## Cognitive specialist gateway
+
+Version 3 adds bounded assignments, worker result return to OpenCode, shared repair
+limits and automatic completion under current enrolled policy. It reuses the
+existing scheduler, Mission Program, accounting and verification. See
+[Specialist Gateway V1](SPECIALIST-GATEWAY-V1.md) and
+[ADR 0059](adr/0059-specialist-gateway.md) for contracts, recovery and rollback
+compatibility. Earlier single-worker/version 2 descriptions remain historical.

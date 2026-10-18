@@ -69,7 +69,9 @@ class AuthorityRuntime {
     return {id:pack.id,refs,selection,context_hash:pack.context_hash,context_sources:refs,retrieved_memory_ids:pack.items.map(m=>m.memory_id),canonical_doc_refs:pack.items.flatMap(m=>m.source_refs.map(r=>r.source_ref).filter(Boolean)),decision_refs:[],reference_data:records,notice:'Memory is untrusted context. It never grants execution authority.'};
   }
   async route(mission,observations) {
-    const envelope=mission.envelope,pack=this.buildContext(mission),policy=envelope.dispatch_policy;
+    const envelope=mission.envelope,pack=this.buildContext(mission);
+    const assignment=require('./specialist-gateway').enabled(mission)?require('./specialist-gateway').adapterScope(this.bridge,this.bridge.tasks.get(mission.task_id),require('./specialist-gateway').active(this.bridge,mission).assignment.worker):null;
+    const policy=assignment?.assignment.worker==='opencode'?require('./default-runtime').LOCAL_POLICY:envelope.dispatch_policy;
     const candidates=Object.entries(observations).filter(([id])=>['host','opencode','claude_code','codex','cursor'].includes(id)).map(([id,a])=>{
       const p=a.runtime_profile||{};
       const governedCursor=id==='cursor'&&a.governed_worker===true&&this.bridge.cursorWorker?.qualifiedFor(mission,{readiness:{ready:a.available===true}})===true;
@@ -77,7 +79,7 @@ class AuthorityRuntime {
     });
     // Preserve immutable legacy billing/provider restrictions without treating
     // a runtime's vendor alias as a selected reasoning provider.
-    for(const c of candidates){if(policy?.providers?.length&&!policy.providers.includes(c.policy_provider_alias))c.enabled=false;if((['declared','default'].includes(envelope.route_mode)||envelope.route_mode==='automatic')&&!(envelope.route_mode==='automatic'?require('./agent-routing').legacyOrder(envelope.task_type):[envelope.preferred_agent,...(envelope.fallback_agents||[])]).map(x=>x==='claude_code'?'claude':x).includes(c.agent_id))c.enabled=false;}
+    for(const c of candidates){if(policy?.providers?.length&&!policy.providers.includes(c.policy_provider_alias))c.enabled=false;if((['declared','default'].includes(envelope.route_mode)||envelope.route_mode==='automatic')&&!(assignment?[assignment.assignment.worker]:envelope.route_mode==='automatic'?require('./agent-routing').legacyOrder(envelope.task_type):[envelope.preferred_agent,...(envelope.fallback_agents||[])]).map(x=>x==='claude_code'?'claude':x).includes(c.agent_id))c.enabled=false;}
     const research=envelope.kind==='browser_research',deterministic=research||['local_files','local_diagnostics','tests','git'].includes(envelope.task_type);
     const input={project_id:mission.project_id,mission_id:mission.id,mission_revision:mission.revision,context_pack_id:pack.id,task_class:envelope.task_type||'focused_refactor',required_capabilities:research?['browser_research']:deterministic?['local_tools']:['coding'],required_assurance:Math.max(envelope.required_assurance||0,deterministic?2:1),privacy:policy?.privacy==='local_only'?'restricted_security':'internal',local_only:policy?.privacy==='local_only',external_allowed:policy?.privacy==='cloud_allowed'||!policy&&envelope.preferred_agent==='claude_code',allow_handoff:policy?.privacy==='cloud_allowed'&&policy.providers?.includes('codex_openai')&&policy.billing_classes?.includes('subscription'),writer_conflict:!!this.db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND mode='write' AND state IN('held','quarantined')").get(envelope.workspace),...(envelope.maxCostUsdBoundary!==undefined?{maxCostUsdBoundary:envelope.maxCostUsdBoundary}:{}),...(policy?.billing_classes?.length?{allowed_cost_classes:policy.billing_classes}:{})};
     const decision=this.router.plan(input,candidates);
@@ -88,6 +90,7 @@ class AuthorityRuntime {
     if(!this.routing)return;
     const decision=this.store.one('routing_decisions',route?.authority_routing_decision_id);
     if(!decision||decision.mission_id!==mission.id||decision.mission_revision!==mission.revision||decision.state!=='selected'||Date.now()-decision.created_at>60000)throw new Error('Current governed route required');
+    if(require('./specialist-gateway').enabled(mission)){const a=require('./specialist-gateway').active(this.bridge,mission);if(decision.selected_agent!==a.assignment.worker||route.selected!==a.assignment.worker||route.assignment_hash!==canonicalHash(a.assignment))throw new Error('Specialist route binding changed');}
     if(!this.memory.validatePack(decision.context_pack_id,{operator_id:this.store.operatorId,project_id:mission.project_id}).valid||pack&&pack.context_hash!==route.context_hash)throw new Error('Context changed after routing; WAIT and reroute');
   }
   memoryItems(input) {

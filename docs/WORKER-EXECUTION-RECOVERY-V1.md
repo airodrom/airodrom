@@ -302,3 +302,22 @@ both authorized and denied non-fixture admission tests. Keep this document autho
 for the distinction between implemented, simulated, host-verified, accepted and installed.
 Do not recreate multi-file workers, mislabel IDE tasks, claim all development is supported,
 or repeatedly send the user through the same invalid approval proposal.
+
+## Cognitive specialist gateway
+
+Version 3 adds bounded assignments, worker result return to OpenCode, shared repair
+limits and automatic completion under current enrolled policy. It reuses the
+existing scheduler, Mission Program, accounting and verification. See
+[Specialist Gateway V1](SPECIALIST-GATEWAY-V1.md) and
+[ADR 0059](adr/0059-specialist-gateway.md) for contracts, recovery and rollback
+compatibility. Earlier single-worker/version 2 descriptions remain historical.
+
+Version 3 adds the opaque `record_id` column to Mission Program nodes. The constructor
+adds the schema; legacy rows require the existing explicit canonical identity
+migration (`memory-identity.migrate`) before retained reads can proceed. Stage this
+on a fresh private SQLite backup first, verify integrity and erasure/accounting
+continuity, then migrate the stopped host under the existing managed writer
+exclusion. Recovery against an authoritative database preserves each UUID and its
+erasure disposition; missing or mismatched origins are rejected. Never synthesize
+replacement identities during restore. Old source lacking this retention field is
+not a compatible rollback, even when every specialist Mission has finished.

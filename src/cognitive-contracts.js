@@ -28,7 +28,7 @@ function choice(v, values) { if (!values.includes(v)) fail('cognitive_enum_inval
 function relative(v) { safePath(v); if (/[:*?\[\]{}]/.test(v)) fail('cognitive_path_invalid'); return v; }
 function limits(v, version = 1) {
   object(v, ['planning_attempts', 'execution_attempts', 'repair_attempts', 'planning_ms', 'execution_ms']);
-  integer(v.planning_attempts, 1, 2); integer(v.execution_attempts, 1, 1); integer(v.repair_attempts, 0, version === 2 ? 2 : 0);
+  integer(v.planning_attempts, 1, 2); integer(v.execution_attempts, 1, version === 3 ? 3 : 1); integer(v.repair_attempts, 0, version >= 2 ? 2 : 0);
   integer(v.planning_ms, 1000, 120000); integer(v.execution_ms, 1000, 120000);
 }
 function integrity(v) {
@@ -46,7 +46,7 @@ function parse(kind, data) {
   }
   if (!schemas[kind]) fail('cognitive_contract_unknown');
   object(data, schemas[kind]);
-  if (![1, 2].includes(data.version)) fail('cognitive_version_unsupported');
+  if (![1, 2, 3].includes(data.version)) fail('cognitive_version_unsupported');
   if (kind === 'RequestEnvelope') {
     string(data.request_id); string(data.caller); object(data.delegation, ['policy_id', 'policy_hash']);
     string(data.delegation.policy_id); digest(data.delegation.policy_hash); string(data.repository_id); string(data.workspace_id);
@@ -59,11 +59,17 @@ function parse(kind, data) {
     string(data.request_id); digest(data.envelope_hash); list(data.files, relative, 8);
     list(data.verification, string, 5); choice(data.complexity, ['simple', 'bounded', 'complex']);
     list(data.tasks, task => {
-      object(task, ['id', 'operation', 'paths', 'description', 'depends_on']);
+      object(task, ['id', 'operation', 'paths', 'description', 'depends_on', ...(data.version === 3 ? ['worker', 'role', 'verification'] : [])]);
       if (!/^[a-z][a-z0-9_-]{0,39}$/.test(task.id)) fail('cognitive_task_id_invalid');
       choice(task.operation, ['read', 'edit']); list(task.paths, relative, 8); string(task.description, 600);
       list(task.depends_on, string, 12, 0);
-    }, 12);
+      if (data.version === 3) {
+        choice(task.worker, ['opencode', 'cursor', 'codex', 'claude_code']);
+        choice(task.role, ['implementation', 'review', 'analysis']);
+        list(task.verification, string, 5, 0);
+        if (task.role !== 'implementation' && task.operation !== 'read') fail('cognitive_review_read_only');
+      }
+    }, data.version === 3 ? 3 : 12);
     const tasks = new Map(data.tasks.map(t => [t.id, t]));
     if (tasks.size !== data.tasks.length) fail('cognitive_duplicate_task');
     const visited = new Set(), visiting = new Set();
@@ -95,7 +101,7 @@ function parse(kind, data) {
     choice(data.state, ['BLOCKED', 'PLANNING', 'SEALED', 'RUNNING', 'NEEDS_REWORK', 'VERIFIED', 'AWAITING_ACCEPTANCE', 'ACCEPTED', 'CANCELLED']);
     list(data.errors, string, 20, 0); list(data.references, string, 30);
     object(data.counts, ['planning', 'execution', 'repair']);
-    integer(data.counts.planning, 0, 2); integer(data.counts.execution, 0, 1); integer(data.counts.repair, 0, data.version === 2 ? 2 : 0);
+    integer(data.counts.planning, 0, 2); integer(data.counts.execution, 0, data.version === 3 ? 5 : 1); integer(data.counts.repair, 0, data.version >= 2 ? 2 : 0);
   }
   return JSON.parse(JSON.stringify(data));
 }

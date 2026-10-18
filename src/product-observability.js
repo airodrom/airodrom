@@ -333,6 +333,12 @@ function missionView(bridge, mission) {
   termination:{verified:worker?.termination_verified===1,process_state:enumValue(worker?.process_state,['starting','alive','exited','unknown','not_started'],'not_started')},
   progress:progress({state}),timeline:history,history_truncated:ev.has_more,latest_activity:history.at(-1)?.label||(state==='draft'||state==='ready'?'Registered — execution not started':null),
   archived,actions:{cancel:!['completed','cancelled'].includes(state),dispatch:['ready','blocked','needs_rework'].includes(state)&&!task.mission?.authorityRevoked&&(!mission.envelope.manifest?.expires_at||mission.envelope.manifest.expires_at>Date.now())&&!(mission.envelope.kind==='conversation'&&db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(mission.id))&&!runs.some(r=>r.process_state==='unknown')&&!require('./removed-runtime').removed(mission),accept:state==='awaiting_acceptance'&&verificationCurrent,archive:visibility.archiveEligible(mission,bridge)&&!archived,restore:archived}};
+ if(require('./specialist-gateway').enabled(mission)){
+  const graph=require('./specialist-gateway').inspect(bridge,mission);
+  view.specialists={state:enumValue(graph.state,['prepared','running','waiting_acceptance','settled','blocked','needs_rework','cancelled']),concurrency:1,repairs_used:graph.repair_attempts,repairs_limit:mission.envelope.cognitive.envelope.limits.repair_attempts,acceptance:'automatic',assignments:graph.assignments.map((a,i)=>({number:i+1,worker:enumValue(a.worker,['opencode','cursor']),role:enumValue(a.role,['implementation','review','analysis']),operation:enumValue(a.operation,['read','edit']),state:enumValue(a.state,['pending','queued','running','evaluating','ready','failed','unavailable']),attempts:a.attempts.length,returned_to_opencode:!!a.attempts.at(-1)?.evaluation_run_id,verification:a.attempts.at(-1)?.verification?.status||'not_observed'}))};
+  view.actions.accept=false;
+  if(acceptance?.decision==='accept')view.acceptance.mode='automatically_verified';
+ }
  view.autonomous_managed=autonomousManaged(bridge,mission.id);
  view.display=displayStatus(state,{started:!!view.started_at,settled:view.settlement.status==='settled',archived,kind:view.kind});
  view.recovery=recoveryStatus(bridge,mission,view);

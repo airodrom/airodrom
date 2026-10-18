@@ -368,12 +368,15 @@ class DeveloperAutonomy {
   contractFor(input) {
     const grant = this.inspectGrant(input.developer_autonomy.grant_id);
     if (!grant || grant.state !== 'active') throw Error('Developer Autonomy grant unavailable');
+    const cognitive=input.cognitive_request_id?this.bridge.zeroSetupWork.read(input.cognitive_request_id)?.cognitive:null;
+    const assignments=cognitive?.envelope?.version===3?cognitive.proposal.tasks:null;
     return { identity: { expires_at: grant.expires_at },
+      ...(assignments?{execution:{worker_allowlist:[...new Set(assignments.map(t=>t.worker))]}}:{}),
       objective: { original_instruction: input.objective },
       permissions: { allowed_write_paths: input.cognitive_request_id && input.preferred_agent === 'host' ? [] : [...input.allowed_files], ...(input.cognitive_request_id && input.preferred_agent === 'host' ? { allowed_tools: ['read'] } : {}) },
       budget: { risk_class: 'normal', max_repair_attempts: grant.repair_budget,
         max_wall_clock_ms: Math.min(grant.expires_at - grant.created_at, grant.manifest.mission.budget.max_runtime_hours * 3600000),
-        max_worker_invocations: grant.repair_budget + 1 } };
+        max_worker_invocations: grant.repair_budget + (assignments?assignments.length:1) } };
   }
 
   assertCreation(input) {

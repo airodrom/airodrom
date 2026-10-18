@@ -160,6 +160,7 @@ class MissionService {
       this.db.prepare('INSERT INTO cp_mission_tasks VALUES(?,?,1,NULL,NULL,?)').run(task.id,m.id,Date.now());
       this.bridge.developerAutonomy.bindMission(m);
       this.program.register(m);this.acceptanceEngine.register(m);this.riskAcceptance.register(m,riskPolicy);
+      require('./specialist-gateway').register(this,m);
       if(developmentSessionId)this.bridge.developmentSessions.attach({session_id:developmentSessionId,mission_id:m.id,confirmed:true},owner);
       if(fixturePolicy)this.store.event('fixture.auto_acceptance.authorized',m.id,{policy:fixturePolicy});
       this.store.event('task.created',m.id,{task_id:task.id});return this.detail(m.id,owner);
@@ -178,6 +179,7 @@ class MissionService {
     const bound=this.bridge.developmentSessions?.forMission(id)||null;
     view.development_session_id=m.envelope.development_session_id||bound?.id||null;
     view.development_session=bound?{id:bound.id,branch:bound.branch,worktree:bound.worktree,integration_state:bound.integration_state,assigned_worker:bound.assigned_worker}:null;
+    if(require('./specialist-gateway').enabled(m))view.specialists=require('./specialist-gateway').inspect(this.bridge,m);
     return view;
   }
   dispatch(id,{request_id},owner='operator'){
@@ -215,7 +217,7 @@ class MissionService {
     }
   }
   queue(id,decisionId=null){
-    const m=this.store.requireMission(id);this.assertAuthority(m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
+    const m=this.store.requireMission(id);this.assertAuthority(m);if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').queue(this,m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
     if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&!(m.envelope.preferred_agent==='cursor'&&m.envelope.contract)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     if(m.envelope.cognitive&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('cognitive_execution_attempts_exhausted');
     if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
@@ -297,7 +299,7 @@ class MissionService {
         if(choice.selected!==fallback.selected_fallback){requeue();return;}
         route=this.bridge.authorityRuntime?.routing?await this.bridge.authorityRuntime.route(m,await this.agents.refresh()):{selected:choice.selected,reason:'durable_compatible_fallback',transport:'native'};
         if(route.selected!==fallback.selected_fallback)throw Error('Governed fallback requires WAIT and reconciliation');
-      }else route=await this.agents.select(m.envelope);
+      }else route=require('./specialist-gateway').enabled(m)?await require('./specialist-gateway').select(this,m,dispatch):await this.agents.select(m.envelope);
       transaction(this.db,()=>{this.db.prepare('UPDATE cp_dispatches SET route=?,updated_at=? WHERE id=?').run(JSON.stringify(route),Date.now(),dispatch.id);this.store.event('agent.route.planned',m.id,route);});
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
@@ -346,7 +348,8 @@ class MissionService {
     const cursor=route.selected==='cursor'&&!m.envelope.worker_contract;
     const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),vendor=!!m.envelope.worker_contract,agentId=vendor?m.envelope.preferred_agent:cursor?'cursor':'opencode',adapter=vendor?this.bridge.workers.get(agentId):cursor?this.bridge.cursorWorker:this.bridge.opencodeAdapter;
     if(cursor&&!adapter)throw Error('worker_execution_unqualified');
-    if(workspaceSnapshot(m.envelope.workspace).hash!==m.envelope.baseline.hash)throw Error('opencode_workspace_changed');
+    const specialist=require('./specialist-gateway').enabled(m)?require('./specialist-gateway').adapterScope(this.bridge,task,agentId):null;
+    if(workspaceSnapshot(m.envelope.workspace).hash!==require('./specialist-gateway').baseline(this.bridge,m,task.id).hash)throw Error('opencode_workspace_changed');
     this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor||cursor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
     if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor||cursor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
     if(cursor&&!m.envelope.contract?.permissions?.external_disclosure?.authorized)throw Error('external_disclosure_unauthorized');
@@ -360,23 +363,25 @@ class MissionService {
         this.db.prepare('UPDATE cp_mission_tasks SET context_pack_id=? WHERE task_id=?').run(pack.id,task.id);task.contextPackId=pack.id;task.assignedAgent=agentId;this.bridge.tasks.save(task);
         this.store.updateRun(runId,{state:'running',processState:vendor?'starting':'alive'});
         this.db.prepare("UPDATE cp_dispatches SET state='running',run_id=?,updated_at=? WHERE id=? AND state IN ('queued','dispatching')").run(runId,Date.now(),dispatch.id);
-        this.store.state(m.id,'running');started=true;return pack;
+        if(this.store.getMission(m.id).state!=='running')this.store.state(m.id,'running');require('./specialist-gateway').started(this.bridge,m,task.id,runId);started=true;return pack;
       });
       await this.web.preflight(m,task);
       if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
-      const prompt=require('./exact-file-prompt').opencodePrompt(m);
+      require('./specialist-gateway').assertFresh(this.bridge,m,task.id);
+      const prompt=specialist?JSON.stringify(require('./specialist-gateway').workerInput(this.bridge,m,task.id)):require('./exact-file-prompt').opencodePrompt(m);
       let output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt,context:{id:pack.id},requestId:`mission:${dispatch.id}`});
       if(m.envelope.cognitive&&output.result?.web_requests?.length)throw Error('cognitive_external_discovery_not_authorized');
       for(let round=0;output.result?.web_requests?.length;round++){if(round>=2||output.changes.length)throw Error('opencode_web_request_bound');for(const action of output.result.web_requests)await this.web.call(m,task,action);output=await adapter.dispatch({task,repo:m.envelope.workspace,prompt,context:{id:pack.id},requestId:`mission:${dispatch.id}:web:${round}`});}
       if(vendor)this.bridge.workers.assertOutput(this.store.requireMission(m.id),output);
       if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
+      require('./specialist-gateway').assertFresh(this.bridge,m,task.id);
       this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
       if(task.cancelRequested||task.safetyStop?.latched)throw Error('opencode_cancelled');
       for(const [i,change]of output.changes.entries()){
         if(vendor)this.bridge.workers.assertOutput(this.store.requireMission(m.id),output);
         this.assertAuthority(this.store.requireMission(m.id));require('./memory-content-erasure').assertContext(this.db,pack.id);
         const file=path.join(m.envelope.workspace,change.path);
-        if(!m.envelope.allowed_files.includes(change.path)||require('./qualified-coding-adapter').digest(file)!==change.preimage_sha256)throw Error('opencode_preimage_changed');
+        if(!(specialist?specialist.writable:m.envelope.allowed_files).includes(change.path)||require('./qualified-coding-adapter').digest(file)!==change.preimage_sha256)throw Error('opencode_preimage_changed');
         this.bridge.developerAutonomy.assertChanges(this.store.requireMission(m.id),output.changes);
         const applied=await this.bridge.invokeCapability(task.id,{name:'file_write',input:{path:file,content:change.content},requestId:`opencode-apply:${runId}:${i}`});
         if(applied.status!=='completed')throw Error('opencode_apply_not_completed');
@@ -457,6 +462,7 @@ class MissionService {
   }
   async processResult(row){
     const m=this.store.getMission(row.mission_id),run=this.store.run(row.run_id),result=JSON.parse(row.normalized);
+    if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').processResult(this,row);
     if(m.state==='dispatching')return;
     transaction(this.db,()=>{
       this.db.prepare('UPDATE cp_run_results SET processed_at=? WHERE run_id=? AND processed_at=0').run(Date.now(),run.id);
@@ -569,11 +575,11 @@ class MissionService {
       for(const h of this.db.prepare("SELECT h.run_id FROM cp_codex_handoffs h JOIN cp_runs r ON r.id=h.run_id WHERE r.mission_id=? AND h.state<>'settled'").all(id))this.bridge.codexAdapter.cancelTask(h.run_id);
       this.store.event('mission.stop_requested',id,{});return{mission_id:id,state:'cancelled'};
     });
-    afterCommit(this.db,()=>{this._web?.cancel(id);if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id)){const task=this.bridge.tasks.get(row.task_id);this.bridge.opencodeAdapter?.cancel({task});for(const a of this.bridge.workers?.adapters.values()||[])a.cancel({task});}for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
+    afterCommit(this.db,()=>{this._web?.cancel(id);if(this.store.getMission(id).envelope.kind==='browser_research')this.research.cancel(id);for(const row of this.db.prepare('SELECT task_id FROM cp_mission_tasks WHERE mission_id=?').all(id)){const task=this.bridge.tasks.get(row.task_id);this.bridge.opencodeAdapter?.cancel({task});this.bridge.cursorWorker?.cancel({task});for(const a of this.bridge.workers?.adapters.values()||[])a.cancel({task});}for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(this.store.missionForTask(job.taskId)?.id===id)this.bridge.capabilityHost.jobs.cancel(job);});
     return result;
   }
   decisionDetails(id){const d=this.store.decision(id);if(!d)throw Error('Decision not found');const m=this.detail(d.mission_id);return{decision:d,mission_objective:m.objective,result:this.db.prepare('SELECT normalized FROM cp_run_results WHERE run_id=?').get(d.run_id)?.normalized||null,verification:m.verifications,risks:['Worker rationale is untrusted; protected approvals are separate.']};}
-  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.riskAcceptance.reconcile();this.schedule();}
+  recover(){for(const {id} of this.db.prepare('SELECT id FROM cp_missions').all()){const m=this.store.getMission(id);if(require('./specialist-gateway').recover(this,m))continue;if(m.envelope.kind==='browser_research')this.research.recover(m);{if(m.envelope.control_version===2&&['dispatching','verifying','running'].includes(m.state)&&!this.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)&&!this.db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state='queued'").get(m.id))this.store.state(m.id,'blocked','Interrupted execution or verification requires reconciliation');}}this.riskAcceptance.reconcile();this.schedule();}
   async close(){this.stopped=true;await this._web?.close();await this._research?.close();await this.bridge.opencodeAdapter?.shutdown();await this.bridge.workers?.shutdown();while(this.busy)await new Promise(resolve=>setTimeout(resolve,20));}
 }
 module.exports={MissionService,relative};

@@ -25,8 +25,8 @@ test('Control Center enrolls exact discovery and caller delegation, displays lim
   await page.getByText('browser-cognitive', { exact: true }).waitFor();
   await page.getByText('Inspect policy', { exact: true }).click();
   await page.getByText('Automatic planning files: fixture.txt', { exact: true }).waitFor();
-  await page.getByText('Planning attempts: 2; execution: one attempt; repairs: 0; OpenCode result review required.', { exact: true }).waitFor();
-  const policy = b.developerAutonomy.list('operator')[0]; assert.equal(policy.cognitive.delegated_callers.length, 1);
+  await page.getByText('Planning attempts: 2; execution assignments: 3; repairs: 0; every result returns to OpenCode.', { exact: true }).waitFor();
+  const policy = b.developerAutonomy.list('operator')[0]; assert.equal(policy.cognitive.delegated_callers.length, 1);assert.equal(policy.cognitive.version,3);assert.equal(policy.cognitive.acceptance,'automatic');
   await page.getByRole('button', { name: 'Revoke policy', exact: true }).click();
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].some(b => b.textContent === 'Revoke policy'));
   assert.equal(b.developerAutonomy.inspect(policy.policy_id).state, 'revoked'); assert.deepEqual(errors, []);
