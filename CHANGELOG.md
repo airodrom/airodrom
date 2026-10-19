@@ -4,7 +4,8 @@
 - Live Execution Monitor V1: active Missions open a three-column real-time activity UI on Observatory SSE/ledger; Cursor stream-json tool events project into Observatory STAGES mid-run; snapshot v2 counters distinguish real-time vs post-execution telemetry ([docs/LIVE-EXECUTION-MONITOR-V1.md](docs/LIVE-EXECUTION-MONITOR-V1.md)).
 
 ### Added
-- Document Milestone A host Acceptance evidence, the exact pending ChatGPT remote instruction, and the Milestone B Cursor specialist readiness plan ([docs/CHATGPT-HANDOFF-V8-VERIFICATION.md](docs/CHATGPT-HANDOFF-V8-VERIFICATION.md), [docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
+- Record genuine ChatGPT-origin Milestone A PASS for `chatgpt_handoff_remote_20261018_v9` and keep Milestone B Cursor readiness as the next priority ([docs/CHATGPT-HANDOFF-V8-VERIFICATION.md](docs/CHATGPT-HANDOFF-V8-VERIFICATION.md), [docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
+- Document Milestone A host Acceptance evidence and the Milestone B Cursor specialist readiness plan ([docs/CHATGPT-HANDOFF-V8-VERIFICATION.md](docs/CHATGPT-HANDOFF-V8-VERIFICATION.md), [docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
 
 ### Fixed
 - Keep specialist settlement honest when host verification already failed: extract embedded OpenCode evaluator JSON, skip evaluation after empty edit mutations, and record `needs_rework` instead of masking the failure as `EVALUATION_UNAVAILABLE` ([docs/CHATGPT-HANDOFF-V8-VERIFICATION.md](docs/CHATGPT-HANDOFF-V8-VERIFICATION.md)).

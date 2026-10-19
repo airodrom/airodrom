@@ -1,11 +1,11 @@
 # Current state (2026-10-10)
 
-## ChatGPT Acceptance Milestone A — FINALIZATION (2026-10-18)
+## ChatGPT Acceptance Milestone A — COMPLETE (2026-10-18)
 
-- **Installed / main:** `5ff3b6899b0ddf86ebe290c036354987e73dba32` (PR #158 repair present). Service healthy, admission open, idle; OpenCode Ready; MCP ready.
-- **Host Acceptance PASS:** `chatgpt_handoff_host_worktree_20261018_v11` / `15413223-…` — exact bytes verified, automatic Acceptance, settled. Not ChatGPT-origin.
-- **Genuine ChatGPT Acceptance:** **PENDING** — standing `chatgpt-handoff` delegation valid through `2026-10-20T00:19:19.917Z`; worktree budget **0/4**; enrolled file still `PENDING\n`. Exact remote instruction in [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md).
-- **Milestone B (Cursor):** read-only readiness only — [MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md). No Cursor spend in this phase.
+- **Genuine ChatGPT-origin PASS:** request `chatgpt_handoff_remote_20261018_v9` / Mission `7050a853-4754-4cab-a357-ff882b3446f0` — planning `02c71cea-…`, execution `5087f6ac-…`, evaluation `18e58f0e-…` (`ready`), host verification passed (exact bytes `4149524f…530a`), automatic Acceptance `8302db4a-…`, program settled, leases released. Evidence: [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md).
+- **Host path (earlier):** `chatgpt_handoff_host_worktree_20261018_v11` remains a separate non-ChatGPT proof.
+- **Historical v8** remains `blocked` / immutable.
+- **Next priority:** Milestone B — [MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md). Do not start Cursor spend until that plan’s qualification steps complete.
 - Protected checkout `~/code/airodrom` and draft PR #148 remain untouched.
 
 ## ChatGPT handoff remote v8 verification closeout (2026-10-18)

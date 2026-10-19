@@ -64,19 +64,25 @@ Request `chatgpt_handoff_host_worktree_20261018_v11` / Mission `15413223-8404-48
 - Worker termination verified; leases released; automatic Acceptance recorded; Mission `completed` / settled.
 - Origin was an authenticated host MCP session reusing the ChatGPT caller principal — **not** a new typed ChatGPT-origin call.
 
-## Milestone A — remaining authentic remote step
+## Milestone A — COMPLETE (genuine ChatGPT-origin v9)
 
-Standing delegation `chatgpt-handoff` (`f32fb28b-…`, caller `mcp:c95b0dba-…`, OpenCode only, file `recovery-proof.txt`) remains **active** until `2026-10-20T00:19:19.917Z`. Concurrent worktree occupancy for that policy is **0 / 4**. Enrolled repository tip still holds `PENDING\n`.
+Request `chatgpt_handoff_remote_20261018_v9` (ChatGPT-origin, caller `mcp:c95b0dba-…`, policy `chatgpt-handoff` / `f32fb28b-…`) completed the full path on installed `f60f931…`:
 
-Do **not** reuse request ids `chatgpt_handoff_remote_20261018_v2`–`v8` or any prior `host_worktree` id. Suggested next remote id: `chatgpt_handoff_remote_20261018_v9`.
+| Stage | Evidence |
+|---|---|
+| Durable MCP ack / reservation | `cp_zero_setup_requests` state `approved`; principal matches standing delegation |
+| OpenCode planning | Planner run `02c71cea-6517-48f7-94c4-be9e3430daa1` completed; termination verified |
+| Mission | `7050a853-4754-4cab-a357-ff882b3446f0` → `completed` |
+| OpenCode execution | `5087f6ac-c790-445e-9957-33dd4db83cca` completed; host artifact `recovery-proof.txt` size 30; termination verified |
+| OpenCode evaluation | `18e58f0e-7b73-4ee6-be5a-c8e7c50e9835` completed; recommendation `ready`; termination verified |
+| Host exact-byte verification | `5f397e60-17a0-436d-b3c2-8fc943cbff45` **passed**; worktree file hex `4149524f44524f4d2d434841544750542d48414e444f46462d504153530a` |
+| Automatic Acceptance | `8302db4a-5192-4cd2-93db-ce808407548d` decision `accept` |
+| Settlement | Specialist program `settled`; assignment `change` `ready`; leases **released** |
+| ChatGPT retrieval | `get_ask_status` → `ACCEPTED`; `get_mission_evidence` → `AUTOMATICALLY_ACCEPTED` / `settled` / verification `passed` |
 
-Exact ChatGPT instruction (typed in ChatGPT against the live Airodrom MCP connector):
+Worktree: `…/worktrees/d6a63730-419b-45c6-81db-f22b978ce3c1`. Historical failures (including remote v8) remain immutable. Do not replay `v2`–`v9` request ids for a second “first” acceptance claim.
 
-```text
-Using the chatgpt-handoff enrollment and OpenCode only, set recovery-proof.txt to exactly AIRODROM-CHATGPT-HANDOFF-PASS followed by a single LF newline (hex 4149524f44524f4d2d434841544750542d48414e444f46462d504153530a). Do not change any other file. Request id: chatgpt_handoff_remote_20261018_v9.
-```
-
-Success criteria after that call: planning → OpenCode execution → OpenCode evaluation → host exact-byte pass → automatic Acceptance → durable settlement, with evidence retrievable via `get_mission_evidence` for the new Mission id.
+**Milestone A status: PASS.** Next development priority is Milestone B — OpenCode ↔ Cursor bidirectional specialist execution ([MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
 
 ## Diagnostics for future mismatches
 

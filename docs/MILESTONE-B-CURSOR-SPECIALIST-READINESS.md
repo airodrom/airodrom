@@ -1,6 +1,6 @@
 # Milestone B — OpenCode ↔ specialist gateway ↔ Cursor readiness
 
-Read-only audit against installed `5ff3b68…` (2026-10-18). No Cursor spend, no paid execution, no production mutations.
+Read-only audit. Milestone A (genuine ChatGPT ↔ OpenCode handoff) is **COMPLETE** via remote v9; this document is the next priority. No Cursor spend, no paid execution, no production mutations until the qualification steps below pass.
 
 ## Target architecture
 
