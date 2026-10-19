@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Added
+- Record Milestone B.3 live acceptance: one operator-origin Cursor Mission planned, executed, returned to OpenCode, passed host exact-byte verification, and settled ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
 - Document the Milestone B.1 live Cursor closeout: exact bytes passed host checks, and OpenCode evaluation did not complete, so Acceptance remains blocked ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
 
 ### Fixed
