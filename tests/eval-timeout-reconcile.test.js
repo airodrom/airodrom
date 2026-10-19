@@ -29,6 +29,15 @@ test('a dead timed-out evaluator releases quarantine and does not accept the Mis
   assert.equal(events[0][0], 'gateway.evaluation_reconciled');
 });
 
+test('an interrupted evaluator left by service shutdown is reconciled the same way', () => {
+  const { db, bridge, mission, updates } = fixture();
+  db.prepare("UPDATE cp_runs SET state='interrupted', resolution='reconcile_process'").run();
+  const ok = reconcileBlockedEvaluation(bridge, mission, () => ({ writer_alive: false, workspace_holders: 0, method: 'test' }));
+  assert.equal(ok, true);
+  assert.equal(updates[0].patch.state, 'failed');
+  assert.equal(db.prepare('SELECT state FROM cp_leases').get().state, 'released');
+});
+
 test('a live evaluator keeps the quarantined lease', () => {
   const { db, bridge, mission, updates } = fixture();
   const ok = reconcileBlockedEvaluation(bridge, mission, () => { const error = Error('writer_still_alive'); error.code = 'writer_still_alive'; throw error; });

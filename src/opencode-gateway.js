@@ -172,7 +172,7 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   // so admission can return. The Mission stays blocked.
   if (mission?.state !== 'blocked') return false;
   const store = bridge.controlStore, db = store.db;
-  const runs = db.prepare("SELECT id,pid FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND state='termination_unverified' AND termination_verified=0 AND resolution='gateway_evaluation_reconciliation_required'").all(mission.id);
+  const runs = db.prepare("SELECT id,pid FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND termination_verified=0 AND ((state='termination_unverified' AND resolution='gateway_evaluation_reconciliation_required') OR (state='interrupted' AND resolution='reconcile_process'))").all(mission.id);
   if (runs.length !== 1 || !Number.isInteger(runs[0].pid) || runs[0].pid <= 1) return false;
   const leases = db.prepare("SELECT id,run_id,resource FROM cp_leases WHERE mission_id=? AND state='quarantined'").all(mission.id);
   if (!leases.length || leases.some(lease => lease.resource !== leases[0].resource)) return false;
