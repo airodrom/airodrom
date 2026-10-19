@@ -855,6 +855,7 @@
   "tests/js-verification-runtime.test.js",
   "tests/mcp-handoff-session.test.js",
   "tests/memory-awareness-v1.test.js",
+  "tests/opencode-evaluator-packet.test.js",
   "tests/opencode-executable-integrity.test.js",
   "tests/opencode-process-failure.test.js",
   "tests/opencode-readiness-dispatch-stability.test.js",

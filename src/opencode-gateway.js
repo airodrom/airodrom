@@ -27,6 +27,14 @@ function extractEvaluationJSON(raw) {
   if (start < 0 || end <= start) return null;
   try { return require('./authority-json').parseAuthorityJSON(raw.slice(start, end + 1)); } catch { return null; }
 }
+function evaluationAllowanceMs(mission, now) {
+  const planning = mission.envelope.cognitive.envelope.limits.planning_ms;
+  const remaining = require('./specialist-gateway').deadline(mission) - now;
+  // The paid Cursor grant stays at execution_ms. This allowance is only the
+  // host-governed slice left after that window and host verification.
+  if (!Number.isFinite(remaining) || remaining < 10) C.fail('gateway_evaluation_deadline');
+  return Math.min(planning, remaining);
+}
 function parseEvaluation(raw, binding) {
   if (typeof raw !== 'string' || Buffer.byteLength(raw) > 12000) C.fail('gateway_result_bound');
   const e = extractEvaluationJSON(raw);
@@ -88,7 +96,7 @@ async function evaluate(bridge, mission, worker, verification) {
     const template = { version: 1, binding_hash: gateway.binding_hash, recommendation: 'ready', summary: 'Evaluate observed work against the original request and host checks.' };
     const result = JSON.parse(row.normalized);
     const output = await bridge.opencodeAdapter.execute({ workspace: mission.envelope.workspace,
-      files: mission.envelope.allowed_files, writable: [], timeoutMs: Math.min(mission.envelope.cognitive.envelope.limits.planning_ms,specialist.enabled(mission)?specialist.deadline(mission)-store.now():Infinity),
+      files: mission.envelope.allowed_files, writable: [], timeoutMs: specialist.enabled(mission)?evaluationAllowanceMs(mission, store.now()):Math.min(mission.envelope.cognitive.envelope.limits.planning_ms, Infinity),
       signal: controller.signal, evaluationRunId:runId, coordination: { result_contract: template,
         worker: { agent: worker.agent_id, summary: String(result.summary || '').slice(0, 6000), untrusted: true },
         tasks: mission.envelope.cognitive.proposal.tasks,
@@ -191,4 +199,4 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   }
   return true;
 }
-module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, reconcileBlockedEvaluation };
+module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, reconcileBlockedEvaluation };

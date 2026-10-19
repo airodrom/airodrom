@@ -76,7 +76,7 @@ OpenCode may recommend `ready` / `needs_rework` (via `repair`) / `blocked`. Airo
 |---|---|
 | Deterministic OpenCode → Cursor → OpenCode → host verify (fixtures) | Supported — `tests/milestone-b-cursor-return.test.js`, `tests/specialist-gateway.test.js` |
 | Live Cursor file credentials + qualification tiers | Operator-local; confirm before spend |
-| Live disposable Cursor Mission with grant | Two operator-origin runs executed. Host exact-byte checks passed on the second. OpenCode evaluation did not complete, so Acceptance is not granted. See B.1 closeout. |
+| Live disposable Cursor Mission with grant | Host exact-byte checks passed. Historical Missions stay blocked. Evaluator requalification of Mission B returned `ready`. Full Acceptance still needs one new granted Cursor Mission. See B.1 and B.2. |
 | Standing ChatGPT Cursor enrollment | Not enabled until live proof + documented spend limits |
 | Concurrent overlapping writers | Not authorized (serial workspace lease) |
 
@@ -109,4 +109,38 @@ An earlier Mission `b5d2ba09-836b-4f5f-ac41-3e914c321a71` (Cursor run `e6d491e4-
 
 Installed source and `origin/main` at this closeout are `a92049ab87a2a247b19ccc1c92512ed6fcce953b`. Rollback checkpoint for the previous install is `airodrom-rollback-0b4b99a4637e`. The protected checkout `~/code/airodrom` was not modified.
 
-Known limitation: live OpenCode evaluation of a passed Cursor packet can still fail closed before a recommendation. Until that evaluation completes, Milestone B stays short of Acceptance.
+Known limitation at B.1: live OpenCode evaluation of a passed Cursor packet failed closed before a recommendation. B.2 repairs that gate. The historical Missions stay blocked.
+
+## B.2 evaluator repair (2026-10-19)
+
+Milestone B is **ready for one final live acceptance**. It is not fully accepted. No additional Cursor execution was run. The architecture is unchanged.
+
+### Sensitive-context root cause
+
+`returnPayload` sends host verification twice: `host_verification` and `verification_results`. The evaluator scan projected digests only on `host_verification`. `verification_results` still carried sha256 evidence hashes. Some of those hashes contain 13–19 digit runs that pass the payment-card check in `containsSecret`, so `sourceContextSensitive` rejected the packet before OpenCode started. Mission `2fb49d9a-a08d-48db-9d17-dee3fdcb34f3` failed with `opencode_sensitive_context` for that reason. The file bytes were already exact.
+
+The scan now projects the same host digest fields on `verification_results`, the before/after hash maps, the scope hash, and workspace identity. Delivered bytes are unchanged, so OpenCode still receives the real binding hash. `containsSecret` is unchanged. A bearer token, a secret in worker prose, or an absolute `/Users` path still fails the scan.
+
+### Timeout root cause
+
+Mission `b5d2ba09-836b-4f5f-ac41-3e914c321a71` blocked with `opencode_timeout` because its sealed wall clock was only the paid Cursor window (`execution_ms`, 120000 ms). Cursor and host verification consumed that window, leaving about 20 seconds for evaluation. Pull request 165 already reserves `execution_ms` for host verification and `planning_ms` for local evaluation on new v3 Missions. The Cursor grant stays capped at `execution_ms`. `evaluationAllowanceMs` fails closed with `gateway_evaluation_deadline` when that host slice is already gone. It does not classify the timeout as a Cursor execution failure. The historical contract was not rewritten.
+
+### Local evaluator requalification
+
+An isolated OpenCode run used the pinned local model and the stored return packet from Mission `2fb49d9a-a08d-48db-9d17-dee3fdcb34f3` (Cursor run `067a69da-75d4-4197-9d5f-9acc01126719`). The database was opened read-only. The historical evaluator run remains `e6ac92ee-b319-47ab-b8e2-cfc7eda2f430` (`gateway_evaluation_unavailable`).
+
+| Field | Result |
+|---|---|
+| Requalification run | `669e289e-6a5b-4880-bead-1a0991e83f4d` (not a Mission run) |
+| Recommendation | `ready` |
+| Binding | Matched the stored host binding |
+| Termination | Verified. No file changes. About 30 seconds. |
+| Historical Mission | Still `blocked`. Reason unchanged. |
+
+This is evaluator requalification, not Acceptance.
+
+### Final live-acceptance prerequisite
+
+One new Mission, under a new mission-scoped Cursor grant, must complete OpenCode planning, one Cursor execution, OpenCode evaluation, host exact-byte verification, and settlement. Repair budget stays zero unless a separate grant allows it. Historical Missions `b5d2ba09-836b-4f5f-ac41-3e914c321a71` and `2fb49d9a-a08d-48db-9d17-dee3fdcb34f3` stay blocked.
+
+Rollback of the install that recorded B.1 is `airodrom-rollback-a92049ab87a2`. The protected checkout `~/code/airodrom` stays unmodified.
