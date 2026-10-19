@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Document the Milestone B.1 live Cursor closeout: exact bytes passed host checks, and OpenCode evaluation did not complete, so Acceptance remains blocked ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
+
 ### Fixed
 - A second cognitive Mission on the same Goal can be created when the instruction text matches an earlier Mission. The project record name is distinct; the objective is unchanged.
 - A dead managed service with a stale discovery record can start again once its writer lock is clear.
