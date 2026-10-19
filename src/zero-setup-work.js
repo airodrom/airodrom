@@ -225,7 +225,9 @@ class ZeroSetupWork {
     identifier(request_id);
     identifier(principal);
     if (require('./assistant-intent').secret(instruction) || require('./private-vault-intent').containsPrivate(instruction)) {
-      throw Error('Secrets and private identifiers cannot be work instructions. Use the vault flows.');
+      const error = Error('SECRET_DETECTED_IN_WORK_INSTRUCTION');
+      error.code = 'SECRET_DETECTED_IN_WORK_INSTRUCTION';
+      throw error;
     }
     const prior = this.read(request_id);
     if (!prior || prior.cognitive) {
@@ -254,8 +256,11 @@ class ZeroSetupWork {
       return this.statusView(this.read(request_id));
     }
     if (workSpec && workSpec.files.some(file => require('./assistant-intent').secret(file.content) ||
-        require('./private-vault-intent').containsPrivate(file.content)))
-      throw Error('Secrets and private identifiers cannot be work instructions. Use the vault flows.');
+        require('./private-vault-intent').containsPrivate(file.content))) {
+      const error = Error('SECRET_DETECTED_IN_WORK_INSTRUCTION');
+      error.code = 'SECRET_DETECTED_IN_WORK_INSTRUCTION';
+      throw error;
+    }
     // A strictly validated data packet is bounded work, not conversational text.
     // The same secret/private-content and authenticated-session gates still apply.
     const routed = workSpec ? { kind: 'work' } : require('./assistant-intent').parse(instruction);
@@ -269,7 +274,8 @@ class ZeroSetupWork {
       this.write(request_id, principal, record, 'clarify');
       return {
         state: 'CLARIFY',
-        message: 'That looks like ordinary conversation or a host connector/memory request, not bounded local work. Use the Airodrom Terminal or Control Center conversation for chat. Rephrase with an exact disposable workspace file change to prepare a Mission.',
+        code: 'WORK_INTENT_NOT_RECOGNIZED',
+        message: 'WORK_INTENT_NOT_RECOGNIZED. That request is ordinary conversation or a host connector/memory request, not bounded local work. Rephrase with an exact file change, or use Terminal or Control Center for chat.',
         authority: false,
         execution_authorized: false,
         next_action: 'use_terminal_or_control_center_chat_or_rephrase_as_work',
