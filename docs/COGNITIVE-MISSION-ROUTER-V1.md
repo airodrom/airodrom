@@ -23,10 +23,13 @@ repository names in text nor model output create access.
    tasks verify independently of worker claims.
 8. Retrieve durable status and MissionEvidence through existing MCP interfaces.
 
-The request row is reserved before the first await. Identical replay returns its
-existing result; changed instructions or callers fail. Planner runs and read leases
-use existing control-plane tables. The Mission contains the full envelope, proposal
-and seal; the authority revision commits to their canonical hash.
+The request row is reserved before the first await. `ask_airodrom` returns that
+reserved state when OpenCode planning begins, instead of holding the MCP response
+until planning and dispatch finish. The same request id returns the current state
+and does not start a second planner. A changed instruction or caller fails.
+Planner runs and read leases use existing control-plane tables. The Mission
+contains the full envelope, proposal and seal; the authority revision commits to
+their canonical hash.
 
 ## Four strict version 1 contracts
 

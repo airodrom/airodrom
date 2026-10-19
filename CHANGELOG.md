@@ -5,6 +5,7 @@
 
 ### Fixed
 - Keep identity reads from materializing the full event ledger, and reconcile a dead in-process writer without treating the interrupted run as successful ([docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md)).
+- Return a reserved Cognitive Router request when OpenCode planning starts, so an MCP client can poll the same request id instead of waiting for the whole Mission ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md)).
 - Record the writer-death dispositions, the merged installation SHA, and the local OpenCode recovery Mission ([docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md)).
 - Route `AIRODROM_WORK_V1` packets as WORK in chat intent; probe Cursor readiness before projectless dispatch; treat unprobed `lastReadiness` as contract-ok until launch/execute; write settlement receipts for projectless Acceptance so Control Center can show settled; cache Cursor readiness from product status.
 - Classify Expanded Autonomy control-plane tables in the Memory retention registry so identity validation no longer treats `cp_expanded_autonomy*` as unclassified stores after schema ensure.

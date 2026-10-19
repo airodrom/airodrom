@@ -34,14 +34,21 @@ async function setup(t, { delegated = true, live = false, cursor = false } = {})
     const proposal = await f.proposal(e, options);
     return { result: { summary: typeof proposal === 'string' ? proposal : JSON.stringify(proposal) }, changes: [], provenance: { termination_verified: true } };
   };
-  f.ask = (id = randomUUID(), principal = caller, instruction = 'In Fixture project change fixture.txt from alpha to beta, preserving one final newline.') => f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, principal);
+  f.ask = async (id = randomUUID(), principal = caller, instruction = 'In Fixture project change fixture.txt from alpha to beta, preserving one final newline.') => {
+    let view = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, principal);
+    for (let i = 0; i < 200 && view.state === 'PLANNING'; i++) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      view = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, principal);
+    }
+    return view;
+  };
   return f;
 }
 
 test('delegated ordinary text plans read-only, seals, verifies independently, and survives reconnect', async t => {
   const f = await setup(t), id = randomUUID();
   const result = await f.ask(id);
-  assert.equal(result.state, 'DISPATCHED', JSON.stringify(result));
+  assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
   const m = await f.settle(result.mission_id);
   assert.equal(m.envelope.cognitive.sealed.worker, 'opencode');
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
@@ -56,6 +63,28 @@ test('delegated ordinary text plans read-only, seals, verifies independently, an
   await f.reopen();
   assert.equal(require('../src/mission-evidence').evidencePackage(f.bridge, m.id).cognitive.contract_hash, evidence.contract_hash);
   assert.throws(() => f.bridge.missions.queue(m.id), /execution_attempts|current state/);
+});
+
+test('a slow planner acknowledges PLANNING before OpenCode returns and the same request does not plan twice', async t => {
+  const f = await setup(t);
+  const planner = f.bridge.opencodeAdapter.execute;
+  f.bridge.opencodeAdapter.execute = async options => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return planner(options);
+  };
+  const id = randomUUID();
+  const instruction = 'In Fixture project change fixture.txt from alpha to beta, preserving one final newline.';
+  const started = Date.now();
+  const ack = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller);
+  assert.ok(Date.now() - started < 150, String(Date.now() - started));
+  assert.equal(ack.state, 'PLANNING');
+  assert.equal(ack.request_id, id);
+  const replay = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller);
+  assert.equal(replay.state, 'PLANNING');
+  await assert.rejects(f.bridge.zeroSetupWork.ask({ request_id: id, instruction: instruction + ' again' }, caller), /replay/);
+  const done = await f.ask(id);
+  assert.ok(done.mission_id && ['DISPATCHED', 'RUNNING'].includes(done.state), JSON.stringify(done));
+  assert.equal(f.plannerCalls, 1);
 });
 
 test('missing caller delegation performs no discovery or planning; text never enrolls', async t => {
@@ -130,7 +159,7 @@ test('strict versioned schemas reject dependency cycles, unknown fields and tamp
 test('read-only proposals use existing host capabilities and cannot satisfy an unmet coding criterion', async t => {
   const f = await setup(t), normal = f.proposal;
   f.proposal = e => ({ ...normal(e), tasks: [{ ...normal(e).tasks[0], operation: 'read', description: 'Inspect fixture.txt' }] });
-  const result = await f.ask(); assert.equal(result.state, 'DISPATCHED', JSON.stringify(result));
+  const result = await f.ask(); assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
   const done = await f.settle(result.mission_id, 'needs_rework');
   assert.equal(done.envelope.preferred_agent, 'host');
   assert.deepEqual(done.envelope.contract.permissions.allowed_write_paths, []);
@@ -165,7 +194,7 @@ test('Cursor proposal uses the existing local approval and finite subscription g
   const approval = { request_id, confirmed: true, channel: 'control_center', subscription_execution: { provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 1, max_runtime_ms: 120000 } };
   await assert.rejects(f.bridge.zeroSetupWork.approve(approval, caller), /operator/);
   const result = await f.bridge.zeroSetupWork.approve(approval, 'operator');
-  assert.equal(result.state, 'DISPATCHED');
+  assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
   const done = await f.settle(result.mission_id).catch(error => {
     const route = f.bridge.controlStore.db.prepare('SELECT route FROM cp_dispatches WHERE mission_id=?').get(result.mission_id);
     throw Error(error.message + '\n' + route?.route);

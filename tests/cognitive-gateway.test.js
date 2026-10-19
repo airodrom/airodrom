@@ -18,10 +18,10 @@ async function setup(t, { repairs = 0, cursor = false } = {}) {
   if(!o.planning)return f.worker(o);
   return{result:{summary:JSON.stringify({...o.planning,tasks:[{id:'change',operation:'edit',paths:['fixture.txt'],description:'Replace alpha with beta and preserve LF',depends_on:[]}]})},changes:[],provenance:{termination_verified:true}};
  };
- f.ask=(instruction='In Fixture project change fixture.txt from alpha to beta.')=>b.zeroSetupWork.ask({request_id:randomUUID(),instruction},'operator');return f;
+ f.ask=async(instruction='In Fixture project change fixture.txt from alpha to beta.')=>{const request_id=randomUUID();let view=await b.zeroSetupWork.ask({request_id,instruction},'operator');for(let i=0;i<200&&view.state==='PLANNING';i++){await new Promise(r=>setTimeout(r,20));view=await b.zeroSetupWork.ask({request_id,instruction},'operator');}return view;};return f;
 }
 test('worker result returns to read-only OpenCode before handoff and survives reconnect',async t=>{
- const f=await setup(t),p=await f.ask();assert.equal(p.state,'DISPATCHED',JSON.stringify(p));const m=await f.settle(p.mission_id);
+ const f=await setup(t),p=await f.ask();assert.ok(p.mission_id&&['DISPATCHED','RUNNING'].includes(p.state),JSON.stringify(p));const m=await f.settle(p.mission_id);
  assert.equal(f.evaluations.length,1);assert.equal(f.evaluations[0].worker.agent,'opencode');assert.ok(f.evaluations[0].worker.summary);
  const evidence=require('../src/mission-evidence').evidencePackage(f.bridge,m.id);assert.equal(evidence.cognitive.counts.execution,1);assert.equal(evidence.gateway.evaluations[0].recommendation,'ready');assert.equal(evidence.gateway.evaluations[0].termination_verified,true);assert.equal(evidence.gateway.evaluations[0].provenance.sandbox,'fixture');
  const events=f.bridge.ledger.list({missionId:m.id,limit:200}).events.map(e=>e.event_type);assert.ok(events.indexOf('gateway.result_received')<events.indexOf('gateway.evaluated'));assert.ok(events.indexOf('gateway.evaluated')<events.indexOf('verification.completed'));
@@ -38,7 +38,7 @@ test('unavailable evaluation preserves result and never replays on restart',asyn
 });
 test('signed v2 repair ceiling reuses deterministic corrective dispatch',async t=>{
  const f=await setup(t,{repairs:1}),execute=f.worker;let calls=0;f.worker=async o=>execute(++calls===1?{...o,objective:'Inspect current file without changing it'}:o);
- const p=await f.ask();assert.equal(p.state,'DISPATCHED',JSON.stringify(p));await f.settle(p.mission_id,'needs_rework');const db=f.bridge.controlStore.db;let child;for(let i=0;i<80&&!child;i++){await f.bridge.missions.tick();child=db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").get(p.mission_id);if(!child)await new Promise(r=>setTimeout(r,25));}
+ const p=await f.ask();assert.ok(p.mission_id&&['DISPATCHED','RUNNING'].includes(p.state),JSON.stringify(p));await f.settle(p.mission_id,'needs_rework');const db=f.bridge.controlStore.db;let child;for(let i=0;i<80&&!child;i++){await f.bridge.missions.tick();child=db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").get(p.mission_id);if(!child)await new Promise(r=>setTimeout(r,25));}
  assert.ok(child);const done=await f.settle(child.id);assert.equal(done.envelope.cognitive.repair_binding.parent_mission_id,p.mission_id);assert.equal(require('../src/mission-evidence').evidencePackage(f.bridge,done.id).cognitive.counts.repair,1);assert.equal(f.evaluations.length,2);assert.equal(calls,2);assert.equal(fs.readFileSync(path.join(done.envelope.workspace,'fixture.txt'),'utf8'),'beta\n');require('../src/autonomous-repair').considerVerifiedRepair(f.bridge,p.mission_id);assert.equal(db.prepare("SELECT count(*) n FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").get(p.mission_id).n,1);
 });
 test('read-only worker choice cannot authorize edits',async t=>{
@@ -82,7 +82,7 @@ test('repair authority binds parent evidence and baseline and stops when the roo
    if(o.signal.aborted)abort();else o.signal.addEventListener('abort',abort,{once:true});
   });
  };
- const p=await f.ask();assert.equal(p.state,'DISPATCHED',JSON.stringify(p));
+ const p=await f.ask();assert.ok(p.mission_id&&['DISPATCHED','RUNNING'].includes(p.state),JSON.stringify(p));
  // The existing scheduler must be free to advance the parent and launch the
  // child. Awaiting tick here would also await this deliberately held worker.
  for(let i=0;i<1800&&!childSignal;i++)await new Promise(r=>setTimeout(r,25));
