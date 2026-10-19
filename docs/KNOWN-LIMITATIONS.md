@@ -2,10 +2,11 @@
 
 ## ChatGPT handoff exact-byte Missions (2026-10-18)
 
-- OpenCode/Qwen may return a completed JSON claim without mutating staging files. Host inventory and `expected_changes` remain authoritative; worker summaries never authorize Acceptance.
+- OpenCode/Qwen may return a completed JSON claim without mutating staging files, or `opencode_malformed_result` with no host changes. Host inventory and `expected_changes` remain authoritative; worker summaries never authorize Acceptance.
 - Policy `chatgpt-handoff` currently enrolls `repair_attempts: 0` / no `repair` workflow, so a first-attempt host failure settles `needs_rework` without automatic specialist repair.
-- Genuine ChatGPT-origin Acceptance requires a new typed remote request id. Host-resumed MCP calls are not substitutes.
-- Historical Mission `chatgpt_handoff_remote_20261018_v8` stays failed/blocked as recorded before settlement hardening; it is not rewritten.
+- Genuine ChatGPT-origin Acceptance requires a new typed remote request id (`chatgpt_handoff_remote_20261018_v9` suggested). Host-resumed MCP calls (including host v11) are not substitutes.
+- Historical Mission `chatgpt_handoff_remote_20261018_v8` stays `blocked` / `EVALUATION_UNAVAILABLE: gateway_json_required` as recorded; it is not rewritten.
+- Milestone B Cursor live spend is **not** authorized by Milestone A closeout. See [MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md).
 
 ## Operational recovery V1
 

@@ -3,6 +3,9 @@
 ### Added
 - Live Execution Monitor V1: active Missions open a three-column real-time activity UI on Observatory SSE/ledger; Cursor stream-json tool events project into Observatory STAGES mid-run; snapshot v2 counters distinguish real-time vs post-execution telemetry ([docs/LIVE-EXECUTION-MONITOR-V1.md](docs/LIVE-EXECUTION-MONITOR-V1.md)).
 
+### Added
+- Document Milestone A host Acceptance evidence, the exact pending ChatGPT remote instruction, and the Milestone B Cursor specialist readiness plan ([docs/CHATGPT-HANDOFF-V8-VERIFICATION.md](docs/CHATGPT-HANDOFF-V8-VERIFICATION.md), [docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
+
 ### Fixed
 - Keep specialist settlement honest when host verification already failed: extract embedded OpenCode evaluator JSON, skip evaluation after empty edit mutations, and record `needs_rework` instead of masking the failure as `EVALUATION_UNAVAILABLE` ([docs/CHATGPT-HANDOFF-V8-VERIFICATION.md](docs/CHATGPT-HANDOFF-V8-VERIFICATION.md)).
 - Keep identity reads from materializing the full event ledger, and reconcile a dead in-process writer without treating the interrupted run as successful ([docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md)).
