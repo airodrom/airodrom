@@ -53,6 +53,12 @@ Future specialists (Claude Code, Codex) use the same return-to-OpenCode shape un
 | Automatic Acceptance after final host pass | Specialist `autoAccept` |
 | Control Center lifecycle rail | Planning — OpenCode → Executing — Cursor → Evaluating — OpenCode → Verifying — Airodrom → Settled |
 
+## Mission intake (false-positive repair)
+
+Work instructions are screened by `operatorSecretLike` before planning. Display redaction treats a bare English noun (`authorization`, `session`, `cookie`, `secret`) plus the following word as a credential assignment. That rejected legitimate enrolled-workspace Cursor requests as `SECRET_DETECTED_IN_WORK_INSTRUCTION` before the subscription gate. Separately, `isWorkRequest` required the edit verb at the start of the string, so “Use OpenCode … Use Cursor to change fixture.txt” was classified as ordinary conversation (`WORK_INTENT_NOT_RECOGNIZED`).
+
+The repair neutralizes the lowercase noun “authorization” when the next word is ordinary English and not an assignment (`=` / `:`) or Bearer/Basic. Session, cookie, token, and password values, including `session <opaque>`, stay credential-shaped. `containsSecret` still rejects API keys, bearer tokens, private-key blocks, and `KEY=value` forms. Bounded file-change sentences that name a work target are work requests. How-to questions stay conversation. No security control was disabled.
+
 ## Authorization and spending
 
 - Cursor CLI installed ≠ authorized paid execution.

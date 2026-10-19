@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Mission intake no longer treats prose words such as authorization, session, or cookie as credentials, and recognizes “Use OpenCode / Use Cursor to change &lt;file&gt;” as bounded work instead of conversation ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
+
 ### Added
 - Milestone B Cursor return path: host-observed specialist evidence packet for OpenCode evaluation, Control Center lifecycle rail (Planning — OpenCode → Executing — Cursor → Evaluating — OpenCode → Verifying — Airodrom → Settled), and canonical multi-agent architecture documentation ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 - Live Execution Monitor V1: active Missions open a three-column real-time activity UI on Observatory SSE/ledger; Cursor stream-json tool events project into Observatory STAGES mid-run; snapshot v2 counters distinguish real-time vs post-execution telemetry ([docs/LIVE-EXECUTION-MONITOR-V1.md](docs/LIVE-EXECUTION-MONITOR-V1.md)).

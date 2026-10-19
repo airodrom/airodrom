@@ -61,7 +61,16 @@ function operatorSecretLike(value) {
   }
   const screened=operatorInstructionText(loginAddresses);
   const baseline=screened.replace(/https:\/\/[^\s<>"'`]+/gi,candidate=>{const address=operatorAddress(candidate);return address?require('./transport-outcome').safeTransportUrl(address.value)+address.suffix:candidate;});
-  return containsSecret(screened)||redactText(screened)!==baseline;
+  // Display redaction treats the English noun "authorization" plus the next
+  // word as a credential assignment. Mission text says "authorization remains
+  // required" without a value. Opaque followers, assignments, and Bearer stay
+  // screened. Session/cookie/token/password space-separated values stay screened.
+  const neutralize=value=>value.replace(/\bauthorization\b(?!\s*[:=])(\s+)([A-Za-z]{2,24})\b/gi,(match,space,next)=>{
+    if(/^(?:bearer|basic)$/i.test(next))return match;
+    if(match===match.toUpperCase())return match;
+    return 'noun'+space+next;
+  });
+  return containsSecret(screened)||redactText(neutralize(screened))!==neutralize(baseline);
 }
 // Display redaction canonicalizes origins and hides arbitrary paths. Those
 // structural edits are not credential evidence. Only ordinary public HTTPS

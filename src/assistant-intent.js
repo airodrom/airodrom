@@ -36,6 +36,12 @@ function isWorkRequest(request) {
     &&!/(?:^|[,;]\s+|\.\s+)(?:please\s+)?(?:change|edit|modify|fix|implement|update|replace)\b/i.test(request))return false;
   return true;
  }
+ // "Use OpenCode/Cursor to change fixture.txt" is bounded work. The verb is
+ // not required to be the first token. How-to questions stay conversation.
+ if(WORK_TARGET.test(request)&&new RegExp('\\b(?:'+WORK_VERB+')\\b','i').test(request)){
+  if(/^(?:what|why|how|when|where|who|which|explain|discuss|describe|tell me about|is there|are there|do you (?:know|think)|can we talk|let'?s (?:talk|discuss|brainstorm))\b/i.test(request))return false;
+  return true;
+ }
  return false;
 }
 function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} = {}) {
