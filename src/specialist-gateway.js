@@ -416,7 +416,14 @@ async function processResult(service,row) {
 }
 function recover(service,m) {
   if(!enabled(m))return false;
-  if(m.state==='blocked'){try{require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge,m);}catch{return true;}}
+  if(m.state==='blocked'){
+    try{require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge,m);}catch{return true;}
+    // Program tick does not visit a blocked graph. Startup recovery is the
+    // only host path that can evaluate the already captured Cursor packet.
+    const current=service.store.getMission(m.id);
+    if(current.state==='blocked')retryPreStartEvaluation(service,current).catch(()=>{});
+    return true;
+  }
   if(!['dispatching','running','verifying'].includes(m.state))return true;
   // Result inbox replay and queued launches are handled by the existing loop.
   if(service.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)||
