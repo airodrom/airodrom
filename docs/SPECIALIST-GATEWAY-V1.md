@@ -4,6 +4,10 @@ OpenCode plans and evaluates; Airodrom authenticates, dispatches, verifies and
 completes. See [ADR 0059](adr/0059-specialist-gateway.md). Source implementation and
 fixture evidence do not by themselves qualify an installed release.
 
+Canonical path: `USER → ChatGPT → AIRODROM → OPENCODE → CURSOR → OPENCODE → AIRODROM → ChatGPT → USER`.
+The gateway transports host-observed specialist results back to OpenCode; it is not a
+second cognitive planner. See [Milestone B](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md).
+
 ## Enrollment and intake
 
 Use the existing authenticated Developer Autonomy enrollment with exact repository,
