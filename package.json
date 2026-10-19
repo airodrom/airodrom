@@ -498,6 +498,7 @@
     "src/work-templates.js",
     "src/developer-autonomy.js",
     "src/exact-file-prompt.js",
+    "src/writer-death-recovery.js",
     "tests/conversation-grounding-v1.test.js",
     "tests/install-hotfix-v101.test.js",
     "tests/mission-activity.test.js",

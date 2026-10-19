@@ -1,5 +1,12 @@
 # Known limitations
 
+## ChatGPT handoff exact-byte Missions (2026-10-18)
+
+- OpenCode/Qwen may return a completed JSON claim without mutating staging files. Host inventory and `expected_changes` remain authoritative; worker summaries never authorize Acceptance.
+- Policy `chatgpt-handoff` currently enrolls `repair_attempts: 0` / no `repair` workflow, so a first-attempt host failure settles `needs_rework` without automatic specialist repair.
+- Genuine ChatGPT-origin Acceptance requires a new typed remote request id. Host-resumed MCP calls are not substitutes.
+- Historical Mission `chatgpt_handoff_remote_20261018_v8` stays failed/blocked as recorded before settlement hardening; it is not rewritten.
+
 ## Operational recovery V1
 
 - Writer-death reconciliation attests that the in-process writer is gone. It does not attest that a read-only git inspection succeeded, and it does not apply to a run that recorded a pid or an external worker event.

@@ -1,5 +1,12 @@
 # Current state (2026-10-10)
 
+## ChatGPT handoff remote v8 verification closeout (2026-10-18)
+
+- Genuine Mission `chatgpt_handoff_remote_20261018_v8` / `42272706-…` remains historical: worker claimed an edit, host observed **no** filesystem mutation (`PENDING\n`), then evaluator JSON failed (`gateway_json_required`). Extra-LF and wrong-worktree hypotheses are disproven for v8.
+- Source repair: extract embedded evaluator JSON; when host verification already failed, do not mask settlement as `EVALUATION_UNAVAILABLE`; skip evaluator for empty edit mutations after host `expected_changes` failure.
+- Exact-byte contract and diagnostics: [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md). Fresh ChatGPT request id required for genuine remote Acceptance; host OpenCode acceptance is tracked separately after merge/install.
+- Protected operator checkout `~/code/airodrom` and draft PR #148 remain untouched.
+
 ## Cognitive Mission Router V1 — SOURCE IMPLEMENTATION, RELEASE HOLD (2026-10-18)
 
 - Implemented over ZeroSetupWork, Developer Autonomy, OpenCode and existing Mission machinery; [ADR 0057](adr/0057-cognitive-mission-router.md).
