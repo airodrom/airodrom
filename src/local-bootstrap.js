@@ -270,7 +270,12 @@ function isStopped(home) {
   // A crash can leave discovery behind. Only exact owned discovery bound to a
   // confirmed-dead PID permits reconciliation; nothing is removed here.
   try { const d = discovery(home); process.kill(d.pid, 0); return false; }
-  catch (error) { return error.code === 'ESRCH'; }
+  catch (error) {
+    if (error.code === 'ESRCH') return true;
+    // The writer lock is already clear. Stale discovery must not keep a dead
+    // service from being started again.
+    return !ownership.blocked;
+  }
 }
 // Owned local.start is host evidence to reopen after a planned/unclean stop once
 // reconciliation is idle. attach()/status alone never resume. Closed startup stays closed.

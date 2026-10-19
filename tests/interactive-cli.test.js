@@ -56,6 +56,13 @@ test('stopped lifecycle is idempotent and missing discovery never hides a live w
   fs.writeFileSync(path.join(home, 'data/bridge.lock'), String(process.pid), { mode: 0o600 });
   assert.equal(local.isStopped(home), false); await assert.rejects(local.stop(home));
   assert.equal(fs.readFileSync(path.join(home, 'data/bridge.lock'), 'utf8'), String(process.pid));
+  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+  assert.equal(dead.status, 0);
+  fs.writeFileSync(path.join(home, 'data/bridge.lock'), String(dead.pid), { mode: 0o600 });
+  const token = 'ab'.repeat(32);
+  local.writePrivate(path.join(home, 'data/ui.json'), { url: 'http://127.0.0.1:9/#token=' + token, port: 9, pid: dead.pid });
+  local.writePrivate(path.join(home, 'data/control-credential.json'), { token });
+  assert.equal(local.isStopped(home), true);
 });
 test('bounded default OpenCode Mission has no tools, exact budget, signed authority and independent review', async t => {
   const f = await conversationFixture(t), { m, done, task } = await f.ask();
