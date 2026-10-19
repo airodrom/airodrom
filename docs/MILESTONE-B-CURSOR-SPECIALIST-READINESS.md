@@ -76,7 +76,7 @@ OpenCode may recommend `ready` / `needs_rework` (via `repair`) / `blocked`. Airo
 |---|---|
 | Deterministic OpenCode → Cursor → OpenCode → host verify (fixtures) | Supported — `tests/milestone-b-cursor-return.test.js`, `tests/specialist-gateway.test.js` |
 | Live Cursor file credentials + qualification tiers | Operator-local; confirm before spend |
-| Live disposable Cursor Mission with grant | Host exact-byte checks passed. Historical Missions stay blocked. Evaluator requalification of Mission B returned `ready`. Full Acceptance still needs one new granted Cursor Mission. See B.1 and B.2. |
+| Live disposable Cursor Mission with grant | Accepted. Mission `073e3232-975c-4ade-9188-9e2603ba6055` settled after one Cursor execution and a local OpenCode evaluation. See B.3. Historical Missions stay blocked. |
 | Standing ChatGPT Cursor enrollment | Not enabled until live proof + documented spend limits |
 | Concurrent overlapping writers | Not authorized (serial workspace lease) |
 
@@ -144,3 +144,27 @@ This is evaluator requalification, not Acceptance.
 One new Mission, under a new mission-scoped Cursor grant, must complete OpenCode planning, one Cursor execution, OpenCode evaluation, host exact-byte verification, and settlement. Repair budget stays zero unless a separate grant allows it. Historical Missions `b5d2ba09-836b-4f5f-ac41-3e914c321a71` and `2fb49d9a-a08d-48db-9d17-dee3fdcb34f3` stay blocked.
 
 Rollback of the install that recorded B.1 is `airodrom-rollback-a92049ab87a2`. The protected checkout `~/code/airodrom` stays unmodified.
+
+## B.3 live acceptance (2026-10-19)
+
+Milestone B is **accepted** for one operator-origin Cursor Mission. The architecture is unchanged. The ask was submitted by the authenticated operator through `POST /api/assistant/input`, request `df5bb960-33ca-4d88-953d-2efec866c10b`. It was not a ChatGPT MCP caller.
+
+Disposable workspace `833e08e6-cb05-4dbc-81a5-12a8eaf5c980` on `milestone-b1-fixture`. Authorized files remained `alpha.txt` and `beta.txt`. Final bytes are alpha `414c5048410a` and beta `424554410a`. No other paths were authorized.
+
+| Step | Evidence |
+|---|---|
+| OpenCode planner | Successful run `111d1213-86c4-4783-b45a-7cafafcc1095`, termination verified. An earlier planner attempt `7fd397bd-2f92-4a29-979a-4e26b7b8e0cd` also completed. Sealed contract prefix `51a0a14fa423`. |
+| Cursor grant | Mission-scoped, channel `control_center`, provider `cursor`, one invocation, 120000 ms, unknown cost acknowledged, repair budget zero. The grant does not authorize another invocation after expiry. |
+| Cursor execution | Run `8a130898-c5ea-496d-ac2a-4f062976a104` on Mission `073e3232-975c-4ade-9188-9e2603ba6055`. Completed, termination verified. One settled subscription invocation, outcome `completed`. |
+| Host verification | Status `passed`, including `task:exact-bytes`. |
+| First OpenCode evaluation | Run `b7b5e97e-30a5-45ff-bcbf-25fc280fcac3` failed before the process started (`opencode_unavailable_or_unsupported`, no pid). The Mission blocked. Cursor was not run again. |
+| Local evaluation retry | After pull requests 173–177, startup recovery evaluated the captured packet once admission was open. Run `b963a5b6-0c1b-45e4-b702-e5bef8c35232` returned recommendation `ready`, termination verified, about 32 seconds. Binding `abb4186968bb4693546eeadcd7f0621378b644164bbb0f748cf375edc8ee179b`. |
+| Automatic Acceptance | Decision `accept`. State `completed`. Program `settled`. Settlement `settled`. |
+| Termination and leases | Cursor and the successful evaluator are termination verified. Workspace leases for the Mission are released. |
+| Control Center | Planning — OpenCode, Executing — Cursor, Evaluating — OpenCode, Verifying — Airodrom, and Settled are all done. The displayed state matches the durable Mission. |
+
+The execution wall and the mission approval had expired before that local retry. The retry does not dispatch Cursor, does not extend the paid grant, and still fails closed on a revoked or scope-mismatched approval. A sensitive-context or interrupted evaluation is not retried. `UNKNOWN_SUBSCRIPTION` remains informational.
+
+Historical Missions stay blocked: `b5d2ba09-836b-4f5f-ac41-3e914c321a71` (`opencode_timeout`) and `2fb49d9a-a08d-48db-9d17-dee3fdcb34f3` (`opencode_sensitive_context`). Milestone A `7050a853-4754-4cab-a357-ff882b3446f0` stays completed. The protected checkout `~/code/airodrom` stays at `a1f97c501e203d72e5e90d24fd36c2ebaeb24320`.
+
+Standing ChatGPT Cursor enrollment is still not enabled. The next phase is Milestone C, Claude Code and Codex on this same architecture. It is not started.
