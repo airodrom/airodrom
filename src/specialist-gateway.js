@@ -228,7 +228,10 @@ async function retryPreStartEvaluation(service, m) {
   const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length === 1);
   const attempt = node?.attempts[0];
   if (!cursor || !require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
-  const ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
+  // A negative cache is not launch authority. A positive cache is enough to
+  // enter evaluation; execute() probes again before the process starts.
+  let ready = await service.bridge.opencodeAdapter.readiness();
+  if (!ready.ready) ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
   if (!ready.ready) {
     const waits = readinessWaits.get(m.id) || 0;
     if (waits >= 15) return false;
