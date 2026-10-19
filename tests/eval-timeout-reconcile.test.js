@@ -34,7 +34,8 @@ test('an interrupted evaluator left by service shutdown is reconciled the same w
   db.prepare("UPDATE cp_runs SET state='interrupted', resolution='reconcile_process'").run();
   const ok = reconcileBlockedEvaluation(bridge, mission, () => ({ writer_alive: false, workspace_holders: 0, method: 'test' }));
   assert.equal(ok, true);
-  assert.equal(updates[0].patch.state, 'failed');
+  assert.equal(updates[0].patch.state, 'interrupted');
+  assert.equal(updates[0].patch.verified, true);
   assert.equal(db.prepare('SELECT state FROM cp_leases').get().state, 'released');
 });
 
