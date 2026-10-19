@@ -59,6 +59,15 @@ test('explicit Cursor destination phrases are recognized without the two-file gr
   assert.equal(intent.isWorkRequest('How does Cursor routing work in Airodrom?'), false);
 });
 
+test('Do not deploy denials do not divert enrolled Cursor work into research clarify', () => {
+  const browser = require('../src/browser-research');
+  const message = 'Start the Arecibo Core release-readiness audit in Cursor. Inspect current main and rollback readiness. Do not deploy production.';
+  assert.equal(browser.parse(message), null);
+  const parsed = intent.parse(message);
+  assert.equal(parsed.kind, 'work');
+  assert.match(parsed.objective || message, /Arecibo Core/i);
+});
+
 test('enrolled Arecibo Cursor request never returns projectless two-file syntax', async t => {
   const f = await fixture(t);
   const research = gitInit(fs.mkdtempSync(path.join(os.tmpdir(), 'arecibo-research-')));
