@@ -44,6 +44,21 @@ function evaluationAllowanceMs(mission, now) {
   if (!Number.isFinite(remaining) || remaining < 10) C.fail('gateway_evaluation_deadline');
   return Math.min(planning, remaining);
 }
+function evaluationContinuation(mission, attempt) {
+  // True while the one never-started local evaluation is in progress. The new
+  // evaluator run already exists by then, so this does not recount OpenCode runs.
+  return mission?.state === 'blocked'
+    && String(mission.reason || '').includes('opencode_unavailable_or_unsupported')
+    && !!attempt && !attempt.evaluation_run_id && attempt.verification?.status === 'passed';
+}
+function localEvaluationTimeoutMs(mission, now, continuation) {
+  // A never-started local evaluation keeps the enrolled planning allowance.
+  // That does not extend the paid Cursor grant or admit another invocation.
+  if (!continuation) return evaluationAllowanceMs(mission, now);
+  const planning = mission.envelope.cognitive.envelope.limits.planning_ms;
+  if (!Number.isFinite(planning) || planning < 10) C.fail('gateway_evaluation_deadline');
+  return planning;
+}
 function parseEvaluation(raw, binding) {
   if (typeof raw !== 'string' || Buffer.byteLength(raw) > 12000) C.fail('gateway_result_bound');
   const e = extractEvaluationJSON(raw);
@@ -70,6 +85,7 @@ async function evaluate(bridge, mission, worker, verification) {
     Object.assign(binding,{assignment_hash:canonicalHash(a.assignment),assignment_baseline:a.attempt.baseline.hash,assignments_hash:specialist.digest(bridge,mission,worker.id)});
   }
   const prior = receipt(bridge, mission.id, worker.id);
+  let continuation = false;
   if (prior) {
     if (prior.result.gateway.binding_hash !== canonicalHash(binding)) C.fail('gateway_evaluation_stale');
     if (prior.state === 'completed' && prior.termination_verified) return prior.result.gateway;
@@ -78,8 +94,11 @@ async function evaluate(bridge, mission, worker, verification) {
     // A failed probe before process start may be retried once. An interrupted
     // or sensitive-context evaluation is never blindly retried.
     if (!preStartEvaluationRetryable(mission, opencodeRuns, attempt)) C.fail('gateway_evaluation_reconciliation_required');
+    continuation = true;
   }
-  bridge.missions.assertAuthority(store.requireMission(mission.id));
+  const currentMission = store.requireMission(mission.id);
+  if (continuation) bridge.missionApprovals.assertLocalEvaluation(currentMission);
+  else bridge.missions.assertAuthority(currentMission);
   const runId = randomUUID(), controller = new AbortController();
   const gateway = { version: 1, worker_run_id: worker.id, binding_hash: canonicalHash(binding), binding, authority: false };
   // The caller holds the existing verifier writer lease through evaluation. That
@@ -94,13 +113,15 @@ async function evaluate(bridge, mission, worker, verification) {
     const current = store.requireMission(mission.id);
     if (specialist.enabled(current)?!specialist.isEvaluating(bridge,current,worker):current.state !== 'verifying') C.fail('gateway_mission_stopped');
     bridge.lifecycle?.assertOpen();
-    bridge.missions.assertAuthority(current);
+    if (continuation) bridge.missionApprovals.assertLocalEvaluation(current);
+    else bridge.missions.assertAuthority(current);
     if (workspaceSnapshot(current.envelope.workspace).hash !== binding.workspace_hash) C.fail('gateway_workspace_changed');
   };
   const watch = setInterval(() => { try {
     const current=store.requireMission(mission.id);
     if (specialist.enabled(current)?!specialist.isEvaluating(bridge,current,worker):current.state !== 'verifying') C.fail('gateway_mission_stopped');
-    bridge.missions.assertAuthority(store.requireMission(mission.id));
+    if (!continuation) bridge.missions.assertAuthority(store.requireMission(mission.id));
+    else bridge.missionApprovals.assertLocalEvaluation(store.requireMission(mission.id));
   } catch { controller.abort(); } }, 250);
   bridge.opencodeAdapter.active.set(worker.task_id, controller);
   try {
@@ -108,7 +129,7 @@ async function evaluate(bridge, mission, worker, verification) {
     const template = { version: 1, binding_hash: gateway.binding_hash, recommendation: 'ready', summary: 'Evaluate observed work against the original request and host checks.' };
     const result = JSON.parse(row.normalized);
     const output = await bridge.opencodeAdapter.execute({ workspace: mission.envelope.workspace,
-      files: mission.envelope.allowed_files, writable: [], timeoutMs: specialist.enabled(mission)?evaluationAllowanceMs(mission, store.now()):Math.min(mission.envelope.cognitive.envelope.limits.planning_ms, Infinity),
+      files: mission.envelope.allowed_files, writable: [], timeoutMs: specialist.enabled(mission)?localEvaluationTimeoutMs(mission, store.now(), continuation):Math.min(mission.envelope.cognitive.envelope.limits.planning_ms, Infinity),
       signal: controller.signal, evaluationRunId:runId, coordination: { result_contract: template,
         worker: { agent: worker.agent_id, summary: String(result.summary || '').slice(0, 6000), untrusted: true },
         tasks: mission.envelope.cognitive.proposal.tasks,
@@ -211,4 +232,4 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   }
   return true;
 }
-module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, preStartEvaluationRetryable, reconcileBlockedEvaluation };
+module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, localEvaluationTimeoutMs, evaluationContinuation, preStartEvaluationRetryable, reconcileBlockedEvaluation };
