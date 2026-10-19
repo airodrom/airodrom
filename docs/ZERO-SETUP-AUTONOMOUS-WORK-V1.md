@@ -61,6 +61,19 @@ workflows. See [Projectless work](PROJECTLESS-WORK-V1.md) for the fixture-only
 contract and [Cognitive Mission Router](COGNITIVE-MISSION-ROUTER-V1.md) for
 standing cognitive planning.
 
+### Live acceptance (2026-10-19)
+
+Installed `b401f5dbcd122572e1d1e3e264d3f195e4436b83` (PR #179). Host-origin
+operator intake (not a ChatGPT MCP session; no paid Cursor run):
+
+| Request | Result |
+| --- | --- |
+| `Use Cursor to continue the Arecibo development task…` | Enrolled path. Did **not** return `projectless_exact_two_file_syntax_required`. Resolved the single-repo Arecibo enrollment; Autopilot reported missing `.vscode/tasks.json` on that checkout (precise standing-prep gate). |
+| `Use Cursor to continue the Arecibo Core development task…` | `ENROLLED_REPOSITORY_AMBIGUOUS` with the enrolled Arecibo Core worktrees listed. No two-file fixture prompt. |
+| Projectless `Use Cursor in a projectless task sandbox…` | Still `projectless_exact_two_file_syntax_required`. |
+
+Remaining genuine gates: choose one Arecibo Core repository when several worktrees are enrolled; standing Developer Autonomy with cognitive discovery files before Cursor planning; explicit subscription grant before paid Cursor execution; no production deploy or Plaid LIVE activation from this path. Rollback checkpoint: `~/.airodrom/activation/airodrom-rollback-b9546357a26c`.
+
 ## One-interface, approval-bound completion (candidate V1)
 
 The ordinary `airodrom` Terminal is the primary interface, with Control Center retained for advanced administration and diagnostics. When one eligible signed local WORK template is active, its exact Project/workspace can be selected without asking the owner to manipulate UUIDs or worktrees. An explicitly named Project overrides unrelated disposable-fixture heuristics. Ambiguous, missing, expired, revoked, or dirty scopes still stop safely rather than guessing.
