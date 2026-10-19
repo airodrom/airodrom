@@ -23,7 +23,7 @@
 
 **Operational recovery V1:** [OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](OPERATIONAL-RECOVERY-LIFECYCLE-V1.md) — bounded identity reads, writer-death reconciliation, checkpoint copy modes.
 
-**ChatGPT handoff v8 verification:** [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md) — exact-byte contract, empty-mutation vs evaluator JSON failures, settlement rules, host v11 PASS, pending remote ChatGPT step.
+**ChatGPT handoff / Milestone A:** [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md) — exact-byte contract, v8 failure forensics, host v11 PASS, genuine remote **v9 PASS** (Milestone A complete).
 
 **Milestone B Cursor readiness:** [MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md) — OpenCode ↔ specialist gateway ↔ Cursor gaps and prioritized plan (no spend).
 
