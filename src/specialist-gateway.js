@@ -214,11 +214,54 @@ function inspect(bridge,m) {
       attempts:n.attempts.map(a=>({ordinal:a.ordinal,task_id:a.task_id,dispatch_id:a.dispatch_id,run_id:a.run_id,repair:a.repair,result_hash:a.result_hash||null,evaluation_run_id:a.evaluation_run_id||null,binding_hash:a.binding_hash||null,verification:a.verification?{status:a.verification.status,workspace_hash:a.verification.workspace_hash}:null}))})),
     lifecycle:lifecycleView(bridge,m),authority:false};
 }
+const localEvalRetries = new Set();
+async function retryPreStartEvaluation(service, m) {
+  if (localEvalRetries.has(m.id)) return false;
+  const runs = service.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(m.id);
+  const cursor = service.db.prepare("SELECT 1 ok FROM cp_runs WHERE mission_id=? AND agent_id='cursor' AND state='completed' AND termination_verified=1").get(m.id);
+  const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length === 1);
+  const attempt = node?.attempts[0];
+  if (!cursor || !require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
+  const ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
+  if (!ready.ready) return false;
+  localEvalRetries.add(m.id);
+  const worker = service.store.run(attempt.run_id);
+  try {
+    save(service.bridge, m, node, 'evaluating');
+    const evaluation = await require('./opencode-gateway').evaluate(service.bridge, service.store.requireMission(m.id), worker, attempt.verification);
+    const current = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
+    const live = current.attempts[0];
+    const receipt = require('./opencode-gateway').receipt(service.bridge, m.id, worker.id);
+    live.evaluation_run_id = receipt.id;
+    live.binding_hash = receipt.result.gateway.binding_hash;
+    if (attempt.verification.status === 'passed' && evaluation.evaluation.recommendation === 'ready') {
+      transaction(service.db, () => {
+        save(service.bridge, m, current, 'ready');
+        service.verifier.persist(service.store.requireMission(m.id), worker, attempt.verification);
+        service.db.prepare("UPDATE cp_mission_programs SET state='waiting_acceptance' WHERE id=?").run(m.id);
+      });
+      if (service.store.requireMission(m.id).state === 'awaiting_acceptance') autoAccept(service.bridge, m.id);
+    } else {
+      save(service.bridge, m, current, 'failed');
+    }
+    return true;
+  } catch (error) {
+    const latest = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
+    if (latest) save(service.bridge, m, latest, 'unavailable');
+    return false;
+  } finally {
+    localEvalRetries.delete(m.id);
+  }
+}
 function tick(service,p) {
   const m=service.store.getMission(p.id); if (!enabled(m)) fail('gateway_graph_parent_missing');
   if (['cancelled','completed','blocked','needs_rework'].includes(m.state)) {
-    if (m.state === 'blocked') { try { require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge, m); } catch { /* Quarantine stays until a later recovery. */ } }
-    service.db.prepare('UPDATE cp_mission_programs SET state=? WHERE id=?').run(m.state==='completed'?'settled':m.state,p.id); return;
+    if (m.state === 'blocked') {
+      try { require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge, m); } catch { /* Quarantine stays until a later recovery. */ }
+      const current = service.store.getMission(p.id);
+      if (current.state === 'blocked') retryPreStartEvaluation(service, current).catch(() => {});
+    }
+    service.db.prepare('UPDATE cp_mission_programs SET state=? WHERE id=?').run(service.store.getMission(p.id).state==='completed'?'settled':service.store.getMission(p.id).state,p.id); return;
   }
   const ns=nodes(service.bridge,m);
   if (ns.some(n=>['queued','running','evaluating'].includes(n.state))) return;
@@ -373,7 +416,14 @@ async function processResult(service,row) {
 }
 function recover(service,m) {
   if(!enabled(m))return false;
-  if(m.state==='blocked'){try{require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge,m);}catch{return true;}}
+  if(m.state==='blocked'){
+    try{require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge,m);}catch{return true;}
+    // Program tick does not visit a blocked graph. Startup recovery is the
+    // only host path that can evaluate the already captured Cursor packet.
+    const current=service.store.getMission(m.id);
+    if(current.state==='blocked')retryPreStartEvaluation(service,current).catch(()=>{});
+    return true;
+  }
   if(!['dispatching','running','verifying'].includes(m.state))return true;
   // Result inbox replay and queued launches are handled by the existing loop.
   if(service.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)||

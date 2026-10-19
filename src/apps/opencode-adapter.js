@@ -373,10 +373,11 @@ class OpenCodeAdapter extends AgentAdapter {
     this._readinessCache = null;
     return executable;
   }
-  async readiness() {
+  async readiness(options = {}) {
     const now = Date.now();
     const ttl = this._readinessCache?.ttl ?? READINESS_TTL_MS;
-    if (this._readinessCache && now - this._readinessCache.at < ttl) {
+    // A status poll may cache a transient provider miss. Launch must probe again.
+    if (options.fresh !== true && this._readinessCache && now - this._readinessCache.at < ttl) {
       return { ...this._readinessCache.value, availability: this._readinessCache.value.ready ? (this.active.size ? 'busy' : 'available') : 'unavailable' };
     }
     if (this._readinessInflight) return this._readinessInflight;
@@ -452,7 +453,9 @@ class OpenCodeAdapter extends AgentAdapter {
     if (sessionId) fail('opencode_session_reuse_denied');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 120000 || deadline !== null && !Number.isSafeInteger(deadline) || signal?.aborted) fail('opencode_timeout_or_cancel_bound');
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
-    if (!(await this.readiness()).ready) fail('opencode_unavailable_or_unsupported');
+    let observed = await this.readiness();
+    if (!observed.ready) observed = await this.readiness({ fresh: true });
+    if (!observed.ready) fail('opencode_unavailable_or_unsupported');
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || fs.realpathSync(workspace) !== workspace || !Array.isArray(files) || files.length > 8 || new Set(files).size !== files.length || !Array.isArray(writable) || new Set(writable).size !== writable.length || writable.some(f => !files.includes(f))) fail('opencode_workspace_binding');
     files.forEach(relative); writable.forEach(relative);
     if (planning && (writable.length || conversation || context !== null)) fail('opencode_planning_read_only_required');
