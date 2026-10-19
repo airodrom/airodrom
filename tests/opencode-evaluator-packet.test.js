@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { createHash, randomUUID } = require('node:crypto');
 const { containsSecret } = require('../src/personal-memory');
 const { sourceContextSensitive, specialistReturnSafetyView, classifyProcessFailure } = require('../src/opencode-adapter');
-const { parseEvaluation, evaluationAllowanceMs } = require('../src/opencode-gateway');
+const { parseEvaluation, evaluationAllowanceMs, preStartEvaluationRetryable } = require('../src/opencode-gateway');
 const { canonicalHash } = require('../src/authority-hash');
 
 function luhnDigest() {
@@ -124,6 +124,18 @@ test('structured evaluation binds to the host hash and fails closed otherwise', 
   assert.throws(() => parseEvaluation(JSON.stringify({ version: 1, binding_hash: 'ab'.repeat(32), recommendation: 'ready', summary: 'mismatch' }), binding), /gateway_result_binding_mismatch/);
   assert.equal(classifyProcessFailure({ timedOut: true }), 'opencode_timeout');
   assert.equal(classifyProcessFailure({ cancelled: true }), 'opencode_cancelled');
+});
+
+test('a local evaluator that never started can be retried once', () => {
+  const mission = { state: 'blocked', reason: 'EVALUATION_UNAVAILABLE: opencode_unavailable_or_unsupported' };
+  const run = { agent_id: 'opencode', state: 'failed', termination_verified: 1, pid: null, resolution: 'gateway_evaluation_unavailable' };
+  const attempt = { verification: { status: 'passed' } };
+  assert.equal(preStartEvaluationRetryable(mission, [run], attempt), true);
+  assert.equal(preStartEvaluationRetryable(mission, [run, run], attempt), false);
+  assert.equal(preStartEvaluationRetryable(mission, [{ ...run, pid: 10 }], attempt), false);
+  assert.equal(preStartEvaluationRetryable({ ...mission, reason: 'EVALUATION_UNAVAILABLE: opencode_sensitive_context' }, [run], attempt), false);
+  assert.equal(preStartEvaluationRetryable(mission, [run], { ...attempt, evaluation_run_id: 'already' }), false);
+  assert.equal(preStartEvaluationRetryable(mission, [run], { verification: { status: 'failed' } }), false);
 });
 
 test('OpenCode evaluation keeps its own allowance after the Cursor window', () => {

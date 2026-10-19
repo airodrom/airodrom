@@ -27,6 +27,15 @@ function extractEvaluationJSON(raw) {
   if (start < 0 || end <= start) return null;
   try { return require('./authority-json').parseAuthorityJSON(raw.slice(start, end + 1)); } catch { return null; }
 }
+function preStartEvaluationRetryable(mission, opencodeRuns, attempt) {
+  // One local retry when the evaluator never started. Not a Cursor redispatch.
+  if (mission?.state !== 'blocked' || !String(mission.reason || '').includes('opencode_unavailable_or_unsupported')) return false;
+  if (!Array.isArray(opencodeRuns) || opencodeRuns.length !== 1) return false;
+  const run = opencodeRuns[0];
+  if (run.agent_id !== 'opencode' || run.state !== 'failed' || run.termination_verified !== 1 || run.pid != null || run.resolution !== 'gateway_evaluation_unavailable') return false;
+  if (!attempt || attempt.evaluation_run_id || attempt.verification?.status !== 'passed') return false;
+  return true;
+}
 function evaluationAllowanceMs(mission, now) {
   const planning = mission.envelope.cognitive.envelope.limits.planning_ms;
   const remaining = require('./specialist-gateway').deadline(mission) - now;
@@ -63,9 +72,12 @@ async function evaluate(bridge, mission, worker, verification) {
   const prior = receipt(bridge, mission.id, worker.id);
   if (prior) {
     if (prior.result.gateway.binding_hash !== canonicalHash(binding)) C.fail('gateway_evaluation_stale');
-    // Even an interrupted local evaluation is never blindly retried after restart.
-    if (prior.state !== 'completed' || !prior.termination_verified) C.fail('gateway_evaluation_reconciliation_required');
-    return prior.result.gateway;
+    if (prior.state === 'completed' && prior.termination_verified) return prior.result.gateway;
+    const opencodeRuns = db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(mission.id);
+    const attempt = specialist.enabled(mission) ? specialist.active(bridge, mission, worker.task_id).attempt : null;
+    // A failed probe before process start may be retried once. An interrupted
+    // or sensitive-context evaluation is never blindly retried.
+    if (!preStartEvaluationRetryable(mission, opencodeRuns, attempt)) C.fail('gateway_evaluation_reconciliation_required');
   }
   bridge.missions.assertAuthority(store.requireMission(mission.id));
   const runId = randomUUID(), controller = new AbortController();
@@ -199,4 +211,4 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   }
   return true;
 }
-module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, reconcileBlockedEvaluation };
+module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, preStartEvaluationRetryable, reconcileBlockedEvaluation };
