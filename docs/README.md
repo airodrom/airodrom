@@ -25,7 +25,7 @@
 
 **ChatGPT handoff / Milestone A:** [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md) — exact-byte contract, v8 failure forensics, host v11 PASS, genuine remote **v9 PASS** (Milestone A complete).
 
-**Milestone B Cursor readiness:** [MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md) — OpenCode ↔ specialist gateway ↔ Cursor gaps and prioritized plan (no spend).
+**Milestone B (OpenCode ↔ Cursor):** [MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md) — canonical USER → ChatGPT → Airodrom → OpenCode → Cursor → OpenCode → Airodrom path; evidence packet; spend boundaries.
 
 **macOS Desktop Activation V1** (Menu V3 + login startup — SHIPPED + INSTALLED): [MACOS-DESKTOP-ACTIVATION-V1.md](MACOS-DESKTOP-ACTIVATION-V1.md).
 

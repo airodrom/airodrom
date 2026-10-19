@@ -883,5 +883,6 @@
   "src/specialist-gateway.js",
   "tests/specialist-erasure.test.js",
   "tests/specialist-gateway-live.cjs",
-  "tests/specialist-gateway.test.js"
+  "tests/specialist-gateway.test.js",
+  "tests/milestone-b-cursor-return.test.js"
 ]

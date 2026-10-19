@@ -41,3 +41,16 @@ existing scheduler, Mission Program, accounting and verification. See
 [Specialist Gateway V1](SPECIALIST-GATEWAY-V1.md) and
 [ADR 0059](adr/0059-specialist-gateway.md) for contracts, recovery and rollback
 compatibility. Earlier single-worker/version 2 descriptions remain historical.
+
+### Canonical multi-agent path (Milestone B)
+
+```text
+USER → ChatGPT → AIRODROM → OPENCODE → CURSOR / CLAUDE CODE / CODEX → OPENCODE → AIRODROM → ChatGPT → USER
+```
+
+Airodrom is the sole governing authority. OpenCode is the central cognitive hub
+(plan, then evaluate). Cursor, Claude Code, and Codex are specialized workers.
+Every specialist result returns to OpenCode for evaluation; Airodrom performs
+independent final verification and settlement. The specialist gateway transports
+and governs; it is not a second cognitive planner. See
+[Milestone B Cursor readiness](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md).

@@ -68,6 +68,16 @@
    if(!m.specialists)return document.createDocumentFragment();
    const g=m.specialists,panel=node('section',null,'glass specialist-progress');
    panel.append(node('h3','Specialist work'),node('p','Automatic completion · repairs '+g.repairs_used+' / '+g.repairs_limit));
+   if(g.lifecycle?.stages?.length){
+     const rail=node('ol',null,'lifecycle specialist-lifecycle');
+     for(const stage of g.lifecycle.stages){
+       const li=node('li',null,stage.state==='done'?'observed':stage.state==='live'?'observed live':'unobserved');
+       if(stage.state==='live'){li.classList.add('live');li.setAttribute('aria-current','step');}
+       li.append(node('span',stage.label),node('small',stage.state==='live'?'In progress':stage.state==='done'?'Observed':stage.state==='blocked'||stage.state==='needs_rework'||stage.state==='cancelled'?readable(stage.state):'Not observed'));
+       rail.append(li);
+     }
+     panel.append(rail);
+   }
    const list=node('ol');
    for(const a of g.assignments){const row=node('li');row.append(node('strong',a.worker+' · '+readable(a.role)),node('span',' — '+readable(a.state)),node('small',(a.returned_to_opencode?'Result returned to OpenCode':'Result not yet evaluated')+' · attempts '+a.attempts+' · checks '+readable(a.verification)));list.append(row);}
    panel.append(list);return panel;

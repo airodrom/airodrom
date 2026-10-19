@@ -162,20 +162,57 @@ function workerInput(bridge,m,taskId) {
 function returnPayload(bridge,m,worker) {
   const a=active(bridge,m,worker.task_id), db=bridge.controlStore.db;
   const normalized=JSON.parse(db.prepare('SELECT normalized FROM cp_run_results WHERE run_id=? AND mission_id=?').get(worker.id,m.id).normalized);
-  return {version:1,assignment:a.assignment,attempt:a.attempt.ordinal,run_id:worker.id,state:worker.state,termination_verified:worker.termination_verified===1,
-    host_changes:(worker.result?.artifacts||[]).map(x=>({path:x.path,preimage_sha256:x.preimage_sha256,sha256:x.sha256,size:x.size})),
-    host_verification:{status:a.attempt.verification.status,workspace_hash:a.attempt.verification.workspace_hash,checks:a.attempt.verification.checks.map(c=>({id:c.id,status:c.status,evidence_hash:hash(c.evidence||{})}))},
+  const host_changes=(worker.result?.artifacts||[]).map(x=>({path:x.path,preimage_sha256:x.preimage_sha256,sha256:x.sha256,size:x.size}));
+  const host_verification={status:a.attempt.verification.status,workspace_hash:a.attempt.verification.workspace_hash,checks:a.attempt.verification.checks.map(c=>({id:c.id,status:c.status,evidence_hash:hash(c.evidence||{})}))};
+  const repairs_used=repairCount(bridge,m),repair_ceiling=a.assignment.repair_ceiling;
+  const scope={paths:a.assignment.paths,operation:a.assignment.operation,repository_id:a.assignment.repository_id,workspace_id:a.assignment.workspace_id};
+  // Milestone B packet: host-observed fields for OpenCode evaluation. Worker prose remains untrusted.
+  return {version:1,mission_id:m.id,assignment_id:a.assignment.id,worker_id:a.assignment.worker,
+    cursor_run_id:a.assignment.worker==='cursor'?worker.id:null,dispatch_id:a.attempt.dispatch_id,
+    authorized_scope_hash:hash(scope),workspace_identity:{workspace_id:a.assignment.workspace_id,repository_id:a.assignment.repository_id},
+    changed_files:host_changes.map(x=>x.path),before_hashes:Object.fromEntries(host_changes.map(x=>[x.path,x.preimage_sha256||null])),
+    after_hashes:Object.fromEntries(host_changes.map(x=>[x.path,x.sha256||null])),
+    diff_summary:{changed:host_changes.length,paths:host_changes.map(x=>x.path)},
+    test_results:(normalized.tests||[]).slice(0,20),execution_status:worker.state,
+    termination_status:{verified:worker.termination_verified===1,process_state:worker.process_state||null},
+    verification_results:host_verification,errors:(normalized.limitations||[]).slice(0,20),
+    remaining_repair_budget:Math.max(0,repair_ceiling-repairs_used),
+    assignment:a.assignment,attempt:a.attempt.ordinal,run_id:worker.id,state:worker.state,termination_verified:worker.termination_verified===1,
+    host_changes,host_verification,
     worker_claims:{tests:(normalized.tests||[]).slice(0,20),limitations:(normalized.limitations||[]).slice(0,20),untrusted:true},
     accounting:{class:m.envelope.contract.budget.spend_observability,observed_cost:null,
       invocations:db.prepare('SELECT count(*) n FROM cp_subscription_invocations WHERE mission_id=?').get(m.id).n},
     references:['mission:'+m.id,'run:'+worker.id,'dispatch:'+a.attempt.dispatch_id],
     prior_results:attempts(bridge,m).filter(x=>x.run_id!==worker.id).map(x=>({assignment_id:x.assignment_id,run_id:x.run_id,result_hash:x.result_hash,evaluation_run_id:x.evaluation_run_id,binding_hash:x.binding_hash})),authority:false};
 }
+function lifecycleView(bridge,m) {
+  const p=program(bridge,m),ns=nodes(bridge,m);
+  const active=ns.find(n=>['queued','running','evaluating'].includes(n.state))||null;
+  const planningDone=!!m.envelope?.cognitive?.proposal;
+  const anyReturned=ns.some(n=>n.attempts.some(a=>a.evaluation_run_id));
+  const evaluating=!!active&&active.state==='evaluating';
+  const executing=!!active&&['queued','running'].includes(active.state);
+  const settled=p.state==='settled'||m.state==='completed';
+  const blocked=['blocked','needs_rework','cancelled'].includes(m.state)||['blocked','needs_rework','cancelled'].includes(p.state);
+  const verifying=m.state==='verifying';
+  const current=settled?'settled':blocked?(p.state==='needs_rework'||m.state==='needs_rework'?'needs_rework':p.state==='cancelled'||m.state==='cancelled'?'cancelled':'blocked'):verifying?'verifying':evaluating?'evaluating':executing?'executing':'planning';
+  const worker=active?.assignment?.worker||ns.find(n=>n.assignment.worker==='cursor')?.assignment?.worker||'opencode';
+  const workerLabel=worker==='cursor'?'Cursor':worker==='opencode'?'OpenCode':String(worker);
+  const stageDone=(id)=>id==='planning'?planningDone:id==='executing'?anyReturned||evaluating||verifying||settled||(active&&['ready','failed'].includes(active.state)):id==='evaluating'?anyReturned&&!evaluating&&(verifying||settled||blocked||['ready','failed','unavailable'].includes(active?.state)):id==='verifying'?settled||['awaiting_acceptance','completed'].includes(m.state):settled;
+  return {current,stages:[
+    {id:'planning',label:'Planning — OpenCode',state:planningDone?(current==='planning'?'live':'done'):'pending'},
+    {id:'executing',label:'Executing — '+workerLabel,state:current==='executing'?'live':(stageDone('executing')?'done':'pending')},
+    {id:'evaluating',label:'Evaluating — OpenCode',state:current==='evaluating'?'live':(stageDone('evaluating')?'done':'pending')},
+    {id:'verifying',label:'Verifying — Airodrom',state:current==='verifying'?'live':(stageDone('verifying')?'done':'pending')},
+    {id:'settled',label:'Settled',state:settled?'done':(blocked?current:'pending')},
+  ]};
+}
 function inspect(bridge,m) {
   const p=program(bridge,m);
   return {version:1,parent_mission_id:m.id,state:p.state,concurrency:1,repair_attempts:repairCount(bridge,m),
     assignments:nodes(bridge,m).map(n=>({id:n.node_id,worker:n.assignment.worker,role:n.assignment.role,paths:n.assignment.paths,operation:n.assignment.operation,depends_on:n.assignment.depends_on,state:n.state,
-      attempts:n.attempts.map(a=>({ordinal:a.ordinal,task_id:a.task_id,dispatch_id:a.dispatch_id,run_id:a.run_id,repair:a.repair,result_hash:a.result_hash||null,evaluation_run_id:a.evaluation_run_id||null,binding_hash:a.binding_hash||null,verification:a.verification?{status:a.verification.status,workspace_hash:a.verification.workspace_hash}:null}))})),authority:false};
+      attempts:n.attempts.map(a=>({ordinal:a.ordinal,task_id:a.task_id,dispatch_id:a.dispatch_id,run_id:a.run_id,repair:a.repair,result_hash:a.result_hash||null,evaluation_run_id:a.evaluation_run_id||null,binding_hash:a.binding_hash||null,verification:a.verification?{status:a.verification.status,workspace_hash:a.verification.workspace_hash}:null}))})),
+    lifecycle:lifecycleView(bridge,m),authority:false};
 }
 function tick(service,p) {
   const m=service.store.getMission(p.id); if (!enabled(m)) fail('gateway_graph_parent_missing');
