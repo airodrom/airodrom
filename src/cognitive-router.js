@@ -32,7 +32,9 @@ function enrollment(input, repository) {
 
 function requestedWorker(instruction) {
   if (/\b(?:codex|claude(?:[- ]code)?)\b/i.test(instruction)) C.fail('cognitive_named_worker_unavailable');
-  const requested = [...String(instruction).matchAll(/\b(?:use|using|via|with)\s+(cursor|opencode|host)\b|\b(cursor|opencode|host)[- ]only\b/ig)].map(m => (m[1] || m[2]).toLowerCase());
+  const requested = [...String(instruction).matchAll(
+    /\b(?:use|using|via|with|in)\s+(cursor|opencode|host)\b|\b(cursor|opencode|host)[- ]only\b|\bassign(?:ed)?\s+to\s+(cursor|opencode|host)\b/ig
+  )].map(m => (m[1] || m[2] || m[3]).toLowerCase());
   if (new Set(requested).size > 1) C.fail('cognitive_ambiguous_worker');
   // A named worker in unrecognized prose must never silently become an auto route.
   if (!requested.length && /\b(?:cursor|opencode)\b/i.test(instruction)) C.fail('cognitive_explicit_worker_syntax_required');
@@ -76,10 +78,12 @@ function policyFor(bridge, instruction) {
   const candidates = (bridge.developerAutonomy?.list?.('operator') || []).filter(p => p.state === 'active' && p.cognitive);
   if (!candidates.length) return [];
   const projects = bridge.projects.listProjects({ status: 'active' });
+  const { instructionMentions } = require('./project-resolution');
   return candidates.filter(p => {
     const project = projects.find(project => project.projectId === p.project_id && project.repositories?.includes(p.repository));
-    const words = instruction.toLowerCase();
-    return project && (words.includes(project.name.toLowerCase()) || words.includes(p.alias.toLowerCase()) || instruction.includes(p.repository));
+    if (!project) return false;
+    if (instruction.includes(p.repository)) return true;
+    return !!instructionMentions(instruction, project.name, p.alias);
   });
 }
 

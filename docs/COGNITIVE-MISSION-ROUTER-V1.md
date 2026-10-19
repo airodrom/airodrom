@@ -101,15 +101,17 @@ No auto-merge or deployment is included. Existing owner review remains distinct.
 
 | Request after plan validation | Selection |
 | --- | --- |
-| Explicit `use/using/via/with Cursor`, `Cursor only` | Cursor; missing qualification/grant blocks, no fallback |
+| Explicit `use/using/via/with/in Cursor`, `Cursor only`, `assign to Cursor` | Cursor; missing qualification/grant blocks, no fallback |
 | Explicit OpenCode or host | Preserve selection; host requires read-only operations |
 | All tasks read-only | Existing host file-read capabilities |
 | More than 4 files or 6 tasks | Cursor, subject to qualification and authorization |
 | Other bounded edits | OpenCode |
 
-A named Cursor/OpenCode worker in unrecognized prose blocks with
-`cognitive_explicit_worker_syntax_required`; use an explicit `use Cursor` or
-`use OpenCode` phrase to disambiguate. It never silently becomes an auto route.
+Destination phrases such as `in Cursor` and `using Cursor` are explicit worker
+selection. A named Cursor/OpenCode worker in unrecognized prose still blocks with
+`cognitive_explicit_worker_syntax_required` and never silently becomes an auto
+route. Policy matching also accepts distinctive project-name tokens and aliases
+so enrolled repositories resolve without requiring a UUID.
 
 V1 permits at most eight existing scoped files, twelve tasks, one worker execution
 and zero automatic repairs. Each planning/execution attempt is bounded to 120 seconds;

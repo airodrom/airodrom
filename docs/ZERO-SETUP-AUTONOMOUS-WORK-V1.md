@@ -24,6 +24,43 @@
 
 Preparation is never permission. ChatGPT text never grants execution.
 
+## Enrolled-project routing (Autonomous Development Unblocking V1)
+
+Ordinary development requests that name an authorized Project — for example
+`Start the Arecibo release-readiness audit in Cursor` — resolve through the
+enrolled-project path. They must **not** enter the projectless exact two-file
+fixture grammar.
+
+Decision order for `ask_airodrom` / `prepare_mission`:
+
+1. Authenticate the caller and run Cognitive Mission Router when a standing
+   Developer Autonomy policy with cognitive enrollment uniquely matches.
+2. Otherwise discover enrolled Projects by full name, alias, distinctive token,
+   or authorized absolute path. Longer exact names win over shorter trailing
+   phrases. Ambiguous matches return `ENROLLED_REPOSITORY_AMBIGUOUS`.
+3. Only when no enrolled Project matches may Cursor prose use the projectless
+   two-file contract (`projectless_exact_two_file_syntax_required`).
+4. A recognized Project without an active standing enrollment returns
+   `ENROLLED_WORKSPACE_REQUIRED` with the single owner action to enroll
+   Developer Autonomy for that repository. Cursor planning without cognitive
+   discovery files returns `standing_cognitive_enrollment_required`.
+
+Multi-file enrolled objectives are valid. OpenCode proposes a bounded file plan
+inside standing enrollment; Airodrom validates it against the grant. Dirty and
+unique checkouts stay protected; disposable worktrees are prepared by Developer
+Autonomy, not by the projectless sandbox.
+
+Mandatory architecture remains:
+
+```text
+USER → ChatGPT → AIRODROM → OPENCODE → CURSOR / CLAUDE CODE / CODEX → OPENCODE → AIRODROM → ChatGPT → USER
+```
+
+Do not reintroduce the obsolete two-file restriction into enrolled-project
+workflows. See [Projectless work](PROJECTLESS-WORK-V1.md) for the fixture-only
+contract and [Cognitive Mission Router](COGNITIVE-MISSION-ROUTER-V1.md) for
+standing cognitive planning.
+
 ## One-interface, approval-bound completion (candidate V1)
 
 The ordinary `airodrom` Terminal is the primary interface, with Control Center retained for advanced administration and diagnostics. When one eligible signed local WORK template is active, its exact Project/workspace can be selected without asking the owner to manipulate UUIDs or worktrees. An explicitly named Project overrides unrelated disposable-fixture heuristics. Ambiguous, missing, expired, revoked, or dirty scopes still stop safely rather than guessing.

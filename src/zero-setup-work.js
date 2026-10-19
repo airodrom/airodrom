@@ -83,12 +83,66 @@ class ZeroSetupWork {
       .run(requestId, principal, JSON.stringify(record), state, now, now);
   }
 
+  activeProjects() {
+    return (this.bridge.projects.listProjects({ status: 'active' }) || [])
+      .filter(p => !isProductionProject(p) && Array.isArray(p.repositories) && p.repositories.length);
+  }
+
+  // Discover an enrolled Project without allocating a projectless sandbox.
+  resolveEnrolledProject(instruction) {
+    const projects = this.activeProjects();
+    const { matchNamedProjects, preferUniqueProject } = require('./project-resolution');
+    const namedHits = matchNamedProjects(instruction, projects);
+    const activeRepositories = new Set();
+    try {
+      for (const policy of this.bridge.developerAutonomy?.list?.('operator') || []) {
+        if (policy.state === 'active' && policy.repository) activeRepositories.add(policy.repository);
+      }
+    } catch { /* enrollment store unavailable */ }
+    const namedChoice = preferUniqueProject(namedHits, { activeRepositories });
+    if (namedChoice.ok) {
+      const project = namedChoice.project;
+      if ((project.repositories || []).length === 1) {
+        try {
+          const root = fs.realpathSync(project.repositories[0]);
+          if (require('./control-execution').repositoryRoot(root) === root) {
+            return { ok: true, project, workspace: root, projectless: false };
+          }
+        } catch { /* absent enrollment */ }
+      } else if ((project.repositories || []).length > 1) {
+        return {
+          ok: false, clarify: true, projectless: false,
+          message: 'Which authorized repository under ' + project.name + ' should I use?',
+          choices: project.repositories.map(workspace => ({ project_name: project.name, workspace_label: readablePath(workspace) })),
+          code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+        };
+      }
+    }
+    if (namedChoice.clarify) {
+      return {
+        ok: false, clarify: true, projectless: false,
+        message: 'Which authorized repository should I use?',
+        choices: namedChoice.matches.map(hit => ({
+          project_name: hit.project.name,
+          workspace_label: readablePath((hit.repositories || [])[0] || ''),
+        })),
+        code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+      };
+    }
+    const authorized = explicitAuthorizedRepository(instruction, projects);
+    if (authorized) return { ok: true, project: authorized.project, workspace: authorized.workspace, projectless: false };
+    if (explicitUnauthorizedPath(instruction, projects)) {
+      return { ok: false, clarify: true, projectless: false, message: 'That repository is not authorized. No files were opened.', choices: [] };
+    }
+    return { ok: true, projectless: true, project: null, workspace: null };
+  }
+
   resolveScope(instruction, intent) {
     if (/projectless task sandbox/i.test(instruction || '')) {
       const sandbox = require('./projectless-sandbox').allocate();
       return { ok: true, projectless: true, exact_fixture: /change fixture\.txt from alpha to beta/i.test(instruction || ''), project: null, workspace: sandbox.workspace, filesystem: sandbox.filesystem };
     }
-    const projects = (this.bridge.projects.listProjects({ status: 'active' }) || []).filter(p => !isProductionProject(p) && Array.isArray(p.repositories) && p.repositories.length);
+    const projects = this.activeProjects();
     const matches = [];
     for (const project of projects) {
       for (const workspace of project.repositories) {
@@ -109,18 +163,14 @@ class ZeroSetupWork {
       }
     }
     // A named active Project wins over unrelated self-repair fixture heuristics.
-    const named = projects.filter(p => (instruction || '').toLowerCase().includes(String(p.name || '').toLowerCase()) && p.repositories.length === 1);
-    if (named.length === 1) {
-      const root = fs.realpathSync(named[0].repositories[0]);
-      if (require('./control-execution').repositoryRoot(root) === root) return { ok: true, project: named[0], workspace: root };
+    const enrolled = this.resolveEnrolledProject(instruction);
+    if (!enrolled.projectless) {
+      if (!enrolled.ok) return enrolled;
+      return { ok: true, project: enrolled.project, workspace: enrolled.workspace };
     }
     // Ordinary work does not require a registered Project. An enrolled repository
     // is used only when the instruction names that project or its authorized path.
     if (intent?.kind === 'general') {
-      if (named.length > 1) return { ok: false, clarify: true, message: 'Which authorized repository should I use?', choices: named.map(p => ({ project_name: p.name, workspace_label: readablePath(p.repositories[0]) })) };
-      const authorized = explicitAuthorizedRepository(instruction, projects);
-      if (authorized) return { ok: true, project: authorized.project, workspace: authorized.workspace };
-      if (explicitUnauthorizedPath(instruction, projects)) return { ok: false, clarify: true, message: 'That repository is not authorized. No files were opened.', choices: [] };
       const sandbox = require('./projectless-sandbox').allocate();
       return { ok: true, projectless: true, project: null, workspace: sandbox.workspace, filesystem: 'task_sandbox_only' };
     }
@@ -245,15 +295,39 @@ class ZeroSetupWork {
     // consent stay on host conversation / Terminal flows; never auto-prepare from chat text.
     const sandbox = require('./projectless-sandbox');
     const workSpec = sandbox.parseWorkSpec(instruction) || sandbox.parseNaturalWorkSpec(instruction);
+    // Enrolled-project Cursor requests must never be intercepted by the projectless
+    // exact two-file fixture grammar. Resolve the named repository first.
+    let enrolledCursorScope = null;
     if (!workSpec && sandbox.explicitlyRequestsCursor(instruction)) {
-      // In particular, never let the historical alpha/beta fixture shortcut turn
-      // an explicit Cursor request into an OpenCode dispatch.
-      const record = { version: 1, instruction, clarify: true, authority: false,
-        intake_blockers: ['projectless_exact_two_file_syntax_required'],
-        presentation: { worker: 'cursor', files: [], measurable: false,
-          status: 'Cursor needs explicit bounded files and exact contents' } };
-      this.write(request_id, principal, record, 'clarify');
-      return this.statusView(this.read(request_id));
+      const enrolled = this.resolveEnrolledProject(instruction);
+      if (!enrolled.ok) {
+        const record = {
+          version: 1, instruction, clarify: enrolled, authority: false,
+          intake_blockers: enrolled.code ? [enrolled.code] : undefined,
+          presentation: { worker: 'cursor', files: [], measurable: false, status: enrolled.message },
+        };
+        this.write(request_id, principal, record, 'clarify');
+        return {
+          state: 'CLARIFY',
+          code: enrolled.code || null,
+          message: enrolled.message,
+          choices: enrolled.choices || [],
+          authority: false,
+          execution_authorized: false,
+          next_action: 'answer_one_short_clarification',
+          blockers: enrolled.code ? [enrolled.code] : [],
+        };
+      }
+      if (enrolled.projectless) {
+        // Genuine projectless Cursor work still requires the finite two-file contract.
+        const record = { version: 1, instruction, clarify: true, authority: false,
+          intake_blockers: ['projectless_exact_two_file_syntax_required'],
+          presentation: { worker: 'cursor', files: [], measurable: false,
+            status: 'Cursor needs explicit bounded files and exact contents' } };
+        this.write(request_id, principal, record, 'clarify');
+        return this.statusView(this.read(request_id));
+      }
+      enrolledCursorScope = enrolled;
     }
     if (workSpec && workSpec.files.some(file => require('./assistant-intent').secret(file.content) ||
         require('./private-vault-intent').containsPrivate(file.content))) {
@@ -263,7 +337,11 @@ class ZeroSetupWork {
     }
     // A strictly validated data packet is bounded work, not conversational text.
     // The same secret/private-content and authenticated-session gates still apply.
-    const routed = workSpec ? { kind: 'work' } : require('./assistant-intent').parse(instruction);
+    // Enrolled Cursor prose that named an authorized project is bounded work even
+    // when the sentence does not start with a classic edit verb.
+    const routed = workSpec || enrolledCursorScope?.project
+      ? { kind: 'work' }
+      : require('./assistant-intent').parse(instruction);
     if (routed.kind === 'operator_control') {
       const record = { version: 1, instruction, routed: { kind: routed.kind }, clarify: false, authority: false, workspace: null };
       this.write(request_id, principal, record, 'clarify');
@@ -295,11 +373,19 @@ class ZeroSetupWork {
     const intent = workSpec ? { kind: 'general', objective: require('./projectless-sandbox').workPresentation(workSpec).goal }
       : parseExactFileIntent(instruction) || { kind: 'general', objective: instruction.trim() };
     const scope = workSpec ? { ok: true, ...require('./projectless-sandbox').allocate(), work_spec: workSpec }
-      : this.resolveScope(instruction, intent);
+      : (enrolledCursorScope || this.resolveScope(instruction, intent));
     if (!scope.ok) {
       const record = { version: 1, instruction, intent, clarify: scope, authority: false };
       this.write(request_id, principal, record, 'clarify');
-      return { state: 'CLARIFY', message: scope.message, choices: scope.choices, authority: false, next_action: 'answer_one_short_clarification' };
+      return {
+        state: 'CLARIFY',
+        code: scope.code || null,
+        message: scope.message,
+        choices: scope.choices,
+        authority: false,
+        next_action: 'answer_one_short_clarification',
+        blockers: scope.code ? [scope.code] : [],
+      };
     }
     if (scope.projectless) {
       const handoff = /^mcp:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(principal);
@@ -356,7 +442,34 @@ class ZeroSetupWork {
       : policies.length === 1 ? policies[0] : null;
     if (standing) {
       const files = this.bridge.developerAutonomy.routineFiles(standing, instruction, intent.file);
-      if (!files.length) return { state: 'CLARIFY', message: 'Name the exact repository file or files to change within this enrollment.', authority: false, execution_authorized: false, next_action: 'identify_files' };
+      if (!files.length) {
+        const wantsCursor = require('./projectless-sandbox').explicitlyRequestsCursor(instruction);
+        const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
+        if (wantsCursor && !cognitiveReady) {
+          const record = {
+            version: 1, instruction, intent, clarify: true, authority: false,
+            project_id: standing.project_id, project_name: project.name, workspace,
+            intake_blockers: ['standing_cognitive_enrollment_required'],
+            presentation: {
+              worker: 'cursor', files: [], measurable: false, project_name: project.name,
+              workspace_label: readablePath(workspace),
+              status: 'Standing enrollment needs cognitive discovery files before Cursor planning',
+            },
+          };
+          this.write(request_id, principal, record, 'clarify');
+          return {
+            state: 'CLARIFY',
+            code: 'standing_cognitive_enrollment_required',
+            message: 'Project ' + project.name + ' is authorized, but Cursor planning needs a standing Developer Autonomy enrollment with cognitive discovery files. Enroll once from Control Center → Developer Autonomy for this repository, then retry the same request. Do not use the projectless two-file fixture syntax for enrolled work.',
+            blockers: ['standing_cognitive_enrollment_required'],
+            authority: false,
+            execution_authorized: false,
+            next_action: 'enroll_developer_autonomy_cognitive_for_repository',
+            presentation: record.presentation,
+          };
+        }
+        return { state: 'CLARIFY', message: 'Name the exact repository file or files to change within this enrollment.', authority: false, execution_authorized: false, next_action: 'identify_files' };
+      }
       const record = {
         version: 1, instruction, intent, project_id: standing.project_id, goal_id: standing.goal_id,
         project_name: project.name, workspace, developer_autonomy_policy_id: standing.policy_id,
@@ -383,12 +496,29 @@ class ZeroSetupWork {
     let proposal = null;
     if (!existing) {
       if (!intent.file) {
+        const wantsCursor = require('./projectless-sandbox').explicitlyRequestsCursor(instruction);
+        const record = {
+          version: 1, instruction, intent, clarify: true, authority: false,
+          project_id: project.projectId, project_name: project.name, workspace,
+          intake_blockers: ['ENROLLED_WORKSPACE_REQUIRED'],
+          presentation: {
+            worker: wantsCursor ? 'cursor' : 'Local OpenCode',
+            files: [], measurable: false, project_name: project.name,
+            workspace_label: readablePath(workspace),
+            status: 'Standing Developer Autonomy enrollment required',
+          },
+        };
+        this.write(request_id, principal, record, 'clarify');
         return {
           state: 'CLARIFY',
-          message: 'Which exact file should change in ' + project.name + '?',
+          code: 'ENROLLED_WORKSPACE_REQUIRED',
+          message: 'Project ' + project.name + ' was recognized at ' + readablePath(workspace) + ', but there is no active standing Developer Autonomy enrollment for that repository. Enroll once from Control Center → Developer Autonomy (include cognitive discovery files when Cursor planning is required), then retry. Do not use the projectless two-file fixture syntax for enrolled work.',
+          blockers: ['ENROLLED_WORKSPACE_REQUIRED'],
           choices: [{ project_name: project.name, workspace_label: readablePath(workspace) }],
           authority: false,
-          next_action: 'answer_one_short_clarification',
+          execution_authorized: false,
+          next_action: 'enroll_developer_autonomy_for_repository',
+          presentation: record.presentation,
         };
       }
       proposal = {
@@ -504,8 +634,16 @@ class ZeroSetupWork {
     if (unboundedProjectless) presentation.status = 'Needs bounded file scope and verification';
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
-      message: live.intake_blockers
+      message: live.intake_blockers?.includes('projectless_exact_two_file_syntax_required')
         ? 'Use Cursor only in a new disposable workspace to create exactly two files: then list each relative path and a JSON-quoted exact content string. Encode newlines as \\n. Unsupported or additional constraints require a new bounded request; approval cannot supply missing scope.'
+        : live.intake_blockers?.includes('ENROLLED_WORKSPACE_REQUIRED')
+        ? ('Project ' + (live.project_name || 'named') + ' was recognized, but standing Developer Autonomy enrollment is required before Mission preparation. Do not use the projectless two-file fixture syntax for enrolled work.')
+        : live.intake_blockers?.includes('standing_cognitive_enrollment_required')
+        ? ('Project ' + (live.project_name || 'named') + ' is authorized. Cursor planning needs cognitive discovery files on the standing enrollment. Do not use the projectless two-file fixture syntax.')
+        : live.intake_blockers?.includes('ENROLLED_REPOSITORY_AMBIGUOUS')
+        ? 'Multiple authorized repositories match that request. Choose one enrolled project or repository.'
+        : live.intake_blockers?.length
+        ? (live.presentation?.status || live.intake_blockers.join(', '))
         : state === 'awaiting_approval'
         ? unboundedProjectless
           ? 'Prepared a task-scoped sandbox. No registered Project was selected. This request has no executable file scope or measurable success criteria; approval alone cannot start it. Provide bounded exact-result files, or name an authorized repository and its exact files. Autopilot and automatic Acceptance do not supply missing scope.'

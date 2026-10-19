@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Enrolled-project Cursor requests such as “Start the Arecibo release-readiness audit in Cursor” resolve the authorized repository instead of the projectless exact two-file fixture grammar. Ambiguous repositories, missing standing enrollment, and missing cognitive discovery files return precise gates. Destination phrases (`in Cursor`, `using Cursor`) are explicit worker selection. Projectless two-file intake remains for genuine projectless work only ([docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md](docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md), [docs/PROJECTLESS-WORK-V1.md](docs/PROJECTLESS-WORK-V1.md), [docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md)).
+
 ### Added
 - Record Milestone B.3 live acceptance: one operator-origin Cursor Mission planned, executed, returned to OpenCode, passed host exact-byte verification, and settled ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
 - Document the Milestone B.1 live Cursor closeout: exact bytes passed host checks, and OpenCode evaluation did not complete, so Acceptance remains blocked ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).

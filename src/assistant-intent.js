@@ -42,6 +42,13 @@ function isWorkRequest(request) {
   if(/^(?:what|why|how|when|where|who|which|explain|discuss|describe|tell me about|is there|are there|do you (?:know|think)|can we talk|let'?s (?:talk|discuss|brainstorm))\b/i.test(request))return false;
   return true;
  }
+ // Enrolled-project development: "Start the Arecibo release-readiness audit in Cursor".
+ // Still conversation when the sentence is a how-to question.
+ if(/\b(?:start|continue|begin|resume|prepare|review|inspect)\b/i.test(request)
+   &&/\b(?:cursor|opencode|mission|worktree|repository|repo|release[- ]readiness|command center|pull request|pr|documentation|deploy(?:ment)? blockers?)\b/i.test(request)){
+  if(/^(?:what|why|how|when|where|who|which|explain|discuss|describe|tell me about|is there|are there|do you (?:know|think)|can we talk|let'?s (?:talk|discuss|brainstorm))\b/i.test(request))return false;
+  return true;
+ }
  return false;
 }
 function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} = {}) {
