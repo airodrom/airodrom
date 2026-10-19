@@ -1,7 +1,7 @@
 ## Unreleased
 
 ### Fixed
-- A blocked Mission whose local OpenCode evaluation timed out releases its quarantined workspace lease after the evaluator process is confirmed gone. The Mission stays blocked and is not accepted.
+- A blocked Mission whose local OpenCode evaluation timed out, including one left interrupted by service shutdown, releases its quarantined workspace lease after the evaluator process is confirmed gone. The Mission stays blocked and is not accepted.
 - A v3 Cursor Mission wall clock reserves host verification and local OpenCode evaluation after the paid Cursor window. The subscription grant still caps Cursor runtime at the enrolled execution limit.
 - A governed Cursor specialist Mission is not rejected by the standing OpenCode-only risk auto Acceptance preference. Specialist completion remains on the gateway path.
 
