@@ -64,7 +64,10 @@ function assertRoot(bridge, m) {
       c.proposal.tasks.some(t => !['cursor','opencode'].includes(t.worker))) fail('gateway_worker_authority_changed');
   if (['cancelled','completed','blocked','needs_rework'].includes(m.state)) fail('gateway_parent_stopped');
   const p=program(bridge,m);
-  if (!['prepared','running','waiting_acceptance'].includes(p.state) || bridge.controlStore.now() >= Math.min(p.expires_at,deadline(m))) fail('gateway_program_stopped');
+  // Acceptance of already verified work may finish after the execution wall.
+  // The program enrolment expiry still applies. This does not extend Cursor.
+  const limit = m.state === 'awaiting_acceptance' ? p.expires_at : Math.min(p.expires_at, deadline(m));
+  if (!['prepared','running','waiting_acceptance'].includes(p.state) || bridge.controlStore.now() >= limit) fail('gateway_program_stopped');
 }
 function active(bridge, m, taskId = m.task_id) {
   const matches = nodes(bridge,m).flatMap(n => n.attempts.filter(a => a.task_id === taskId).map(a => ({ node:n, attempt:a, assignment:n.assignment })));
@@ -135,9 +138,11 @@ function started(bridge,m,taskId,runId) {
   const a=active(bridge,m,taskId); a.attempt.run_id=runId; save(bridge,m,a.node,'running');
 }
 function isEvaluating(bridge,m,worker) {
-  if (!enabled(m) || !['running','verifying'].includes(m.state)) return false;
-  assertRoot(bridge,m);
+  if (!enabled(m)) return false;
   const a=active(bridge,m,worker.task_id);
+  const continuation = require('./opencode-gateway').evaluationContinuation(m, a.attempt);
+  if (!continuation && !['running','verifying'].includes(m.state)) return false;
+  if (!continuation) assertRoot(bridge,m);
   return a.node.state==='evaluating' && a.attempt.run_id===worker.id && m.task_id===worker.task_id;
 }
 function historyDigest(history,currentRun) {
@@ -215,15 +220,24 @@ function inspect(bridge,m) {
     lifecycle:lifecycleView(bridge,m),authority:false};
 }
 const localEvalRetries = new Set();
+const readinessWaits = new Map();
 async function retryPreStartEvaluation(service, m) {
-  if (localEvalRetries.has(m.id)) return false;
+  if (!m || localEvalRetries.has(m.id)) return false;
   const runs = service.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(m.id);
   const cursor = service.db.prepare("SELECT 1 ok FROM cp_runs WHERE mission_id=? AND agent_id='cursor' AND state='completed' AND termination_verified=1").get(m.id);
   const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length === 1);
   const attempt = node?.attempts[0];
   if (!cursor || !require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
   const ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
-  if (!ready.ready) return false;
+  if (!ready.ready) {
+    const waits = readinessWaits.get(m.id) || 0;
+    if (waits >= 15) return false;
+    readinessWaits.set(m.id, waits + 1);
+    setTimeout(() => {
+      retryPreStartEvaluation(service, service.store.getMission(m.id)).catch(() => {});
+    }, 2000);
+    return false;
+  }
   localEvalRetries.add(m.id);
   const worker = service.store.run(attempt.run_id);
   try {
@@ -443,7 +457,14 @@ function autoAccept(bridge,id) {
   assertRoot(bridge,m);
   if(store.decisions(id).some(d=>d.state==='waiting_for_operator'))return{accepted:false,reason:'waiting_decision'};
   if(bridge.policy.list().some(a=>a.status==='pending'&&store.missionForTask(a.taskId)?.id===id))return{accepted:false,reason:'pending_protected_action'};
-  bridge.missions.assertAuthority(m);
+  try { bridge.missions.assertAuthority(m); }
+  catch (error) {
+    // The execution grant can expire while a never-started local evaluation
+    // finishes. Acceptance still requires host verification and a ready receipt.
+    // Revocation and scope mismatch stay closed. This does not dispatch Cursor.
+    if (m.state !== 'awaiting_acceptance' || !['approval_expired', 'subscription_expired'].includes(error.message)) throw error;
+    bridge.missionApprovals.assertLocalEvaluation(m);
+  }
   if(db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','dispatching','running','unknown')").get(id)||db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND state IN ('held','quarantined')").get(m.envelope.workspace))return{accepted:false,reason:'execution_not_settled'};
   const v=db.prepare('SELECT * FROM cp_verifications WHERE mission_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id);
   if(!v||v.result!=='passed'||v.revision!==m.revision||JSON.parse(v.evidence).some(c=>c.status!=='passed'))return{accepted:false,reason:'host_verification_required'};

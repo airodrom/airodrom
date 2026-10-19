@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { createHash, randomUUID } = require('node:crypto');
 const { containsSecret } = require('../src/personal-memory');
 const { sourceContextSensitive, specialistReturnSafetyView, classifyProcessFailure } = require('../src/opencode-adapter');
-const { parseEvaluation, evaluationAllowanceMs, preStartEvaluationRetryable } = require('../src/opencode-gateway');
+const { parseEvaluation, evaluationAllowanceMs, localEvaluationTimeoutMs, evaluationContinuation, preStartEvaluationRetryable } = require('../src/opencode-gateway');
 const { canonicalHash } = require('../src/authority-hash');
 
 function luhnDigest() {
@@ -149,4 +149,16 @@ test('OpenCode evaluation keeps its own allowance after the Cursor window', () =
   assert.equal(evaluationAllowanceMs(mission, 240000), 120000);
   assert.equal(evaluationAllowanceMs(mission, 0), 120000);
   assert.throws(() => evaluationAllowanceMs(mission, 359995), /gateway_evaluation_deadline/);
+  const expired = {
+    state: 'blocked',
+    reason: 'EVALUATION_UNAVAILABLE: opencode_unavailable_or_unsupported',
+    created_at: 0,
+    envelope: mission.envelope
+  };
+  const attempt = { verification: { status: 'passed' } };
+  assert.equal(evaluationContinuation(expired, attempt), true);
+  assert.equal(evaluationContinuation({ ...expired, reason: 'EVALUATION_UNAVAILABLE: opencode_sensitive_context' }, attempt), false);
+  assert.equal(evaluationContinuation(expired, { ...attempt, evaluation_run_id: 'done' }), false);
+  assert.equal(localEvaluationTimeoutMs(expired, 999999, true), 120000);
+  assert.throws(() => localEvaluationTimeoutMs(expired, 999999, false), /gateway_evaluation_deadline/);
 });

@@ -193,6 +193,21 @@ class MissionApprovals {
     return r;
   }
 
+  /** Local OpenCode evaluation of an already settled invocation. Expired is allowed. Revoked is not. */
+  assertLocalEvaluation(mission) {
+    const contract = mission?.envelope?.contract;
+    const approvalId = mission?.envelope?.approval_id;
+    if (!approvalId || !contract) throw Error('approval_unavailable');
+    const r = this.row(approvalId);
+    if (!r) throw Error('approval_unavailable');
+    if (r.state === 'revoked') throw Error('approval_revoked');
+    if (r.scope_fingerprint !== contract.scope_fingerprint) throw Error('approval_scope_mismatch');
+    if (r.permissions_digest !== MissionApprovals.permissionsDigest(contract)) throw Error('approval_scope_mismatch');
+    if (mission.envelope.workspace && r.workspace !== mission.envelope.workspace) throw Error('approval_scope_mismatch');
+    if (contract.permissions?.external_disclosure?.authorized && !r.external_disclosure) throw Error('external_disclosure_unauthorized');
+    return r;
+  }
+
   /** Dispatch-time check: active, unexpired, same fingerprint. Running work is not interrupted here. */
   assertDispatch(mission) {
     const approvalId = mission.envelope.approval_id;
