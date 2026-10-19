@@ -221,6 +221,15 @@ function inspect(bridge,m) {
 }
 const localEvalRetries = new Set();
 const readinessWaits = new Map();
+function deferEvaluationRetry(service, m) {
+  const waits = readinessWaits.get(m.id) || 0;
+  if (waits >= 15) return false;
+  readinessWaits.set(m.id, waits + 1);
+  setTimeout(() => {
+    retryPreStartEvaluation(service, service.store.getMission(m.id)).catch(() => {});
+  }, 2000);
+  return false;
+}
 async function retryPreStartEvaluation(service, m) {
   if (!m || localEvalRetries.has(m.id)) return false;
   const runs = service.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(m.id);
@@ -237,15 +246,10 @@ async function retryPreStartEvaluation(service, m) {
     ready = await service.bridge.opencodeAdapter.readiness();
     if (!ready.ready) ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
   } catch { ready = { ready: false }; }
-  if (!ready.ready) {
-    const waits = readinessWaits.get(m.id) || 0;
-    if (waits >= 15) return false;
-    readinessWaits.set(m.id, waits + 1);
-    setTimeout(() => {
-      retryPreStartEvaluation(service, service.store.getMission(m.id)).catch(() => {});
-    }, 2000);
-    return false;
-  }
+  if (!ready.ready) return deferEvaluationRetry(service, m);
+  // recover() runs while admission is still closed. Starting the evaluator
+  // then rolls back. Wait until the service is open; this is not a new Cursor run.
+  if (service.bridge.lifecycle && service.bridge.lifecycle.state() !== 'open') return deferEvaluationRetry(service, m);
   localEvalRetries.add(m.id);
   const worker = service.store.run(attempt.run_id);
   try {
@@ -270,7 +274,9 @@ async function retryPreStartEvaluation(service, m) {
   } catch (error) {
     const latest = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
     if (latest) save(service.bridge, m, latest, 'unavailable');
-    try { service.store.event('gateway.evaluation_retry_failed', m.id, { code: String(error.code || error.message).slice(0, 120), authority: false }); } catch { /* The Mission stays blocked either way. */ }
+    const code = String(error.code || error.message);
+    if (code.includes('Service admission is closed')) return deferEvaluationRetry(service, m);
+    try { service.store.event('gateway.evaluation_retry_failed', m.id, { code: code.slice(0, 120), authority: false }); } catch { /* The Mission stays blocked either way. */ }
     return false;
   } finally {
     localEvalRetries.delete(m.id);
