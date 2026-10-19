@@ -55,6 +55,29 @@ Evaluation JSON may be wrapped in prose or a Markdown fence; the host extracts o
 
 A fresh typed ChatGPT-origin request (new request id) is required to mark genuine remote Acceptance complete. Host-resumed MCP traffic is not equivalent.
 
+## Host-side Acceptance (proven; not ChatGPT-origin)
+
+Request `chatgpt_handoff_host_worktree_20261018_v11` / Mission `15413223-8404-4801-b6b1-c112ceb7903b` on installed `5ff3b68…`:
+
+- OpenCode planning and execution completed; OpenCode evaluation completed.
+- Host verification `passed` (exact bytes `4149524f44524f4d2d434841544750542d48414e444f46462d504153530a`).
+- Worker termination verified; leases released; automatic Acceptance recorded; Mission `completed` / settled.
+- Origin was an authenticated host MCP session reusing the ChatGPT caller principal — **not** a new typed ChatGPT-origin call.
+
+## Milestone A — remaining authentic remote step
+
+Standing delegation `chatgpt-handoff` (`f32fb28b-…`, caller `mcp:c95b0dba-…`, OpenCode only, file `recovery-proof.txt`) remains **active** until `2026-10-20T00:19:19.917Z`. Concurrent worktree occupancy for that policy is **0 / 4**. Enrolled repository tip still holds `PENDING\n`.
+
+Do **not** reuse request ids `chatgpt_handoff_remote_20261018_v2`–`v8` or any prior `host_worktree` id. Suggested next remote id: `chatgpt_handoff_remote_20261018_v9`.
+
+Exact ChatGPT instruction (typed in ChatGPT against the live Airodrom MCP connector):
+
+```text
+Using the chatgpt-handoff enrollment and OpenCode only, set recovery-proof.txt to exactly AIRODROM-CHATGPT-HANDOFF-PASS followed by a single LF newline (hex 4149524f44524f4d2d434841544750542d48414e444f46462d504153530a). Do not change any other file. Request id: chatgpt_handoff_remote_20261018_v9.
+```
+
+Success criteria after that call: planning → OpenCode execution → OpenCode evaluation → host exact-byte pass → automatic Acceptance → durable settlement, with evidence retrievable via `get_mission_evidence` for the new Mission id.
+
 ## Diagnostics for future mismatches
 
 1. Compare worktree realpath and sealed `workspace_id`.
