@@ -159,6 +159,14 @@ async function prepare(zero, { instruction, request_id }, principal) {
     cognitive: { version: p.cognitive.version, planning_attempts: 0 }, blockers: [], authority: false };
   // Reserve before the first await. Concurrent replay cannot allocate a second planner.
   zero.write(request_id, principal, record, 'planning');
+  setImmediate(() => { executeReserved(zero, record, p, instruction).catch(() => {}); });
+  // The reserved row is the acknowledgement. OpenCode planning continues on
+  // the host; the same request id is the only recovery handle.
+  return view(zero.read(request_id), b);
+}
+
+async function executeReserved(zero, record, p, instruction) {
+  const b = zero.bridge, request_id = record.request_id;
   try {
     assertDelegation(b, record);
     const requested = requestedWorker(instruction);
@@ -168,7 +176,7 @@ async function prepare(zero, { instruction, request_id }, principal) {
     record.workspace = ws.path;
     b.developerAutonomy.assertVerifiers(p, ws.path, p.cognitive.files);
     const captured = integrity.capture(ws.path, p.cognitive.files);
-    const envelope = C.parse('RequestEnvelope', C.seal({ version: p.cognitive.version, request_id, caller: principal,
+    const envelope = C.parse('RequestEnvelope', C.seal({ version: p.cognitive.version, request_id, caller: record.principal,
       delegation: { policy_id: p.policy_id, policy_hash: p.policy_hash }, repository_id: p.project_id + ':' + p.policy_id,
       workspace_id: ws.workspace_id, git_anchor: captured.head, integrity: captured.integrity,
       permitted_paths: [...p.cognitive.files].sort(), denied_paths: [...DEFAULT_DENIED_PATHS], operations: requested === 'host' || /\bread[- ]only\b|\bdo not (?:edit|modify|write)\b/i.test(instruction) ? ['read'] : ['read', 'edit'],
@@ -181,7 +189,7 @@ async function prepare(zero, { instruction, request_id }, principal) {
     while (record.cognitive.planning_attempts < envelope.limits.planning_attempts) {
       assertDelegation(b, record); integrity.assertCurrent(ws.path, envelope, captured.workspace_identity);
       record.cognitive.planning_attempts++;
-      zero.write(request_id, principal, record, 'planning');
+      zero.write(request_id, record.principal, record, 'planning');
       const template = { version: envelope.version, request_id, envelope_hash: envelope.hash, files: envelope.permitted_paths,
         tasks: [{ id: 'change', operation: envelope.operations.includes('edit') ? 'edit' : 'read', paths: envelope.permitted_paths, description: 'Describe the requested work grounded in the supplied files', depends_on: [] }], verification: envelope.verification, complexity: 'bounded' };
       if (envelope.version === 3) Object.assign(template.tasks[0], { worker: requested === 'auto' ? 'opencode' : requested, role: envelope.operations.includes('edit') ? 'implementation' : 'analysis', verification: [] });
@@ -207,7 +215,7 @@ async function prepare(zero, { instruction, request_id }, principal) {
         success_criteria: envelope.verification, status: 'Scoped local owner disclosure and subscription grant required' };
       // No DA grant is converted into external authority. The existing operator
       // approval endpoint supplies an exact, finite subscription grant separately.
-      zero.write(request_id, principal, record, 'awaiting_approval');
+      zero.write(request_id, record.principal, record, 'awaiting_approval');
       return view(record, b);
     }
     assertDelegation(b, record); integrity.assertCurrent(ws.path, envelope, captured.workspace_identity);
@@ -215,17 +223,17 @@ async function prepare(zero, { instruction, request_id }, principal) {
       objective: instruction, allowed_files: [...proposal.files].sort(), workflow: 'routine_edit', repair_budget: envelope.limits.repair_attempts, prefer_disposable: true,
       ...(envelope.version === 3 ? { criteria: [{ id: 'registered-checks', type: 'registered_checks', description: 'All enrolled host checks and the sealed specialist graph complete successfully' }] } : {}) }, 'operator');
     record.cognitive.grant_id = prepared.grant.grant_id;
-    record.state = 'sealed'; zero.write(request_id, principal, record, 'sealed');
+    record.state = 'sealed'; zero.write(request_id, record.principal, record, 'sealed');
     const narrowed = worker === 'host' ? readScope(prepared.mission_input, record) : prepared.mission_input;
     delete narrowed.workers;
     const mission = b.missions.create({ ...narrowed, constraints: planConstraints(proposal), cognitive_request_id: request_id }, 'operator');
-    record.mission_id = mission.id; record.state = 'approved'; zero.write(request_id, principal, record, 'approved');
+    record.mission_id = mission.id; record.state = 'approved'; zero.write(request_id, record.principal, record, 'approved');
     b.missions.dispatch(mission.id, { request_id: 'cognitive-dispatch:' + request_id });
-    return view(record, b);
+    return view(zero.read(request_id), b);
   } catch (error) {
     if (zero.read(request_id)?.state === 'rejected') return view(zero.read(request_id), b);
     record.state = 'blocked'; record.blockers = [String(error.code || error.message).slice(0, 300)];
-    zero.write(request_id, principal, record, 'blocked');
+    zero.write(request_id, record.principal, record, 'blocked');
     return view(record, b);
   }
 }

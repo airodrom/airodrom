@@ -18,11 +18,11 @@ async function setup(t,{cursor=false,repairs=2,manual=false}={}) {
   if(o.coordination){f.evaluations.push(o.coordination);assert.deepEqual(o.writable,[]);return{result:{summary:JSON.stringify(await f.evaluate(o))},changes:[],provenance:{runtime_id:'opencode',sandbox:'fixture',termination_verified:true,authority:false}};}
   f.calls.push({files:o.files,writable:o.writable,input:JSON.parse(o.objective)});return f.worker(o.writable.length?o:{...o,objective:'Inspect current files without changes',objectiveProof:null});
  };};f.bindAdapter();
- f.ask=()=>b.zeroSetupWork.ask({request_id:randomUUID(),instruction:'In Fixture project change fixture.txt from alpha to beta and independently review it.'},'operator');
+ f.ask=async()=>{const request_id=randomUUID(),instruction='In Fixture project change fixture.txt from alpha to beta and independently review it.';let view=await b.zeroSetupWork.ask({request_id,instruction},'operator');for(let i=0;i<200&&view.state==='PLANNING';i++){await new Promise(r=>setTimeout(r,20));view=await b.zeroSetupWork.ask({request_id,instruction},'operator');}return view;};
  return f;
 }
 test('specialist graph returns each result to OpenCode and automatically accepts after final host checks',async t=>{
- const f=await setup(t),p=await f.ask();assert.equal(p.state,'DISPATCHED',JSON.stringify(p));
+ const f=await setup(t),p=await f.ask();assert.ok(p.mission_id&&['DISPATCHED','RUNNING'].includes(p.state),JSON.stringify(p));
  const m=await f.settle(p.mission_id,'completed');assert.equal(m.specialists.assignments.length,2);assert.ok(m.specialists.assignments.every(a=>a.state==='ready'));
  assert.equal(f.calls.length,2);assert.deepEqual(f.calls[1].writable,[]);assert.equal(f.evaluations.length,2);
  assert.equal(f.evaluations[0].specialist_return.assignment.id,'implement');assert.equal(f.evaluations[1].specialist_return.assignment.id,'review');assert.equal(f.evaluations[1].specialist_return.prior_results.length,1);
