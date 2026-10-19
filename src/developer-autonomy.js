@@ -359,6 +359,28 @@ class DeveloperAutonomy {
     });
   }
 
+  // Concurrent worktree budget covers active preparation and unsettled execution.
+  // Settled, idle clones may remain on disk as evidence; they must not block a
+  // later Mission when max_worktrees is a concurrent ceiling.
+  workspaceOccupiesBudget(row) {
+    if (!row || !['ready', 'bound', 'held', 'invalid'].includes(row.state)) return false;
+    if (row.state === 'ready' || row.state === 'invalid') return true;
+    const missions = this.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.workspace')=?")
+      .all(row.path).map(item => this.bridge.controlStore.requireMission(item.id));
+    if (!this.workspaceIdle(row.path)) return true;
+    if (missions.length) return !this.lineageSettled(missions);
+    if (row.grant_id) {
+      const grant = this.db.prepare('SELECT state FROM cp_developer_autonomy_grants WHERE grant_id=?').get(row.grant_id);
+      return !grant || grant.state === 'active';
+    }
+    return true;
+  }
+
+  occupiedWorktrees(policyId) {
+    return this.db.prepare("SELECT * FROM cp_developer_autonomy_workspaces WHERE policy_id=? AND state IN ('ready','bound','held','invalid')")
+      .all(policyId).filter(row => this.workspaceOccupiesBudget(row)).length;
+  }
+
   reservations(policyId) {
     let count = 0;
     for (const row of this.db.prepare('SELECT * FROM cp_developer_autonomy_grants WHERE policy_id=?').all(policyId)) {
@@ -680,9 +702,7 @@ class DeveloperAutonomy {
     const objectRoot = fs.realpathSync(path.resolve(policy.repository, git(policy.repository, ['rev-parse', '--git-path', 'objects'])));
     const tracked = git(policy.repository, ['ls-tree', '-rl', 'HEAD']).split('\n').reduce((sum, line) => sum + (Number(line.split(/\s+/)[3]) || 0), 0);
     this.assertDiskBudget(policy, tracked + diskBytes(objectRoot) + 1024 * 1024);
-    const open = this.db.prepare("SELECT count(*) n FROM cp_developer_autonomy_workspaces WHERE policy_id=? AND state IN ('ready','bound','held','invalid')")
-      .get(policy.policy_id).n;
-    if (open >= policy.budgets.max_worktrees) throw Error('Worktree budget exhausted');
+    if (this.occupiedWorktrees(policy.policy_id) >= policy.budgets.max_worktrees) throw Error('Worktree budget exhausted');
 
     const dirty = workspaceDirty(policy.repository);
     const forceDisposable = input.prefer_disposable === true || dirty.length > 0;
