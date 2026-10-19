@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- Developer Autonomy can enroll Cursor when the governed sandboxed worker is qualified. The separate no-tools bounded-worker qualification remains denied.
+
+### Fixed
 - Mission intake no longer treats prose words such as authorization, session, or cookie as credentials, and recognizes “Use OpenCode / Use Cursor to change &lt;file&gt;” as bounded work instead of conversation ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
 
 ### Added

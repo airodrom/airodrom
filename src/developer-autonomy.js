@@ -38,6 +38,14 @@ const BRANCH = /^[A-Za-z0-9._\/-]{1,120}$/;
 
 const AUXILIARY_TEST = /^(?:tests?|__tests__)\/.+\.(?:ts|tsx|js|jsx|cjs|mjs)$/;
 
+function externalWorkerEligible(bridge, workerId) {
+  if (process.env.NODE_ENV === 'test' && bridge.options?.allowFixtureWorker) return true;
+  if (workerId === 'cursor') {
+    const ready = bridge.cursorWorker?.lastReadiness;
+    return ready?.governed_worker === true && ready?.ready === true && ready?.tiers?.qualified === true;
+  }
+  return !!bridge.workers?.current?.(workerId)?.qualified;
+}
 function auxiliaryApplicationTest(name) {
   return typeof name === 'string' && AUXILIARY_TEST.test(name) && !/(^|\/)(credentials|secrets)(\/|$)/.test(name);
 }
@@ -487,9 +495,10 @@ class DeveloperAutonomy {
     }
     if (workers.some(w => w !== 'opencode')) {
       // External workers remain admission-gated at dispatch; enrollment only permits consideration.
+      // Cursor's generic bounded-worker qualification is a separate no-tools path and stays denied.
+      // Specialist enrollment uses the governed sandboxed Cursor worker readiness instead.
       for (const w of workers.filter(x => x !== 'opencode')) {
-        const q = this.bridge.workers?.current?.(w);
-        if (!q?.qualified && !(process.env.NODE_ENV === 'test' && this.bridge.options.allowFixtureWorker)) {
+        if (!externalWorkerEligible(this.bridge, w)) {
           throw Error('External worker ' + w + ' is not independently qualified');
         }
       }
@@ -1382,4 +1391,4 @@ class DeveloperAutonomy {
   }
 }
 
-module.exports = { DeveloperAutonomy, WORKFLOWS, NEVER_AUTO, DEFAULT_BUDGETS, auxiliaryApplicationTest };
+module.exports = { DeveloperAutonomy, WORKFLOWS, NEVER_AUTO, DEFAULT_BUDGETS, auxiliaryApplicationTest, externalWorkerEligible };
