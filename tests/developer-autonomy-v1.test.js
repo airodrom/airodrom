@@ -506,9 +506,39 @@ test('repair keeps grant lineage and rejects zero budget and revocation', async 
   const input = repair.repairInput(failed,{objective:'Bounded correction'},{request_id:randomUUID()});
   assert.deepEqual(input.developer_autonomy,failed.envelope.developer_autonomy);
   assert.throws(()=>b.missions.create({...input,developer_autonomy:undefined},'operator'),/retain.*grant/);
-  assert.throws(()=>b.missions.create(input,'operator'),/repair budget/);
+  assert.throws(()=>b.missions.create(input,'operator'),/repair budget|expired|revoked|changed/);
   da.revoke({policy_id:policy.policy_id,policy_hash:policy.policy_hash,confirmed:true},'operator');
   assert.throws(()=>b.missions.create(input,'operator'),/revoked|expired|changed/);
+});
+
+test('zero-repair needs_rework consumes the concurrent reservation', async t => {
+  const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
+  const policy = da.enroll({...f.enrollInput, workflows:['routine_edit','test'], budgets:{...f.enrollInput.budgets,max_repairs:0,max_concurrent_missions:1}}, 'operator');
+  const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:0,
+    criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
+  const m = b.missions.create(first.mission_input, 'operator');
+  b.missions.dispatch(m.id, {request_id:randomUUID()});
+  await f.settle(m.id, 'needs_rework');
+  assert.equal(da.reservations(policy.policy_id), 0);
+  assert.equal(da.inspectGrant(first.grant.grant_id).state, 'consumed');
+  const second = routine(da, policy, {objective:'Second Mission after terminal verification failure'});
+  assert.ok(second.grant.grant_id);
+  assert.notEqual(second.grant.grant_id, first.grant.grant_id);
+  const next = b.missions.create(second.mission_input, 'operator');
+  b.missions.cancel(next.id, {request_id:randomUUID()});
+});
+
+test('needs_rework with remaining repair budget keeps the concurrent reservation', async t => {
+  const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
+  const policy = da.enroll(f.enrollInput, 'operator');
+  const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:1,
+    criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
+  const m = b.missions.create(first.mission_input, 'operator');
+  b.missions.dispatch(m.id, {request_id:randomUUID()});
+  await f.settle(m.id, 'needs_rework');
+  assert.equal(da.reservations(policy.policy_id), 1);
+  assert.equal(da.inspectGrant(first.grant.grant_id).state, 'active');
+  assert.throws(() => routine(da, policy, {objective:'Second Mission while repair remains'}), /Concurrent Mission budget/);
 });
 
 test('explicitly named enrolled requests retain the full instruction beyond the plan display limit', async t => {
