@@ -278,6 +278,16 @@ async function processResult(service,row) {
       }else verification=stage;
       a.attempt.verification=verification;save(b,m,a.node,'evaluating');
     }
+    // Host already proved an edit assignment wrote nothing. Skip OpenCode evaluation:
+    // worker claims remain untrusted, verification evidence stays on the attempt, and
+    // settlement must not depend on evaluator JSON for an empty mutation.
+    if(verification.status==='failed'&&a.assignment.operation==='edit'&&!(run.result?.artifacts||[]).length){
+      save(b,m,a.node,'failed');
+      if(['running','verifying'].includes(store.requireMission(m.id).state)){
+        store.state(m.id,'needs_rework','Host verification failed: edit assignment produced no host-observed file changes');
+      }
+      finishResult(service,run);service.schedule();return true;
+    }
     const gateway=require('./opencode-gateway');
     const evaluation=await gateway.evaluate(b,store.requireMission(m.id),run,verification);
     assertRoot(b,store.requireMission(m.id));
@@ -304,8 +314,18 @@ async function processResult(service,row) {
       finishResult(service,run);
     }
   }catch(error){
-    save(b,m,a.node,'unavailable');
-    if(['running','verifying','awaiting_acceptance'].includes(store.requireMission(m.id).state))store.state(m.id,'blocked','EVALUATION_UNAVAILABLE: '+String(error.code||error.message).slice(0,160));
+    const detail=String(error.code||error.message).slice(0,160);
+    const current=store.requireMission(m.id);
+    // Host verification already failed: keep that evidence as needs_rework.
+    // Masking it as EVALUATION_UNAVAILABLE blocks durable settlement diagnostics
+    // and erases the distinction between empty worker writes and evaluator JSON.
+    if(verification&&verification.status==='failed'&&['running','verifying'].includes(current.state)){
+      save(b,m,a.node,'failed');
+      store.state(m.id,'needs_rework','Host verification failed; evaluation unavailable: '+detail);
+    }else{
+      save(b,m,a.node,'unavailable');
+      if(['running','verifying','awaiting_acceptance'].includes(current.state))store.state(m.id,'blocked','EVALUATION_UNAVAILABLE: '+detail);
+    }
     finishResult(service,run);
   }finally{store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
   if(final&&store.requireMission(m.id).state==='awaiting_acceptance')autoAccept(b,m.id);

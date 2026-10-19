@@ -4,6 +4,7 @@
 - Live Execution Monitor V1: active Missions open a three-column real-time activity UI on Observatory SSE/ledger; Cursor stream-json tool events project into Observatory STAGES mid-run; snapshot v2 counters distinguish real-time vs post-execution telemetry ([docs/LIVE-EXECUTION-MONITOR-V1.md](docs/LIVE-EXECUTION-MONITOR-V1.md)).
 
 ### Fixed
+- Keep specialist settlement honest when host verification already failed: extract embedded OpenCode evaluator JSON, skip evaluation after empty edit mutations, and record `needs_rework` instead of masking the failure as `EVALUATION_UNAVAILABLE` ([docs/CHATGPT-HANDOFF-V8-VERIFICATION.md](docs/CHATGPT-HANDOFF-V8-VERIFICATION.md)).
 - Keep identity reads from materializing the full event ledger, and reconcile a dead in-process writer without treating the interrupted run as successful ([docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](docs/OPERATIONAL-RECOVERY-LIFECYCLE-V1.md)).
 - Return a reserved Cognitive Router request when OpenCode planning starts, so an MCP client can poll the same request id instead of waiting for the whole Mission ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md)).
 - Release Developer Autonomy concurrent capacity when a Mission ends in `needs_rework` or `blocked` and no further repair can be authorized ([docs/DEVELOPER-AUTONOMY-V1.md](docs/DEVELOPER-AUTONOMY-V1.md)).

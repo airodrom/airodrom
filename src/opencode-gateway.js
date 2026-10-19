@@ -16,9 +16,21 @@ function receipt(bridge, missionId, workerId) {
   const rows = bridge.controlStore.db.prepare('SELECT id FROM cp_runs WHERE mission_id=? ORDER BY created_at DESC').all(missionId);
   return rows.map(r => bridge.controlStore.run(r.id)).find(r => r.result?.gateway?.worker_run_id === workerId) || null;
 }
+function extractEvaluationJSON(raw) {
+  // Evaluators must return authority JSON. Models sometimes wrap the object in
+  // prose or a Markdown fence; extract one balanced object the same way the
+  // worker adapter recovers structured results, then re-validate with the
+  // duplicate-member authority parser. Do not invent fields.
+  try { return require('./authority-json').parseAuthorityJSON(raw); } catch { /* fall through */ }
+  if (typeof raw !== 'string') return null;
+  const start = raw.indexOf('{'), end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try { return require('./authority-json').parseAuthorityJSON(raw.slice(start, end + 1)); } catch { return null; }
+}
 function parseEvaluation(raw, binding) {
   if (typeof raw !== 'string' || Buffer.byteLength(raw) > 12000) C.fail('gateway_result_bound');
-  let e; try { e = require('./authority-json').parseAuthorityJSON(raw); } catch { C.fail('gateway_json_required'); }
+  const e = extractEvaluationJSON(raw);
+  if (!e) C.fail('gateway_json_required');
   C.object(e, ['version', 'binding_hash', 'recommendation', 'summary', ...(binding.assignment_hash?['repair_assignment']:[])], ['version', 'binding_hash', 'recommendation', 'summary']);
   if (e.version !== 1 || e.binding_hash !== canonicalHash(binding)) C.fail('gateway_result_binding_mismatch');
   if (!['ready', 'repair', 'blocked'].includes(e.recommendation)) C.fail('gateway_recommendation_invalid');
@@ -154,4 +166,4 @@ function evidence(bridge, mission) {
     repair_of: mission.envelope.repair_of || null,
     ...(require('./specialist-gateway').enabled(mission)?{specialists:require('./specialist-gateway').inspect(bridge,mission)}:{}) };
 }
-module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, verificationDigest };
+module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest };
