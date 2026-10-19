@@ -4123,6 +4123,25 @@
       "updated_at": "A"
     }
   },
+  "cp_project_defaults": {
+    "fields": [
+      "project_id",
+      "repository",
+      "record",
+      "configured_at",
+      "configured_by",
+      "request_id"
+    ],
+    "source": "src/project-defaults.js",
+    "classification": {
+      "project_id": "A",
+      "repository": "B",
+      "record": "B",
+      "configured_at": "A",
+      "configured_by": "A",
+      "request_id": "A"
+    }
+  },
   "cp_autopilot_activity": {
     "fields": [
       "id",

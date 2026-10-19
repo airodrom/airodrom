@@ -206,14 +206,46 @@ class GlobalAutopilot {
     });
     const goalId = goal.goalId || goal.id;
     const taskFile = path.join(workspace, '.vscode/tasks.json');
-    if (!fs.existsSync(taskFile)) {
-      throw Error('Autopilot requires registered verification tasks (.vscode/tasks.json) in ' + workspace);
+    let diff = null;
+    let tests = [];
+    if (fs.existsSync(taskFile)) {
+      const tasks = JSON.parse(fs.readFileSync(taskFile, 'utf8')).tasks || [];
+      const labels = tasks.filter(t => t.type === 'process').map(t => t.label);
+      diff = labels.includes('diff-check') ? 'diff-check' : null;
+      tests = labels.filter(l => l !== diff).slice(0, 4);
     }
-    const tasks = JSON.parse(fs.readFileSync(taskFile, 'utf8')).tasks || [];
-    const labels = tasks.filter(t => t.type === 'process').map(t => t.label);
-    const diff = labels.includes('diff-check') ? 'diff-check' : null;
-    const tests = labels.filter(l => l !== diff).slice(0, 4);
-    if (!diff || !tests.length) throw Error('Autopilot needs diff-check and at least one registered test task');
+    // Prefer repository-registered VS Code tasks. When absent, use the host's
+    // existing Work Template verification labels only if a signed template already
+    // exists for this exact workspace — never invent unverified commands.
+    if (!diff || !tests.length) {
+      for (const item of this.bridge.workTemplates.list('operator') || []) {
+        if (item.state !== 'active' || item.project_id !== project.projectId) continue;
+        try {
+          const template = this.bridge.workTemplates.template(item.project, item.workspace_alias);
+          if (!template || template.workspace !== workspace) continue;
+          diff = template.verification?.diff_check || null;
+          tests = [...(template.verification?.tests || [])].slice(0, 4);
+          if (diff && tests.length) break;
+        } catch { /* invalid template */ }
+      }
+    }
+    if (!diff || !tests.length) {
+      throw Error('Autopilot needs registered verification (diff-check plus at least one test task) via .vscode/tasks.json or an active Work template for ' + workspace);
+    }
+    const { DEFAULT_DENIED_PATHS, globMatch } = require('./mission-contract');
+    const discovery = [
+      'README.md', 'CHANGELOG.md', 'docs/README.md',
+      'docs/operations/founder-current-state.md', 'lib/platform/manifest.json',
+      'src/index.js', 'fixture.txt',
+    ].filter(file => {
+      if (DEFAULT_DENIED_PATHS.some(pattern => globMatch(pattern, file))) return false;
+      try {
+        const target = path.join(workspace, file);
+        return fs.lstatSync(target).isFile() && fs.realpathSync(target) === target;
+      } catch { return false; }
+    }).slice(0, 8);
+    const cursorReady = !!(this.bridge.cursorWorker?.lastReadiness?.ready
+      || this.bridge.cursorWorker?.lastReadiness?.tiers?.qualified);
     return this.bridge.developerAutonomy.enroll({
       alias: 'autopilot-' + project.projectId.replace(/-/g,'').slice(0, 12),
       repository: workspace,
@@ -229,11 +261,24 @@ class GlobalAutopilot {
         max_runtime_hours: 4,
         max_disk_mb: 2048
       },
-      workers: ['opencode'],
+      workers: cursorReady ? ['opencode', 'cursor'] : ['opencode'],
       duration_days: 30,
       confirmed: true,
       diff_check: diff,
-      default_tests: tests
+      default_tests: tests,
+      ...(discovery.length ? {
+        cognitive: {
+          version: 3,
+          files: discovery,
+          delegated_callers: [],
+          planning_attempts: 2,
+          planning_ms: 120000,
+          execution_ms: 120000,
+          repair_attempts: 1,
+          max_assignments: 2,
+          acceptance: 'automatic',
+        },
+      } : {}),
     }, 'operator');
   }
 

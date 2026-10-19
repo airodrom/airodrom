@@ -91,7 +91,13 @@ function assertDelegation(bridge, record) {
   if (!record || bridge.zeroSetupWork.read(record.request_id)?.state === 'rejected') C.fail('cognitive_request_cancelled');
   const p = bridge.developerAutonomy.inspect(record.developer_autonomy_policy_id);
   if (!p || p.state !== 'active' || p.policy_hash !== record.developer_autonomy_policy_hash || !p.cognitive) C.fail('cognitive_delegation_expired_or_revoked');
-  if (record.principal !== 'operator' && !p.cognitive.delegated_callers.includes(record.principal)) C.fail('cognitive_caller_delegation_required');
+  if (record.principal !== 'operator' && !p.cognitive.delegated_callers.includes(record.principal)) {
+    // Owner Autopilot ON is standing consent for authenticated MCP handoff callers
+    // on enrolled cognitive policies. Cursor spend still requires a separate grant.
+    const autopilot = !!bridge.globalAutopilot?.enabled?.();
+    const handoff = /^mcp:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.principal);
+    if (!(autopilot && handoff)) C.fail('cognitive_caller_delegation_required');
+  }
   bridge.developerAutonomy.assertPolicyBoundaries(p);
   if (record.cognitive?.envelope && record.cognitive.envelope.expires_at <= Date.now()) C.fail('cognitive_envelope_expired');
   return p;

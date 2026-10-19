@@ -50,7 +50,7 @@ function matchNamedProjects(instruction, projects) {
   return hits;
 }
 
-function preferUniqueProject(hits, { activeRepositories = new Set() } = {}) {
+function preferUniqueProject(hits, { activeRepositories = new Set(), defaultProjectIds = new Set() } = {}) {
   if (!hits.length) return { ok: false, clarify: false, matches: [] };
   if (hits.length === 1) return { ok: true, project: hits[0].project, matches: hits };
   // Exact full-name or alias beats shared tokens ("Arecibo Core" over "Arecibo …").
@@ -64,6 +64,8 @@ function preferUniqueProject(hits, { activeRepositories = new Set() } = {}) {
     if (longest.length === 1) return { ok: true, project: longest[0].project, matches: hits };
     ranked = longest;
   }
+  const defaulted = ranked.filter(hit => defaultProjectIds.has(hit.project.projectId));
+  if (defaulted.length === 1) return { ok: true, project: defaulted[0].project, matches: hits };
   const enrolled = ranked.filter(hit => (hit.repositories || []).some(repo => activeRepositories.has(repo)));
   const pool = enrolled.length ? enrolled : ranked;
   const singleRepo = pool.filter(hit => (hit.repositories || []).length === 1);

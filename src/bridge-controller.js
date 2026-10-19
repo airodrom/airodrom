@@ -371,6 +371,7 @@ class BridgeController extends EventEmitter {
       this.workers=new (require('./worker-registry').WorkerRegistry)(this);
       this.workTemplates=new (require('./work-templates').WorkTemplates)(this);
       this.developerAutonomy=new (require('./developer-autonomy').DeveloperAutonomy)(this);
+      this.projectDefaults=new (require('./project-defaults').ProjectDefaults)(this);
       this.globalAutopilot=new (require('./global-autopilot').GlobalAutopilot)(this);
       this.expandedAutonomy=new (require('./expanded-autonomy').ExpandedAutonomy)(this);
       this.missionApprovals=new (require('./mission-approval').MissionApprovals)(this);
