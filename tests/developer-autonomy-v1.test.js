@@ -541,6 +541,51 @@ test('needs_rework with remaining repair budget keeps the concurrent reservation
   assert.throws(() => routine(da, policy, {objective:'Second Mission while repair remains'}), /Concurrent Mission budget/);
 });
 
+test('settled retained worktrees do not exhaust the concurrent worktree budget', async t => {
+  const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
+  const policy = da.enroll({
+    ...f.enrollInput,
+    alias: 'fixture-da-worktrees',
+    workflows: ['routine_edit', 'test'],
+    budgets: { ...f.enrollInput.budgets, max_repairs: 0, max_concurrent_missions: 1, max_worktrees: 1 }
+  }, 'operator');
+  const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:0,
+    criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
+  const m = b.missions.create(first.mission_input, 'operator');
+  b.missions.dispatch(m.id, {request_id:randomUUID()});
+  await f.settle(m.id, 'needs_rework');
+  assert.equal(da.inspectGrant(first.grant.grant_id).state, 'consumed');
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
+  assert.ok(fs.existsSync(first.workspace.path));
+  const second = routine(da, policy, {objective:'Second Mission after retained worktree'});
+  assert.ok(second.grant.grant_id);
+  assert.notEqual(second.workspace.workspace_id, first.workspace.workspace_id);
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
+  const next = b.missions.create(second.mission_input, 'operator');
+  b.missions.cancel(next.id, {request_id:randomUUID()});
+});
+
+test('ready and unsettled worktrees still occupy the concurrent worktree budget', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.enroll({
+    ...f.enrollInput,
+    alias: 'fixture-da-ready-budget',
+    budgets: { ...f.enrollInput.budgets, max_worktrees: 1 }
+  }, 'operator');
+  const ready = da.prepareWorkspace({
+    policy_id: policy.policy_id,
+    request_id: randomUUID(),
+    prefer_disposable: true
+  }, 'operator');
+  assert.equal(ready.state, 'ready');
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
+  assert.throws(() => da.prepareWorkspace({
+    policy_id: policy.policy_id,
+    request_id: randomUUID(),
+    prefer_disposable: true
+  }, 'operator'), /Worktree budget exhausted/);
+});
+
 test('explicitly named enrolled requests retain the full instruction beyond the plan display limit', async t => {
   const f=await setup(t),b=f.bridge,da=b.developerAutonomy;
   da.enroll({...f.enrollInput,workflows:['routine_edit'],budgets:{...f.enrollInput.budgets,max_repairs:0}},'operator');
