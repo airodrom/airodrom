@@ -172,7 +172,7 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   // so admission can return. The Mission stays blocked.
   if (mission?.state !== 'blocked') return false;
   const store = bridge.controlStore, db = store.db;
-  const runs = db.prepare("SELECT id,pid FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND termination_verified=0 AND ((state='termination_unverified' AND resolution='gateway_evaluation_reconciliation_required') OR (state='interrupted' AND resolution='reconcile_process'))").all(mission.id);
+  const runs = db.prepare("SELECT id,pid,state FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND termination_verified=0 AND ((state='termination_unverified' AND resolution='gateway_evaluation_reconciliation_required') OR (state='interrupted' AND resolution='reconcile_process'))").all(mission.id);
   if (runs.length !== 1 || !Number.isInteger(runs[0].pid) || runs[0].pid <= 1) return false;
   const leases = db.prepare("SELECT id,run_id,resource FROM cp_leases WHERE mission_id=? AND state='quarantined'").all(mission.id);
   if (!leases.length || leases.some(lease => lease.resource !== leases[0].resource)) return false;
@@ -180,7 +180,10 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   try { observation = observe({ pid: runs[0].pid, resource: leases[0].resource }); }
   catch { return false; }
   const runId = runs[0].id;
-  store.updateRun(runId, { state: 'failed', processState: 'exited', verified: true, resolution: 'gateway_evaluation_timed_out', result: { recovery_not_execution: true, accepted: false, observation: observation.method } });
+  // interrupted is already terminal, so the store rejects a state change.
+  // Verifying that same state settles admission. It does not accept the Mission.
+  const nextState = runs[0].state === 'interrupted' ? 'interrupted' : 'failed';
+  store.updateRun(runId, { state: nextState, processState: 'exited', verified: true, resolution: 'gateway_evaluation_timed_out', result: { recovery_not_execution: true, accepted: false, observation: observation.method } });
   for (const lease of leases) {
     const changed = db.prepare("UPDATE cp_leases SET state='released' WHERE id=? AND run_id=? AND state='quarantined'").run(lease.id, lease.run_id);
     if (changed.changes !== 1) C.fail('quarantined_lease_not_reconciled');
