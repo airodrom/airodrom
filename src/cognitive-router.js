@@ -255,6 +255,9 @@ async function approve(zero, record, confirmation, owner) {
     criteria: e.version === 3 ? [{ id: 'registered-checks', type: 'registered_checks', description: 'All enrolled host checks and the sealed specialist graph complete successfully' }] : [{ id: 'owner-review', type: 'operator_review', description: 'Registered independent verification and explicit owner Acceptance' }],
     verification: p.verification_defaults, preferred_agent: 'cursor', fallback_agents: [], capability_scopes: ['repo', 'developer_environment'],
     data_class: 'public', task_type: 'focused_refactor',
+    // Standing OpenCode-only risk auto Acceptance must not attach to a Cursor
+    // specialist Mission. Specialist completion stays on the gateway autoAccept path.
+    risk_auto_acceptance: false,
     dispatch_policy: { privacy: 'cloud_allowed', providers: ['cursor_runtime'], billing_classes: ['subscription'], max_attempts: 1 },
     authority: { level: 'development', permissions: { repository: ['read', 'write'], runtime: ['diagnostic', 'test'], network: ['internet', 'localhost'], secrets: [], data: ['read', 'workspace_write'] },
       filesystem: { read: [record.workspace], write: proposal.files.map(f => path.join(record.workspace, f)) }, expiresAt: expiry } };

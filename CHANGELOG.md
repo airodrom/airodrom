@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- A governed Cursor specialist Mission is not rejected by the standing OpenCode-only risk auto Acceptance preference. Specialist completion remains on the gateway path.
+
+### Fixed
 - Developer Autonomy can enroll Cursor when the governed sandboxed worker is qualified. The separate no-tools bounded-worker qualification remains denied.
 
 ### Fixed
