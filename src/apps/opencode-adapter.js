@@ -117,9 +117,29 @@ function assignmentSafetyView(a) {
 }
 function feedbackSafetyView(r){return r?{...r,worker_run_id:scanUuid(r.worker_run_id),evaluation_run_id:scanUuid(r.evaluation_run_id),binding_hash:scanDigest(r.binding_hash)}:r;}
 function specialistObjectiveSafetyView(input){return {...input,assignment:assignmentSafetyView(input.assignment),prior_evaluation:feedbackSafetyView(input.prior_evaluation),repair_context:feedbackSafetyView(input.repair_context)};}
-function specialistReturnSafetyView(r){return {...r,assignment:assignmentSafetyView(r.assignment),run_id:scanUuid(r.run_id),
+function projectVerification(v){
+  if(!v||typeof v!=='object')return v;
+  return {...v,workspace_hash:scanDigest(v.workspace_hash),checks:(v.checks||[]).map(c=>({...c,evidence_hash:scanDigest(c.evidence_hash)}))};
+}
+function projectHashMap(map){
+  if(!map||typeof map!=='object')return map;
+  return Object.fromEntries(Object.entries(map).map(([k,v])=>[k,scanDigest(v)]));
+}
+function projectWorkspaceIdentity(identity){
+  if(!identity||typeof identity!=='object')return identity;
+  return {workspace_id:scanUuid(identity.workspace_id),repository_id:typeof identity.repository_id==='string'?identity.repository_id.split(':').map(scanUuid).join(':'):identity.repository_id};
+}
+// Scan projection only. Delivered specialist bytes stay intact so OpenCode can
+// bind the real host hashes. Duplicate verification_results carries the same
+// evidence digests as host_verification; leaving that copy raw made sha256
+// digit runs fail the card detector before evaluation started.
+function specialistReturnSafetyView(r){return {...r,assignment:assignmentSafetyView(r.assignment),
+  mission_id:scanUuid(r.mission_id),assignment_id:scanUuid(r.assignment_id),cursor_run_id:r.cursor_run_id==null?null:scanUuid(r.cursor_run_id),dispatch_id:scanUuid(r.dispatch_id),
+  authorized_scope_hash:scanDigest(r.authorized_scope_hash),workspace_identity:projectWorkspaceIdentity(r.workspace_identity),
+  before_hashes:projectHashMap(r.before_hashes),after_hashes:projectHashMap(r.after_hashes),
+  verification_results:projectVerification(r.verification_results),run_id:scanUuid(r.run_id),
   host_changes:r.host_changes.map(c=>({...c,preimage_sha256:scanDigest(c.preimage_sha256),sha256:scanDigest(c.sha256)})),
-  host_verification:{...r.host_verification,workspace_hash:scanDigest(r.host_verification.workspace_hash),checks:r.host_verification.checks.map(c=>({...c,evidence_hash:scanDigest(c.evidence_hash)}))},
+  host_verification:projectVerification(r.host_verification),
   references:r.references.map(ref=>typeof ref==='string'&&/^(mission|run|dispatch):/.test(ref)?ref.split(':').map((v,i)=>i===1?scanUuid(v):v).join(':'):ref),
   prior_results:r.prior_results.map(p=>({...p,run_id:scanUuid(p.run_id),result_hash:scanDigest(p.result_hash),evaluation_run_id:scanUuid(p.evaluation_run_id),binding_hash:scanDigest(p.binding_hash)}))};}
 function planningSafetyView(p){return {...p,request_id:scanUuid(p.request_id),envelope_hash:scanDigest(p.envelope_hash)};}
@@ -569,4 +589,4 @@ class OpenCodeAdapter extends AgentAdapter {
   async shutdown() { for (const controller of this.active.values()) controller.abort(); }
   async status() { return this.readiness(); }
 }
-module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, codingSecretScanView, classifyStderrClass, classifyProcessFailure, MAX_CONTEXT, MAX_OUTPUT, MAX_FILE, STDERR_CLASSIFY_BYTES, CODING_TIMEOUT_MS, VERSION, OLLAMA_PORT };
+module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, codingSecretScanView, specialistReturnSafetyView, classifyStderrClass, classifyProcessFailure, MAX_CONTEXT, MAX_OUTPUT, MAX_FILE, STDERR_CLASSIFY_BYTES, CODING_TIMEOUT_MS, VERSION, OLLAMA_PORT };

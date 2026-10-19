@@ -4,6 +4,7 @@
 - Document the Milestone B.1 live Cursor closeout: exact bytes passed host checks, and OpenCode evaluation did not complete, so Acceptance remains blocked ([docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](docs/MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)).
 
 ### Fixed
+- OpenCode evaluation no longer rejects a legitimate Cursor return packet when host evidence digests look like card numbers. The scan projects those digests. Secrets, private paths, and untrusted worker prose still fail closed. Local evaluation time stays inside the host allowance and does not extend the paid Cursor grant.
 - A second cognitive Mission on the same Goal can be created when the instruction text matches an earlier Mission. The project record name is distinct; the objective is unchanged.
 - A dead managed service with a stale discovery record can start again once its writer lock is clear.
 - A blocked Mission whose local OpenCode evaluation timed out, including one left interrupted by service shutdown, releases its quarantined workspace lease after the evaluator process is confirmed gone. An interrupted run stays interrupted. The Mission stays blocked and is not accepted.
