@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- A second cognitive Mission on the same Goal can be created when the instruction text matches an earlier Mission. The project record name is distinct; the objective is unchanged.
 - A dead managed service with a stale discovery record can start again once its writer lock is clear.
 - A blocked Mission whose local OpenCode evaluation timed out, including one left interrupted by service shutdown, releases its quarantined workspace lease after the evaluator process is confirmed gone. An interrupted run stays interrupted. The Mission stays blocked and is not accepted.
 - A v3 Cursor Mission wall clock reserves host verification and local OpenCode evaluation after the paid Cursor window. The subscription grant still caps Cursor runtime at the enrolled execution limit.

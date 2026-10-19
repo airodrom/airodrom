@@ -889,5 +889,6 @@
   "tests/cursor-enrollment-qualification.test.js",
   "tests/cursor-risk-acceptance.test.js",
   "tests/cursor-evaluation-budget.test.js",
-  "tests/eval-timeout-reconcile.test.js"
+  "tests/eval-timeout-reconcile.test.js",
+  "tests/cognitive-mission-name.test.js"
 ]
