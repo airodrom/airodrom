@@ -191,6 +191,22 @@ class GlobalAutopilot {
       .map(r => ({ ...r, authority: false }));
   }
 
+  // Prefer the stable project alias; when a revoked row still occupies it,
+  // allocate a free autopilot-* alias so STOP can still match the prefix.
+  allocateAutopilotAlias(projectId, workspace) {
+    const base = 'autopilot-' + String(projectId).replace(/-/g, '').slice(0, 12);
+    const taken = (alias) => !!this.bridge.developerAutonomy.db
+      .prepare('SELECT 1 AS ok FROM cp_developer_autonomy_policies WHERE alias=?').get(alias);
+    if (!taken(base)) return base;
+    const crypto = require('node:crypto');
+    for (let n = 0; n < 32; n += 1) {
+      const digest = crypto.createHash('sha256').update(String(workspace) + ':' + n).digest('hex').slice(0, 8);
+      const alias = base + '-' + digest;
+      if (!taken(alias)) return alias;
+    }
+    throw Error('Unable to allocate a free Autopilot policy alias');
+  }
+
   /**
    * Ensure a standing DA policy exists for Autopilot-managed routine work in a repo.
    * Marked with alias autopilot:* so OFF/STOP can revoke unspent grants.
@@ -247,7 +263,7 @@ class GlobalAutopilot {
     const cursorReady = !!(this.bridge.cursorWorker?.lastReadiness?.ready
       || this.bridge.cursorWorker?.lastReadiness?.tiers?.qualified);
     return this.bridge.developerAutonomy.enroll({
-      alias: 'autopilot-' + project.projectId.replace(/-/g,'').slice(0, 12),
+      alias: this.allocateAutopilotAlias(project.projectId, workspace),
       repository: workspace,
       project_id: project.projectId,
       goal_id: goalId,

@@ -216,6 +216,28 @@ test('Autopilot verification accepts tasks.json when present', async t => {
   assert.ok(policy?.policy_id || policy?.alias || policy?.repository);
 });
 
+test('Autopilot re-enrolls after a revoked policy occupies the base alias', async t => {
+  const f = await fixture(t);
+  f.bridge.missionAuthority.initializeOperatorKey();
+  f.bridge.globalAutopilot.enable({ confirmed: true, request_id: randomUUID() }, 'operator');
+  const primary = fs.realpathSync(gitInit(fs.mkdtempSync(path.join(os.tmpdir(), 'alias-reuse-'))));
+  t.after(() => fs.rmSync(primary, { recursive: true, force: true }));
+  const project = f.bridge.projects.createProject({
+    name: 'Alias Reuse',
+    repositories: [primary],
+    privacyPolicy: 'local_only',
+  });
+  const first = f.bridge.globalAutopilot.ensureRepositoryPolicy(project, primary);
+  assert.ok(first?.policy_id);
+  const hash = first.policy_hash || f.bridge.developerAutonomy.inspect(first.policy_id)?.policy_hash
+    || f.bridge.developerAutonomy.inspect(first.policy_id)?.hash;
+  f.bridge.developerAutonomy.revoke({ policy_id: first.policy_id, policy_hash: hash, confirmed: true }, 'operator');
+  const second = f.bridge.globalAutopilot.ensureRepositoryPolicy(project, primary);
+  assert.ok(second?.policy_id);
+  assert.notEqual(second.policy_id, first.policy_id);
+  assert.match(second.alias || '', /^autopilot-/);
+});
+
 test('Autopilot without tasks.json and without Work template fails closed', async t => {
   const f = await fixture(t);
   f.bridge.missionAuthority.initializeOperatorKey();
