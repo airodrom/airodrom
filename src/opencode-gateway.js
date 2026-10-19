@@ -166,4 +166,26 @@ function evidence(bridge, mission) {
     repair_of: mission.envelope.repair_of || null,
     ...(require('./specialist-gateway').enabled(mission)?{specialists:require('./specialist-gateway').inspect(bridge,mission)}:{}) };
 }
-module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest };
+function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer-death-recovery').observeWriter) {
+  // A local evaluator timeout is not Cursor success and is not retried here.
+  // Once the owned process and workspace holders are gone, release the quarantine
+  // so admission can return. The Mission stays blocked.
+  if (mission?.state !== 'blocked') return false;
+  const store = bridge.controlStore, db = store.db;
+  const runs = db.prepare("SELECT id,pid FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND state='termination_unverified' AND termination_verified=0 AND resolution='gateway_evaluation_reconciliation_required'").all(mission.id);
+  if (runs.length !== 1 || !Number.isInteger(runs[0].pid) || runs[0].pid <= 1) return false;
+  const leases = db.prepare("SELECT id,run_id,resource FROM cp_leases WHERE mission_id=? AND state='quarantined'").all(mission.id);
+  if (!leases.length || leases.some(lease => lease.resource !== leases[0].resource)) return false;
+  let observation;
+  try { observation = observe({ pid: runs[0].pid, resource: leases[0].resource }); }
+  catch { return false; }
+  const runId = runs[0].id;
+  store.updateRun(runId, { state: 'failed', processState: 'exited', verified: true, resolution: 'gateway_evaluation_timed_out', result: { recovery_not_execution: true, accepted: false, observation: observation.method } });
+  for (const lease of leases) {
+    const changed = db.prepare("UPDATE cp_leases SET state='released' WHERE id=? AND run_id=? AND state='quarantined'").run(lease.id, lease.run_id);
+    if (changed.changes !== 1) C.fail('quarantined_lease_not_reconciled');
+    store.event('gateway.evaluation_reconciled', mission.id, { run_id: runId, lease_id: lease.id, previous_state: 'quarantined', state: 'released', recovery_not_execution: true, accepted: false }, { runId });
+  }
+  return true;
+}
+module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, reconcileBlockedEvaluation };

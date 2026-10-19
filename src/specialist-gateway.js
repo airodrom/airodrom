@@ -216,7 +216,10 @@ function inspect(bridge,m) {
 }
 function tick(service,p) {
   const m=service.store.getMission(p.id); if (!enabled(m)) fail('gateway_graph_parent_missing');
-  if (['cancelled','completed','blocked','needs_rework'].includes(m.state)) { service.db.prepare('UPDATE cp_mission_programs SET state=? WHERE id=?').run(m.state==='completed'?'settled':m.state,p.id); return; }
+  if (['cancelled','completed','blocked','needs_rework'].includes(m.state)) {
+    if (m.state === 'blocked') require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge, m);
+    service.db.prepare('UPDATE cp_mission_programs SET state=? WHERE id=?').run(m.state==='completed'?'settled':m.state,p.id); return;
+  }
   const ns=nodes(service.bridge,m);
   if (ns.some(n=>['queued','running','evaluating'].includes(n.state))) return;
   if (ns.every(n=>n.state==='ready')) return;
@@ -370,6 +373,7 @@ async function processResult(service,row) {
 }
 function recover(service,m) {
   if(!enabled(m))return false;
+  if(m.state==='blocked')require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge,m);
   if(!['dispatching','running','verifying'].includes(m.state))return true;
   // Result inbox replay and queued launches are handled by the existing loop.
   if(service.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)||
