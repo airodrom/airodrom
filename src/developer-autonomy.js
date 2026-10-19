@@ -339,7 +339,24 @@ class DeveloperAutonomy {
   lineageSettled(missions) {
     if (!missions.length) return false;
     const parents = new Set(missions.map(m => m.envelope.repair_of).filter(Boolean));
-    return missions.filter(m => !parents.has(m.id)).every(m => ['completed', 'cancelled'].includes(m.state));
+    return missions.filter(m => !parents.has(m.id)).every(m => {
+      if (['completed', 'cancelled'].includes(m.state)) return true;
+      // needs_rework / blocked remain reserved only while a corrective Mission
+      // can still be admitted under this grant. A zero repair budget or a
+      // policy without repair must not hold the concurrent slot forever.
+      if (!['needs_rework', 'blocked'].includes(m.state)) return false;
+      const ref = m.envelope.developer_autonomy;
+      if (!ref?.grant_id || !ref.policy_id) return true;
+      const grantRow = this.db.prepare('SELECT record FROM cp_developer_autonomy_grants WHERE grant_id=?').get(ref.grant_id);
+      const policyRow = this.db.prepare('SELECT record FROM cp_developer_autonomy_policies WHERE policy_id=?').get(ref.policy_id);
+      if (!grantRow || !policyRow) return true;
+      const grant = JSON.parse(grantRow.record).record;
+      const policy = JSON.parse(policyRow.record).record;
+      const repairs = this.grantMissions(ref.grant_id).filter(x => x.envelope.repair_of).length;
+      const canRepair = Array.isArray(policy.workflows) && policy.workflows.includes('repair')
+        && Number.isInteger(grant.repair_budget) && repairs < grant.repair_budget;
+      return !canRepair;
+    });
   }
 
   reservations(policyId) {
