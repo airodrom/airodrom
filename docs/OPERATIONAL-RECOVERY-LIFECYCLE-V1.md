@@ -28,3 +28,28 @@ Private checkpoint verification still sets its own umask to `077` and creates a 
 ## Admission
 
 Admission opens only through the existing idle resume. This path does not delete rows, rewind accounting, or force `admission=open`.
+
+## Closeout
+
+Repair commits on `main`:
+
+- `bcedc6d5260fbf0f230813fec6b0f76e7df2504b` — pull request 152, writer-death reconciliation and bounded identity reads
+- `c2ffaddaebe97df3e1d9437ec4435f62e57c31c4` — pull request 153, skip identity checks for values shorter than 64 characters
+
+The managed installation that completed acceptance runs `c2ffaddaebe97df3e1d9437ec4435f62e57c31c4`. A product status call on that build returned in about one second.
+
+Evidence-backed dispositions, preserved in the live database:
+
+| Record | Disposition |
+|---|---|
+| Bridge run `2d3527b7-4700-405c-af32-df08dc2959ec` | Stays `interrupted`. `process_state=exited`, `termination_verified`, resolution `writer_death_in_process`. Not successful. |
+| Host run `4cf66102-ca05-4bfa-aef7-056a0c9921f7` | Same disposition as the bridge run. |
+| Lease `99018858-bdcc-4179-a251-9faede39fb83` | Released after the writer was observed gone and no workspace holder remained. |
+| Read-only `git_diff` invocation | Settled `incomplete`. The row was not deleted and was not marked successful. |
+| Mission `26a6407c-5bf4-4f1a-8279-1ed970559f48` | Remains blocked. |
+
+Admission then opened because the existing resume saw an idle, reconciled host. No blocker row was removed by hand.
+
+The pre-migration checkpoint taken while that host was stopped passed private verification: file hashes matched, copied modes matched the sealed source, and authority records were preserved. The sealed checkpoints were not rewritten. Source-only rollback `1e2fadd96f339fe49f50440219c0cd1e724d8051` remains staged. It was not swapped under the database after these writer-death rows were recorded.
+
+Live acceptance used the installed MCP front door, not a remote ChatGPT conversation. `ask_airodrom` exceeded the 15-second client window and was recorded as a client timeout. The same request then completed as Mission `6a90f72d-a31e-47fb-a5fc-3700840a0c9b`: OpenCode run `72033f42-1843-409b-830c-ae2a4ed52d18` exited with termination verified, a second OpenCode run completed, both workspace leases were released, host verification passed, and the Mission settled `AUTOMATICALLY_ACCEPTED`. The disposable worktree contains `recovery-proof.txt` with exactly `AIRODROM-RECOVERY-PASS` and one trailing newline. The enrolled repository was not modified. That automatic settlement is not a separate human Acceptance. Control Center showed the service connected and this Mission settled on OpenCode with automatic completion.
