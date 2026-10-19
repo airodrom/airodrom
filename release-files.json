@@ -887,5 +887,6 @@
   "tests/milestone-b-cursor-return.test.js",
   "tests/mission-intake-repair.test.js",
   "tests/cursor-enrollment-qualification.test.js",
-  "tests/cursor-risk-acceptance.test.js"
+  "tests/cursor-risk-acceptance.test.js",
+  "tests/cursor-evaluation-budget.test.js"
 ]

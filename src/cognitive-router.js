@@ -242,6 +242,15 @@ function planConstraints(proposal) {
   return ('Validated file plan (advisory descriptions, never permission): ' + proposal.tasks.map(t => t.id + ': ' + t.description).join('\n')).slice(0, 1800);
 }
 
+function specialistWallClockMs(envelope, proposal) {
+  const workers = envelope.version === 3 ? proposal.tasks.length + envelope.limits.repair_attempts : 1;
+  const workerMs = envelope.limits.execution_ms * workers;
+  if (envelope.version !== 3) return Math.max(60000, workerMs);
+  // Cursor, host verification, and the local OpenCode evaluation run in sequence.
+  // The subscription grant still caps paid Cursor runtime at execution_ms.
+  return Math.max(60000, workerMs + envelope.limits.execution_ms + envelope.limits.planning_ms);
+}
+
 async function approve(zero, record, confirmation, owner) {
   if (owner !== 'operator' || confirmation.confirmed !== true || !['terminal', 'control_center'].includes(confirmation.channel) || !confirmation.subscription_execution) C.fail('BLOCKED_SPEND_AUTHORIZATION');
   const b = zero.bridge, p = assertDelegation(b, record), c = record.cognitive, e = C.parse('RequestEnvelope', c.envelope);
@@ -263,7 +272,7 @@ async function approve(zero, record, confirmation, owner) {
       filesystem: { read: [record.workspace], write: proposal.files.map(f => path.join(record.workspace, f)) }, expiresAt: expiry } };
   const seed = { identity: { expires_at: expiry }, permissions: { external_disclosure: { authorized: true, providers: ['cursor'], purpose: 'Owner-approved declared public cognitive Mission files' }, network: { mode: 'allowlist', allow: contracts.KNOWN_PROVIDER_HOSTS.cursor } },
     ...(e.version === 3 ? { execution: { worker_allowlist: [...new Set(proposal.tasks.map(t => t.worker))] } } : {}),
-    budget: { risk_class: 'low', max_worker_invocations: e.version === 3 ? proposal.tasks.length + e.limits.repair_attempts : 1, max_repair_attempts: e.version === 3 ? e.limits.repair_attempts : 0, max_wall_clock_ms: Math.max(60000, e.limits.execution_ms * (e.version === 3 ? proposal.tasks.length + e.limits.repair_attempts : 1)) } };
+    budget: { risk_class: 'low', max_worker_invocations: e.version === 3 ? proposal.tasks.length + e.limits.repair_attempts : 1, max_repair_attempts: e.version === 3 ? e.limits.repair_attempts : 0, max_wall_clock_ms: specialistWallClockMs(e, proposal) } };
   const baseline = require('./control-context').workspaceSnapshot(record.workspace);
   const preview = contracts.normalizeContract(seed, { ...input, now: Date.now(), base_commit_sha: baseline.head, branch: baseline.branch, operator: true });
   const approval = b.missionApprovals.issue({ request_id: 'cognitive-approval:' + record.request_id, contract: preview,
@@ -355,4 +364,4 @@ function evidence(bridge, mission, detail, verification, changes) {
     references: ['mission:' + mission.id, 'request:' + c.envelope.request_id, ...(c.planner_run_ids || []).map(id => 'run:' + id), ...(verification ? ['verification:' + verification.id] : [])],
     counts: { planning: c.planning_attempts, execution: runs.length, repair: c.envelope.version === 3 ? require('./specialist-gateway').repairCount(bridge, mission) : c.envelope.version === 2 ? require('./mission-evidence').lineageFor(bridge, mission).filter(m => m.repair_of).length : 0 } });
 }
-module.exports = { enrollment, requestedWorker, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope };
+module.exports = { enrollment, requestedWorker, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
