@@ -230,8 +230,13 @@ async function retryPreStartEvaluation(service, m) {
   if (!cursor || !require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
   // A negative cache is not launch authority. A positive cache is enough to
   // enter evaluation; execute() probes again before the process starts.
-  let ready = await service.bridge.opencodeAdapter.readiness();
-  if (!ready.ready) ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
+  // A startup probe can throw before pins are observable. That is not a
+  // consumed evaluation attempt.
+  let ready = { ready: false };
+  try {
+    ready = await service.bridge.opencodeAdapter.readiness();
+    if (!ready.ready) ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
+  } catch { ready = { ready: false }; }
   if (!ready.ready) {
     const waits = readinessWaits.get(m.id) || 0;
     if (waits >= 15) return false;
@@ -265,6 +270,7 @@ async function retryPreStartEvaluation(service, m) {
   } catch (error) {
     const latest = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
     if (latest) save(service.bridge, m, latest, 'unavailable');
+    try { service.store.event('gateway.evaluation_retry_failed', m.id, { code: String(error.code || error.message).slice(0, 120), authority: false }); } catch { /* The Mission stays blocked either way. */ }
     return false;
   } finally {
     localEvalRetries.delete(m.id);
