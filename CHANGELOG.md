@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- A v3 Cursor Mission wall clock reserves host verification and local OpenCode evaluation after the paid Cursor window. The subscription grant still caps Cursor runtime at the enrolled execution limit.
 - A governed Cursor specialist Mission is not rejected by the standing OpenCode-only risk auto Acceptance preference. Specialist completion remains on the gateway path.
 
 ### Fixed
