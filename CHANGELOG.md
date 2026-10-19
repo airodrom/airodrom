@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Zero-Manual Autopilot Activation V1: owner-configured project default repositories (`cp_project_defaults`), live-Git filtering of cleaned disposable leftovers, deterministic repository selection precedence, and Autopilot verification via `.vscode/tasks.json` or an already-active Work template ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md), [docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md](docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md)).
+
 ### Fixed
 - Enrolled Cursor work that says “Do not deploy production” is no longer diverted into the research read-only clarify gate. Explicit denials are stripped before the deploy/publish action detector runs ([docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md](docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md)).
 - Enrolled-project Cursor requests such as “Start the Arecibo release-readiness audit in Cursor” resolve the authorized repository instead of the projectless exact two-file fixture grammar. Ambiguous repositories, missing standing enrollment, and missing cognitive discovery files return precise gates. Destination phrases (`in Cursor`, `using Cursor`) are explicit worker selection. Projectless two-file intake remains for genuine projectless work only ([docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md](docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md), [docs/PROJECTLESS-WORK-V1.md](docs/PROJECTLESS-WORK-V1.md), [docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md)).

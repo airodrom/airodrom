@@ -37,12 +37,17 @@ Decision order for `ask_airodrom` / `prepare_mission`:
    Developer Autonomy policy with cognitive enrollment uniquely matches.
 2. Otherwise discover enrolled Projects by full name, alias, distinctive token,
    or authorized absolute path. Longer exact names win over shorter trailing
-   phrases. Ambiguous matches return `ENROLLED_REPOSITORY_AMBIGUOUS`.
+   phrases. Owner-configured project defaults (see [Global Autopilot](GLOBAL-AUTOPILOT-V1.md))
+   and live-Git filtering of cleaned disposable leftovers resolve ordinary
+   Arecibo Core ambiguity. Genuine multi-repo ambiguity without a default still
+   returns `ENROLLED_REPOSITORY_AMBIGUOUS`.
 3. Only when no enrolled Project matches may Cursor prose use the projectless
    two-file contract (`projectless_exact_two_file_syntax_required`).
-4. A recognized Project without an active standing enrollment returns
-   `ENROLLED_WORKSPACE_REQUIRED` with the single owner action to enroll
-   Developer Autonomy for that repository. Cursor planning without cognitive
+4. With Global Autopilot ON, authenticated intake ensures a standing
+   `autopilot:*` Developer Autonomy policy for the resolved live repository
+   (verification from `.vscode/tasks.json` or an already-active Work template).
+   Without Autopilot, a recognized Project without an active standing enrollment
+   returns `ENROLLED_WORKSPACE_REQUIRED`. Cursor planning without cognitive
    discovery files returns `standing_cognitive_enrollment_required`.
 
 Multi-file enrolled objectives are valid. OpenCode proposes a bounded file plan

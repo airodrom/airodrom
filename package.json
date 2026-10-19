@@ -462,6 +462,7 @@
     "src/private-vault-intent.js",
     "src/product-diagnostics.js",
     "src/product-observability.js",
+    "src/project-defaults.js",
     "src/project-memory-v2-adapter.js",
     "src/project-memory-v2.js",
     "src/project-orchestrator.js",
@@ -560,6 +561,7 @@
     "tests/mission-activity.test.js",
     "tests/reboot-acceptance-v1.test.js",
     "tests/reliability-browser.cjs",
-    "tests/reliability-opencode-live.cjs"
+    "tests/reliability-opencode-live.cjs",
+    "tests/zero-manual-autopilot.test.js"
   ]
 }

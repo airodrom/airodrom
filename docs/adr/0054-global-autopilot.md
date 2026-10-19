@@ -22,10 +22,19 @@ reuse that machinery under a single authenticated owner flag.
 3. While ON, Missions may carry `envelope.autopilot`. Zero-setup ensures an
    `autopilot:*` Developer Autonomy policy for the resolved repository so
    routine work proceeds without separate enrollment.
-4. OFF and STOP immediately clear the flag, revoke unspent `autopilot:*`
+4. Owner-configured project default repositories persist in
+   `cp_project_defaults` (durable data directory). Selection prefers an exact
+   caller identity, an exact live workspace label, the configured default, then
+   a single unambiguous live repository; otherwise fail closed. Cleaned
+   non-Git disposable leftovers are ignored. Autopilot verification uses
+   `.vscode/tasks.json` or an already-active Work template — never invented
+   commands.
+5. OFF and STOP immediately clear the flag, revoke unspent `autopilot:*`
    policies/grants, and (STOP) cancel active Autopilot-tagged Missions.
-5. Activity is recorded in `cp_autopilot_activity` without credential values.
-6. External provider authentication and account permissions remain enforced.
+6. Activity is recorded in `cp_autopilot_activity` without credential values.
+7. External provider authentication and account permissions remain enforced.
+   Paid Cursor spend, production deploy, and related high-risk gates stay
+   separately authorized.
 
 ## Consequences
 

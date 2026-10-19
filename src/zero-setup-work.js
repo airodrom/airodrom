@@ -92,40 +92,35 @@ class ZeroSetupWork {
   resolveEnrolledProject(instruction) {
     const projects = this.activeProjects();
     const { matchNamedProjects, preferUniqueProject } = require('./project-resolution');
-    const namedHits = matchNamedProjects(instruction, projects);
+    const { liveRepositories } = require('./project-defaults');
+    const namedHits = matchNamedProjects(instruction, projects).map(hit => ({
+      ...hit,
+      repositories: liveRepositories(hit.project),
+    }));
     const activeRepositories = new Set();
+    const defaultProjectIds = new Set();
     try {
       for (const policy of this.bridge.developerAutonomy?.list?.('operator') || []) {
         if (policy.state === 'active' && policy.repository) activeRepositories.add(policy.repository);
       }
-    } catch { /* enrollment store unavailable */ }
-    const namedChoice = preferUniqueProject(namedHits, { activeRepositories });
-    if (namedChoice.ok) {
-      const project = namedChoice.project;
-      if ((project.repositories || []).length === 1) {
-        try {
-          const root = fs.realpathSync(project.repositories[0]);
-          if (require('./control-execution').repositoryRoot(root) === root) {
-            return { ok: true, project, workspace: root, projectless: false };
-          }
-        } catch { /* absent enrollment */ }
-      } else if ((project.repositories || []).length > 1) {
-        return {
-          ok: false, clarify: true, projectless: false,
-          message: 'Which authorized repository under ' + project.name + ' should I use?',
-          choices: project.repositories.map(workspace => ({ project_name: project.name, workspace_label: readablePath(workspace) })),
-          code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
-        };
+      for (const item of this.bridge.projectDefaults?.list?.() || []) {
+        if (item?.project_id && item?.repository) defaultProjectIds.add(item.project_id);
       }
+    } catch { /* enrollment store unavailable */ }
+    const namedChoice = preferUniqueProject(namedHits, { activeRepositories, defaultProjectIds });
+    if (namedChoice.ok) {
+      const selected = this.bridge.projectDefaults.selectRepository(namedChoice.project, { instruction });
+      if (selected.ok) return { ok: true, project: selected.project, workspace: selected.workspace, projectless: false, defaulted: !!selected.defaulted };
+      return { ...selected, projectless: false };
     }
     if (namedChoice.clarify) {
       return {
         ok: false, clarify: true, projectless: false,
         message: 'Which authorized repository should I use?',
-        choices: namedChoice.matches.map(hit => ({
+        choices: namedChoice.matches.flatMap(hit => liveRepositories(hit.project).map(workspace => ({
           project_name: hit.project.name,
-          workspace_label: readablePath((hit.repositories || [])[0] || ''),
-        })),
+          workspace_label: readablePath(workspace),
+        }))),
         code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
       };
     }
@@ -416,13 +411,16 @@ class ZeroSetupWork {
       return { ...this.statusView(this.read(request_id)), state: 'PREPARED', projectless: true };
     }
     const { project, workspace } = scope;
+    const autopilotOn = !!this.bridge.globalAutopilot?.enabled?.();
+    const mcpHandoff = /^mcp:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(principal);
     // Global Autopilot ON: ensure a standing policy for the resolved repo (owner-delegated).
-    if (principal === 'operator' && this.bridge.globalAutopilot?.enabled?.()) {
+    // Authenticated MCP handoff may use the standing policy only while Autopilot remains ON.
+    if (autopilotOn && (principal === 'operator' || mcpHandoff)) {
       try {
         this.bridge.globalAutopilot.ensureRepositoryPolicy(project, workspace);
         this.bridge.globalAutopilot.record({
-          kind: 'task_routed', summary: 'Autopilot routed owner ask to repository',
-          project_id: project.projectId, repository: workspace, actor: 'operator'
+          kind: 'task_routed', summary: 'Autopilot routed authorized ask to repository',
+          project_id: project.projectId, repository: workspace, actor: principal === 'operator' ? 'operator' : 'mcp_handoff'
         });
       } catch (error) {
         const record = { version: 1, instruction, intent, clarify: true, autopilot: true, authority: false, error: error.message };
@@ -435,6 +433,10 @@ class ZeroSetupWork {
           next_action: 'fix_verification_tasks_or_pick_another_repository'
         };
       }
+      // Autopilot enrollment may have just added cognitive discovery files. Prefer
+      // OpenCode planning over asking the caller to name exact files again.
+      const cognitive = await require('./cognitive-router').prepare(this, { instruction, request_id }, principal);
+      if (cognitive) return cognitive;
     }
     const policies = this.bridge.developerAutonomy.activePolicyForRepository(workspace);
     const standing = scope.developer_autonomy_policy_id
@@ -482,9 +484,10 @@ class ZeroSetupWork {
           status: 'Prepared within standing enrollment' }
       };
       this.write(request_id, principal, record, 'awaiting_approval');
-      // Only authenticated local owner intake may use existing standing consent.
-      // MCP, model, and connector text remain proposals requiring owner approval.
-      return principal === 'operator' ? this.activateAutonomy(this.read(request_id)) : this.statusView(this.read(request_id));
+      // Authenticated owner intake always activates standing consent. Autopilot ON also
+      // activates it for authenticated MCP handoff sessions. Cursor spend stays separate.
+      const mayActivate = principal === 'operator' || (autopilotOn && mcpHandoff);
+      return mayActivate ? this.activateAutonomy(this.read(request_id)) : this.statusView(this.read(request_id));
     }
     const existing = this.existingTemplate(workspace, project.projectId);
     const goal = existing?.template
