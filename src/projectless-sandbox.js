@@ -116,7 +116,10 @@ function parseNaturalWorkSpec(instruction) {
 }
 
 function explicitlyRequestsCursor(instruction) {
-  return /\b(?:use|using|with|via)\s+cursor\b|\bcursor[- ]only\b/i.test(instruction);
+  // Destination phrases ("in Cursor", "using Cursor") are explicit worker selection.
+  // Bare "Cursor" without a destination verb stays unrecognized here and is handled
+  // by the cognitive worker parser, which still fails closed when ambiguous.
+  return /\b(?:use|using|with|via|in)\s+cursor\b|\bcursor[- ]only\b|\bassign(?:ed)?\s+to\s+cursor\b/i.test(instruction);
 }
 function workPresentation(spec) {
   spec = normalizeWorkSpec(spec);

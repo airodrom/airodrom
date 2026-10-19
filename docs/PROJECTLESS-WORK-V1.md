@@ -42,9 +42,11 @@ This is intentionally a finite grammar for two public exact-result files, not a
 general prose planner. The entire instruction must match. Extra files, commands,
 money ceilings, fallback instructions, claimed approvals, and appended constraints
 are rejected rather than silently dropped. Existing path/content limits apply,
-including screening decoded contents. Ambiguous explicit Cursor prose returns
+including screening decoded contents. Ambiguous explicit Cursor prose that does **not** name an enrolled Project returns
 `projectless_exact_two_file_syntax_required` and cannot enter the historical
-OpenCode fixture shortcut. Invalid literals and unparsed constraints have distinct
+OpenCode fixture shortcut. Enrolled-project Cursor requests are handled by
+[Zero-setup autonomous work](ZERO-SETUP-AUTONOMOUS-WORK-V1.md#enrolled-project-routing-autonomous-development-unblocking-v1)
+and must never be forced through this two-file grammar. Invalid literals and unparsed constraints have distinct
 blockers. Reusing a request ID with changed instructions is denied; correct a request
 using a new ID. Replay of identical input returns the existing identity and blockers.
 

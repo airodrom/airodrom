@@ -136,12 +136,13 @@ test('route preserves explicit worker and disregards advisory complexity', () =>
   assert.throws(() => R.requestedWorker('Use Cursor only with OpenCode'), /ambiguous/);
 });
 
-test('unrecognized explicit worker prose blocks before planning instead of silently using another worker', async t => {
+test('destination worker phrases are explicit; unrecognized worker prose still blocks', async t => {
   const f = await setup(t);
-  for (const instruction of ['In Fixture project run this in Cursor.', 'In Fixture project OpenCode must execute this.']) {
-    const result = await f.ask(randomUUID(), caller, instruction);
-    assert.equal(result.state, 'BLOCKED'); assert.deepEqual(result.blockers, ['cognitive_explicit_worker_syntax_required']);
-  }
+  assert.equal(R.requestedWorker('Continue the Fixture project audit in Cursor.'), 'cursor');
+  assert.equal(R.requestedWorker('Use OpenCode for the Fixture change.'), 'opencode');
+  const blocked = await f.ask(randomUUID(), caller, 'In Fixture project Cursor somehow must execute this.');
+  assert.equal(blocked.state, 'BLOCKED');
+  assert.deepEqual(blocked.blockers, ['cognitive_explicit_worker_syntax_required']);
   assert.equal(f.plannerCalls, 0);
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n, 0);
 });
