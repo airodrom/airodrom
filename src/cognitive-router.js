@@ -152,7 +152,7 @@ function coerceAutopilotDeliverable(proposal, envelope, instruction) {
       id: 'report',
       operation: 'edit',
       paths: [target],
-      description: 'Write a grounded release-readiness report into the enrolled deliverable file',
+      description: 'Write a grounded release-readiness report into the enrolled deliverable file with no trailing whitespace so git diff --check passes',
       depends_on: [],
       ...(envelope.version === 3 ? { worker, role: 'implementation', verification: [] } : {})
     }],

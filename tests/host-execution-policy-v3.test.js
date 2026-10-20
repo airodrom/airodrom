@@ -101,6 +101,7 @@ describe('Local-First Autopilot V3 host execution policy', () => {
     assert.equal(coerced.tasks.length, 1);
     assert.equal(coerced.tasks[0].operation, 'edit');
     assert.equal(coerced.tasks[0].paths[0], 'CHANGELOG.md');
+    assert.match(coerced.tasks[0].description, /diff --check|trailing whitespace/i);
     assert.equal(R.coerceAutopilotDeliverable(proposal, envelope, 'Summarize CHANGELOG only').tasks.length, 2);
   });
 
