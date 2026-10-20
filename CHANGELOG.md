@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Idle HOLD evidence worktrees (unique commits retained, no active grant) no longer exhaust the concurrent `max_worktrees` ceiling; ready and unsettled clones still occupy slots ([docs/DEVELOPER-AUTONOMY-V1.md](docs/DEVELOPER-AUTONOMY-V1.md)).
 - ChatGPT Autopilot worker-role reconciliation: “Use OpenCode to plan/evaluate” no longer competes with an explicit Cursor specialist on the shared MCP and operator resolver (`cognitive_ambiguous_worker`). Canonical roles remain planner/evaluator=OpenCode, specialist=Cursor ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md)).
 - Full Autopilot V2 host-origin Arecibo acceptance `a48dabaf-d71a-407c-bcc9-4963825ee06f` on install `23ead46`: OpenCode planned, Cursor specialist assigned, WAIT only on `BLOCKED_SPEND_AUTHORIZATION` ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
 - Full Autopilot V2: OpenCode planner/evaluator phrases no longer compete with an explicit Cursor specialist (`cognitive_ambiguous_worker`). Planning forwards only discovery files OpenCode can admit; JSON `\\n` escapes no longer trip the UNC path detector ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md), [docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
