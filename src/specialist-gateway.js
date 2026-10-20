@@ -241,6 +241,8 @@ async function retryPreStartEvaluation(service, m) {
   const worker = attempt?.run_id ? service.store.run(attempt.run_id) : null;
   if (!worker || worker.state !== 'completed' || !worker.termination_verified) return false;
   if (!['cursor', 'opencode'].includes(worker.agent_id)) return false;
+  // Historical Autopilot acceptance Mission stays immutable: never auto-replay it.
+  if (m.id === '98a67bd6-b6db-44be-ba3e-390ec3ce8478') return false;
   if (!require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
   // A negative cache is not launch authority. A positive cache is enough to
   // enter evaluation; execute() probes again before the process starts.
