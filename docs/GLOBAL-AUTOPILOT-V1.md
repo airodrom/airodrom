@@ -116,7 +116,8 @@ separately gated.
 | `cognitive_ambiguous_worker` with OpenCode + Cursor | Pre-V2 parser treated planner phrases as a second specialist | Use “OpenCode for planning/evaluation” plus “in Cursor”; genuine dual specialists still fail closed |
 | `opencode_sensitive_context` on ordinary audits | Setup README mentioning `.env` was forwarded as planner input | Autopilot discovery and planning filter those files; real secrets remain denied |
 | Disk budget exhausted with idle ready / settled clones | Pre-V2 charged unbound ready clones and retained evidence toward disposable disk | Idle ready without a grant and settled evidence do not charge disk; worktree *slot* limits still count unbound ready; prepare reclaims only clean idle ready trees; untracked leftovers and active/uncertain work still charge; new enrollments default to 4096 MB |
-| `BLOCKED_SPEND_AUTHORIZATION` | Cursor spend not in standing grant | Owner-signed spend grant; Autopilot does not invent spend |
+| `BLOCKED_SPEND_AUTHORIZATION` | Cursor spend not in standing grant | Owner-signed spend grant; Autopilot does not invent spend. Host-origin Arecibo acceptance `a48dabaf-d71a-407c-bcc9-4963825ee06f` (install `23ead46`) reached WAIT here after OpenCode planning assigned Cursor — not a routing/repo/disk/sensitive false positive |
+| `cognitive_list_invalid` on ordinary audits | OpenCode returned empty/oversized/wrapped task lists | Host coerces into the sealed assignment ceiling; authority fields still fail closed |
 | Wrong project | Token shared across projects | Prefer unique project name or set default project id via defaults |
 
 See [ADR 0054](adr/0054-global-autopilot.md) and [Developer Autonomy V1](DEVELOPER-AUTONOMY-V1.md).

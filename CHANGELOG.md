@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Full Autopilot V2 host-origin Arecibo acceptance `a48dabaf-d71a-407c-bcc9-4963825ee06f` on install `23ead46`: OpenCode planned, Cursor specialist assigned, WAIT only on `BLOCKED_SPEND_AUTHORIZATION` ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
 - Full Autopilot V2: OpenCode planner/evaluator phrases no longer compete with an explicit Cursor specialist (`cognitive_ambiguous_worker`). Planning forwards only discovery files OpenCode can admit; JSON `\\n` escapes no longer trip the UNC path detector ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md), [docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
 - Full Autopilot V2 capacity: disposable disk budget no longer charges idle ready clones without a grant (worktree *slot* limits still apply); prepare reclaims only clean idle ready trees without promoting unique content to held; project repository enrollment projects UUID path segments before secret scanning; new Autopilot enrollments default to 4096 MB disk ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
 - Full Autopilot V2 planning: OpenCode proposals that wrap JSON, return empty task lists, or exceed the sealed assignment ceiling are coerced into the enrolled limits while unknown authority fields still fail closed ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md)).
