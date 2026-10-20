@@ -324,8 +324,10 @@ class DeveloperAutonomy {
   assertDiskBudget(policy, additional = 0) {
     const ceiling = policy.budgets.max_disk_mb * 1024 * 1024;
     // Charge active/uncertain registered worktrees and untracked leftovers under
-    // the policy worktree root. Settled evidence clones may remain on disk
-    // without consuming disposable capacity. External package stores are never copied in.
+    // the policy worktree root. Idle ready clones without a grant and settled
+    // evidence clones may remain on disk without consuming disposable capacity.
+    // External package stores are never copied in. Worktree *slot* limits use
+    // workspaceOccupiesBudget separately and still count unbound ready clones.
     const root = path.join(this.dataRoot(policy.repository), 'worktrees');
     const byPath = new Map(this.db.prepare("SELECT * FROM cp_developer_autonomy_workspaces WHERE policy_id=?")
       .all(policy.policy_id).map(row => [row.path, row]));
@@ -343,7 +345,7 @@ class DeveloperAutonomy {
         const target = path.join(root, name);
         const row = byPath.get(target);
         if (row) {
-          if (this.workspaceOccupiesBudget(row)) charge(target);
+          if (this.workspaceOccupiesDiskBudget(row)) charge(target);
           continue;
         }
         charge(target);
@@ -407,6 +409,33 @@ class DeveloperAutonomy {
       return !grant || grant.state === 'active';
     }
     return true;
+  }
+
+  // Disposable disk capacity excludes unbound ready clones and settled evidence.
+  // Bound/held work with active writers or unsettled lineage still charges.
+  workspaceOccupiesDiskBudget(row) {
+    if (!row || !['ready', 'bound', 'held', 'invalid'].includes(row.state)) return false;
+    if (row.state === 'invalid') return true;
+    if (row.state === 'ready' && !row.grant_id) return false;
+    return this.workspaceOccupiesBudget(row);
+  }
+
+  // Remove only clean, idle ready clones so worktree slots and physical disk
+  // can recover. Never promote unique/dirty clones to held here — held would
+  // re-charge disk and worsen capacity. Leave those as ready (non-disk-occupying).
+  reclaimIdleReadyWorkspaces(policy, owner) {
+    const idleBefore = Date.now() - 60_000;
+    const rows = this.db.prepare(
+      "SELECT * FROM cp_developer_autonomy_workspaces WHERE policy_id=? AND state='ready' AND (grant_id IS NULL OR grant_id='') AND created_at<=?"
+    ).all(policy.policy_id, idleBefore);
+    for (const row of rows) {
+      try {
+        if (!this.workspaceIdle(row.path)) continue;
+        const record = JSON.parse(row.record);
+        if (this.cleanupDecision(row, record).action !== 'clean') continue;
+        this.cleanupOwnedWorkspace({ workspace_id: row.workspace_id, confirmed: true }, owner);
+      } catch { /* best-effort reclaim; prepare still fail-closed on budget */ }
+    }
   }
 
   occupiedWorktrees(policyId) {
@@ -732,6 +761,7 @@ class DeveloperAutonomy {
       this.assertWorkspace(ws);
       return ws;
     }
+    this.reclaimIdleReadyWorkspaces(policy, owner);
     this.assertDiskBudget(policy);
     const objectRoot = fs.realpathSync(path.resolve(policy.repository, git(policy.repository, ['rev-parse', '--git-path', 'objects'])));
     const tracked = git(policy.repository, ['ls-tree', '-rl', 'HEAD']).split('\n').reduce((sum, line) => sum + (Number(line.split(/\s+/)[3]) || 0), 0);

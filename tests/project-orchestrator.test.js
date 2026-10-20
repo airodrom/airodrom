@@ -65,6 +65,21 @@ test('project updates validate supplied fields and reject secret-like project me
   assert.throws(() => f.projects.updateProject(created.projectId, { references: ['authorization: Bearer super-secret-token-value'] }), /secret-like/);
 });
 
+test('DA worktree UUID repository paths enroll without card-scan false positives', t => {
+  const f = fixture(t); const created = f.projects.createProject(project());
+  // This UUID path fails containsSecret when scanned as free-form metadata
+  // because hyphenated digit runs satisfy the Luhn card detector.
+  const daPath = '/tmp/.airodrom-da-worktrees/worktrees/139752a3-4616-4073-9697-7078c627650e';
+  assert.equal(require('../src/personal-memory').containsSecret(daPath), true);
+  const updated = f.projects.updateProject(created.projectId, {
+    repositories: [...created.repositories, daPath]
+  });
+  assert.ok(updated.repositories.includes(daPath));
+  assert.throws(() => f.projects.updateProject(created.projectId, {
+    repositories: ['authorization: Bearer super-secret-token-value']
+  }), /secret-like/);
+});
+
 test('cross-project dependencies and task, run, and event links are rejected', t => {
   const f = fixture(t); const one = f.projects.createProject(project()); const two = f.projects.createProject(project({ name: 'Arecibo' }));
   const first = f.projects.createGoal({ projectId: one.projectId, name: 'Memory' }); const second = f.projects.createGoal({ projectId: two.projectId, name: 'Engineering' });

@@ -279,7 +279,7 @@ class GlobalAutopilot {
         max_files: 12,
         max_worktrees: 4,
         max_runtime_hours: 4,
-        max_disk_mb: 2048
+        max_disk_mb: 4096
       },
       workers: cursorReady ? ['opencode', 'cursor'] : ['opencode'],
       duration_days: 30,
