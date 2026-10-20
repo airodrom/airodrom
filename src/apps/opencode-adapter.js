@@ -10,6 +10,11 @@ const { randomUUID, createHash } = require('node:crypto');
 const { AgentAdapter, AgentAdapterError } = require('../agent-adapter');
 const { object, redactValue } = require('../control-plane-store');
 const MAX_CONTEXT = 24000, MAX_OUTPUT = 64000, MAX_PLANNING_STREAM = 128000, MAX_FILE = 262144;
+// Discovery/planning input must stay well under MAX_OUTPUT so a single OpenCode
+// read of an enrolled file cannot alone exhaust the execution stream budget
+// (JSONL tool events amplify file bytes). Autopilot Arecibo docs/README.md at
+// ~78KB previously caused opencode_output_bound on the second assignment.
+const MAX_DISCOVERY_FILE = 16384;
 const STDERR_CLASSIFY_BYTES = 4096;
 const VERSION = '2.0.25';
 const CODING_TIMEOUT_MS = 120000;
@@ -82,6 +87,13 @@ function sourceContextSensitive(value) {
   if (/\bAIRODROM_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY)[A-Z0-9_]*\b/i.test(value)) return true;
   if (/\b(?:OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|GH_TOKEN)\b/.test(value)) return true;
   return false;
+}
+// Host gate for Autopilot discovery and cognitive planner permitted_paths.
+// Oversized or secret-bearing files stay on disk but are never forwarded.
+function planningContextAdmissible(value) {
+  if (typeof value !== 'string') return false;
+  if (Buffer.byteLength(value, 'utf8') > MAX_DISCOVERY_FILE) return false;
+  return !sourceContextSensitive(value);
 }
 function safeText(value, max = MAX_CONTEXT) {
   if (typeof value !== 'string' || Buffer.byteLength(value) > max || /\0/.test(value)) fail('opencode_context_bound');
@@ -624,4 +636,4 @@ class OpenCodeAdapter extends AgentAdapter {
   async shutdown() { for (const controller of this.active.values()) controller.abort(); }
   async status() { return this.readiness(); }
 }
-module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, codingSecretScanView, specialistReturnSafetyView, classifyStderrClass, classifyProcessFailure, MAX_CONTEXT, MAX_OUTPUT, MAX_PLANNING_STREAM, MAX_FILE, STDERR_CLASSIFY_BYTES, CODING_TIMEOUT_MS, VERSION, OLLAMA_PORT };
+module.exports = { OpenCodeAdapter, version, authCategory, parseOutput, disposableEnv, runtimeConfig, sandboxProfile, sourceContextSensitive, planningContextAdmissible, codingSecretScanView, specialistReturnSafetyView, classifyStderrClass, classifyProcessFailure, MAX_CONTEXT, MAX_OUTPUT, MAX_PLANNING_STREAM, MAX_FILE, MAX_DISCOVERY_FILE, STDERR_CLASSIFY_BYTES, CODING_TIMEOUT_MS, VERSION, OLLAMA_PORT };

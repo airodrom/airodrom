@@ -249,7 +249,7 @@ class GlobalAutopilot {
       throw Error('Autopilot needs registered verification (diff-check plus at least one test task) via .vscode/tasks.json or an active Work template for ' + workspace);
     }
     const { DEFAULT_DENIED_PATHS, globMatch } = require('./mission-contract');
-    const { sourceContextSensitive } = require('./opencode-adapter');
+    const { planningContextAdmissible } = require('./opencode-adapter');
     const discovery = [
       'README.md', 'CHANGELOG.md', 'docs/README.md',
       'docs/operations/founder-current-state.md', 'lib/platform/manifest.json',
@@ -259,9 +259,11 @@ class GlobalAutopilot {
       try {
         const target = path.join(workspace, file);
         if (!fs.lstatSync(target).isFile() || fs.realpathSync(target) !== target) return false;
-        // Planning must receive only context OpenCode can admit. Setup docs that
-        // mention .env paths stay on disk but are not forwarded as planner input.
-        return !sourceContextSensitive(fs.readFileSync(target, 'utf8'));
+        // Planning must receive only context OpenCode can admit under the
+        // execution stream budget. Setup docs that mention .env paths, and
+        // oversized indexes that alone would exhaust MAX_OUTPUT, stay on disk
+        // but are not forwarded as planner or specialist input.
+        return planningContextAdmissible(fs.readFileSync(target, 'utf8'));
       } catch { return false; }
     }).slice(0, 8);
     const cursorReady = !!(this.bridge.cursorWorker?.lastReadiness?.ready

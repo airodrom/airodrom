@@ -72,6 +72,38 @@ describe('Local-First Autopilot V3 host execution policy', () => {
     assert.equal(R.route(envelope, proposal, ['host', 'opencode', 'cursor'], { cursorDisabled: true }), 'opencode');
   });
 
+  test('coerceAutopilotDeliverable turns read-only audit plans into one enrolled edit', () => {
+    const envelope = C.seal({
+      version: 3, request_id: '11111111-1111-4111-8111-111111111111', caller: 'operator',
+      delegation: { policy_id: '22222222-2222-4222-8222-222222222222', policy_hash: 'a'.repeat(64) },
+      repository_id: 'proj:policy', workspace_id: '33333333-3333-4333-8333-333333333333',
+      git_anchor: 'b'.repeat(40),
+      integrity: { version: 1, hash: 'c'.repeat(64), entries: 1, bytes: 1, exclusions: 'none' },
+      permitted_paths: ['CHANGELOG.md', 'README.md'], denied_paths: ['.git/**'],
+      operations: ['read', 'edit'], eligible_workers: ['host', 'opencode'],
+      verification: ['diff-check', 'arecibo-typecheck'],
+      limits: { planning_attempts: 2, execution_attempts: 2, repair_attempts: 1, planning_ms: 120000, execution_ms: 120000 },
+      requested_worker: 'auto', instruction_hash: 'd'.repeat(64), expires_at: Date.now() + 60000
+    });
+    const proposal = {
+      version: 3,
+      request_id: envelope.request_id,
+      envelope_hash: envelope.hash,
+      files: ['CHANGELOG.md', 'README.md'],
+      tasks: [
+        { id: 'read_changelog', operation: 'read', paths: ['CHANGELOG.md'], description: 'read changelog', depends_on: [], worker: 'opencode', role: 'analysis', verification: [] },
+        { id: 'read_readme', operation: 'read', paths: ['README.md'], description: 'read readme', depends_on: ['read_changelog'], worker: 'opencode', role: 'analysis', verification: [] }
+      ],
+      verification: ['diff-check', 'arecibo-typecheck'],
+      complexity: 'bounded'
+    };
+    const coerced = R.coerceAutopilotDeliverable(proposal, envelope, 'Start the Arecibo release-readiness audit and produce a grounded report.');
+    assert.equal(coerced.tasks.length, 1);
+    assert.equal(coerced.tasks[0].operation, 'edit');
+    assert.equal(coerced.tasks[0].paths[0], 'CHANGELOG.md');
+    assert.equal(R.coerceAutopilotDeliverable(proposal, envelope, 'Summarize CHANGELOG only').tasks.length, 2);
+  });
+
   test('coercePlanningProposal clamps Cursor tasks to OpenCode when Cursor is ineligible', () => {
     const envelope = C.seal({
       version: 3, request_id: '11111111-1111-4111-8111-111111111111', caller: 'operator',

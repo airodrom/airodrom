@@ -46,7 +46,15 @@ Lifecycle presentation remains:
 A successful OpenCode evaluation never overrides failed host verification.
 Cursor execution stays disabled; there is no paid external evaluator fallback.
 One bounded never-started evaluator retry uses the enrolled planning allowance,
-not the paid Cursor window.
+not the paid Cursor window. Historical Mission `98a67bd6-…` is never auto-replayed.
+If an evaluator process dies after write leases were already released, reconciliation
+still settles that run as `gateway_evaluation_timed_out` without Acceptance so
+admission can idle.
+Planner permitted_paths and Autopilot discovery admit only files that pass
+`planningContextAdmissible` (sensitivity plus `MAX_DISCOVERY_FILE`). Report/audit
+instructions with edit authorization coerce read-only multi-task plans into one
+enrolled edit so oversized indexes cannot trigger `opencode_output_bound` on a
+later assignment. Historical Mission `cbc4e596-…` stays immutable.
 
 ## Planner / specialist / evaluator roles
 

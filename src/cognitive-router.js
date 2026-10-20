@@ -127,6 +127,40 @@ function extractProposalObject(raw) {
   catch { C.fail('cognitive_json_required'); }
 }
 
+// Local-first Autopilot audits that ask for a report must produce a measurable
+// edit. Read-only multi-task plans against enrolled discovery previously stalled
+// Acceptance when a later assignment re-read an oversized file and hit
+// opencode_output_bound. Coerce only when edit is authorized and every proposed
+// task is still a read.
+function coerceAutopilotDeliverable(proposal, envelope, instruction) {
+  if (!envelope.operations.includes('edit')) return proposal;
+  if (!/\b(report|audit|readiness|release[- ]readiness)\b/i.test(String(instruction || ''))) return proposal;
+  if (!Array.isArray(proposal?.tasks) || !proposal.tasks.length) return proposal;
+  if (!proposal.tasks.every(task => task.operation === 'read')) return proposal;
+  const prefer = ['CHANGELOG.md', 'README.md', 'docs/operations/founder-current-state.md'];
+  const target = prefer.find(file => envelope.permitted_paths.includes(file)) || envelope.permitted_paths[0];
+  if (!target) return proposal;
+  const worker = envelope.eligible_workers.includes('opencode')
+    ? 'opencode'
+    : (proposal.tasks[0].worker || (envelope.requested_worker === 'auto' ? 'opencode' : envelope.requested_worker));
+  return {
+    version: proposal.version,
+    request_id: proposal.request_id,
+    envelope_hash: proposal.envelope_hash,
+    files: [target],
+    tasks: [{
+      id: 'report',
+      operation: 'edit',
+      paths: [target],
+      description: 'Write a grounded release-readiness report into the enrolled deliverable file',
+      depends_on: [],
+      ...(envelope.version === 3 ? { worker, role: 'implementation', verification: [] } : {})
+    }],
+    verification: proposal.verification,
+    complexity: proposal.complexity || 'bounded'
+  };
+}
+
 function coercePlanningProposal(raw, envelope) {
   const e = C.parse('RequestEnvelope', envelope);
   const data = extractProposalObject(raw);
@@ -375,14 +409,15 @@ async function executeReserved(zero, record, p, instruction) {
     const ws = b.developerAutonomy.prepareWorkspace({ policy_id: p.policy_id, request_id: 'cognitive:' + request_id + ':workspace', prefer_disposable: true, branch_prefix: 'airodrom/da' }, 'operator');
     record.workspace = ws.path;
     b.developerAutonomy.assertVerifiers(p, ws.path, p.cognitive.files);
-    // Forward only discovery files OpenCode can admit. Existing enrollments may
-    // still list setup docs that mention .env paths; those stay out of planner input.
-    const { sourceContextSensitive } = require('./opencode-adapter');
+    // Forward only discovery files OpenCode can admit under the execution stream
+    // budget. Existing enrollments may still list setup docs that mention .env
+    // paths or oversized indexes; those stay out of planner/specialist input.
+    const { planningContextAdmissible } = require('./opencode-adapter');
     const planningFiles = [...p.cognitive.files].filter(file => {
       try {
         const target = path.join(ws.path, file);
         return fs.lstatSync(target).isFile() && fs.realpathSync(target) === target
-          && !sourceContextSensitive(fs.readFileSync(target, 'utf8'));
+          && planningContextAdmissible(fs.readFileSync(target, 'utf8'));
       } catch { return false; }
     }).sort();
     if (!planningFiles.length) C.fail('cognitive_discovery_sensitive_or_missing');
@@ -410,7 +445,11 @@ async function executeReserved(zero, record, p, instruction) {
         timeoutMs: envelope.limits.planning_ms });
       if (!output.provenance?.termination_verified || output.changes?.length) C.fail('cognitive_planner_termination_or_mutation');
       assertDelegation(b, record); integrity.assertCurrent(ws.path, envelope, captured.workspace_identity);
-      try { proposal = validateProposal(output.result?.summary, envelope); break; }
+      try {
+        proposal = validateProposal(output.result?.summary, envelope);
+        proposal = validateProposal(coerceAutopilotDeliverable(proposal, envelope, instruction), envelope);
+        break;
+      }
       catch (error) { if (record.cognitive.planning_attempts >= envelope.limits.planning_attempts) throw error; }
     }
     const ready = await b.opencodeAdapter.readiness();
@@ -579,4 +618,4 @@ function evidence(bridge, mission, detail, verification, changes) {
     references: ['mission:' + mission.id, 'request:' + c.envelope.request_id, ...(c.planner_run_ids || []).map(id => 'run:' + id), ...(verification ? ['verification:' + verification.id] : [])],
     counts: { planning: c.planning_attempts, execution: runs.length, repair: c.envelope.version === 3 ? require('./specialist-gateway').repairCount(bridge, mission) : c.envelope.version === 2 ? require('./mission-evidence').lineageFor(bridge, mission).filter(m => m.repair_of).length : 0 } });
 }
-module.exports = { enrollment, requestedWorker, resolveWorkerRoles, coercePlanningProposal, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
+module.exports = { enrollment, requestedWorker, resolveWorkerRoles, coercePlanningProposal, coerceAutopilotDeliverable, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
