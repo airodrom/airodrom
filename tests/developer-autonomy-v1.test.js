@@ -586,6 +586,43 @@ test('ready and unsettled worktrees still occupy the concurrent worktree budget'
   }, 'operator'), /Worktree budget exhausted/);
 });
 
+test('idle ready clones without grants do not exhaust disposable disk budget', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.enroll({
+    ...f.enrollInput,
+    alias: 'fixture-da-ready-disk',
+    budgets: { ...f.enrollInput.budgets, max_disk_mb: 64, max_worktrees: 4 }
+  }, 'operator');
+  const ready = da.prepareWorkspace({
+    policy_id: policy.policy_id,
+    request_id: randomUUID(),
+    prefer_disposable: true
+  }, 'operator');
+  assert.equal(ready.state, 'ready');
+  assert.equal(da.workspaceOccupiesDiskBudget(
+    f.bridge.controlStore.db.prepare('SELECT * FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').get(ready.workspace_id)
+  ), false);
+  // Untracked bulk under the worktree root still charges disposable capacity.
+  const trees = path.join(da.dataRoot(f.repo), 'worktrees');
+  const canary = path.join(trees, 'retained-large-file');
+  const fd = fs.openSync(canary, 'wx'); fs.ftruncateSync(fd, 65 * 1024 * 1024); fs.closeSync(fd);
+  assert.throws(() => da.prepareWorkspace({
+    policy_id: policy.policy_id,
+    request_id: randomUUID(),
+    prefer_disposable: true
+  }, 'operator'), /disk budget/);
+  fs.unlinkSync(canary);
+  // After removing the untracked charge, a second prepare may proceed on disk
+  // even while the prior ready clone remains (worktree slots still apply).
+  const next = da.prepareWorkspace({
+    policy_id: policy.policy_id,
+    request_id: randomUUID(),
+    prefer_disposable: true
+  }, 'operator');
+  assert.equal(next.state, 'ready');
+  assert.notEqual(next.workspace_id, ready.workspace_id);
+});
+
 test('explicitly named enrolled requests retain the full instruction beyond the plan display limit', async t => {
   const f=await setup(t),b=f.bridge,da=b.developerAutonomy;
   da.enroll({...f.enrollInput,workflows:['routine_edit'],budgets:{...f.enrollInput.budgets,max_repairs:0}},'operator');

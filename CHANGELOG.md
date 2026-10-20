@@ -1,7 +1,8 @@
 ## Unreleased
 
 ### Fixed
-- Full Autopilot V2: OpenCode planner/evaluator phrases no longer compete with an explicit Cursor specialist (`cognitive_ambiguous_worker`). Planning forwards only discovery files OpenCode can admit; JSON `\\n` escapes no longer trip the UNC path detector; disposable disk budget ignores settled evidence clones ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md), [docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
+- Full Autopilot V2: OpenCode planner/evaluator phrases no longer compete with an explicit Cursor specialist (`cognitive_ambiguous_worker`). Planning forwards only discovery files OpenCode can admit; JSON `\\n` escapes no longer trip the UNC path detector ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md), [docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
+- Full Autopilot V2 capacity: disposable disk budget no longer charges idle ready clones without a grant (worktree *slot* limits still apply); prepare reclaims only clean idle ready trees without promoting unique content to held; project repository enrollment projects UUID path segments before secret scanning; new Autopilot enrollments default to 4096 MB disk ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
 
 ### Added
 - Zero-Manual Autopilot Activation V1: owner-configured project default repositories (`cp_project_defaults`), live-Git filtering of cleaned disposable leftovers, deterministic repository selection precedence, and Autopilot verification via `.vscode/tasks.json` or an already-active Work template ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md), [docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md](docs/ZERO-SETUP-AUTONOMOUS-WORK-V1.md)).

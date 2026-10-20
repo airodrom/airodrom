@@ -115,7 +115,7 @@ separately gated.
 | Disposable worktree without `node_modules` | Source deps use an external store (pnpm/yarn links outside the repo) | Expected skip; install deps inside the disposable clone when verification needs them |
 | `cognitive_ambiguous_worker` with OpenCode + Cursor | Pre-V2 parser treated planner phrases as a second specialist | Use “OpenCode for planning/evaluation” plus “in Cursor”; genuine dual specialists still fail closed |
 | `opencode_sensitive_context` on ordinary audits | Setup README mentioning `.env` was forwarded as planner input | Autopilot discovery and planning filter those files; real secrets remain denied |
-| Disk budget exhausted with only settled clones | Pre-V2 counted retained evidence under the worktree root | Active/uncertain worktrees and untracked leftovers count; settled evidence does not |
+| Disk budget exhausted with idle ready / settled clones | Pre-V2 charged unbound ready clones and retained evidence toward disposable disk | Idle ready without a grant and settled evidence do not charge disk; worktree *slot* limits still count unbound ready; prepare reclaims only clean idle ready trees; untracked leftovers and active/uncertain work still charge; new enrollments default to 4096 MB |
 | `BLOCKED_SPEND_AUTHORIZATION` | Cursor spend not in standing grant | Owner-signed spend grant; Autopilot does not invent spend |
 | Wrong project | Token shared across projects | Prefer unique project name or set default project id via defaults |
 

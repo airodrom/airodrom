@@ -47,6 +47,22 @@ function strings(value, name, maximum = 24, itemMaximum = 500) {
   if (!Array.isArray(value) || value.length > maximum) throw new Error(`Invalid ${name}`);
   return value.map((item, index) => text(item, `${name}[${index}]`, itemMaximum));
 }
+// Repository paths are host filesystem coordinates. UUID path segments can
+// accidentally match the payment-card digit detector; scan a projection that
+// replaces RFC-4122 UUID components with a fixed non-secret placeholder.
+const UUID_PATH = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+function repositoryPaths(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 24) throw new Error('Invalid repositories');
+  return value.map((item, index) => {
+    if (typeof item !== 'string' || !item.trim() || Buffer.byteLength(item, 'utf8') > 500 || item.includes('\0')) {
+      throw new Error(`Invalid repositories[${index}]`);
+    }
+    const projected = item.replace(UUID_PATH, 'repo-uuid-path-segment');
+    if (containsSecret(projected)) throw new Error(`repositories[${index}] cannot contain secret-like content`);
+    return item.normalize('NFC').trim();
+  });
+}
 function agents(value) {
   const list = strings(value, 'preferredAgents', 8, 32);
   if (list.some(agent => !AGENTS.has(agent))) throw new Error('Unsupported preferred agent');
@@ -156,7 +172,7 @@ class ProjectMissionOrchestrator {
     const autonomyLevel = input.autonomyLevel ?? 'suggest'; if (!AUTONOMY.has(autonomyLevel)) throw new Error('Invalid autonomy level');
     const projectId = randomUUID(); const now = this.now();
     this.db.prepare(`INSERT INTO projects(project_id,name,description,status,priority,desired_outcomes,current_phase,next_action,preferred_agents,autonomy_level,privacy_policy,cost_policy,memory_namespace,repositories,references_json,decisions,limitations,created_at,updated_at,archived_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`).run(projectId, name, text(input.description, 'project description', MAX_TEXT, { optional: true }), status, priority(input.priority), json(strings(input.desiredOutcomes, 'desiredOutcomes')), text(input.currentPhase, 'current phase', 500, { optional: true }), text(input.nextAction, 'next action', 1_000, { optional: true }), json(agents(input.preferredAgents)), autonomyLevel, text(input.privacyPolicy, 'privacy policy', 1_000, { optional: true }), text(input.costPolicy, 'cost policy', 1_000, { optional: true }), `project:${projectId}`, json(strings(input.repositories, 'repositories')), json(strings(input.references, 'references')), json(strings(input.decisions, 'decisions')), json(strings(input.limitations, 'limitations')), now, now);
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`).run(projectId, name, text(input.description, 'project description', MAX_TEXT, { optional: true }), status, priority(input.priority), json(strings(input.desiredOutcomes, 'desiredOutcomes')), text(input.currentPhase, 'current phase', 500, { optional: true }), text(input.nextAction, 'next action', 1_000, { optional: true }), json(agents(input.preferredAgents)), autonomyLevel, text(input.privacyPolicy, 'privacy policy', 1_000, { optional: true }), text(input.costPolicy, 'cost policy', 1_000, { optional: true }), `project:${projectId}`, json(repositoryPaths(input.repositories)), json(strings(input.references, 'references')), json(strings(input.decisions, 'decisions')), json(strings(input.limitations, 'limitations')), now, now);
     const project = this.getProject(projectId); this._record('project.created', { project_id: projectId }); return project;
   }
   getProject(projectId) { return this._project(projectId); }
@@ -182,7 +198,7 @@ class ProjectMissionOrchestrator {
     });
     const privacyPolicy = supplied('privacyPolicy', project.privacyPolicy, value => text(value, 'privacy policy', 1_000, { optional: true }));
     const costPolicy = supplied('costPolicy', project.costPolicy, value => text(value, 'cost policy', 1_000, { optional: true }));
-    const repositories = supplied('repositories', project.repositories, value => strings(value, 'repositories'));
+    const repositories = supplied('repositories', project.repositories, value => repositoryPaths(value));
     const references = supplied('references', project.references, value => strings(value, 'references'));
     const decisions = supplied('decisions', project.decisions, value => strings(value, 'decisions'));
     const limitations = supplied('limitations', project.limitations, value => strings(value, 'limitations'));
