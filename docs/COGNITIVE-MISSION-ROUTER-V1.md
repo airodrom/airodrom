@@ -1,7 +1,31 @@
 # Cognitive Mission Router V1
 
-Source implementation; not merged, installed or accepted on the running host.
 Architecture decision: [ADR 0057](adr/0057-cognitive-mission-router.md).
+
+## Planner / specialist / evaluator roles
+
+OpenCode is the cognitive planner and evaluator. Cursor (or another qualified
+specialist) executes when selected. Naming both in one instruction is valid:
+
+> Start the Arecibo release-readiness audit in Cursor. Use OpenCode for planning and evaluation. Do not deploy production.
+
+Interpretation:
+
+| Role | Worker |
+|------|--------|
+| Planner | OpenCode |
+| Specialist | Cursor |
+| Evaluator | OpenCode |
+
+`requested_worker` records the **specialist**. OpenCode planner/evaluator phrases
+are stripped before ambiguity detection. Competing specialists (for example
+“Use Cursor only with OpenCode” as two execution workers) still fail closed as
+`cognitive_ambiguous_worker`.
+
+Planning forwards only enrolled discovery files that pass the OpenCode
+sensitive-context gate. Setup docs that mention `.env` paths remain on disk but
+are not planner input. Real secrets, absolute home paths, and credential files
+still fail closed.
 
 ## Lifecycle and existing components
 

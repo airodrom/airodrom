@@ -55,6 +55,10 @@ test('explicit Cursor destination phrases are recognized without the two-file gr
   assert.equal(sandbox.explicitlyRequestsCursor('Maybe talk about Cursor later'), false);
   assert.equal(sandbox.parseNaturalWorkSpec('Start the Arecibo release-readiness audit in Cursor'), null);
   assert.equal(R.requestedWorker('Start the Arecibo release-readiness audit in Cursor'), 'cursor');
+  assert.equal(
+    R.requestedWorker('Start the Arecibo release-readiness audit in Cursor. Use OpenCode for planning and evaluation. Do not deploy production.'),
+    'cursor'
+  );
   assert.equal(intent.isWorkRequest('Start the Arecibo release-readiness audit in Cursor'), true);
   assert.equal(intent.isWorkRequest('How does Cursor routing work in Airodrom?'), false);
 });

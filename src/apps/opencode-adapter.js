@@ -60,7 +60,9 @@ function sourceContextSensitive(value) {
   if (typeof value !== 'string') return true;
   if (require('../personal-memory').containsSecret(codingSecretScanView(value))) return true;
   // Absolute home/private product paths and Windows/UNC/~ roots.
-  if (/(?:^|[\s"'`=(,:])(?:[A-Za-z]:[\\/]|\\\\|~\/)/.test(value)) return true;
+  // Require a UNC server token after \\ so JSON/JS escape sequences like \\n
+  // in ordinary source do not trip the Windows-path detector.
+  if (/(?:^|[\s"'`=(,:])(?:[A-Za-z]:[\\/]|\\\\[A-Za-z0-9._$%-]+(?:\\|$)|~\/)/.test(value)) return true;
   if (/(?:^|[\s"'`=(,:])\/(?:Users|home|private|root|etc)(?:\/|$)/.test(value)) return true;
   if (/(?:^|[\s"'`=\/])\.airodrom(?:\/|$)/.test(value) || /\/\.airodrom(?:\/|$)/.test(value)) return true;
   // Credential / secret file names: dotted filenames or path segments only.
