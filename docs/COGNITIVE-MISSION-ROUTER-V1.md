@@ -3,6 +3,17 @@
 Architecture decision: [ADR 0057](adr/0057-cognitive-mission-router.md).
 Host execution policy: [ADR 0060](adr/0060-host-execution-policy.md).
 
+## MCP acknowledgement and status responsiveness
+
+`ask_airodrom` / `prepare_mission` reserve a durable request row and return
+`PLANNING` (or a terminal view) before OpenCode planning finishes. Disposable
+workspace clone and `node_modules` materialization run asynchronously on the
+cognitive path (`prepareWorkspaceAsync`) so the bridge event loop keeps
+serving `get_ask_status` and `agent_status` during multi-GB prep. Identical
+`request_id` values remain idempotent; unknown outcomes recover with the same
+id. Cursor may appear in `agent_status` as installed/observable while
+`host_execution_disabled=true` — that is not execution authorization.
+
 ## Local-First default (V3)
 
 While `cp_host_execution_policy.cursor_execution_disabled=1`, explicit Cursor

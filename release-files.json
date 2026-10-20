@@ -743,6 +743,7 @@
   "tests/mcp-restart-transport.test.js",
   "tests/mcp-schema.test.js",
   "tests/mcp-status-compact.test.js",
+  "tests/mcp-status-reliability.test.js",
   "tests/mcp-trace.test.js",
   "tests/mcp-tunnel.test.js",
   "tests/memory-awareness-v1.test.js",

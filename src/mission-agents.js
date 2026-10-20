@@ -10,11 +10,14 @@ class MissionAgents {
       host:{kind:'control_plane_capability',implemented:true,available:!this.bridge.closed,capabilities:['verification','local_tools'],boundary:'bridge typed capabilities',reason:this.bridge.closed?'stopped':null},
       claude_code:{kind:'agent',version:claude.version||null,authenticated:claude.authenticated===true,running_jobs:claude.running_jobs||0,jobs:claude.jobs||[],implemented:true,installed:claude.installed===true,available:claude.availability==='available'&&claude.auth_mode==='subscription'&&!claude.api_key_overrides_subscription&&!(claude.running_jobs>0),auth_mode:claude.auth_mode,subscription:claude.subscription||'unknown',capabilities:['coding'],boundary:'local Claude CLI; not an OS sandbox',reason:claude.running_jobs>0?'busy':claude.availability==='available'?(claude.auth_mode==='subscription'?null:'subscription_required'):claude.availability,concurrency:1},
       cursor:await (async()=>{
-        const base={kind:'agent',installed:cursor.installed===true,implemented:true,available:false,capabilities:[],editor_available:cursor.installed===true,runtime:cursor.runtime||null,reason:cursor.runtime?.reason||'cursor_execution_unqualified'};
+        const cursorDisabled=!!this.bridge.hostExecutionPolicy?.cursorDisabled?.();
+        const base={kind:'agent',installed:cursor.installed===true,implemented:true,available:false,capabilities:[],editor_available:cursor.installed===true,runtime:cursor.runtime||null,reason:cursorDisabled?'cursor_execution_disabled':(cursor.runtime?.reason||'cursor_execution_unqualified'),host_execution_disabled:cursorDisabled};
         // ADR 0051: the governed sandboxed worker is the only Cursor execution path.
+        // Host policy may leave the adapter observable while denying execution.
         const worker=this.bridge.cursorWorker;if(!worker)return base;
         let r;try{r=await worker.readiness();worker.lastReadiness=r;}catch{return base;}
-        return {...base,installed:r.installed,version:r.version,governed_worker:true,available:r.ready===true,availability:r.availability,auth_state:r.auth_state,credential_source:r.credential_source,tiers:r.tiers,isolation:r.isolation,capabilities:r.ready?['coding','bounded_file_work']:[],boundary:'sandbox-exec staging; host CONNECT proxy to Cursor API hosts only; Keychain and shells denied; host applies changes',reason:r.ready?null:r.reason,owner_step:r.owner_step||null,spend:r.spend};
+        const executable=!cursorDisabled&&r.ready===true;
+        return {...base,installed:r.installed,version:r.version,governed_worker:true,available:executable,availability:cursorDisabled?'disabled':r.availability,auth_state:r.auth_state,credential_source:r.credential_source,tiers:r.tiers,isolation:r.isolation,capabilities:executable?['coding','bounded_file_work']:[],boundary:'sandbox-exec staging; host CONNECT proxy to Cursor API hosts only; Keychain and shells denied; host applies changes',reason:cursorDisabled?'cursor_execution_disabled':(r.ready?null:r.reason),owner_step:cursorDisabled?'enable_cursor_via_authenticated_local_api':(r.owner_step||null),spend:r.spend,host_execution_disabled:cursorDisabled};
       })(),
       chatgpt:{kind:'orchestrator',implemented:true,available:null,reason:'remote client connection not probed'}
     };

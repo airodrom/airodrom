@@ -233,10 +233,27 @@ class CursorWorker {
 
   async readiness() {
     const install = this.install();
-    const observed = install ? (() => {
+    const now = Date.now();
+    // Short TTL cache keeps agent_status MCP polls off the spawn hot path.
+    if (this._readinessCache && (now - this._readinessCache.at) < 3000) return this._readinessCache.value;
+    const observed = install ? await (async () => {
       if (this.options.fixtureExecutable) return this.options.fixtureVersion || '2026.09.28-64d2043';
-      const r = spawnSync(install.node, [install.index, '--version'], { encoding: 'utf8', timeout: 8000, maxBuffer: 8192, env: { PATH: '/usr/bin:/bin', HOME: os.homedir(), CURSOR_INVOKED_AS: 'cursor-agent', NO_COLOR: '1' } });
-      return r.status === 0 ? version(r.stdout) : null;
+      return await new Promise(resolve => {
+        let settled = false;
+        const finish = value => { if (settled) return; settled = true; resolve(value); };
+        let child;
+        try {
+          child = spawn(install.node, [install.index, '--version'], {
+            stdio: ['ignore', 'pipe', 'ignore'],
+            env: { PATH: '/usr/bin:/bin', HOME: os.homedir(), CURSOR_INVOKED_AS: 'cursor-agent', NO_COLOR: '1' }
+          });
+        } catch { return finish(null); }
+        const timer = setTimeout(() => { try { child.kill('SIGTERM'); } catch { /* best-effort */ } finish(null); }, 8000);
+        let stdout = '';
+        child.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(0, 8192); });
+        child.on('error', () => { clearTimeout(timer); finish(null); });
+        child.on('close', code => { clearTimeout(timer); finish(code === 0 ? version(stdout) : null); });
+      });
     })() : null;
     const credential = this.credentialSource();
     const qualification = this.qualification();
@@ -252,7 +269,7 @@ class CursorWorker {
       available: ready && !this.active.size,
       executing: this.active.size > 0,
     };
-    return {
+    const value = {
       agentId: ID, implemented: true, installed: !!install, version: observed, ready, available: ready,
       availability: ready ? (this.active.size ? 'busy' : 'available') : credential.available ? 'unavailable' : 'auth_required',
       auth_state: credential.available ? (credential.kind === 'fixture' ? 'fixture' : 'credential_file') : 'auth_required',
@@ -264,6 +281,8 @@ class CursorWorker {
       spend: 'UNKNOWN_SUBSCRIPTION',
       spend_authorization: 'mission_scoped_owner_grant_required',
     };
+    this._readinessCache = { at: now, value };
+    return value;
   }
 
   /** Mission-level qualification: governed contract with disclosure for Cursor, allowlist of known hosts, worker ready. */

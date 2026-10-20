@@ -2,8 +2,29 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { classifyCommand } = require('./command-classifier');
+
+function runCpClone(src, dst) {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = result => { if (settled) return; settled = true; resolve(result); };
+    let child;
+    try {
+      child = spawn('/bin/cp', ['-Rc', src, dst], { stdio: ['ignore', 'ignore', 'pipe'] });
+    } catch (error) {
+      return finish({ status: 1, error });
+    }
+    const timer = setTimeout(() => {
+      try { child.kill('SIGTERM'); } catch { /* best-effort */ }
+      finish({ status: 1, timedOut: true });
+    }, 600000);
+    let stderr = '';
+    child.stderr?.on('data', chunk => { stderr = (stderr + chunk).slice(0, 400); });
+    child.on('error', error => { clearTimeout(timer); finish({ status: 1, error }); });
+    child.on('close', status => { clearTimeout(timer); finish({ status: status ?? 1, stderr }); });
+  });
+}
 
 // Confined JS/TS verification helpers.
 // Seatbelt mission profiles only allow exact process-exec targets and workspace
@@ -132,13 +153,13 @@ function boundedDependencyBytes(root, maxBytes, allowedRoot = root) {
   return bytes;
 }
 
-function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 * 1024 } = {}) {
+function materializePreconditions(sourceRepo, workPath, maxBytes) {
   if (typeof sourceRepo !== 'string' || typeof workPath !== 'string' || !path.isAbsolute(sourceRepo) || !path.isAbsolute(workPath)) {
-    return { status: 'skipped', reason: 'invalid_paths' };
+    return { early: { status: 'skipped', reason: 'invalid_paths' } };
   }
   const src = path.join(sourceRepo, 'node_modules');
   const dst = path.join(workPath, 'node_modules');
-  if (!fs.existsSync(src)) return { status: 'absent' };
+  if (!fs.existsSync(src)) return { early: { status: 'absent' } };
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw Error('Invalid dependency disk budget');
   let current = null;
   try { current = fs.lstatSync(dst); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -147,13 +168,13 @@ function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 *
     else {
       if (!current.isDirectory()) throw Error('Dependency destination is not a directory');
       boundedDependencyBytes(dst, maxBytes, workPath);
-      return { status: 'present' };
+      return { early: { status: 'present' } };
     }
   }
   let srcStat;
-  try { srcStat = fs.lstatSync(src); } catch { return { status: 'absent' }; }
-  if (srcStat.isSymbolicLink()) return { status: 'skipped', reason: 'source_symlink' };
-  if (!srcStat.isDirectory()) return { status: 'skipped', reason: 'source_not_directory' };
+  try { srcStat = fs.lstatSync(src); } catch { return { early: { status: 'absent' } }; }
+  if (srcStat.isSymbolicLink()) return { early: { status: 'skipped', reason: 'source_symlink' } };
+  if (!srcStat.isDirectory()) return { early: { status: 'skipped', reason: 'source_not_directory' } };
   // pnpm/yarn external stores link outside the enrolled tree. Refuse to copy those
   // graphs into the disposable clone, but do not abort workspace preparation —
   // verification that needs local modules still fails closed later.
@@ -161,10 +182,31 @@ function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 *
     boundedDependencyBytes(src, maxBytes, sourceRepo);
   } catch (error) {
     if (/Dependency symlink escapes permitted repository tree/i.test(error.message)) {
-      return { status: 'skipped', reason: 'external_store_links' };
+      return { early: { status: 'skipped', reason: 'external_store_links' } };
     }
     throw error;
   }
+  return { src, dst };
+}
+
+function materializeFallbackCopy(src, dst, workPath, maxBytes) {
+  try {
+    fs.cpSync(src, dst, { recursive: true, verbatimSymlinks: true });
+    if (!fs.existsSync(dst) || fs.lstatSync(dst).isSymbolicLink()) {
+      throw Error('Materialized dependencies are missing or symlinked');
+    }
+    boundedDependencyBytes(dst, maxBytes, workPath);
+    return { status: 'copied' };
+  } catch (error) {
+    fs.rmSync(dst, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 * 1024 } = {}) {
+  const prep = materializePreconditions(sourceRepo, workPath, maxBytes);
+  if (prep.early) return prep.early;
+  const { src, dst } = prep;
 
   if (process.platform === 'darwin') {
     const cloned = spawnSync('/bin/cp', ['-Rc', src, dst], { encoding: 'utf8' });
@@ -177,17 +219,28 @@ function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 *
     fs.rmSync(dst, { recursive: true, force: true });
   }
 
-  try {
-    fs.cpSync(src, dst, { recursive: true, verbatimSymlinks: true });
-    if (!fs.existsSync(dst) || fs.lstatSync(dst).isSymbolicLink()) {
-      throw Error('Materialized dependencies are missing or symlinked');
+  return materializeFallbackCopy(src, dst, workPath, maxBytes);
+}
+
+// Non-blocking materialization for the MCP event loop. clone/copy runs in a
+// child process so get_ask_status / agent_status stay responsive during prep.
+async function materializeNodeModulesAsync(sourceRepo, workPath, { maxBytes = 2048 * 1024 * 1024 } = {}) {
+  const prep = materializePreconditions(sourceRepo, workPath, maxBytes);
+  if (prep.early) return prep.early;
+  const { src, dst } = prep;
+
+  if (process.platform === 'darwin') {
+    const cloned = await runCpClone(src, dst);
+    if (cloned.status === 0 && fs.existsSync(dst) && !fs.lstatSync(dst).isSymbolicLink()) {
+      try {
+        boundedDependencyBytes(dst, maxBytes, workPath);
+        return { status: 'cloned' };
+      } catch { /* Retry with relative links preserved by fs.cpSync. */ }
     }
-    boundedDependencyBytes(dst, maxBytes, workPath);
-    return { status: 'copied' };
-  } catch (error) {
     fs.rmSync(dst, { recursive: true, force: true });
-    throw error;
   }
+
+  return materializeFallbackCopy(src, dst, workPath, maxBytes);
 }
 
 function resolveNodeRunnable(repo, token) {
@@ -255,6 +308,7 @@ function planPackageManagerInvocation(repo, argv, nodePath) {
 
 module.exports = {
   materializeNodeModules,
+  materializeNodeModulesAsync,
   resolveNpmCli,
   resolveNodeRunnable,
   planPackageManagerInvocation

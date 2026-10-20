@@ -91,6 +91,37 @@ test('a slow planner acknowledges PLANNING before OpenCode returns and the same 
   assert.equal(f.plannerCalls, 1);
 });
 
+test('status reads stay responsive while disposable workspace preparation awaits', async t => {
+  const f = await setup(t);
+  const da = f.bridge.developerAutonomy;
+  const original = da.prepareWorkspaceAsync.bind(da);
+  let preparing = null;
+  da.prepareWorkspaceAsync = async (...args) => {
+    preparing = Promise.resolve().then(() => new Promise(resolve => setTimeout(resolve, 400))).then(() => original(...args));
+    return preparing;
+  };
+  const id = randomUUID();
+  const instruction = 'In Fixture project change fixture.txt from alpha to beta, preserving one final newline.';
+  const ack = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller);
+  assert.equal(ack.state, 'PLANNING');
+  const statusStarted = Date.now();
+  const status = f.bridge.zeroSetupWork.refreshState(id);
+  const statusMs = Date.now() - statusStarted;
+  assert.ok(statusMs < 100, 'get_ask_status path must not wait on workspace prep: ' + statusMs);
+  assert.equal(status.state, 'PLANNING');
+  assert.equal(status.request_id, id);
+  const agentsStarted = Date.now();
+  const agents = await f.bridge.orchestratorAgentStatus();
+  const agentsMs = Date.now() - agentsStarted;
+  assert.ok(agentsMs < 2000, 'agent_status must remain responsive during prep: ' + agentsMs);
+  assert.equal(agents.cursor?.host_execution_disabled, true);
+  assert.equal(agents.cursor?.available, false);
+  assert.match(String(agents.cursor?.reason || ''), /cursor_execution_disabled/);
+  await preparing;
+  const done = await f.ask(id);
+  assert.ok(done.mission_id, JSON.stringify(done));
+});
+
 test('missing caller delegation performs no discovery or planning; text never enrolls', async t => {
   const f = await setup(t, { delegated: false });
   const result = await f.ask();
