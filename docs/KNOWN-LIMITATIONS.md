@@ -6,6 +6,10 @@
 - Oversized operational docs are therefore unavailable as Autopilot grounding until split or summarized under the bound. Host verification and independent Acceptance are unchanged.
 - Historical Mission `cbc4e596-…` (`opencode_output_bound` on the second assignment) and blocked evaluator Mission `98a67bd6-…` stay immutable.
 
+## Disposable dependency materialization (2026-10-20)
+
+- Dependency copy treats lowercase `secrets` / `credentials` / `vault` segments and real `.env*` files as private, but allows PascalCase package exports (for example `effect/Secret`) and public templates (`.env.example` / `.env.sample` / `.env.template`). Earlier case-insensitive matching skipped Arecibo `node_modules` and caused `arecibo-typecheck` to fail with `tsc: command not found`.
+
 ## ChatGPT handoff exact-byte Missions (2026-10-18)
 
 - OpenCode/Qwen may return a completed JSON claim without mutating staging files, or `opencode_malformed_result` with no host changes. Host inventory and `expected_changes` remain authoritative; worker summaries never authorize Acceptance.

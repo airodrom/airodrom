@@ -90,6 +90,35 @@ test('dependency copy skips external store links instead of aborting the workspa
   assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
 });
 
+test('PascalCase package exports like effect/Secret do not skip materialization', t => {
+  const f = fixture(t);
+  fs.mkdirSync(path.join(f.source, 'node_modules', 'effect', 'Secret'), { recursive: true });
+  fs.writeFileSync(path.join(f.source, 'node_modules', 'effect', 'Secret', 'index.js'), 'module.exports = {};\n');
+  const ok = materializeNodeModules(f.source, f.work);
+  assert.ok(['cloned', 'copied'].includes(ok.status), ok.status);
+  assert.equal(fs.existsSync(path.join(f.work, 'node_modules', 'effect', 'Secret', 'index.js')), true);
+});
+
+test('lowercase secrets path segments still skip materialization', t => {
+  const f = fixture(t);
+  fs.mkdirSync(path.join(f.source, 'node_modules', 'pkg', 'secrets'), { recursive: true });
+  fs.writeFileSync(path.join(f.source, 'node_modules', 'pkg', 'secrets', 'token'), 'x');
+  const result = materializeNodeModules(f.source, f.work);
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.reason, 'external_store_links');
+});
+
+test('in-repo .env.example links do not skip dependency materialization', t => {
+  const f = fixture(t);
+  for (const root of [f.source, f.work]) {
+    fs.mkdirSync(path.join(root, 'web', 'app'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'web', 'app', '.env.example'), 'EXAMPLE=1\n');
+  }
+  fs.symlinkSync('../../web/app/.env.example', path.join(f.source, 'node_modules', '.bin', 'env-example'));
+  const ok = materializeNodeModules(f.source, f.work);
+  assert.ok(['cloned', 'copied'].includes(ok.status), ok.status);
+});
+
 test('materialized workspace package links remain inside the disposable repository', t => {
   const f = fixture(t);
   for (const root of [f.source, f.work]) {
