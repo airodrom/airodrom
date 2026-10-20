@@ -35,6 +35,21 @@ Control Center: **Autopilot** view and **Automation & Permissions** switch.
 Only the authenticated local owner can enable Autopilot. Model, browser, email,
 MCP, and repository text cannot.
 
+## Verified Arecibo default (this host)
+
+| Field | Value |
+|-------|-------|
+| Project | Arecibo Core (`02054eab-4648-4db4-9fa0-aaa3239544db`) |
+| Default repository label | `arecibo-core-autopilot-main` |
+| Git remote | `github.com:arecibo-inc/arecibo-core` |
+| Approved branch | `main` |
+| Persistence | `cp_project_defaults` in durable `~/.airodrom` data (survives managed install upgrades) |
+| Standing Autopilot policy | `autopilot-02054eab4648-*` (opencode + cursor workers, cognitive v3, ~30-day expiry) |
+
+Four cleaned non-Git DA leftover directories may remain listed on the project;
+live-Git filtering ignores them. Separate project **Arecibo product research**
+points at a different checkout and is not the Autopilot default.
+
 ## Project default repositories
 
 When a project has more than one enrolled path (for example cleaned disposable
