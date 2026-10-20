@@ -235,9 +235,18 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   const runs = db.prepare("SELECT id,pid,state FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND termination_verified=0 AND ((state='termination_unverified' AND resolution='gateway_evaluation_reconciliation_required') OR (state='interrupted' AND resolution='reconcile_process'))").all(mission.id);
   if (runs.length !== 1 || !Number.isInteger(runs[0].pid) || runs[0].pid <= 1) return false;
   const leases = db.prepare("SELECT id,run_id,resource FROM cp_leases WHERE mission_id=? AND state='quarantined'").all(mission.id);
-  if (!leases.length || leases.some(lease => lease.resource !== leases[0].resource)) return false;
+  // Evaluator may die after write leases were already released (never-started
+  // retry kill). Still settle the run so admission can idle; Mission stays blocked.
+  const workspace = mission.envelope?.workspace;
+  if (leases.length) {
+    if (leases.some(lease => lease.resource !== leases[0].resource)) return false;
+  } else if (typeof workspace !== 'string' || !workspace.startsWith('/')) {
+    return false;
+  } else if (db.prepare("SELECT 1 FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(mission.id)) {
+    return false;
+  }
   let observation;
-  try { observation = observe({ pid: runs[0].pid, resource: leases[0].resource }); }
+  try { observation = observe({ pid: runs[0].pid, resource: leases[0]?.resource || workspace }); }
   catch { return false; }
   const runId = runs[0].id;
   // interrupted is already terminal, so the store rejects a state change.
@@ -248,6 +257,9 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
     const changed = db.prepare("UPDATE cp_leases SET state='released' WHERE id=? AND run_id=? AND state='quarantined'").run(lease.id, lease.run_id);
     if (changed.changes !== 1) C.fail('quarantined_lease_not_reconciled');
     store.event('gateway.evaluation_reconciled', mission.id, { run_id: runId, lease_id: lease.id, previous_state: 'quarantined', state: 'released', recovery_not_execution: true, accepted: false }, { runId });
+  }
+  if (!leases.length) {
+    store.event('gateway.evaluation_reconciled', mission.id, { run_id: runId, lease_id: null, previous_state: 'released', state: 'released', recovery_not_execution: true, accepted: false }, { runId });
   }
   return true;
 }
