@@ -266,6 +266,7 @@ class GlobalAutopilot {
     }).slice(0, 8);
     const cursorReady = !!(this.bridge.cursorWorker?.lastReadiness?.ready
       || this.bridge.cursorWorker?.lastReadiness?.tiers?.qualified);
+    const cursorAllowed = cursorReady && !this.bridge.hostExecutionPolicy?.cursorDisabled?.();
     return this.bridge.developerAutonomy.enroll({
       alias: this.allocateAutopilotAlias(project.projectId, workspace),
       repository: workspace,
@@ -281,7 +282,7 @@ class GlobalAutopilot {
         max_runtime_hours: 4,
         max_disk_mb: 4096
       },
-      workers: cursorReady ? ['opencode', 'cursor'] : ['opencode'],
+      workers: cursorAllowed ? ['opencode', 'cursor'] : ['opencode'],
       duration_days: 30,
       confirmed: true,
       diff_check: diff,

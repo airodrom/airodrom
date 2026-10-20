@@ -468,6 +468,7 @@ class CursorWorker {
     const b = this.bridge, m = b.controlStore.requireMission(task?.controlPlaneMissionId);
     const assignment=require('./specialist-gateway').adapterScope(b,task,ID);
     if (m.task_id !== task.id || m.envelope.workspace !== repo || context?.id !== task.contextPackId || m.envelope.preferred_agent !== ID || m.envelope.fallback_agents.length) fail('cursor_mission_binding');
+    b.hostExecutionPolicy?.assertCursorAllowed?.('dispatch');
     const readiness = await this.readiness(); this.lastReadiness = readiness;
     if (!this.qualifiedFor(m, { readiness })) fail('cursor_mission_unqualified');
     b.missions.assertAuthority(m);

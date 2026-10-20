@@ -129,6 +129,7 @@ function queue(service, m) {
 async function select(service,m,dispatch) {
   const scope=adapterScope(service.bridge,service.bridge.tasks.get(dispatch.task_id),active(service.bridge,m,dispatch.task_id).assignment.worker);
   const observations=await service.agents.refresh({boundedOnly:true}),worker=scope.assignment.worker,o=observations[worker];
+  if (worker==='cursor') service.bridge.hostExecutionPolicy?.assertCursorAllowed?.('specialist_select');
   if (!o?.available || worker==='cursor'&&!o.governed_worker) fail('cognitive_worker_unqualified:'+worker);
   if(service.bridge.authorityRuntime?.routing){const route=await service.bridge.authorityRuntime.route(m,observations);if(route.selected!==worker)fail('gateway_assignment_governed_route_unavailable');return{...route,assignment_id:scope.assignment.id,assignment_hash:hash(scope.assignment)};}
   return {selected:worker,selected_agent:worker,transport:worker==='cursor'?'sandboxed_headless_cli':'confined_local_cli',reason:'sealed_specialist_assignment',assignment_id:scope.assignment.id,assignment_hash:hash(scope.assignment),authority:false};

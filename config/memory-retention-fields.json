@@ -4123,6 +4123,25 @@
       "updated_at": "A"
     }
   },
+  "cp_host_execution_policy": {
+    "fields": [
+      "id",
+      "cursor_execution_disabled",
+      "updated_at",
+      "updated_by",
+      "request_id",
+      "note"
+    ],
+    "source": "src/host-execution-policy.js",
+    "classification": {
+      "id": "A",
+      "cursor_execution_disabled": "A",
+      "updated_at": "A",
+      "updated_by": "A",
+      "request_id": "A",
+      "note": "A"
+    }
+  },
   "cp_project_defaults": {
     "fields": [
       "project_id",
