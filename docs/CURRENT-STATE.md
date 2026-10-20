@@ -1,10 +1,18 @@
 # Current state (2026-10-10)
 
-## Local-First Autopilot V3 — SOURCE (2026-10-20)
+## Local OpenCode Evaluation & Verification Recovery V1 — SOURCE (2026-10-20)
+
+- **Forensics:** Historical Mission `98a67bd6-…` / request `1b6456ee-…` — OpenCode plan+implement completed; host verification passed on finished assignment; evaluator never started (`gateway_evaluation_unavailable` / `opencode_unavailable_or_unsupported`). Mission remains blocked/immutable.
+- **Root cause:** retry path required Cursor specialist; single-OpenCode-run retry shape excluded local OpenCode implement+failed-eval; readiness `fresh` coalescing; DA continuation required Cursor `approval_id`.
+- **Repair:** local OpenCode → OpenCode evaluate retry; DA-safe continuation authority; independent fresh readiness probe. Cursor stays disabled; host verification remains authoritative.
+- Evidence: [COGNITIVE-MISSION-ROUTER-V1.md](COGNITIVE-MISSION-ROUTER-V1.md), [GLOBAL-AUTOPILOT-V1.md](GLOBAL-AUTOPILOT-V1.md). Protected checkout and PR #148 untouched.
+
+## Local-First Autopilot V3 — INSTALLED (2026-10-20)
 
 - **Decision:** Paid Cursor execution through Airodrom is **disabled by default** (`cp_host_execution_policy`). External Cursor billing is separately identified as unaffected.
 - **Default path:** Local OpenCode plan → local OpenCode code (when suitable) → OpenCode evaluate → Airodrom host verification.
 - **Architecture unchanged:** `USER → ChatGPT → AIRODROM → OPENCODE → (specialist if authorized) → OPENCODE → AIRODROM → ChatGPT → USER`.
+- **Install:** `12c462cfe3919834a839fc44d5cc68280372fe05` at `…/airodrom-install-bcedc6d` (pre-eval-recovery baseline).
 - **Reactivation:** authenticated operator `enable-cursor` only; adapters and Milestone A/B evidence preserved.
 - Evidence: [GLOBAL-AUTOPILOT-V1.md](GLOBAL-AUTOPILOT-V1.md), [ADR 0060](adr/0060-host-execution-policy.md). Protected checkout `~/code/airodrom` and PR #148 remain untouched.
 

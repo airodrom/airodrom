@@ -389,6 +389,15 @@ class OpenCodeAdapter extends AgentAdapter {
     if (options.fresh !== true && this._readinessCache && now - this._readinessCache.at < ttl) {
       return { ...this._readinessCache.value, availability: this._readinessCache.value.ready ? (this.active.size ? 'busy' : 'available') : 'unavailable' };
     }
+    // fresh:true must not coalesce with a concurrent status probe that may still
+    // resolve negative — launch admission needs its own provider observation.
+    if (options.fresh === true) {
+      const probe = this._probeReadiness();
+      this._readinessInflight = probe.finally(() => {
+        if (this._readinessInflight === probe) this._readinessInflight = null;
+      });
+      return probe;
+    }
     if (this._readinessInflight) return this._readinessInflight;
     this._readinessInflight = this._probeReadiness().finally(() => { this._readinessInflight = null; });
     return this._readinessInflight;

@@ -234,10 +234,14 @@ function deferEvaluationRetry(service, m) {
 async function retryPreStartEvaluation(service, m) {
   if (!m || localEvalRetries.has(m.id)) return false;
   const runs = service.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(m.id);
-  const cursor = service.db.prepare("SELECT 1 ok FROM cp_runs WHERE mission_id=? AND agent_id='cursor' AND state='completed' AND termination_verified=1").get(m.id);
   const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length === 1);
   const attempt = node?.attempts[0];
-  if (!cursor || !require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
+  // Completed specialist may be Cursor (Milestone B) or local OpenCode (Local-First).
+  // Do not require a Cursor run — that blocked local-only evaluation recovery.
+  const worker = attempt?.run_id ? service.store.run(attempt.run_id) : null;
+  if (!worker || worker.state !== 'completed' || !worker.termination_verified) return false;
+  if (!['cursor', 'opencode'].includes(worker.agent_id)) return false;
+  if (!require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
   // A negative cache is not launch authority. A positive cache is enough to
   // enter evaluation; execute() probes again before the process starts.
   // A startup probe can throw before pins are observable. That is not a
@@ -252,7 +256,6 @@ async function retryPreStartEvaluation(service, m) {
   // then rolls back. Wait until the service is open; this is not a new Cursor run.
   if (service.bridge.lifecycle && service.bridge.lifecycle.state() !== 'open') return deferEvaluationRetry(service, m);
   localEvalRetries.add(m.id);
-  const worker = service.store.run(attempt.run_id);
   try {
     save(service.bridge, m, node, 'evaluating');
     const evaluation = await require('./opencode-gateway').evaluate(service.bridge, service.store.requireMission(m.id), worker, attempt.verification);
@@ -262,12 +265,23 @@ async function retryPreStartEvaluation(service, m) {
     live.evaluation_run_id = receipt.id;
     live.binding_hash = receipt.result.gateway.binding_hash;
     if (attempt.verification.status === 'passed' && evaluation.evaluation.recommendation === 'ready') {
+      const siblings = nodes(service.bridge, m);
+      const final = siblings.every(n => n.node_id === current.node_id || n.state === 'ready');
       transaction(service.db, () => {
         save(service.bridge, m, current, 'ready');
-        service.verifier.persist(service.store.requireMission(m.id), worker, attempt.verification);
-        service.db.prepare("UPDATE cp_mission_programs SET state='waiting_acceptance' WHERE id=?").run(m.id);
+        if (final) {
+          assertReceipts(service.bridge, service.store.requireMission(m.id), worker.id);
+          service.verifier.persist(service.store.requireMission(m.id), worker, attempt.verification);
+          service.db.prepare("UPDATE cp_mission_programs SET state='waiting_acceptance' WHERE id=?").run(m.id);
+        } else {
+          // Intermediate assignment: reopen so the existing scheduler can queue the next node.
+          // blocked → ready is the authorized lifecycle edge (not blocked → running).
+          if (service.store.requireMission(m.id).state === 'blocked') service.store.state(m.id, 'ready');
+          service.db.prepare("UPDATE cp_mission_programs SET state='running' WHERE id=?").run(m.id);
+        }
       });
-      if (service.store.requireMission(m.id).state === 'awaiting_acceptance') autoAccept(service.bridge, m.id);
+      if (final && service.store.requireMission(m.id).state === 'awaiting_acceptance') autoAccept(service.bridge, m.id);
+      else if (!final) service.schedule();
     } else {
       save(service.bridge, m, current, 'failed');
     }
@@ -276,7 +290,9 @@ async function retryPreStartEvaluation(service, m) {
     const latest = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
     if (latest) save(service.bridge, m, latest, 'unavailable');
     const code = String(error.code || error.message);
-    if (code.includes('Service admission is closed')) return deferEvaluationRetry(service, m);
+    if (code.includes('Service admission is closed') || /opencode_unavailable_or_unsupported|opencode_local_provider/.test(code)) {
+      return deferEvaluationRetry(service, m);
+    }
     try { service.store.event('gateway.evaluation_retry_failed', m.id, { code: code.slice(0, 120), authority: false }); } catch { /* The Mission stays blocked either way. */ }
     return false;
   } finally {
@@ -438,6 +454,11 @@ async function processResult(service,row) {
     }else{
       save(b,m,a.node,'unavailable');
       if(['running','verifying','awaiting_acceptance'].includes(current.state))store.state(m.id,'blocked','EVALUATION_UNAVAILABLE: '+detail);
+      // Local OpenCode (and Cursor→OpenCode) evaluator never-started misses are
+      // retryable once host verification already passed. Do not wait for reboot.
+      if (verification?.status === 'passed' && /opencode_unavailable_or_unsupported|opencode_local_provider/.test(detail)) {
+        deferEvaluationRetry(service, store.requireMission(m.id));
+      }
     }
     finishResult(service,run);
   }finally{store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}

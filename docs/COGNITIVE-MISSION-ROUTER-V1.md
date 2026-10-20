@@ -16,6 +16,38 @@ Local-only example:
 
 > Start the Arecibo release-readiness audit using local OpenCode only. Do not deploy production, call Cursor, enable Plaid LIVE, or use external AI providers.
 
+### Local OpenCode evaluation recovery (V1)
+
+Historical Autopilot Mission `98a67bd6-…` / request `1b6456ee-…` completed
+OpenCode planning and local implementation, passed registered host verification
+on the finished assignment, then blocked with
+`EVALUATION_UNAVAILABLE: gateway_evaluation_unavailable` /
+`opencode_unavailable_or_unsupported`. The OpenCode evaluator never started
+(`pid` null). That Mission remains immutable.
+
+Proven causes (not host verification):
+
+1. Pre-start evaluation retry required a completed **Cursor** specialist run,
+   so a local OpenCode implement → OpenCode evaluate path could not recover.
+2. `preStartEvaluationRetryable` accepted only a single OpenCode run (Cursor
+   path). Local OpenCode specialists leave a completed implementation run plus
+   a never-started evaluator — both shapes are now retryable once when host
+   verification already passed.
+3. `fresh:true` readiness could coalesce with a concurrent negative status
+   probe; launch admission now probes independently.
+4. Evaluation continuation called `assertLocalEvaluation`, which requires an
+   `approval_id`. Developer Autonomy / Autopilot OpenCode Missions have none;
+   continuation now uses `assertAuthority` unless a Cursor approval exists.
+
+Lifecycle presentation remains:
+
+`Planning — OpenCode → Executing — OpenCode → Evaluating — OpenCode → Verifying — Airodrom → Settled / Needs Rework / Blocked`
+
+A successful OpenCode evaluation never overrides failed host verification.
+Cursor execution stays disabled; there is no paid external evaluator fallback.
+One bounded never-started evaluator retry uses the enrolled planning allowance,
+not the paid Cursor window.
+
 ## Planner / specialist / evaluator roles
 
 OpenCode is the cognitive planner and evaluator. When Cursor execution is
