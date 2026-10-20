@@ -323,7 +323,32 @@ class DeveloperAutonomy {
 
   assertDiskBudget(policy, additional = 0) {
     const ceiling = policy.budgets.max_disk_mb * 1024 * 1024;
-    const used = diskBytes(path.join(this.dataRoot(policy.repository), 'worktrees'), ceiling);
+    // Charge active/uncertain registered worktrees and untracked leftovers under
+    // the policy worktree root. Settled evidence clones may remain on disk
+    // without consuming disposable capacity. External package stores are never copied in.
+    const root = path.join(this.dataRoot(policy.repository), 'worktrees');
+    const byPath = new Map(this.db.prepare("SELECT * FROM cp_developer_autonomy_workspaces WHERE policy_id=?")
+      .all(policy.policy_id).map(row => [row.path, row]));
+    let used = 0;
+    const charge = (target) => {
+      try {
+        if (fs.existsSync(target)) used += diskBytes(target, Math.max(1, ceiling - used + 1));
+      } catch (error) {
+        if (/disk budget exhausted/i.test(error.message)) throw error;
+        throw error;
+      }
+    };
+    if (fs.existsSync(root)) {
+      for (const name of fs.readdirSync(root)) {
+        const target = path.join(root, name);
+        const row = byPath.get(target);
+        if (row) {
+          if (this.workspaceOccupiesBudget(row)) charge(target);
+          continue;
+        }
+        charge(target);
+      }
+    }
     if (used + additional > ceiling) throw Error('Developer Autonomy disk budget exhausted');
     return used;
   }

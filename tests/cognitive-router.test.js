@@ -136,6 +136,20 @@ test('route preserves explicit worker and disregards advisory complexity', () =>
   assert.throws(() => R.requestedWorker('Use Cursor only with OpenCode'), /ambiguous/);
 });
 
+test('OpenCode planner/evaluator phrases do not compete with a Cursor specialist', () => {
+  assert.equal(
+    R.requestedWorker('Start the Arecibo release-readiness audit in Cursor. Use OpenCode for planning and evaluation. Do not deploy production.'),
+    'cursor'
+  );
+  assert.equal(
+    R.requestedWorker('Continue developing Arecibo in Cursor. Plan with OpenCode.'),
+    'cursor'
+  );
+  assert.equal(R.requestedWorker('Use OpenCode for planning.'), 'auto');
+  assert.throws(() => R.requestedWorker('Use Cursor only with OpenCode'), /ambiguous/);
+  assert.throws(() => R.requestedWorker('Assign to Cursor and use OpenCode for the edit'), /ambiguous/);
+});
+
 test('destination worker phrases are explicit; unrecognized worker prose still blocks', async t => {
   const f = await setup(t);
   assert.equal(R.requestedWorker('Continue the Fixture project audit in Cursor.'), 'cursor');

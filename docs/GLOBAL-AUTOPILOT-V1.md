@@ -113,6 +113,9 @@ separately gated.
 | `ENROLLED_REPOSITORY_AMBIGUOUS` | Multiple live repos, no default | Set project default; or name exact path/label |
 | Autopilot clarify about verification | No tasks.json and no active Work template | Register tasks or activate a Work template |
 | Disposable worktree without `node_modules` | Source deps use an external store (pnpm/yarn links outside the repo) | Expected skip; install deps inside the disposable clone when verification needs them |
+| `cognitive_ambiguous_worker` with OpenCode + Cursor | Pre-V2 parser treated planner phrases as a second specialist | Use “OpenCode for planning/evaluation” plus “in Cursor”; genuine dual specialists still fail closed |
+| `opencode_sensitive_context` on ordinary audits | Setup README mentioning `.env` was forwarded as planner input | Autopilot discovery and planning filter those files; real secrets remain denied |
+| Disk budget exhausted with only settled clones | Pre-V2 counted retained evidence under the worktree root | Active/uncertain worktrees and untracked leftovers count; settled evidence does not |
 | `BLOCKED_SPEND_AUTHORIZATION` | Cursor spend not in standing grant | Owner-signed spend grant; Autopilot does not invent spend |
 | Wrong project | Token shared across projects | Prefer unique project name or set default project id via defaults |
 

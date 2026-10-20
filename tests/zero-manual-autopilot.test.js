@@ -201,6 +201,27 @@ test('project default persists across ProjectDefaults reconstruction', async t =
   assert.equal(reloaded.read(project.projectId).repository, fs.realpathSync(primary));
 });
 
+test('Autopilot discovery skips setup docs that OpenCode cannot admit', async t => {
+  const f = await fixture(t);
+  f.bridge.missionAuthority.initializeOperatorKey();
+  f.bridge.globalAutopilot.enable({ confirmed: true, request_id: randomUUID() }, 'operator');
+  const primary = fs.realpathSync(gitInit(fs.mkdtempSync(path.join(os.tmpdir(), 'discovery-safe-'))));
+  t.after(() => fs.rmSync(primary, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(primary, 'README.md'), '# Product\n\ncp .env.example .env\n');
+  fs.writeFileSync(path.join(primary, 'CHANGELOG.md'), '## 1.0.0\n- release readiness notes\n');
+  spawnSync('git', ['-C', primary, 'add', '.'], { encoding: 'utf8' });
+  spawnSync('git', ['-C', primary, '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'docs'], { encoding: 'utf8' });
+  const project = f.bridge.projects.createProject({
+    name: 'Discovery Safe',
+    repositories: [primary],
+    privacyPolicy: 'local_only',
+  });
+  const policy = f.bridge.globalAutopilot.ensureRepositoryPolicy(project, primary);
+  const files = policy.cognitive?.files || f.bridge.developerAutonomy.inspect(policy.policy_id)?.cognitive?.files || [];
+  assert.ok(files.includes('CHANGELOG.md'));
+  assert.ok(!files.includes('README.md'));
+});
+
 test('Autopilot verification accepts tasks.json when present', async t => {
   const f = await fixture(t);
   f.bridge.missionAuthority.initializeOperatorKey();

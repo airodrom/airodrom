@@ -32,12 +32,19 @@ function enrollment(input, repository) {
 
 function requestedWorker(instruction) {
   if (/\b(?:codex|claude(?:[- ]code)?)\b/i.test(instruction)) C.fail('cognitive_named_worker_unavailable');
-  const requested = [...String(instruction).matchAll(
+  // OpenCode is the cognitive planner/evaluator. Naming it for those roles must not
+  // compete with an explicit specialist (Cursor). Strip planner/evaluator phrases
+  // before detecting the requested execution worker.
+  let text = String(instruction);
+  text = text.replace(/\b(?:use|using|via|with)\s+opencode\s+for\s+(?:planning|planner|evaluation|evaluating|evaluator)(?:\s+and\s+(?:planning|planner|evaluation|evaluating|evaluator))?\b/ig, ' ');
+  text = text.replace(/\bopencode\s+for\s+(?:planning|planner|evaluation|evaluating|evaluator)(?:\s+and\s+(?:planning|planner|evaluation|evaluating|evaluator))?\b/ig, ' ');
+  text = text.replace(/\b(?:plan(?:ning)?|evaluat(?:e|ion|or)|planner)\s+(?:with|via|using)\s+opencode\b/ig, ' ');
+  const requested = [...text.matchAll(
     /\b(?:use|using|via|with|in)\s+(cursor|opencode|host)\b|\b(cursor|opencode|host)[- ]only\b|\bassign(?:ed)?\s+to\s+(cursor|opencode|host)\b/ig
   )].map(m => (m[1] || m[2] || m[3]).toLowerCase());
   if (new Set(requested).size > 1) C.fail('cognitive_ambiguous_worker');
   // A named worker in unrecognized prose must never silently become an auto route.
-  if (!requested.length && /\b(?:cursor|opencode)\b/i.test(instruction)) C.fail('cognitive_explicit_worker_syntax_required');
+  if (!requested.length && /\b(?:cursor|opencode)\b/i.test(text)) C.fail('cognitive_explicit_worker_syntax_required');
   return requested[0] || 'auto';
 }
 
@@ -185,11 +192,22 @@ async function executeReserved(zero, record, p, instruction) {
     const ws = b.developerAutonomy.prepareWorkspace({ policy_id: p.policy_id, request_id: 'cognitive:' + request_id + ':workspace', prefer_disposable: true, branch_prefix: 'airodrom/da' }, 'operator');
     record.workspace = ws.path;
     b.developerAutonomy.assertVerifiers(p, ws.path, p.cognitive.files);
-    const captured = integrity.capture(ws.path, p.cognitive.files);
+    // Forward only discovery files OpenCode can admit. Existing enrollments may
+    // still list setup docs that mention .env paths; those stay out of planner input.
+    const { sourceContextSensitive } = require('./opencode-adapter');
+    const planningFiles = [...p.cognitive.files].filter(file => {
+      try {
+        const target = path.join(ws.path, file);
+        return fs.lstatSync(target).isFile() && fs.realpathSync(target) === target
+          && !sourceContextSensitive(fs.readFileSync(target, 'utf8'));
+      } catch { return false; }
+    }).sort();
+    if (!planningFiles.length) C.fail('cognitive_discovery_sensitive_or_missing');
+    const captured = integrity.capture(ws.path, planningFiles);
     const envelope = C.parse('RequestEnvelope', C.seal({ version: p.cognitive.version, request_id, caller: record.principal,
       delegation: { policy_id: p.policy_id, policy_hash: p.policy_hash }, repository_id: p.project_id + ':' + p.policy_id,
       workspace_id: ws.workspace_id, git_anchor: captured.head, integrity: captured.integrity,
-      permitted_paths: [...p.cognitive.files].sort(), denied_paths: [...DEFAULT_DENIED_PATHS], operations: requested === 'host' || /\bread[- ]only\b|\bdo not (?:edit|modify|write)\b/i.test(instruction) ? ['read'] : ['read', 'edit'],
+      permitted_paths: planningFiles, denied_paths: [...DEFAULT_DENIED_PATHS], operations: requested === 'host' || /\bread[- ]only\b|\bdo not (?:edit|modify|write)\b/i.test(instruction) ? ['read'] : ['read', 'edit'],
       eligible_workers: ['host', ...p.workers.filter(w => ['opencode', 'cursor'].includes(w))],
       verification: [p.verification_defaults.diff_check, ...p.verification_defaults.tests].sort(),
       limits: { planning_attempts: p.cognitive.planning_attempts, execution_attempts: p.cognitive.version === 3 ? p.cognitive.max_assignments : 1, repair_attempts: p.cognitive.repair_attempts || 0, planning_ms: p.cognitive.planning_ms, execution_ms: p.cognitive.execution_ms },

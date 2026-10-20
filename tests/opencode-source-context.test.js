@@ -42,7 +42,9 @@ test('ordinary authorized source paths and JS syntax are not sensitive context',
     'session credentials remain operator-local',
     'Sensitive Memory · app secret withheld',
     'const value = d.key;',
-    'return options.key || defaults.key;'
+    'return options.key || defaults.key;',
+    // JSON/JS escape sequences must not look like UNC paths.
+    "console.log('\\\\nPilot guide: docs/operations/pilot-checkout.md\\\\n')"
   ];
   for (const sample of samples) assert.equal(sourceContextSensitive(sample), false, sample);
 });
