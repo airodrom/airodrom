@@ -136,6 +136,41 @@ test('route preserves explicit worker and disregards advisory complexity', () =>
   assert.throws(() => R.requestedWorker('Use Cursor only with OpenCode'), /ambiguous/);
 });
 
+test('oversized or wrapped OpenCode proposals coerce into the sealed assignment ceiling', () => {
+  const envelope = C.seal({
+    version: 3, request_id: '11111111-1111-4111-8111-111111111111', caller: 'operator',
+    delegation: { policy_id: '22222222-2222-4222-8222-222222222222', policy_hash: 'a'.repeat(64) },
+    repository_id: 'proj:policy', workspace_id: '33333333-3333-4333-8333-333333333333',
+    git_anchor: 'b'.repeat(40),
+    integrity: { version: 1, hash: 'c'.repeat(64), entries: 1, bytes: 1, exclusions: 'none' },
+    permitted_paths: ['CHANGELOG.md', 'docs/README.md'], denied_paths: ['.git/**'],
+    operations: ['read', 'edit'], eligible_workers: ['host', 'opencode', 'cursor'],
+    verification: ['diff-check', 'arecibo-typecheck'],
+    limits: { planning_attempts: 2, execution_attempts: 2, repair_attempts: 1, planning_ms: 120000, execution_ms: 120000 },
+    requested_worker: 'cursor', instruction_hash: 'd'.repeat(64), expires_at: Date.now() + 60000
+  });
+  const wrapped = {
+    proposal: {
+      version: 3, request_id: 'wrong', envelope_hash: 'e'.repeat(64),
+      files: ['CHANGELOG.md', 'docs/README.md', 'secret.env'],
+      tasks: [
+        { id: 'scan', operation: 'read', paths: ['CHANGELOG.md'], description: 'scan', depends_on: [], worker: 'opencode', role: 'analysis', verification: [] },
+        { id: 'audit', operation: 'edit', paths: ['docs/README.md'], description: 'audit', depends_on: ['scan'], worker: 'cursor', role: 'implementation', verification: [] },
+        { id: 'extra', operation: 'edit', paths: ['CHANGELOG.md'], description: 'extra', depends_on: [], worker: 'cursor', role: 'implementation', verification: [] },
+        { id: 'overflow', operation: 'edit', paths: ['CHANGELOG.md'], description: 'overflow', depends_on: [], worker: 'cursor', role: 'implementation', verification: [] }
+      ],
+      verification: [], complexity: 'complex'
+    }
+  };
+  const proposal = R.validateProposal(wrapped, envelope);
+  assert.equal(proposal.tasks.length, 2);
+  assert.ok(proposal.tasks.every(task => task.worker === 'cursor'));
+  assert.deepEqual(proposal.files, [...new Set(proposal.tasks.flatMap(task => task.paths))].sort());
+  assert.deepEqual(proposal.verification, ['diff-check', 'arecibo-typecheck']);
+  assert.equal(proposal.request_id, envelope.request_id);
+  assert.equal(proposal.envelope_hash, envelope.hash);
+});
+
 test('OpenCode planner/evaluator phrases do not compete with a Cursor specialist', () => {
   assert.equal(
     R.requestedWorker('Start the Arecibo release-readiness audit in Cursor. Use OpenCode for planning and evaluation. Do not deploy production.'),

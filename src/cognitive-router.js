@@ -48,13 +48,115 @@ function requestedWorker(instruction) {
   return requested[0] || 'auto';
 }
 
+// OpenCode sometimes wraps the proposal, returns an empty task list, or emits
+// more assignments than the sealed execution ceiling. Host coercion keeps the
+// envelope identity authoritative and never invents paths outside permitted_paths.
+function extractProposalObject(raw) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    if (raw.tasks != null || (raw.version != null && raw.files != null)) return raw;
+    for (const key of ['proposal', 'plan', 'result', 'planning']) {
+      if (raw[key] && typeof raw[key] === 'object' && !Array.isArray(raw[key])) return extractProposalObject(raw[key]);
+    }
+    return raw;
+  }
+  if (typeof raw !== 'string') C.fail('cognitive_json_required');
+  try { return extractProposalObject(require('./authority-json').parseAuthorityJSON(raw)); }
+  catch { /* fall through to brace extraction */ }
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) C.fail('cognitive_json_required');
+  try { return extractProposalObject(JSON.parse(raw.slice(start, end + 1))); }
+  catch { C.fail('cognitive_json_required'); }
+}
+
+function coercePlanningProposal(raw, envelope) {
+  const e = C.parse('RequestEnvelope', envelope);
+  const data = extractProposalObject(raw);
+  const maxTasks = e.version === 3 ? Math.min(3, e.limits.execution_attempts) : 12;
+  let tasks = Array.isArray(data.tasks) ? data.tasks.filter(t => t && typeof t === 'object') : [];
+  if (e.version === 3 && e.requested_worker !== 'auto') {
+    const preferred = tasks.filter(t => t.worker === e.requested_worker);
+    if (preferred.length) tasks = [...preferred, ...tasks.filter(t => t.worker !== e.requested_worker)];
+  }
+  if (tasks.length > maxTasks) tasks = tasks.slice(0, maxTasks);
+  const templateTask = () => ({
+    id: 'change',
+    operation: e.operations.includes('edit') ? 'edit' : 'read',
+    paths: e.permitted_paths.slice(),
+    description: 'Bounded work grounded in the enrolled discovery files',
+    depends_on: [],
+    ...(e.version === 3 ? {
+      worker: e.requested_worker === 'auto' ? 'opencode' : e.requested_worker,
+      role: e.operations.includes('edit') ? 'implementation' : 'analysis',
+      verification: []
+    } : {})
+  });
+  if (!tasks.length) tasks = [templateTask()];
+  tasks = tasks.map((task, index) => {
+    const paths = (Array.isArray(task.paths) ? task.paths : [])
+      .filter(file => typeof file === 'string' && e.permitted_paths.includes(file) && !denied(file, e.denied_paths));
+    return {
+      id: typeof task.id === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(task.id) ? task.id : ('task' + (index + 1)),
+      operation: e.operations.includes(task.operation) ? task.operation : (e.operations.includes('edit') ? 'edit' : 'read'),
+      paths: paths.length ? paths : e.permitted_paths.slice(),
+      description: typeof task.description === 'string' && task.description.trim()
+        ? task.description.slice(0, 600) : 'Bounded enrolled work',
+      depends_on: Array.isArray(task.depends_on)
+        ? task.depends_on.filter(id => typeof id === 'string').slice(0, 12) : [],
+      ...(e.version === 3 ? {
+        worker: e.requested_worker !== 'auto' ? e.requested_worker
+          : (['opencode', 'cursor'].includes(task.worker) ? task.worker : 'opencode'),
+        role: ['implementation', 'review', 'analysis'].includes(task.role) ? task.role
+          : (e.operations.includes('edit') ? 'implementation' : 'analysis'),
+        verification: Array.isArray(task.verification)
+          ? task.verification.filter(v => e.verification.includes(v)).slice(0, 5) : []
+      } : {})
+    };
+  });
+  const ids = new Set(tasks.map(task => task.id));
+  tasks = tasks.map(task => ({ ...task, depends_on: task.depends_on.filter(id => ids.has(id) && id !== task.id) }));
+  const files = [...new Set(tasks.flatMap(task => task.paths))].sort();
+  let verification = Array.isArray(data.verification)
+    ? data.verification.filter(v => e.verification.includes(v)) : [];
+  if (!verification.length) verification = e.verification.slice();
+  if (verification.length > 5) verification = verification.slice(0, 5);
+  return {
+    version: e.version,
+    request_id: e.request_id,
+    envelope_hash: e.hash,
+    files,
+    tasks,
+    verification,
+    complexity: ['simple', 'bounded', 'complex'].includes(data.complexity) ? data.complexity : 'bounded'
+  };
+}
+
 function validateProposal(raw, envelope) {
-  const p = C.parse('PlanningProposal', raw), e = C.parse('RequestEnvelope', envelope);
+  const e = C.parse('RequestEnvelope', envelope);
+  // Unwrap common OpenCode JSON wrappers / Markdown fences before schema checks.
+  // Unknown fields on the inner proposal still fail closed.
+  let candidate = raw;
+  try { candidate = extractProposalObject(raw); }
+  catch (error) {
+    if (!/cognitive_json_required/.test(String(error.code || error.message || ''))) throw error;
+  }
+  let p;
+  try {
+    p = C.parse('PlanningProposal', candidate);
+  } catch (error) {
+    // Empty/oversized lists are recovered into the sealed ceiling. Authority
+    // keys and out-of-scope paths remain hard failures.
+    if (!/cognitive_list_invalid/.test(String(error.code || error.message || ''))) throw error;
+    p = C.parse('PlanningProposal', coercePlanningProposal(candidate, envelope));
+  }
   if (p.version !== e.version) C.fail('cognitive_version_binding_mismatch');
   if (p.request_id !== e.request_id || p.envelope_hash !== e.hash) C.fail('cognitive_request_binding_mismatch');
   if (p.files.some(f => !e.permitted_paths.includes(f) || denied(f, e.denied_paths)) ||
       p.tasks.some(t => !e.operations.includes(t.operation)) || p.verification.some(v => !e.verification.includes(v))) C.fail('cognitive_plan_outside_scope');
   if (e.version === 3) {
+    if (p.tasks.length > e.limits.execution_attempts) {
+      p = C.parse('PlanningProposal', coercePlanningProposal(p, envelope));
+    }
     if (p.tasks.length > e.limits.execution_attempts) C.fail('cognitive_assignment_limit');
     for (const task of p.tasks) {
       if (!e.eligible_workers.includes(task.worker)) C.fail('cognitive_worker_unqualified:' + task.worker);
@@ -392,4 +494,4 @@ function evidence(bridge, mission, detail, verification, changes) {
     references: ['mission:' + mission.id, 'request:' + c.envelope.request_id, ...(c.planner_run_ids || []).map(id => 'run:' + id), ...(verification ? ['verification:' + verification.id] : [])],
     counts: { planning: c.planning_attempts, execution: runs.length, repair: c.envelope.version === 3 ? require('./specialist-gateway').repairCount(bridge, mission) : c.envelope.version === 2 ? require('./mission-evidence').lineageFor(bridge, mission).filter(m => m.repair_of).length : 0 } });
 }
-module.exports = { enrollment, requestedWorker, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
+module.exports = { enrollment, requestedWorker, coercePlanningProposal, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
