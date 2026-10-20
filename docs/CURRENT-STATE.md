@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## MCP Recovery & Cursor Mission Connectivity V1 — SOURCE (2026-10-20)
+
+- **Reconciled ChatGPT request:** `arecibo_chatgpt_localfirst_acceptance_20261019_v1` → Mission `7da96c04-…` **Completed and settled** (planner `b049e54e-…`, OpenCode eval `ready`, Acceptance accept, settlement settled). Do not replay.
+- **Timeout root cause:** After cognitive ack, sync `prepareWorkspace` (`git clone --local` + `cp -Rc` materialize of multi-GB Arecibo `node_modules`) blocked the bridge Node event loop for ~17s. Concurrent ChatGPT `get_ask_status` / `agent_status` hit the 15s MCP client / HTTP `requestTimeout` and appeared failed while the Mission continued.
+- **Repair:** `prepareWorkspaceAsync` + async dependency materialize on the cognitive path; Cursor readiness probe is async with a short TTL cache; `agent_status` reports Cursor observable but `cursor_execution_disabled` while host policy denies execution.
+- **Preserved:** Historical local-first Mission `634be433-…` Acceptance; Cursor stays disabled (`cp_host_execution_policy`); architecture USER→ChatGPT→AIRODROM→OPENCODE→(Cursor if authorized)→OPENCODE→AIRODROM→ChatGPT→USER.
+- Protected checkout `~/code/airodrom` and draft PR #148 untouched.
+
 ## Local-First Autopilot Final Recovery V1 — SOURCE (2026-10-20)
 
 - **Forensics (evaluator):** Historical Mission `98a67bd6-…` / request `1b6456ee-…` — OpenCode plan+implement completed; host verification passed on finished assignment; evaluator never started (`gateway_evaluation_unavailable` / `opencode_unavailable_or_unsupported`). Mission remains blocked/immutable. Fixed on main via eval-recovery (#194/#195).

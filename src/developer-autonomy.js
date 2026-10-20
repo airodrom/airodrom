@@ -6,7 +6,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const { randomUUID, createHash } = require('node:crypto');
 const { object, identifier, text, fingerprint } = require('./control-plane-store');
 const { transaction } = require('./control-transaction');
@@ -89,8 +89,30 @@ function git(cwd, args, opts = {}) {
   }).trim();
 }
 
+function gitAsync(cwd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', cwd, ...args], {
+      encoding: 'utf8',
+      timeout: opts.timeout || 300000,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', ...(opts.env || {}) }
+    }, (error, stdout, stderr) => {
+      if (error) {
+        error.stderr = stderr;
+        return reject(error);
+      }
+      resolve(String(stdout || '').trim());
+    });
+  });
+}
+
 function safeGit(cwd, args) {
   try { return { ok: true, out: git(cwd, args) }; }
+  catch (e) { return { ok: false, err: String(e.stderr || e.message || e).slice(0, 400) }; }
+}
+
+async function safeGitAsync(cwd, args, opts = {}) {
+  try { return { ok: true, out: await gitAsync(cwd, args, opts) }; }
   catch (e) { return { ok: false, err: String(e.stderr || e.message || e).slice(0, 400) }; }
 }
 
@@ -748,7 +770,7 @@ class DeveloperAutonomy {
 
   // --- Workspaces ------------------------------------------------------------
 
-  prepareWorkspace(input, owner) {
+  #workspacePreparePrelude(input, owner) {
     this.owner(owner);
     object(input, ['policy_id', 'request_id', 'prefer_disposable', 'branch_prefix']);
     identifier(input.policy_id);
@@ -763,7 +785,7 @@ class DeveloperAutonomy {
       const ws = this.inspectWorkspace(prior.workspace_id);
       if (ws.request_hash !== requestHash) throw Error('Workspace request replay scope mismatch');
       this.assertWorkspace(ws);
-      return ws;
+      return { prior: ws };
     }
     this.reclaimIdleReadyWorkspaces(policy, owner);
     this.assertDiskBudget(policy);
@@ -774,22 +796,61 @@ class DeveloperAutonomy {
 
     const dirty = workspaceDirty(policy.repository);
     const forceDisposable = input.prefer_disposable === true || dirty.length > 0;
-    const now = Date.now();
     const workspaceId = randomUUID();
     const branchPrefix = typeof input.branch_prefix === 'string' && /^[a-z0-9][a-z0-9._-]{0,40}$/.test(input.branch_prefix)
       ? input.branch_prefix
       : 'airodrom/da';
     const branch = branchPrefix + '/' + workspaceId.slice(0, 8);
     if (!BRANCH.test(branch)) throw Error('Invalid feature branch name');
-
-    let workPath;
-    let disposable = true;
-    let baseSha;
-    let reason;
-
     const trees = path.join(this.dataRoot(policy.repository), 'worktrees');
-    workPath = path.join(trees, workspaceId);
-    baseSha = git(policy.repository, ['rev-parse', 'HEAD']);
+    const workPath = path.join(trees, workspaceId);
+    const baseSha = git(policy.repository, ['rev-parse', 'HEAD']);
+    return { policy, requestHash, dirty, forceDisposable, workspaceId, branch, trees, workPath, baseSha };
+  }
+
+  #workspacePrepareFinalize(input, ctx, { disposable, reason }) {
+    const { policy, requestHash, dirty, workspaceId, branch, trees, workPath, baseSha } = ctx;
+    try {
+      const project = this.bridge.projects.getProject(policy.project_id);
+      if (!project.repositories.includes(workPath)) {
+        this.bridge.projects.updateProject(policy.project_id, {
+          repositories: [...project.repositories, workPath]
+        });
+      }
+    } catch (e) {
+      throw e;
+    }
+    const now = Date.now();
+    const record = {
+      workspace_id: workspaceId,
+      policy_id: policy.policy_id,
+      request_id: input.request_id,
+      request_hash: requestHash,
+      container: trees,
+      identities: identityChain(workPath),
+      path: workPath,
+      repository: policy.repository,
+      branch,
+      base_sha: baseSha,
+      disposable,
+      reason,
+      preserved_dirty: dirty.slice(0, 40),
+      created_at: now
+    };
+    this.db.prepare('INSERT INTO cp_developer_autonomy_workspaces VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(workspaceId, policy.policy_id, null, null, workPath, policy.repository, branch, baseSha,
+        disposable ? 1 : 0, 'ready', JSON.stringify(record), now, now);
+    this.bridge.controlStore.event('developer_autonomy.workspace_prepared', null, {
+      workspace_id: workspaceId, policy_id: policy.policy_id, path: workPath, disposable, reason, authority: false
+    });
+    this.assertDiskBudget(policy);
+    return { ...record, state: 'ready', authority: false };
+  }
+
+  prepareWorkspace(input, owner) {
+    const prelude = this.#workspacePreparePrelude(input, owner);
+    if (prelude.prior) return prelude.prior;
+    const { policy, dirty, forceDisposable, branch, workPath } = prelude;
     // Use a local clone (not `git worktree add`). Linked worktrees point `.git` into
     // the source object's worktrees metadata, which capability sandboxing rejects.
     // A local clone stays a self-contained repository root and never mutates dirty
@@ -822,51 +883,46 @@ class DeveloperAutonomy {
       fs.rmSync(workPath, { recursive: true, force: true });
       throw Error('Unable to create task feature branch: ' + branched.err);
     }
-    if (!forceDisposable && dirty.length === 0) {
-      reason = 'clean_reusable_clone';
-      disposable = true;
-    } else {
-      reason = dirty.length ? 'dirty_source_preserved_disposable_created' : 'explicit_disposable';
-      disposable = true;
-    }
+    const disposable = true;
+    const reason = (!forceDisposable && dirty.length === 0)
+      ? 'clean_reusable_clone'
+      : (dirty.length ? 'dirty_source_preserved_disposable_created' : 'explicit_disposable');
+    return this.#workspacePrepareFinalize(input, prelude, { disposable, reason });
+  }
 
-    // Register disposable path as a Project repository so Mission boundary checks pass.
+  // Cognitive MCP planning must not block the bridge event loop while cloning
+  // multi-GB enrolled trees. Status tools keep answering during this await.
+  async prepareWorkspaceAsync(input, owner) {
+    const prelude = this.#workspacePreparePrelude(input, owner);
+    if (prelude.prior) return prelude.prior;
+    const { policy, dirty, forceDisposable, branch, workPath } = prelude;
+    const clone = await safeGitAsync(policy.repository, ['clone', '--local', '--no-hardlinks', policy.repository, workPath], { timeout: 300000 });
+    if (!clone.ok) {
+      throw Error((forceDisposable || dirty.length
+        ? 'Unable to prepare disposable workspace while preserving dirty work: '
+        : 'Unable to prepare isolated workspace: ') + clone.err);
+    }
+    directoryIdentity(workPath, true);
     try {
-      const project = this.bridge.projects.getProject(policy.project_id);
-      if (!project.repositories.includes(workPath)) {
-        this.bridge.projects.updateProject(policy.project_id, {
-          repositories: [...project.repositories, workPath]
-        });
-      }
-    } catch (e) {
-      // Preserve the clone if registration fails; no source checkout is changed.
-      throw e;
+      const availableBytes = policy.budgets.max_disk_mb * 1024 * 1024
+        - this.assertDiskBudget(policy) - 1024 * 1024;
+      if (availableBytes <= 0) throw Error('Developer Autonomy disk budget exhausted');
+      await require('./js-verification-runtime').materializeNodeModulesAsync(policy.repository, workPath, { maxBytes: availableBytes });
+      this.assertDiskBudget(policy);
+    } catch (error) {
+      fs.rmSync(workPath, { recursive: true, force: true });
+      throw error;
     }
-
-    const record = {
-      workspace_id: workspaceId,
-      policy_id: policy.policy_id,
-      request_id: input.request_id,
-      request_hash: requestHash,
-      container: trees,
-      identities: identityChain(workPath),
-      path: workPath,
-      repository: policy.repository,
-      branch,
-      base_sha: baseSha,
-      disposable,
-      reason,
-      preserved_dirty: dirty.slice(0, 40),
-      created_at: now
-    };
-    this.db.prepare('INSERT INTO cp_developer_autonomy_workspaces VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
-      .run(workspaceId, policy.policy_id, null, null, workPath, policy.repository, branch, baseSha,
-        disposable ? 1 : 0, 'ready', JSON.stringify(record), now, now);
-    this.bridge.controlStore.event('developer_autonomy.workspace_prepared', null, {
-      workspace_id: workspaceId, policy_id: policy.policy_id, path: workPath, disposable, reason, authority: false
-    });
-    this.assertDiskBudget(policy);
-    return { ...record, state: 'ready', authority: false };
+    const branched = await safeGitAsync(workPath, ['checkout', '-b', branch]);
+    if (!branched.ok) {
+      fs.rmSync(workPath, { recursive: true, force: true });
+      throw Error('Unable to create task feature branch: ' + branched.err);
+    }
+    const disposable = true;
+    const reason = (!forceDisposable && dirty.length === 0)
+      ? 'clean_reusable_clone'
+      : (dirty.length ? 'dirty_source_preserved_disposable_created' : 'explicit_disposable');
+    return this.#workspacePrepareFinalize(input, prelude, { disposable, reason });
   }
 
   bindWorkspace(workspaceId, { grant_id, mission_id }) {

@@ -406,7 +406,9 @@ async function executeReserved(zero, record, p, instruction) {
     const requested = requestedWorker(instruction, { cursorDisabled });
     if (p.cognitive.version >= 2 && p.cognitive.repair_attempts && (!p.workflows.includes('repair') || p.cognitive.repair_attempts > p.budgets.max_repairs)) C.fail('cognitive_repair_delegation_required');
     b.lifecycle?.assertOpen();
-    const ws = b.developerAutonomy.prepareWorkspace({ policy_id: p.policy_id, request_id: 'cognitive:' + request_id + ':workspace', prefer_disposable: true, branch_prefix: 'airodrom/da' }, 'operator');
+    // Non-blocking clone/materialize so MCP get_ask_status / agent_status remain
+    // responsive during multi-GB disposable workspace preparation.
+    const ws = await b.developerAutonomy.prepareWorkspaceAsync({ policy_id: p.policy_id, request_id: 'cognitive:' + request_id + ':workspace', prefer_disposable: true, branch_prefix: 'airodrom/da' }, 'operator');
     record.workspace = ws.path;
     b.developerAutonomy.assertVerifiers(p, ws.path, p.cognitive.files);
     // Forward only discovery files OpenCode can admit under the execution stream

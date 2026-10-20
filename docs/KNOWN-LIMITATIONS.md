@@ -24,7 +24,7 @@
 - Writer-death reconciliation attests that the in-process writer is gone. It does not attest that a read-only git inspection succeeded, and it does not apply to a run that recorded a pid or an external worker event.
 - No Cursor spending grant is present. Live acceptance for this recovery uses local OpenCode only.
 - Hosted CI remains disabled and `main` has no required rules. Local focused tests are the gate for this change.
-- The MCP `ask_airodrom` client still stops waiting after 15 seconds. The Mission can continue and be retrieved by the same request id.
+- The MCP stdio client still applies a 15-second per-call budget to the bridge HTTP hop. Cognitive `ask_airodrom` acknowledges immediately with `PLANNING` and continues asynchronously; disposable workspace clone/materialize no longer blocks the bridge event loop, so `get_ask_status` and `agent_status` stay responsive during long prep. If a single call still times out, recover with the same `request_id` — never replay under a new id.
 - Cognitive enrollment can only name files that already exist. The recovery proof therefore started from a placeholder and replaced it in a disposable worktree. The enrolled repository was left unchanged.
 - Source-only rollback `1e2fadd96f339fe49f50440219c0cd1e724d8051` stays available and was not cut back in under the writer-death rows.
 
