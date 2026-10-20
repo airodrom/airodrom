@@ -397,6 +397,10 @@ class DeveloperAutonomy {
   // Concurrent worktree budget covers active preparation and unsettled execution.
   // Settled, idle clones may remain on disk as evidence; they must not block a
   // later Mission when max_worktrees is a concurrent ceiling.
+  // Concurrent max_worktrees is an active-prep / unsettled-execution ceiling.
+  // Idle held evidence (unique commits retained after owner cleanup) and idle
+  // grantless bound clones must not block a later Mission. Ready and invalid
+  // clones still occupy slots until cleaned or settled.
   workspaceOccupiesBudget(row) {
     if (!row || !['ready', 'bound', 'held', 'invalid'].includes(row.state)) return false;
     if (row.state === 'ready' || row.state === 'invalid') return true;
@@ -408,7 +412,7 @@ class DeveloperAutonomy {
       const grant = this.db.prepare('SELECT state FROM cp_developer_autonomy_grants WHERE grant_id=?').get(row.grant_id);
       return !grant || grant.state === 'active';
     }
-    return true;
+    return false;
   }
 
   // Disposable disk capacity excludes unbound ready clones and settled evidence.
