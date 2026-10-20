@@ -387,7 +387,12 @@ class MissionService {
         const file=path.join(m.envelope.workspace,change.path);
         if(!(specialist?specialist.writable:m.envelope.allowed_files).includes(change.path)||require('./qualified-coding-adapter').digest(file)!==change.preimage_sha256)throw Error('opencode_preimage_changed');
         this.bridge.developerAutonomy.assertChanges(this.store.requireMission(m.id),output.changes);
-        const applied=await this.bridge.invokeCapability(task.id,{name:'file_write',input:{path:file,content:change.content},requestId:`opencode-apply:${runId}:${i}`});
+        // Markdown Autopilot reports must pass registered `git diff --check`.
+        // Strip trailing spaces/tabs only; do not alter intentional code bytes.
+        const content=/\.md$/i.test(change.path)&&typeof change.content==='string'
+          ? change.content.replace(/[ \t]+$/gm, '')
+          : change.content;
+        const applied=await this.bridge.invokeCapability(task.id,{name:'file_write',input:{path:file,content},requestId:`opencode-apply:${runId}:${i}`});
         if(applied.status!=='completed')throw Error('opencode_apply_not_completed');
       }
       transaction(this.db,()=>{
