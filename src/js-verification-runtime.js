@@ -16,10 +16,17 @@ function inside(root, target) {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
-const PRIVATE_DEPENDENCY = /(^|\/)(?:[.]git|[.]runtime|[.]env(?:[.][^/]*)?|[.]ssh|[.]aws|secrets?|credentials?|vault)(\/|$)/i;
+// Case-sensitive: PascalCase package exports such as effect/Secret must not be
+// treated as credential stores. Real vault/secret path segments are lowercase.
+// `.env.example` / `.env.sample` / `.env.template` are public templates and must
+// remain copyable when packages link to them inside the enrolled repository.
+const PRIVATE_DEPENDENCY = /(^|\/)(?:[.]git|[.]runtime|[.]env(?:[.][^/]*)?|[.]ssh|[.]aws|secrets?|credentials?|vault)(\/|$)/;
+const PUBLIC_ENV_TEMPLATE = /(^|\/)[.]env[.](?:example|sample|template|dist)(?:\/|$)/;
 
 function privateDependency(root, target) {
-  return PRIVATE_DEPENDENCY.test(path.relative(root, target).replaceAll(path.sep, '/'));
+  const rel = path.relative(root, target).replaceAll(path.sep, '/');
+  if (PUBLIC_ENV_TEMPLATE.test(rel)) return false;
+  return PRIVATE_DEPENDENCY.test(rel);
 }
 
 // Follow a symlink chain without trusting a final realpath that returned
