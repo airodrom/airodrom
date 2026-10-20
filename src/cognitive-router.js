@@ -30,22 +30,75 @@ function enrollment(input, repository) {
   return JSON.parse(JSON.stringify(input));
 }
 
-function requestedWorker(instruction) {
+// Canonical planner / specialist / evaluator contract. MCP ask_airodrom and
+// operator intake both call requestedWorker → resolveWorkerRoles; there is no
+// second ChatGPT-specific parser. OpenCode named for plan/evaluate is never a
+// competing specialist next to an explicit Cursor assignment.
+const PLAN_EVAL_ROLE = '(?:plan(?:ning)?|evaluat(?:e|ion|or)|planner|evaluator)';
+const OPENCODE_ROLE_PHRASES = [
+  // "Use OpenCode to plan", "Use OpenCode to plan and evaluate"
+  new RegExp(String.raw`\b(?:use|using|via|with)\s+opencode\s+to\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
+  new RegExp(String.raw`\bopencode\s+to\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
+  // "OpenCode evaluates" / "OpenCode plans"
+  /\bopencode\s+(?:plans?|evaluates?)\b/ig,
+  // "Use OpenCode for planning and evaluation"
+  new RegExp(String.raw`\b(?:use|using|via|with)\s+opencode\s+for\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
+  new RegExp(String.raw`\bopencode\s+for\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
+  new RegExp(String.raw`\b${PLAN_EVAL_ROLE}\s+(?:with|via|using)\s+opencode\b`, 'ig'),
+  /\bopencode\s+as\s+(?:the\s+)?(?:planner|evaluator|planning|evaluation)\b/ig,
+  /\b(?:planner|evaluator)\s*[:=]\s*opencode\b/ig
+];
+const AIRODROM_VERIFY_PHRASES = [
+  /\b(?:and\s+)?airodrom\s+to\s+(?:independently\s+)?verif(?:y|ies|ication)\b/ig,
+  /\bairodrom\s+(?:independently\s+)?verif(?:y|ies|ication)\b/ig
+];
+const SPECIALIST_MATCH = new RegExp(
+  String.raw`\b(?:use|using|via|with|in)\s+(cursor|opencode|host)\b` +
+  String.raw`|\b(cursor|opencode|host)[- ]only\b` +
+  String.raw`|\bassign(?:ed)?\s+to\s+(cursor|opencode|host)\b` +
+  String.raw`|\b(cursor|opencode|host)\s+as\s+(?:the\s+)?specialist\b` +
+  String.raw`|\b(cursor|opencode|host)\s+to\s+(?:implement(?:ation|s)?|execute|edit|run)\b` +
+  String.raw`|\b(cursor|opencode|host)\s+(?:for\s+)?(?:implementation|implements?|specialist)\b` +
+  String.raw`|\bspecialist\s*[:=]\s*(cursor|opencode|host)\b`,
+  'ig'
+);
+
+function resolveWorkerRoles(instruction) {
   if (/\b(?:codex|claude(?:[- ]code)?)\b/i.test(instruction)) C.fail('cognitive_named_worker_unavailable');
-  // OpenCode is the cognitive planner/evaluator. Naming it for those roles must not
-  // compete with an explicit specialist (Cursor). Strip planner/evaluator phrases
-  // before detecting the requested execution worker.
-  let text = String(instruction);
-  text = text.replace(/\b(?:use|using|via|with)\s+opencode\s+for\s+(?:planning|planner|evaluation|evaluating|evaluator)(?:\s+and\s+(?:planning|planner|evaluation|evaluating|evaluator))?\b/ig, ' ');
-  text = text.replace(/\bopencode\s+for\s+(?:planning|planner|evaluation|evaluating|evaluator)(?:\s+and\s+(?:planning|planner|evaluation|evaluating|evaluator))?\b/ig, ' ');
-  text = text.replace(/\b(?:plan(?:ning)?|evaluat(?:e|ion|or)|planner)\s+(?:with|via|using)\s+opencode\b/ig, ' ');
-  const requested = [...text.matchAll(
-    /\b(?:use|using|via|with|in)\s+(cursor|opencode|host)\b|\b(cursor|opencode|host)[- ]only\b|\bassign(?:ed)?\s+to\s+(cursor|opencode|host)\b/ig
-  )].map(m => (m[1] || m[2] || m[3]).toLowerCase());
-  if (new Set(requested).size > 1) C.fail('cognitive_ambiguous_worker');
+  const original = String(instruction);
+  let text = original;
+  let namedPlanner = false;
+  let namedEvaluator = false;
+  for (const pattern of OPENCODE_ROLE_PHRASES) {
+    pattern.lastIndex = 0;
+    const hits = original.match(pattern) || [];
+    for (const sample of hits) {
+      if (/evaluat/i.test(sample)) namedEvaluator = true;
+      if (/plan/i.test(sample)) namedPlanner = true;
+    }
+    text = text.replace(pattern, ' ');
+  }
+  for (const pattern of AIRODROM_VERIFY_PHRASES) text = text.replace(pattern, ' ');
+  const specialists = [...text.matchAll(SPECIALIST_MATCH)]
+    .map(m => (m[1] || m[2] || m[3] || m[4] || m[5] || m[6] || m[7]).toLowerCase());
+  const unique = [...new Set(specialists)];
+  if (unique.length > 1) C.fail('cognitive_ambiguous_worker');
   // A named worker in unrecognized prose must never silently become an auto route.
-  if (!requested.length && /\b(?:cursor|opencode)\b/i.test(text)) C.fail('cognitive_explicit_worker_syntax_required');
-  return requested[0] || 'auto';
+  if (!unique.length && /\b(?:cursor|opencode)\b/i.test(text)) C.fail('cognitive_explicit_worker_syntax_required');
+  return {
+    planner: 'opencode',
+    specialist: unique[0] || 'auto',
+    evaluator: 'opencode',
+    governor: 'airodrom',
+    named_planner: namedPlanner,
+    named_evaluator: namedEvaluator,
+    authority: false
+  };
+}
+
+function requestedWorker(instruction) {
+  // Shared by MCP ask_airodrom / prepare_mission and operator zero-setup intake.
+  return resolveWorkerRoles(instruction).specialist;
 }
 
 // OpenCode sometimes wraps the proposal, returns an empty task list, or emits
@@ -494,4 +547,4 @@ function evidence(bridge, mission, detail, verification, changes) {
     references: ['mission:' + mission.id, 'request:' + c.envelope.request_id, ...(c.planner_run_ids || []).map(id => 'run:' + id), ...(verification ? ['verification:' + verification.id] : [])],
     counts: { planning: c.planning_attempts, execution: runs.length, repair: c.envelope.version === 3 ? require('./specialist-gateway').repairCount(bridge, mission) : c.envelope.version === 2 ? require('./mission-evidence').lineageFor(bridge, mission).filter(m => m.repair_of).length : 0 } });
 }
-module.exports = { enrollment, requestedWorker, coercePlanningProposal, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
+module.exports = { enrollment, requestedWorker, resolveWorkerRoles, coercePlanningProposal, validateProposal, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
