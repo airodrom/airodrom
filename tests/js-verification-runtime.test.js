@@ -79,12 +79,14 @@ test('resolveNpmCli finds npm-cli.js beside a pinned node binary', () => {
   if (cli) assert.equal(fs.statSync(cli).isFile(), true);
 });
 
-test('dependency copy rejects links escaping the repository', t => {
+test('dependency copy skips external store links instead of aborting the workspace', t => {
   const f = fixture(t);
   const outside = path.join(f.root, 'outside.js');
   fs.writeFileSync(outside, 'module.exports = 1;');
   fs.symlinkSync(outside, path.join(f.source, 'node_modules', '.bin', 'escape'));
-  assert.throws(() => materializeNodeModules(f.source, f.work), /symlink escapes/);
+  const result = materializeNodeModules(f.source, f.work);
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.reason, 'external_store_links');
   assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
 });
 
@@ -101,12 +103,15 @@ test('materialized workspace package links remain inside the disposable reposito
   assert.equal(resolveNodeRunnable(f.work, 'local-tool').file, fs.realpathSync(path.join(f.work, 'packages', 'local-tool.js')));
 });
 
-test('workspace links to private repository paths still fail closed', t => {
+test('workspace links to private repository paths are not copied into the disposable clone', t => {
   const f = fixture(t);
   fs.mkdirSync(path.join(f.source, '.git'), { recursive: true });
   fs.writeFileSync(path.join(f.source, '.git', 'config'), 'fixture');
   fs.symlinkSync('../../.git/config', path.join(f.source, 'node_modules', '.bin', 'escape'));
-  assert.throws(() => materializeNodeModules(f.source, f.work), /symlink escapes/);
+  const result = materializeNodeModules(f.source, f.work);
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.reason, 'external_store_links');
+  assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
 });
 
 test('dependency disk budget rejects oversized trees before copying', t => {
@@ -176,12 +181,12 @@ test('cyclic, dangling, and outside-return symlink chains fail closed', t => {
   const outside = path.join(f.root, 'outside-hop');
   fs.symlinkSync(path.join(f.source, 'packages', 'tool.js'), outside);
   fs.symlinkSync(outside, path.join(modules, 'tool.js'));
-  assert.throws(() => materializeNodeModules(f.source, f.work), /symlink escapes/);
+  assert.deepEqual(materializeNodeModules(f.source, f.work), { status: 'skipped', reason: 'external_store_links' });
   const { resolveNodeRunnable } = require('../src/js-verification-runtime');
   assert.equal(resolveNodeRunnable(f.source, 'node_modules/tool.js'), null);
   fs.rmSync(path.join(modules, 'tool.js'));
   fs.symlinkSync('/etc/passwd', path.join(modules, 'absolute.js'));
-  assert.throws(() => materializeNodeModules(f.source, f.work), /symlink escapes/);
+  assert.deepEqual(materializeNodeModules(f.source, f.work), { status: 'skipped', reason: 'external_store_links' });
   fs.rmSync(path.join(modules, 'absolute.js'));
   const hidden = path.join(modules, 'hidden');
   fs.mkdirSync(hidden);
