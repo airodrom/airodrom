@@ -68,16 +68,36 @@ standing cognitive planning.
 
 ### Live acceptance (2026-10-19)
 
-Installed `b401f5dbcd122572e1d1e3e264d3f195e4436b83` (PR #179). Host-origin
+**Unblocking V1** — installed `b401f5dbcd122572e1d1e3e264d3f195e4436b83` (PR #179). Host-origin
 operator intake (not a ChatGPT MCP session; no paid Cursor run):
 
 | Request | Result |
 | --- | --- |
-| `Use Cursor to continue the Arecibo development task…` | Enrolled path. Did **not** return `projectless_exact_two_file_syntax_required`. Resolved the single-repo Arecibo enrollment; Autopilot reported missing `.vscode/tasks.json` on that checkout (precise standing-prep gate). |
-| `Use Cursor to continue the Arecibo Core development task…` | `ENROLLED_REPOSITORY_AMBIGUOUS` with the enrolled Arecibo Core worktrees listed. No two-file fixture prompt. |
+| `Use Cursor to continue the Arecibo development task…` | Enrolled path. Did **not** return `projectless_exact_two_file_syntax_required`. |
+| `Use Cursor to continue the Arecibo Core development task…` | Then `ENROLLED_REPOSITORY_AMBIGUOUS` (cleaned DA leftovers still listed). |
 | Projectless `Use Cursor in a projectless task sandbox…` | Still `projectless_exact_two_file_syntax_required`. |
 
-Remaining genuine gates: choose one Arecibo Core repository when several worktrees are enrolled; standing Developer Autonomy with cognitive discovery files before Cursor planning; explicit subscription grant before paid Cursor execution; no production deploy or Plaid LIVE activation from this path. Rollback checkpoint: `~/.airodrom/activation/airodrom-rollback-b9546357a26c`.
+**Zero-Manual Autopilot Activation V1** — installed
+`79ef2eb23dd9ecf31dbe1f8b570a3457d04c9184` (PRs #181–#183). Owner default set to
+live `arecibo-core-autopilot-main` (`arecibo-inc/arecibo-core`, branch `main`).
+Host-origin acceptance for
+`Start the Arecibo release-readiness audit in Cursor. Do not deploy production.`:
+
+| Check | Result |
+| --- | --- |
+| Arecibo Core resolved / no workspace clarify | PASS |
+| Authoritative default repository selected | PASS (`arecibo-core-autopilot-main`) |
+| Not projectless two-file parser | PASS |
+| Standing Autopilot DA + cognitive enrollment | PASS (`autopilot-02054eab4648-*`) |
+| OpenCode planning invoked | PASS (cognitive v3, one planner run id) |
+| Cursor execution | Not reached |
+| Host verification / settlement | Not reached |
+| Planning outcome | BLOCKED `opencode_sensitive_context` (genuine OpenCode sensitive-context gate on the enrolled Arecibo tree) |
+
+This acceptance is **host-origin**, not genuine remote ChatGPT acceptance. Paid
+Cursor was not run. Production was not altered. Rollback checkpoints:
+`~/.airodrom/activation/airodrom-rollback-b3c44fbec731`,
+`…/airodrom-rollback-40fddf84b045`, `…/airodrom-rollback-3bb93123b4d8`.
 
 ## One-interface, approval-bound completion (candidate V1)
 
