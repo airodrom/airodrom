@@ -17,10 +17,24 @@ Interpretation:
 | Specialist | Cursor |
 | Evaluator | OpenCode |
 
-`requested_worker` records the **specialist**. OpenCode planner/evaluator phrases
-are stripped before ambiguity detection. Competing specialists (for example
-“Use Cursor only with OpenCode” as two execution workers) still fail closed as
+`resolveWorkerRoles` returns the canonical contract `{ planner: opencode,
+specialist, evaluator: opencode, governor: airodrom }`. `requested_worker`
+records only the **specialist**. MCP `ask_airodrom` / `prepare_mission` and
+operator zero-setup intake share this resolver — there is no ChatGPT-specific
+second parser.
+
+OpenCode planner/evaluator phrases are stripped before specialist detection,
+including both “for planning/evaluation” and “to plan / to evaluate”. “Cursor as
+specialist”, “Cursor to implement”, and “Airodrom verifies” are role-aware.
+Competing *execution* specialists (for example “Use Cursor only with OpenCode”
+or “assign to Cursor and assign to OpenCode”) still fail closed as
 `cognitive_ambiguous_worker`.
+
+**Proven ChatGPT-origin defect (2026-10-19):** host-origin “Use OpenCode for
+planning and evaluation” resolved to Cursor, while ChatGPT prose “Use OpenCode
+to plan … OpenCode to evaluate” left bare `Use OpenCode` matches and returned
+`cognitive_ambiguous_worker`. The shared resolver now treats both phrasings as
+planner/evaluator roles.
 
 Planning forwards only enrolled discovery files that pass the OpenCode
 sensitive-context gate. Setup docs that mention `.env` paths remain on disk but

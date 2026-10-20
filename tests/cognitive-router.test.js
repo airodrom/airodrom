@@ -185,6 +185,51 @@ test('OpenCode planner/evaluator phrases do not compete with a Cursor specialist
   assert.throws(() => R.requestedWorker('Assign to Cursor and use OpenCode for the edit'), /ambiguous/);
 });
 
+test('ChatGPT Autopilot worker-role reconciliation: role contract for historical and adjacent phrasing', () => {
+  const historical = 'Start the Arecibo release-readiness audit in Cursor using the owner-configured Arecibo Core default repository and standing Autopilot enrollment. Use OpenCode to plan, Cursor as specialist, OpenCode to evaluate, and Airodrom to independently verify. Inspect source versus deployed API/Admin identities, migrations, flags, and rollback readiness, producing an evidence report in an isolated authorized worktree. Do not deploy production, enable Plaid LIVE, expose secrets or alter infrastructure. Proceed with Cursor only if a currently valid standing subscription-execution and scoped external-disclosure grant covers this task; otherwise return the exact approval prerequisite.';
+  const cases = [
+    ['historical_v1', historical, 'cursor'],
+    ['in_cursor', 'Start the Arecibo release-readiness audit in Cursor.', 'cursor'],
+    ['plan_and_implement', 'Use OpenCode to plan and Cursor to implement.', 'cursor'],
+    ['implements_evaluates', 'Cursor implements; OpenCode evaluates.', 'cursor'],
+    ['plan_and_evaluate_only', 'Use OpenCode for planning and evaluation.', 'auto'],
+    ['to_plan_and_evaluate', 'Start the Arecibo release-readiness audit in Cursor. Use OpenCode to plan and evaluate. Do not deploy production.', 'cursor'],
+    ['repeated_opencode', 'Use OpenCode to plan. Use OpenCode to evaluate. Run the audit in Cursor.', 'cursor'],
+    ['airodrom_verify', 'Start the audit in Cursor. Use OpenCode to plan. Airodrom verifies.', 'cursor'],
+    ['opencode_only_planning', 'Use OpenCode for planning.', 'auto'],
+    ['opencode_execution', 'Use OpenCode for the Fixture change.', 'opencode']
+  ];
+  for (const [name, instruction, specialist] of cases) {
+    const roles = R.resolveWorkerRoles(instruction);
+    assert.equal(roles.planner, 'opencode', name);
+    assert.equal(roles.evaluator, 'opencode', name);
+    assert.equal(roles.governor, 'airodrom', name);
+    assert.equal(roles.specialist, specialist, name + ' specialist');
+    assert.equal(R.requestedWorker(instruction), specialist, name + ' requestedWorker');
+  }
+  assert.throws(() => R.resolveWorkerRoles('Use Cursor and Use OpenCode to edit the files'), /ambiguous/);
+  assert.throws(() => R.resolveWorkerRoles('Assign to Cursor and assign to OpenCode'), /ambiguous/);
+  assert.throws(() => R.resolveWorkerRoles('Use Claude Code in Cursor'), /named_worker_unavailable/);
+  assert.throws(() => R.resolveWorkerRoles('Cursor somehow must execute this.'), /explicit_worker_syntax/);
+});
+
+test('MCP and operator intake share the same worker-role resolver export', () => {
+  // ask_airodrom and zero-setup prepare both require this module; there is no
+  // ChatGPT-specific role parser alongside the operator path.
+  assert.match(require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/mcp-tools.js'), 'utf8'), /zeroSetupWork\.ask/);
+  assert.match(require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/zero-setup-work.js'), 'utf8'), /cognitive-router/);
+  const router = require('../src/cognitive-router');
+  assert.equal(router.requestedWorker, R.requestedWorker);
+  assert.equal(router.resolveWorkerRoles, R.resolveWorkerRoles);
+  const roles = router.resolveWorkerRoles(
+    'Start the Arecibo release-readiness audit in Cursor. Use OpenCode to plan and evaluate. Do not deploy production.'
+  );
+  assert.deepEqual(
+    { planner: roles.planner, specialist: roles.specialist, evaluator: roles.evaluator },
+    { planner: 'opencode', specialist: 'cursor', evaluator: 'opencode' }
+  );
+});
+
 test('destination worker phrases are explicit; unrecognized worker prose still blocks', async t => {
   const f = await setup(t);
   assert.equal(R.requestedWorker('Continue the Fixture project audit in Cursor.'), 'cursor');
