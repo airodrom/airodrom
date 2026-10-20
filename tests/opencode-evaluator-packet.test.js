@@ -128,14 +128,22 @@ test('structured evaluation binds to the host hash and fails closed otherwise', 
 
 test('a local evaluator that never started can be retried once', () => {
   const mission = { state: 'blocked', reason: 'EVALUATION_UNAVAILABLE: opencode_unavailable_or_unsupported' };
-  const run = { agent_id: 'opencode', state: 'failed', termination_verified: 1, pid: null, resolution: 'gateway_evaluation_unavailable' };
+  const failedEval = {
+    id: 'eval-1', agent_id: 'opencode', state: 'failed', termination_verified: 1, pid: null,
+    resolution: 'gateway_evaluation_unavailable', result: { gateway: { version: 1 } }
+  };
   const attempt = { verification: { status: 'passed' } };
-  assert.equal(preStartEvaluationRetryable(mission, [run], attempt), true);
-  assert.equal(preStartEvaluationRetryable(mission, [run, run], attempt), false);
-  assert.equal(preStartEvaluationRetryable(mission, [{ ...run, pid: 10 }], attempt), false);
-  assert.equal(preStartEvaluationRetryable({ ...mission, reason: 'EVALUATION_UNAVAILABLE: opencode_sensitive_context' }, [run], attempt), false);
-  assert.equal(preStartEvaluationRetryable(mission, [run], { ...attempt, evaluation_run_id: 'already' }), false);
-  assert.equal(preStartEvaluationRetryable(mission, [run], { verification: { status: 'failed' } }), false);
+  // Cursor path: only the never-started OpenCode evaluator exists.
+  assert.equal(preStartEvaluationRetryable(mission, [failedEval], attempt), true);
+  // Local OpenCode specialist: completed implementation + never-started evaluator.
+  const impl = { id: 'impl-1', agent_id: 'opencode', state: 'completed', termination_verified: 1, pid: 42, resolution: null, result: { opencode_provenance: {} } };
+  assert.equal(preStartEvaluationRetryable(mission, [impl, failedEval], attempt), true);
+  assert.equal(preStartEvaluationRetryable(mission, [failedEval, failedEval], attempt), false);
+  assert.equal(preStartEvaluationRetryable(mission, [{ ...failedEval, pid: 10 }], attempt), false);
+  assert.equal(preStartEvaluationRetryable({ ...mission, reason: 'EVALUATION_UNAVAILABLE: opencode_sensitive_context' }, [failedEval], attempt), false);
+  assert.equal(preStartEvaluationRetryable(mission, [failedEval], { ...attempt, evaluation_run_id: 'already' }), false);
+  assert.equal(preStartEvaluationRetryable(mission, [failedEval], { verification: { status: 'failed' } }), false);
+  assert.equal(preStartEvaluationRetryable(mission, [impl], attempt), false);
 });
 
 test('OpenCode evaluation keeps its own allowance after the Cursor window', () => {

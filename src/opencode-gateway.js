@@ -27,13 +27,28 @@ function extractEvaluationJSON(raw) {
   if (start < 0 || end <= start) return null;
   try { return require('./authority-json').parseAuthorityJSON(raw.slice(start, end + 1)); } catch { return null; }
 }
+function isNeverStartedEvaluator(run) {
+  // Failed before process start: no pid, gateway stub present, termination verified.
+  // Implementation OpenCode runs complete without a gateway receipt on the same row.
+  if (!run || run.agent_id !== 'opencode' || run.state !== 'failed' || run.termination_verified !== 1) return false;
+  if (run.pid != null || run.resolution !== 'gateway_evaluation_unavailable') return false;
+  const result = run.result && typeof run.result === 'object' ? run.result
+    : (() => { try { return JSON.parse(run.result || 'null'); } catch { return null; } })();
+  return !!result?.gateway;
+}
 function preStartEvaluationRetryable(mission, opencodeRuns, attempt) {
   // One local retry when the evaluator never started. Not a Cursor redispatch.
+  // Cursor specialists leave exactly one failed OpenCode evaluator run.
+  // Local OpenCode specialists leave one completed implementation run plus that
+  // failed evaluator — both shapes are retryable when host verification passed.
   if (mission?.state !== 'blocked' || !String(mission.reason || '').includes('opencode_unavailable_or_unsupported')) return false;
-  if (!Array.isArray(opencodeRuns) || opencodeRuns.length !== 1) return false;
-  const run = opencodeRuns[0];
-  if (run.agent_id !== 'opencode' || run.state !== 'failed' || run.termination_verified !== 1 || run.pid != null || run.resolution !== 'gateway_evaluation_unavailable') return false;
   if (!attempt || attempt.evaluation_run_id || attempt.verification?.status !== 'passed') return false;
+  const rows = Array.isArray(opencodeRuns) ? opencodeRuns : [];
+  const failed = rows.filter(isNeverStartedEvaluator);
+  if (failed.length !== 1) return false;
+  const others = rows.filter(r => r.id !== failed[0].id);
+  if (others.length > 1) return false;
+  if (others.length === 1 && !(others[0].state === 'completed' && others[0].termination_verified === 1)) return false;
   return true;
 }
 function evaluationAllowanceMs(mission, now) {
@@ -97,8 +112,14 @@ async function evaluate(bridge, mission, worker, verification) {
     continuation = true;
   }
   const currentMission = store.requireMission(mission.id);
-  if (continuation) bridge.missionApprovals.assertLocalEvaluation(currentMission);
-  else bridge.missions.assertAuthority(currentMission);
+  // Cursor subscription approvals use assertLocalEvaluation so a paid grant TTL
+  // cannot strand an already-verified local OpenCode evaluation. Developer
+  // Autonomy / Autopilot OpenCode Missions have no approval_id — keep assertAuthority.
+  const assertEvalAuthority = (current) => {
+    if (continuation && current.envelope.approval_id) bridge.missionApprovals.assertLocalEvaluation(current);
+    else bridge.missions.assertAuthority(current);
+  };
+  assertEvalAuthority(currentMission);
   const runId = randomUUID(), controller = new AbortController();
   const gateway = { version: 1, worker_run_id: worker.id, binding_hash: canonicalHash(binding), binding, authority: false };
   // The caller holds the existing verifier writer lease through evaluation. That
@@ -113,15 +134,13 @@ async function evaluate(bridge, mission, worker, verification) {
     const current = store.requireMission(mission.id);
     if (specialist.enabled(current)?!specialist.isEvaluating(bridge,current,worker):current.state !== 'verifying') C.fail('gateway_mission_stopped');
     bridge.lifecycle?.assertOpen();
-    if (continuation) bridge.missionApprovals.assertLocalEvaluation(current);
-    else bridge.missions.assertAuthority(current);
+    assertEvalAuthority(current);
     if (workspaceSnapshot(current.envelope.workspace).hash !== binding.workspace_hash) C.fail('gateway_workspace_changed');
   };
   const watch = setInterval(() => { try {
     const current=store.requireMission(mission.id);
     if (specialist.enabled(current)?!specialist.isEvaluating(bridge,current,worker):current.state !== 'verifying') C.fail('gateway_mission_stopped');
-    if (!continuation) bridge.missions.assertAuthority(store.requireMission(mission.id));
-    else bridge.missionApprovals.assertLocalEvaluation(store.requireMission(mission.id));
+    assertEvalAuthority(store.requireMission(mission.id));
   } catch { controller.abort(); } }, 250);
   bridge.opencodeAdapter.active.set(worker.task_id, controller);
   try {
@@ -232,4 +251,4 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   }
   return true;
 }
-module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, localEvaluationTimeoutMs, evaluationContinuation, preStartEvaluationRetryable, reconcileBlockedEvaluation };
+module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, localEvaluationTimeoutMs, evaluationContinuation, preStartEvaluationRetryable, isNeverStartedEvaluator, reconcileBlockedEvaluation };
