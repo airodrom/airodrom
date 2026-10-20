@@ -1,20 +1,35 @@
 # Cognitive Mission Router V1
 
 Architecture decision: [ADR 0057](adr/0057-cognitive-mission-router.md).
+Host execution policy: [ADR 0060](adr/0060-host-execution-policy.md).
+
+## Local-First default (V3)
+
+While `cp_host_execution_policy.cursor_execution_disabled=1`, explicit Cursor
+requests and automatic Cursor selection fail with durable
+`CURSOR_EXECUTION_DISABLED`. Local OpenCode is the default specialist for
+ordinary enrolled work; planner and evaluator roles remain OpenCode. Cursor
+adapter code and historical Missions stay available for authenticated
+reactivation. External Cursor billing is unaffected.
+
+Local-only example:
+
+> Start the Arecibo release-readiness audit using local OpenCode only. Do not deploy production, call Cursor, enable Plaid LIVE, or use external AI providers.
 
 ## Planner / specialist / evaluator roles
 
-OpenCode is the cognitive planner and evaluator. Cursor (or another qualified
-specialist) executes when selected. Naming both in one instruction is valid:
+OpenCode is the cognitive planner and evaluator. When Cursor execution is
+re-enabled and authorized, Cursor (or another qualified specialist) executes
+when selected. Naming both in one instruction is valid after reactivation:
 
 > Start the Arecibo release-readiness audit in Cursor. Use OpenCode for planning and evaluation. Do not deploy production.
 
-Interpretation:
+Interpretation (when Cursor is eligible):
 
 | Role | Worker |
 |------|--------|
 | Planner | OpenCode |
-| Specialist | Cursor |
+| Specialist | Cursor (or OpenCode when local-only / Cursor disabled) |
 | Evaluator | OpenCode |
 
 `resolveWorkerRoles` returns the canonical contract `{ planner: opencode,

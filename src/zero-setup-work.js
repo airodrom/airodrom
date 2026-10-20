@@ -446,6 +446,29 @@ class ZeroSetupWork {
       const files = this.bridge.developerAutonomy.routineFiles(standing, instruction, intent.file);
       if (!files.length) {
         const wantsCursor = require('./projectless-sandbox').explicitlyRequestsCursor(instruction);
+        if (wantsCursor && this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
+          const record = {
+            version: 1, instruction, intent, clarify: true, authority: false,
+            project_id: standing.project_id, project_name: project.name, workspace,
+            intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
+            presentation: {
+              worker: 'cursor', files: [], measurable: false, project_name: project.name,
+              workspace_label: readablePath(workspace),
+              status: 'Cursor execution disabled in Airodrom; use local OpenCode only',
+            },
+          };
+          this.write(request_id, principal, record, 'blocked');
+          return {
+            state: 'BLOCKED',
+            code: 'CURSOR_EXECUTION_DISABLED',
+            message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+            blockers: ['CURSOR_EXECUTION_DISABLED'],
+            authority: false,
+            execution_authorized: false,
+            next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+            presentation: record.presentation,
+          };
+        }
         const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
         if (wantsCursor && !cognitiveReady) {
           const record = {
@@ -623,6 +646,22 @@ class ZeroSetupWork {
     const phaseTerminal = phase ? !require('./recovery-phase').OBSERVING.has(phase) : terminalStates.includes(state);
     const waiting = state === 'awaiting_approval';
     const cursorApproval = waiting && live.work_spec?.worker === 'cursor';
+    const cursorDisabled = !!this.bridge.hostExecutionPolicy?.cursorDisabled?.();
+    if (cursorDisabled && cursorApproval) {
+      live.state = 'blocked';
+      live.intake_blockers = ['CURSOR_EXECUTION_DISABLED'];
+      this.write(live.request_id, live.principal, live, 'blocked');
+      return {
+        state: 'BLOCKED',
+        code: 'CURSOR_EXECUTION_DISABLED',
+        message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center.',
+        blockers: ['CURSOR_EXECUTION_DISABLED'],
+        presentation: { ...(live.presentation || {}), worker: 'cursor', status: 'Cursor execution disabled in Airodrom' },
+        authority: false,
+        execution_authorized: false,
+        next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+      };
+    }
     // A generic task sandbox is not an executable Mission. Approval cannot supply
     // missing files or verification; keep the original admission guards intact.
     // Derive this for old durable proposals too, without rewriting their state.
@@ -761,6 +800,7 @@ class ZeroSetupWork {
     const sandbox = require('./projectless-sandbox');
     const spec = sandbox.normalizeWorkSpec(live.work_spec);
     const external = spec.worker === 'cursor';
+    if (external && this.bridge.hostExecutionPolicy?.cursorDisabled?.()) throw Error('CURSOR_EXECUTION_DISABLED');
     if (!external && confirmation?.subscription_execution !== undefined) throw Error('Subscription permission requires Cursor');
     if (external && (!confirmation || confirmation.owner !== 'operator' || confirmation.confirmed !== true ||
         !['terminal', 'control_center'].includes(confirmation.channel) || !confirmation.subscription_execution))

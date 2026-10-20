@@ -19,11 +19,16 @@ const DEFAULT_TTL_MS = 2 * 60 * 60 * 1000;
 // Billing visibility is not permission. This is a separate, explicit operator
 // decision to permit a finite subscription-backed run with unobservable cost.
 // It promises invocation/time limits, NEVER an unenforceable monetary cap.
-function subscriptionExecution(input, contract, channel) {
+function subscriptionExecution(input, contract, channel, bridge = null) {
   if (input === undefined || input === null) return null;
   object(input, ['provider', 'acknowledge_unknown_cost', 'max_invocations', 'max_runtime_ms']);
   if (channel === 'fixture' || input.provider !== 'cursor' || input.acknowledge_unknown_cost !== true)
     throw Error('subscription_explicit_authorization_required');
+  if (bridge?.hostExecutionPolicy?.cursorDisabled?.()) {
+    const error = Error('CURSOR_EXECUTION_DISABLED');
+    error.code = 'CURSOR_EXECUTION_DISABLED';
+    throw error;
+  }
   if (contract.execution.preferred_worker !== 'cursor' || contract.execution.mode !== 'sandboxed_headless' ||
       !contract.permissions.external_disclosure.authorized ||
       !contract.permissions.external_disclosure.providers.includes('cursor'))
@@ -113,7 +118,7 @@ class MissionApprovals {
     if (input.confirmed !== true) throw Error('Explicit owner approval required');
     if (!CHANNELS.has(input.channel)) throw Error('Unknown approval channel');
     const contract = require('./mission-contract').assertIntact(input.contract);
-    const subscription = subscriptionExecution(input.subscription_execution, contract, input.channel);
+    const subscription = subscriptionExecution(input.subscription_execution, contract, input.channel, this.bridge);
     const ttl = input.ttl_ms ?? DEFAULT_TTL_MS;
     if (!Number.isSafeInteger(ttl) || ttl < 60000 || ttl > MAX_TTL_MS) throw Error('Approval window must be between one minute and 24 hours');
     if (input.plan_id !== undefined) identifier(input.plan_id);
@@ -228,7 +233,7 @@ class MissionApprovals {
     const approval = this.assertDispatch(mission);
     if (!approval || approval.principal !== 'operator' || approval.state !== 'active')
       throw Error('BLOCKED_SPEND_AUTHORIZATION');
-    const grant = subscriptionExecution(approval.summary.subscription_execution, contract, approval.channel);
+    const grant = subscriptionExecution(approval.summary.subscription_execution, contract, approval.channel, this.bridge);
     if (!grant) throw Error('BLOCKED_SPEND_AUTHORIZATION');
     if (mission.envelope.maxCostUsdBoundary !== undefined) throw Error('subscription_monetary_cap_unenforceable');
     if (mission.state !== 'running')

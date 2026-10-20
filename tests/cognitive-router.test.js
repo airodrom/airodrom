@@ -15,7 +15,11 @@ const caller = 'mcp:380c1915-b24c-40c5-9f7a-8e87c2da61f0';
 async function setup(t, { delegated = true, live = false, cursor = false } = {}) {
   const opencode = live ? { enabled: true, executable: '/opt/homebrew/bin/opencode', model: 'ollama/qwen3-coder:30b', timeoutMs: 120000 } : runtime(t).options;
   const f = await fixture(t, { opencode, settleTimeoutMs: live ? 150000 : 15000 });
-  if (cursor) f.bridge.cursorWorker = new (require('../src/cursor-worker').CursorWorker)(f.bridge, { fixtureExecutable: path.join(__dirname, 'fixtures/cursor-agent-fixture.cjs') });
+  if (cursor) {
+    // Opt into paid Cursor for grant-path coverage; host policy defaults to disabled (Local-First V3).
+    f.bridge.hostExecutionPolicy.enableCursor({ confirmed: true, request_id: randomUUID() }, 'operator');
+    f.bridge.cursorWorker = new (require('../src/cursor-worker').CursorWorker)(f.bridge, { fixtureExecutable: path.join(__dirname, 'fixtures/cursor-agent-fixture.cjs') });
+  }
   f.bridge.missionAuthority.initializeOperatorKey(); qualifyCanonical(f.bridge);
   const project = f.bridge.projects.listProjects({ status: 'active' })[0];
   const goal = f.bridge.projects.summary(project.projectId).goals[0];
@@ -276,7 +280,9 @@ test('drift immediately before queue blocks dispatch and remains a durable block
 test('explicit Cursor never launches OpenCode execution without its own qualification and grant', async t => {
   const f = await setup(t);
   const result = await f.ask(randomUUID(), caller, 'Use Cursor only in Fixture project to change fixture.txt from alpha to beta.');
-  assert.equal(result.state, 'BLOCKED'); assert.match(result.blockers[0], /cursor|subscription/i);
+  assert.equal(result.state, 'BLOCKED');
+  // Local-First V3: host policy blocks before subscription gates; both remain precise.
+  assert.match(result.blockers[0], /CURSOR_EXECUTION_DISABLED|cursor|subscription/i);
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n, 0);
 });
 

@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## Local-First Autopilot V3 — SOURCE (2026-10-20)
+
+- **Decision:** Paid Cursor execution through Airodrom is **disabled by default** (`cp_host_execution_policy`). External Cursor billing is separately identified as unaffected.
+- **Default path:** Local OpenCode plan → local OpenCode code (when suitable) → OpenCode evaluate → Airodrom host verification.
+- **Architecture unchanged:** `USER → ChatGPT → AIRODROM → OPENCODE → (specialist if authorized) → OPENCODE → AIRODROM → ChatGPT → USER`.
+- **Reactivation:** authenticated operator `enable-cursor` only; adapters and Milestone A/B evidence preserved.
+- Evidence: [GLOBAL-AUTOPILOT-V1.md](GLOBAL-AUTOPILOT-V1.md), [ADR 0060](adr/0060-host-execution-policy.md). Protected checkout `~/code/airodrom` and PR #148 remain untouched.
+
 ## ChatGPT Acceptance Milestone A — COMPLETE (2026-10-18)
 
 - **Genuine ChatGPT-origin PASS:** request `chatgpt_handoff_remote_20261018_v9` / Mission `7050a853-4754-4cab-a357-ff882b3446f0` — planning `02c71cea-…`, execution `5087f6ac-…`, evaluation `18e58f0e-…` (`ready`), host verification passed (exact bytes `4149524f…530a`), automatic Acceptance `8302db4a-…`, program settled, leases released. Evidence: [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md).

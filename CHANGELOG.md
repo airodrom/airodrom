@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Added
+- Local-First Autopilot V3: durable host execution policy disables paid Cursor dispatch by default (`CURSOR_EXECUTION_DISABLED`), keeps adapters and Milestone A/B evidence, leaves any external Cursor subscription unaffected, and re-enables only via authenticated operator API ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md), [docs/adr/0060-host-execution-policy.md](docs/adr/0060-host-execution-policy.md)).
+- Compact schema-first OpenCode planning with a separate planning stream budget and bounded overflow recovery so ordinary local Autopilot work does not depend on Cursor ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).
+
 ### Fixed
 - Idle HOLD evidence worktrees (unique commits retained, no active grant) no longer exhaust the concurrent `max_worktrees` ceiling; ready and unsettled clones still occupy slots ([docs/DEVELOPER-AUTONOMY-V1.md](docs/DEVELOPER-AUTONOMY-V1.md)).
 - Document ChatGPT-MCP Autopilot acceptance `ad4e7ebb` on install `5938d4f`: shared role resolver, OpenCode plan/evaluate, Cursor specialist, WAIT only on spend/disclosure ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md), [docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).

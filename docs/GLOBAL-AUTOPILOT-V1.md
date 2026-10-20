@@ -7,7 +7,27 @@ Autopilot changes how routine work is **admitted and prepared**. It does not
 add another control plane, scheduler, or cognitive coordinator. Architecture
 remains:
 
-`USER → ChatGPT → AIRODROM → OPENCODE → CURSOR/CLAUDE/CODEX → OPENCODE → AIRODROM → ChatGPT → USER`
+    `USER → ChatGPT → AIRODROM → OPENCODE → (specialist when authorized) → OPENCODE → AIRODROM → ChatGPT → USER`
+
+## Local-First Autopilot V3 (current operating mode)
+
+Paid **Cursor execution through Airodrom is disabled by default** via durable
+host preference `cp_host_execution_policy` (`CURSOR_EXECUTION_DISABLED`).
+
+| Rule | Behavior |
+|------|----------|
+| Default worker | Local OpenCode (installed runtime + Ollama/Qwen) for plan, local code when suitable, and evaluate |
+| Cursor selection | Excluded from automatic Autopilot enrollment and worker lists |
+| Explicit “in Cursor” | Fails closed with durable `CURSOR_EXECUTION_DISABLED` |
+| Stale spend grants | Cannot dispatch Cursor while disabled |
+| Adapter / Milestone B | Preserved; historical Missions remain readable |
+| External Cursor billing | **Unaffected** — this is an Airodrom policy, not a subscription cancellation |
+| Reactivation | Authenticated operator only: `POST /api/assistant/host-execution-policy/enable-cursor` with `confirmed: true` (or matching disable endpoint). Model/MCP/browser text cannot flip it |
+
+Local-only Arecibo work does **not** require Cursor spend, disclosure grants, or
+Cursor availability. OpenCode planning uses compact schema-first proposals with
+a separate planning stream budget and one bounded overflow recovery; host
+verification remains authoritative. See [ADR 0060](adr/0060-host-execution-policy.md).
 
 ## Commands
 
@@ -44,7 +64,7 @@ MCP, and repository text cannot.
 | Git remote | `github.com:arecibo-inc/arecibo-core` |
 | Approved branch | `main` |
 | Persistence | `cp_project_defaults` in durable `~/.airodrom` data (survives managed install upgrades) |
-| Standing Autopilot policy | `autopilot-02054eab4648-*` (opencode + cursor workers, cognitive v3, ~30-day expiry) |
+| Standing Autopilot policy | `autopilot-02054eab4648-*` (OpenCode worker while Cursor host-disabled; cognitive v3) |
 
 Four cleaned non-Git DA leftover directories may remain listed on the project;
 live-Git filtering ignores them. Separate project **Arecibo product research**
@@ -89,14 +109,20 @@ fails closed.
 
 ## Supported natural-language shapes (with Autopilot ON + default set)
 
-- `Continue developing Arecibo in Cursor.`
-- `Start the Arecibo release-readiness audit in Cursor. Do not deploy production.`
+Local-first (no Cursor spend):
+
+- `Start the Arecibo release-readiness audit using local OpenCode only. Do not deploy production, call Cursor, enable Plaid LIVE, or use external AI providers.`
+- `Continue developing Arecibo with local OpenCode.`
 
 These resolve the configured default repository, ensure a standing Autopilot DA
-policy, prefer OpenCode planning, and route to a qualified specialist when
-authorized. Paid Cursor execution still requires an existing owner-signed spend
-grant; production deploy, Plaid LIVE, IAM/DNS, and credential changes remain
-separately gated.
+policy, use OpenCode for planning/local coding/evaluation, and keep Airodrom
+host verification authoritative. Production deploy, Plaid LIVE, IAM/DNS, and
+credential changes remain separately gated.
+
+Historical Cursor shapes (`… in Cursor`) remain parseable but settle as
+`CURSOR_EXECUTION_DISABLED` until an authenticated operator re-enables Cursor
+execution. After reactivation, paid Cursor still requires qualification plus an
+owner-signed spend/disclosure grant.
 
 ## Security
 
@@ -117,7 +143,8 @@ separately gated.
 | `opencode_sensitive_context` on ordinary audits | Setup README mentioning `.env` was forwarded as planner input | Autopilot discovery and planning filter those files; real secrets remain denied |
 | Disk budget exhausted with idle ready / settled clones | Pre-V2 charged unbound ready clones and retained evidence toward disposable disk | Idle ready without a grant and settled evidence do not charge disk; worktree *slot* limits still count unbound ready; prepare reclaims only clean idle ready trees; untracked leftovers and active/uncertain work still charge; new enrollments default to 4096 MB |
 | `Worktree budget exhausted` after unique HOLD cleanup | Idle grantless HOLD evidence still charged concurrent `max_worktrees` | Concurrent slots count ready/invalid and unsettled bound/held only; idle unique HOLD evidence stays on disk without filling the ceiling ([Developer Autonomy V1](DEVELOPER-AUTONOMY-V1.md)) |
-| `BLOCKED_SPEND_AUTHORIZATION` | Cursor spend not in standing grant | Owner-signed spend grant; Autopilot does not invent spend. Host-origin Arecibo acceptance `a48dabaf-d71a-407c-bcc9-4963825ee06f` (install `23ead46`) and ChatGPT-MCP acceptance `ad4e7ebb-4407-43d0-8842-b9a126ab74b7` (install `5938d4f`) reached WAIT here after OpenCode planning assigned Cursor — not a routing/repo/disk/worker-role false positive |
+| `CURSOR_EXECUTION_DISABLED` | Host Local-First policy | Use local OpenCode wording; or authenticated operator enable-cursor if paid Cursor is intentionally restored |
+| `BLOCKED_SPEND_AUTHORIZATION` | Cursor spend not in standing grant (only after Cursor re-enabled) | Owner-signed spend grant; Autopilot does not invent spend. Historical: host `a48dabaf-…` / ChatGPT-MCP `ad4e7ebb-…` reached WAIT on spend after Cursor assignment — superseded as the default path by Local-First V3 |
 | `cognitive_list_invalid` on ordinary audits | OpenCode returned empty/oversized/wrapped task lists | Host coerces into the sealed assignment ceiling; authority fields still fail closed |
 | Wrong project | Token shared across projects | Prefer unique project name or set default project id via defaults |
 
