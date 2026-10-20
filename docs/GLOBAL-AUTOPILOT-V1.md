@@ -97,6 +97,7 @@ separately gated.
 |---------|--------------|----------|
 | `ENROLLED_REPOSITORY_AMBIGUOUS` | Multiple live repos, no default | Set project default; or name exact path/label |
 | Autopilot clarify about verification | No tasks.json and no active Work template | Register tasks or activate a Work template |
+| Disposable worktree without `node_modules` | Source deps use an external store (pnpm/yarn links outside the repo) | Expected skip; install deps inside the disposable clone when verification needs them |
 | `BLOCKED_SPEND_AUTHORIZATION` | Cursor spend not in standing grant | Owner-signed spend grant; Autopilot does not invent spend |
 | Wrong project | Token shared across projects | Prefer unique project name or set default project id via defaults |
 

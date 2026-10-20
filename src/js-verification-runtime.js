@@ -147,7 +147,17 @@ function materializeNodeModules(sourceRepo, workPath, { maxBytes = 2048 * 1024 *
   try { srcStat = fs.lstatSync(src); } catch { return { status: 'absent' }; }
   if (srcStat.isSymbolicLink()) return { status: 'skipped', reason: 'source_symlink' };
   if (!srcStat.isDirectory()) return { status: 'skipped', reason: 'source_not_directory' };
-  boundedDependencyBytes(src, maxBytes, sourceRepo);
+  // pnpm/yarn external stores link outside the enrolled tree. Refuse to copy those
+  // graphs into the disposable clone, but do not abort workspace preparation —
+  // verification that needs local modules still fails closed later.
+  try {
+    boundedDependencyBytes(src, maxBytes, sourceRepo);
+  } catch (error) {
+    if (/Dependency symlink escapes permitted repository tree/i.test(error.message)) {
+      return { status: 'skipped', reason: 'external_store_links' };
+    }
+    throw error;
+  }
 
   if (process.platform === 'darwin') {
     const cloned = spawnSync('/bin/cp', ['-Rc', src, dst], { encoding: 'utf8' });
