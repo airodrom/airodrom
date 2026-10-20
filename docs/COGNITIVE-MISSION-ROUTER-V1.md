@@ -36,6 +36,15 @@ to plan … OpenCode to evaluate” left bare `Use OpenCode` matches and returne
 `cognitive_ambiguous_worker`. The shared resolver now treats both phrasings as
 planner/evaluator roles.
 
+**Genuine ChatGPT-MCP acceptance (2026-10-19/20):** after install `5938d4f`,
+MCP `ask_airodrom` request `ad4e7ebb-4407-43d0-8842-b9a126ab74b7` (“Start the
+Arecibo release-readiness audit in Cursor. Use OpenCode to plan and evaluate.
+Do not deploy production.”) resolved roles to planner/evaluator=OpenCode and
+specialist=Cursor, completed OpenCode planning (cognitive v3), and stopped at
+WAIT with `scoped_external_disclosure_required` + `BLOCKED_SPEND_AUTHORIZATION`.
+No `cognitive_ambiguous_worker`, repository ambiguity, or obsolete two-file
+syntax gate. Paid Cursor was not started.
+
 Planning forwards only enrolled discovery files that pass the OpenCode
 sensitive-context gate. Setup docs that mention `.env` paths remain on disk but
 are not planner input. Real secrets, absolute home paths, and credential files
