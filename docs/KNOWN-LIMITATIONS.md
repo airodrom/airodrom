@@ -1,5 +1,11 @@
 # Known limitations
 
+## Local-first Autopilot discovery size (2026-10-20)
+
+- Autopilot discovery and cognitive planning forward only files ≤ `MAX_DISCOVERY_FILE` (16KB) that also pass the OpenCode sensitivity gate. Larger enrolled indexes (for example Arecibo `docs/README.md`) remain on disk but are never planner or specialist input, so OpenCode cannot exhaust `MAX_OUTPUT` by dumping them into the event stream.
+- Oversized operational docs are therefore unavailable as Autopilot grounding until split or summarized under the bound. Host verification and independent Acceptance are unchanged.
+- Historical Mission `cbc4e596-…` (`opencode_output_bound` on the second assignment) and blocked evaluator Mission `98a67bd6-…` stay immutable.
+
 ## ChatGPT handoff exact-byte Missions (2026-10-18)
 
 - OpenCode/Qwen may return a completed JSON claim without mutating staging files, or `opencode_malformed_result` with no host changes. Host inventory and `expected_changes` remain authoritative; worker summaries never authorize Acceptance.

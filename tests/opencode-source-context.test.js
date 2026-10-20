@@ -150,3 +150,12 @@ test('sourceContextSensitive is exported for host inspection without granting au
   assert.equal(typeof sourceContextSensitive, 'function');
   assert.equal(new OpenCodeAdapter(null, {}).id, 'opencode');
 });
+
+test('planningContextAdmissible rejects oversized discovery that would exhaust MAX_OUTPUT', () => {
+  const { planningContextAdmissible, MAX_DISCOVERY_FILE, MAX_OUTPUT } = require('../src/opencode-adapter');
+  assert.equal(typeof planningContextAdmissible, 'function');
+  assert.ok(MAX_DISCOVERY_FILE < MAX_OUTPUT);
+  assert.equal(planningContextAdmissible('# ok\n'), true);
+  assert.equal(planningContextAdmissible('x'.repeat(MAX_DISCOVERY_FILE + 1)), false);
+  assert.equal(planningContextAdmissible('# Product\n\ncp .env.example .env\n'), false);
+});

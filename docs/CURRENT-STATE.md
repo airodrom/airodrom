@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## Local-First Autopilot Final Recovery V1 — SOURCE (2026-10-20)
+
+- **Forensics (evaluator):** Historical Mission `98a67bd6-…` / request `1b6456ee-…` — OpenCode plan+implement completed; host verification passed on finished assignment; evaluator never started (`gateway_evaluation_unavailable` / `opencode_unavailable_or_unsupported`). Mission remains blocked/immutable. Fixed on main via eval-recovery (#194/#195).
+- **Forensics (Acceptance gap):** Mission `cbc4e596-…` / request `7ccfb7cd-…` — OpenCode plan+first assignment+evaluation `ca327058-…` (`ready`); second assignment `c8ca132d-…` failed `opencode_output_bound` reading Arecibo `docs/README.md` (~78KB > OpenCode `MAX_OUTPUT` 64KB stream). Mission `needs_rework`; no Acceptance.
+- **Root cause (Acceptance):** Autopilot discovery enrolled oversized indexes; multi-read Autopilot audit plans re-read them during execution and exhausted the stream budget. Host verification did not fail independently on the first assignment; the Mission stalled on the later bound failure.
+- **Repair:** `planningContextAdmissible` / `MAX_DISCOVERY_FILE` (16KB) filters discovery and planner permitted_paths; `coerceAutopilotDeliverable` turns read-only report/audit plans into one enrolled edit when edit is authorized. Cursor stays disabled; host verification remains authoritative.
+- Evidence: [COGNITIVE-MISSION-ROUTER-V1.md](COGNITIVE-MISSION-ROUTER-V1.md), [GLOBAL-AUTOPILOT-V1.md](GLOBAL-AUTOPILOT-V1.md). Protected checkout and PR #148 untouched.
+
 ## Local OpenCode Evaluation & Verification Recovery V1 — SOURCE (2026-10-20)
 
 - **Forensics:** Historical Mission `98a67bd6-…` / request `1b6456ee-…` — OpenCode plan+implement completed; host verification passed on finished assignment; evaluator never started (`gateway_evaluation_unavailable` / `opencode_unavailable_or_unsupported`). Mission remains blocked/immutable.
