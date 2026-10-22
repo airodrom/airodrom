@@ -464,13 +464,16 @@ class ZeroSetupWork {
         };
       }
       // Active standing enrollment is enough to auto-prepare cognitive discovery from
-      // prior same-repo enrollment files or Autopilot-admissible paths. Autopilot MCP
+      // prior same-repo enrollment files or Autopilot-admissible paths, and to attach
+      // the Cursor worker when host Cursor execution is already authorized. Autopilot MCP
       // and the local operator share that authority; bare MCP without Autopilot does not.
       const mayEnsureCognitive = principal === 'operator' || (autopilotOn && mcpHandoff);
-      if (mayEnsureCognitive && !(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length)) {
+      const cognitiveMissing = !(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
+      const cursorWorkerMissing = Array.isArray(standing.workers) && standing.workers.length > 0 && !standing.workers.includes('cursor');
+      if (mayEnsureCognitive && (cognitiveMissing || cursorWorkerMissing)) {
         try {
           standing = this.bridge.developerAutonomy.ensureCognitiveDiscovery(standing.policy_id, 'operator') || standing;
-        } catch { /* fall through to precise cognitive gate */ }
+        } catch { /* fall through to precise cognitive / worker gates */ }
       }
       const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
       if (!cognitiveReady) {
