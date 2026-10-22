@@ -1,5 +1,12 @@
 # Current state (2026-10-10)
 
+## Cognitive enrollment auto-prepare for standing DA — SOURCE (2026-10-22)
+
+- **Cause:** `chatgpt-handoff` cognitive policy expired while Autopilot standing for the same repo remained active without cognitive files → `standing_cognitive_enrollment_required` for Cursor.
+- **Repair:** `developerAutonomy.ensureCognitiveDiscovery` reuses same-repo discovery files or Autopilot-admissible paths on the active standing policy and attaches Cursor to workers when host Cursor is enabled. Autopilot MCP / operator Cursor gates call it before failing closed.
+- **Next gate:** OpenCode planning or scoped disclosure / subscription spend — not manual cognitive re-enrollment for already-authorized repos.
+- Historical request `chatgpt_cursor_execution_20261022_v2` stays immutable; do not replay.
+
 ## Cursor Mission Admission & Round-Trip Closeout V1 — SOURCE (2026-10-22)
 
 - **Reconciled request:** `chatgpt_cursor_live_roundtrip_20261022_v1` remains `awaiting_approval` / WAIT; `mission_id=null`; no Cursor dispatch; historical proposal wrongly showed `Local OpenCode` / `requested_specialist=opencode`. Do not replay.
