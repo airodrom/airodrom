@@ -53,15 +53,21 @@ const AIRODROM_VERIFY_PHRASES = [
   /\bairodrom\s+(?:independently\s+)?verif(?:y|ies|ication)\b/ig
 ];
 const SPECIALIST_MATCH = new RegExp(
-  String.raw`\b(?:use|using|via|with|in)\s+(cursor|opencode|host)\b` +
+  String.raw`\b(?:use|using|via|with|in|have|ask)\s+(cursor|opencode|host)\b` +
   String.raw`|\b(cursor|opencode|host)[- ]only\b` +
   String.raw`|\bassign(?:ed)?\s+to\s+(cursor|opencode|host)\b` +
   String.raw`|\b(cursor|opencode|host)\s+as\s+(?:the\s+)?specialist\b` +
-  String.raw`|\b(cursor|opencode|host)\s+to\s+(?:implement(?:ation|s)?|execute|edit|run)\b` +
+  String.raw`|\b(cursor|opencode|host)\s+to\s+(?:implement(?:ation|s)?|execute|edit|run|change|modify|write|update)\b` +
+  String.raw`|\b(cursor|opencode|host)\s+(?:change|edit|modify|write|update|implement|execute|run)\b` +
   String.raw`|\b(cursor|opencode|host)\s+(?:for\s+)?(?:implementation|implements?|specialist)\b` +
   String.raw`|\bspecialist\s*[:=]\s*(cursor|opencode|host)\b`,
   'ig'
 );
+// Architecture narration ("OpenCode → Cursor → OpenCode") is not specialist selection.
+const ARCHITECTURE_PATH_PHRASES = [
+  /\b(?:chatgpt|airodrom|opencode|cursor)(?:\s*(?:→|->|to)\s*(?:chatgpt|airodrom|opencode|cursor)){2,}\b/ig,
+  /\bmission\s+path\b/ig
+];
 
 function resolveWorkerRoles(instruction, options = {}) {
   if (/\b(?:codex|claude(?:[- ]code)?)\b/i.test(instruction)) C.fail('cognitive_named_worker_unavailable');
@@ -79,12 +85,13 @@ function resolveWorkerRoles(instruction, options = {}) {
     text = text.replace(pattern, ' ');
   }
   for (const pattern of AIRODROM_VERIFY_PHRASES) text = text.replace(pattern, ' ');
+  for (const pattern of ARCHITECTURE_PATH_PHRASES) text = text.replace(pattern, ' ');
   // Local-first: "using local OpenCode only" strips Cursor destination phrases.
   if (/\blocal\s+opencode\s+only\b|\bopencode\s+only\b|\bwithout\s+cursor\b|\bdo\s+not\s+(?:call|use|dispatch)\s+cursor\b/i.test(original)) {
-    text = text.replace(/\bin\s+cursor\b|\busing\s+cursor\b|\bvia\s+cursor\b/ig, ' ');
+    text = text.replace(/\bin\s+cursor\b|\busing\s+cursor\b|\bvia\s+cursor\b|\bhave\s+cursor\b/ig, ' ');
   }
   const specialists = [...text.matchAll(SPECIALIST_MATCH)]
-    .map(m => (m[1] || m[2] || m[3] || m[4] || m[5] || m[6] || m[7]).toLowerCase());
+    .map(m => (m[1] || m[2] || m[3] || m[4] || m[5] || m[6] || m[7] || m[8]).toLowerCase());
   const unique = [...new Set(specialists)];
   if (unique.length > 1) C.fail('cognitive_ambiguous_worker');
   // A named worker in unrecognized prose must never silently become an auto route.
@@ -199,7 +206,12 @@ function coercePlanningProposal(raw, envelope) {
         worker: (() => {
           const prefer = e.requested_worker !== 'auto' ? e.requested_worker
             : (['opencode', 'cursor'].includes(task.worker) ? task.worker : 'opencode');
-          // Host-disabled Cursor leaves cursor out of eligible_workers; clamp to OpenCode.
+          // Explicit Cursor must never silently become OpenCode when host policy
+          // removed Cursor from eligible_workers. Fail closed instead.
+          // Auto routes may still clamp planner-suggested Cursor down to OpenCode.
+          if (e.requested_worker === 'cursor' && !e.eligible_workers.includes('cursor')) {
+            C.fail('CURSOR_EXECUTION_DISABLED');
+          }
           if (e.eligible_workers.includes(prefer)) return prefer;
           if (e.eligible_workers.includes('opencode')) return 'opencode';
           return prefer;

@@ -19,7 +19,10 @@ this host preference.
    (`cursor_execution_disabled`, default `1`).
 2. While disabled, Airodrom:
    - excludes Cursor from automatic worker selection and Autopilot enrollment;
-   - rejects explicit Cursor requests with durable `CURSOR_EXECUTION_DISABLED`;
+   - rejects explicit Cursor requests with durable `CURSOR_EXECUTION_DISABLED`
+     while preserving `requested_specialist=cursor` (never silently substitutes
+     OpenCode for an explicit Cursor Mission);
+   - allows implicit local OpenCode only when no specialist was named;
    - refuses subscription-execution grants and Cursor dispatch/select;
    - does not invent Cursor disclosure or spend grants.
 3. Cursor adapter, qualification records, and historical Missions remain readable.

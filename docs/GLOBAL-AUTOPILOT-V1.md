@@ -18,7 +18,8 @@ host preference `cp_host_execution_policy` (`CURSOR_EXECUTION_DISABLED`).
 |------|----------|
 | Default worker | Local OpenCode (installed runtime + Ollama/Qwen) for plan, local code when suitable, and evaluate |
 | Cursor selection | Excluded from automatic Autopilot enrollment and worker lists |
-| Explicit “in Cursor” | Fails closed with durable `CURSOR_EXECUTION_DISABLED` |
+| Explicit Cursor (“in/using/via/have/ask Cursor”, “Cursor change …”) | Fails closed with durable `CURSOR_EXECUTION_DISABLED`; specialist identity stays `cursor`; no OpenCode substitution |
+| Implicit / auto (no named specialist) | Local OpenCode remains available |
 | Stale spend grants | Cannot dispatch Cursor while disabled |
 | Adapter / Milestone B | Preserved; historical Missions remain readable |
 | External Cursor billing | **Unaffected** — this is an Airodrom policy, not a subscription cancellation |

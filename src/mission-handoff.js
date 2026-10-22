@@ -70,5 +70,45 @@ async function submit(bridge,packet,principal,operatorAcceptance=null){
 }
 function bound(bridge,id,principal){const m=bridge.missions.require(id),task=bridge.tasks.get(m.task_id);if(task.source?.handoff_principal!==principal)throw Error('Handoff belongs to another authenticated client');return m;}
 function status(bridge,id,principal){const m=bound(bridge,id,principal),view=require('./product-observability').missionView(bridge,m);return {version:1,mission_id:m.id,state:m.state,progress:view.progress,verification:view.verification,review:view.acceptance,settlement:view.settlement,result:require('./conversation-mission').projectRead(bridge,m.task_id,bridge.tasks.get(m.task_id).lastResult||null,m.id),untrusted:true,authority:false};}
-function cancel(bridge,id,principal){bound(bridge,id,principal);bridge.missions.cancel(id,{request_id:randomUUID()});return {mission_id:id,cancellation_requested:true,authority:false};}
+function askOwnsMission(bridge, id, principal) {
+  const rows = bridge.controlStore.db.prepare(
+    'SELECT request_id, principal, record FROM cp_zero_setup_requests WHERE principal=?'
+  ).all(principal);
+  for (const row of rows) {
+    let rec; try { rec = JSON.parse(row.record); } catch { continue; }
+    if (rec.mission_id === id) return row;
+  }
+  return null;
+}
+
+function cancel(bridge, id, principal, requestId = null) {
+  // Prefer authenticated handoff ownership. Ask-origin Missions bind through the
+  // durable zero-setup principal instead of submit_mission handoff metadata.
+  let owned = false;
+  try { bound(bridge, id, principal); owned = true; } catch { /* fall through */ }
+  if (!owned && !askOwnsMission(bridge, id, principal)) {
+    throw Error('Handoff belongs to another authenticated client');
+  }
+  const rid = typeof requestId === 'string' && requestId.trim() ? requestId.trim() : randomUUID();
+  if (rid.length > 120) throw Error('Bounded request ID required');
+  const operation = { op: 'mcp_cancel_mission', mission_id: id };
+  return bridge.controlStore.request(principal, rid, operation, () => {
+    const m = bridge.missions.require(id);
+    if (['cancelled', 'completed'].includes(m.state)) {
+      return { mission_id: id, cancellation_requested: true, state: m.state, request_id: rid, authority: false };
+    }
+    bridge.missions.cancel(id, { request_id: rid });
+    // Keep ask-origin presentation aligned when a zero-setup row owns this Mission.
+    try {
+      const row = askOwnsMission(bridge, id, principal);
+      if (row && bridge.zeroSetupWork?.write) {
+        const rec = JSON.parse(row.record);
+        rec.state = 'rejected';
+        rec.blocker_message = 'The task was cancelled. No Acceptance was recorded.';
+        bridge.zeroSetupWork.write(row.request_id, row.principal, rec, 'rejected');
+      }
+    } catch { /* best-effort presentation sync */ }
+    return { mission_id: id, cancellation_requested: true, request_id: rid, authority: false };
+  });
+}
 module.exports={validate,submit,status,cancel};

@@ -1,5 +1,14 @@
 # Current state (2026-10-10)
 
+## Cursor Round-Trip Reliability & Acceptance V1 — SOURCE (2026-10-22)
+
+- **Reconciled Mission:** `db7c6eaa-d623-4e9f-822c-b8b50bc9c0c2` / request `chatgpt_cursor_roundtrip_probe_20261022_v1` — Cursor explicitly requested; standing DA dispatched Local OpenCode; settled `needs_rework` after failed verification. Historical evidence immutable.
+- **Cancellation:** `chatgpt_cursor_roundtrip_cancel_20261022_v1` — not durably recorded (ask-origin ownership + ephemeral cancel IDs). Classified **uncertain / not acknowledged** at the time; repair makes cancel durable and replay-safe without rewriting history.
+- **Root cause:** standing DA path dispatched OpenCode when routine files resolved, skipping the Cursor disabled gate; phrase gaps (“Have Cursor change”); architecture path prose could confuse specialist parsing; cancel did not bind ask-origin Missions to `cp_requests`.
+- **Repair:** fail-closed explicit `requested_specialist=cursor` with `CURSOR_EXECUTION_DISABLED` (no OpenCode fallback); shared MCP/operator parsers; durable cancel; Cursor remains disabled (`cp_host_execution_policy`).
+- **Gates:** Gate A = disabled-worker refusal (no spend). Gate B = full Cursor round trip **PENDING** until owner re-enables bounded Cursor via authenticated policy.
+- Protected checkout `~/code/airodrom` and draft PR #148 untouched.
+
 ## MCP Recovery & Cursor Mission Connectivity V1 — SOURCE (2026-10-20)
 
 - **Reconciled ChatGPT request:** `arecibo_chatgpt_localfirst_acceptance_20261019_v1` → Mission `7da96c04-…` **Completed and settled** (planner `b049e54e-…`, OpenCode eval `ready`, Acceptance accept, settlement settled). Do not replay.
