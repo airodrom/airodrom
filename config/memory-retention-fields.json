@@ -4142,6 +4142,37 @@
       "note": "A"
     }
   },
+  "cp_host_execution_mcp_delegation": {
+    "fields": [
+      "id",
+      "scope",
+      "operations",
+      "state",
+      "enrolled_at",
+      "enrolled_by",
+      "enroll_request_id",
+      "revoked_at",
+      "revoked_by",
+      "revoke_request_id",
+      "expires_at",
+      "note"
+    ],
+    "source": "src/host-execution-policy.js",
+    "classification": {
+      "id": "A",
+      "scope": "A",
+      "operations": "A",
+      "state": "A",
+      "enrolled_at": "A",
+      "enrolled_by": "A",
+      "enroll_request_id": "A",
+      "revoked_at": "A",
+      "revoked_by": "A",
+      "revoke_request_id": "A",
+      "expires_at": "A",
+      "note": "A"
+    }
+  },
   "cp_project_defaults": {
     "fields": [
       "project_id",

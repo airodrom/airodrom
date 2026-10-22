@@ -14,7 +14,7 @@ function discovery(dataDir = process.env.AIRODROM_DATA_DIR || path.join(__dirnam
   return value;
 }
 
-const SESSION_TOOLS = Object.freeze(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status','prepare_mission','inspect_mission_proposal','get_mission_status','get_mission_events','get_mission_evidence','request_mission_correction','cancel_mission']);
+const SESSION_TOOLS = Object.freeze(['submit_mission','get_mission_handoff','cancel_mission_handoff','list_authorized_scopes','list_work_templates','list_goal_plans','inspect_goal_plan','inspect_autonomous_goal','propose_goal_plan','request_autonomous_authorization','ask_airodrom','get_ask_status','prepare_mission','inspect_mission_proposal','get_mission_status','get_mission_events','get_mission_evidence','request_mission_correction','cancel_mission','get_host_execution_policy','enable_cursor_execution','disable_cursor_execution']);
 
 function createClient({ dataDir,resumeSession=process.env.AIRODROM_MCP_SESSION,sessionFile=process.env.AIRODROM_MCP_SESSION_FILE } = {}) {
   let session=null,sessionPromise=null;
