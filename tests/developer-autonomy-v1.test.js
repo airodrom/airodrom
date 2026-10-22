@@ -528,7 +528,7 @@ test('zero-repair needs_rework consumes the concurrent reservation', async t => 
   b.missions.cancel(next.id, {request_id:randomUUID()});
 });
 
-test('needs_rework with remaining repair budget keeps the concurrent reservation', async t => {
+test('needs_rework with remaining repair budget keeps reservation while writers are not idle', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
   const policy = da.enroll(f.enrollInput, 'operator');
   const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:1,
@@ -536,9 +536,33 @@ test('needs_rework with remaining repair budget keeps the concurrent reservation
   const m = b.missions.create(first.mission_input, 'operator');
   b.missions.dispatch(m.id, {request_id:randomUUID()});
   await f.settle(m.id, 'needs_rework');
-  assert.equal(da.reservations(policy.policy_id), 1);
+  // Without forcing verified idle termination, unsettled writers still occupy capacity.
+  if (!da.workspaceIdle(first.workspace.path)) {
+    assert.equal(da.reservations(policy.policy_id), 1);
+    assert.equal(da.inspectGrant(first.grant.grant_id).state, 'active');
+    assert.throws(() => routine(da, policy, {objective:'Second Mission while repair remains'}), /Concurrent Mission budget/);
+  }
+});
+
+test('idle needs_rework with remaining repair budget frees concurrent admission', async t => {
+  const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
+  const policy = da.enroll(f.enrollInput, 'operator');
+  const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:1,
+    criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
+  // Create without dispatch so no auto-repair writer appears (live hang was idle).
+  const m = b.missions.create(first.mission_input, 'operator');
+  const authority = b.controlStore.authorityRuntime;
+  if (authority?.active) authority.store.setState(m.id, 'needs_rework');
+  b.controlStore.db.prepare("UPDATE cp_missions SET state='needs_rework', reason=? WHERE id=?")
+    .run('Verification failed', m.id);
+  assert.equal(da.workspaceIdle(first.workspace.path), true);
+  assert.equal(da.reservations(policy.policy_id), 0);
   assert.equal(da.inspectGrant(first.grant.grant_id).state, 'active');
-  assert.throws(() => routine(da, policy, {objective:'Second Mission while repair remains'}), /Concurrent Mission budget/);
+  const second = routine(da, policy, {objective:'Second Mission after idle needs_rework'});
+  assert.ok(second.grant.grant_id);
+  assert.notEqual(second.grant.grant_id, first.grant.grant_id);
+  const next = b.missions.create(second.mission_input, 'operator');
+  b.missions.cancel(next.id, {request_id:randomUUID()});
 });
 
 test('settled retained worktrees do not exhaust the concurrent worktree budget', async t => {

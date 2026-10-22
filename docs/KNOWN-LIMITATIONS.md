@@ -1,9 +1,17 @@
 # Known limitations
 
+## Cursor Mission admission closeout (2026-10-22)
+
+- Request `chatgpt_cursor_live_roundtrip_20261022_v1` is historical WAIT evidence and must not be replayed. After install, a **fresh** ChatGPT-origin request is required for Gate B.
+- MCP host-execution delegation authorizes only `enable_cursor` / `disable_cursor`. It does **not** enroll Cursor on Developer Autonomy worker allowlists, grant scoped disclosure, or authorize subscription spend.
+- Standing policies with `workers:['opencode']` (including Autopilot OpenCode-only aliases) reject explicit Cursor with `standing_cursor_worker_not_enrolled` once host Cursor execution is enabled. Cognitive discovery files are also required for enrolled Cursor planning.
+- Idle `needs_rework` / `blocked` Missions with remaining repair budget no longer occupy concurrent admission once writers and leases are gone; genuine active writers still count. Retained evidence worktrees do not consume concurrent Mission slots unless policy says otherwise.
+- Full ChatGPT → OpenCode → Cursor → OpenCode → Airodrom live Acceptance remains **PENDING** until the owner enrolls Cursor on the standing DA policy and issues a bounded spend/disclosure grant. Do not fabricate grants from chat text.
+
 ## Cursor round-trip Gate B (2026-10-22)
 
 - Gate A (explicit Cursor while `cursor_execution_disabled=1`) returns durable `CURSOR_EXECUTION_DISABLED` with zero dispatches. That is not a Gate B PASS.
-- Full ChatGPT → Airodrom → OpenCode → Cursor → OpenCode → Airodrom → ChatGPT live spend remains **PENDING** until the owner re-enables bounded Cursor through authenticated host-execution policy. Do not treat disabled-worker routing as round-trip acceptance.
+- Host Cursor execution may now be enabled via owner-enrolled MCP delegation (PR #202) while DA Cursor worker allowlist and spend remain separately gated.
 - Historical Mission `db7c6eaa-…` and cancel request `chatgpt_cursor_roundtrip_cancel_20261022_v1` stay immutable; uncertain cancel outcomes are not rewritten to success.
 
 ## Local-first Autopilot discovery size (2026-10-20)

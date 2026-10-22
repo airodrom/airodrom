@@ -413,6 +413,113 @@ class ZeroSetupWork {
     const { project, workspace } = scope;
     const autopilotOn = !!this.bridge.globalAutopilot?.enabled?.();
     const mcpHandoff = /^mcp:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(principal);
+    const wantsCursorEarly = require('./projectless-sandbox').explicitlyRequestsCursor(instruction)
+      || (() => {
+        try { return require('./cognitive-router').requestedWorker(instruction, { cursorDisabled: false }) === 'cursor'; }
+        catch { return false; }
+      })();
+    const selectStanding = (policies) => {
+      if (scope.developer_autonomy_policy_id) {
+        return policies.find(policy => policy.policy_id === scope.developer_autonomy_policy_id) || null;
+      }
+      if (policies.length === 1) return policies[0];
+      if (!wantsCursorEarly) return null;
+      // When Autopilot and a named enrollment both cover the same repo, prefer the
+      // cognitive / Cursor-capable standing policy for explicit Cursor requests so
+      // Autopilot's OpenCode-only policy is not silently selected.
+      const withCursor = policies.filter(p => Array.isArray(p.workers) && p.workers.includes('cursor')
+        && p.cognitive && Array.isArray(p.cognitive.files) && p.cognitive.files.length);
+      if (withCursor.length === 1) return withCursor[0];
+      const withCognitive = policies.filter(p => p.cognitive && Array.isArray(p.cognitive.files) && p.cognitive.files.length);
+      if (withCognitive.length === 1) return withCognitive[0];
+      return null;
+    };
+    const cursorStandingGate = (standing, files) => {
+      if (this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
+        const record = {
+          version: 1, instruction, intent, clarify: true, authority: false,
+          project_id: standing.project_id, project_name: project.name, workspace,
+          requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+          intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
+          presentation: {
+            worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
+            workspace_label: readablePath(workspace),
+            status: 'Cursor execution disabled in Airodrom; use local OpenCode only',
+          },
+        };
+        this.write(request_id, principal, record, 'blocked');
+        return {
+          state: 'BLOCKED',
+          code: 'CURSOR_EXECUTION_DISABLED',
+          message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+          blockers: ['CURSOR_EXECUTION_DISABLED'],
+          authority: false,
+          execution_authorized: false,
+          requested_specialist: 'cursor',
+          planner: 'opencode',
+          evaluator: 'opencode',
+          next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+          presentation: record.presentation,
+        };
+      }
+      const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
+      if (!cognitiveReady) {
+        const record = {
+          version: 1, instruction, intent, clarify: true, authority: false,
+          project_id: standing.project_id, project_name: project.name, workspace,
+          requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+          intake_blockers: ['standing_cognitive_enrollment_required'],
+          presentation: {
+            worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
+            workspace_label: readablePath(workspace),
+            status: 'Standing enrollment needs cognitive discovery files before Cursor planning',
+          },
+        };
+        this.write(request_id, principal, record, 'clarify');
+        return {
+          state: 'CLARIFY',
+          code: 'standing_cognitive_enrollment_required',
+          message: 'Project ' + project.name + ' is authorized, but Cursor planning needs a standing Developer Autonomy enrollment with cognitive discovery files. Enroll once from Control Center → Developer Autonomy for this repository, then retry the same request. Do not use the projectless two-file fixture syntax for enrolled work.',
+          blockers: ['standing_cognitive_enrollment_required'],
+          authority: false,
+          execution_authorized: false,
+          requested_specialist: 'cursor',
+          planner: 'opencode',
+          evaluator: 'opencode',
+          next_action: 'enroll_developer_autonomy_cognitive_for_repository',
+          presentation: record.presentation,
+        };
+      }
+      const workers = Array.isArray(standing.workers) ? standing.workers : [];
+      if (workers.length && !workers.includes('cursor')) {
+        const record = {
+          version: 1, instruction, intent, clarify: true, authority: false,
+          project_id: standing.project_id, project_name: project.name, workspace,
+          requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+          intake_blockers: ['standing_cursor_worker_not_enrolled'],
+          presentation: {
+            worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
+            workspace_label: readablePath(workspace),
+            status: 'Standing enrollment allows Local OpenCode only; Cursor is not on the worker allowlist',
+          },
+        };
+        this.write(request_id, principal, record, 'blocked');
+        return {
+          state: 'BLOCKED',
+          code: 'standing_cursor_worker_not_enrolled',
+          message: 'Project ' + project.name + ' has a standing policy, but Cursor is not enrolled on that policy worker allowlist. Re-enroll Developer Autonomy with Cursor permitted, or use local OpenCode wording. Chat text cannot expand the allowlist.',
+          blockers: ['standing_cursor_worker_not_enrolled'],
+          authority: false,
+          execution_authorized: false,
+          requested_specialist: 'cursor',
+          planner: 'opencode',
+          evaluator: 'opencode',
+          next_action: 'enroll_developer_autonomy_with_cursor_worker',
+          presentation: record.presentation,
+        };
+      }
+      return null;
+    };
     // Global Autopilot ON: ensure a standing policy for the resolved repo (owner-delegated).
     // Authenticated MCP handoff may use the standing policy only while Autopilot remains ON.
     if (autopilotOn && (principal === 'operator' || mcpHandoff)) {
@@ -433,78 +540,59 @@ class ZeroSetupWork {
           next_action: 'fix_verification_tasks_or_pick_another_repository'
         };
       }
+      // Explicit Cursor must pass standing gates before Autopilot cognitive planning,
+      // so OpenCode-only enrollments never enter PLANNING under a Cursor request.
+      if (wantsCursorEarly) {
+        const autopilotStanding = selectStanding(this.bridge.developerAutonomy.activePolicyForRepository(workspace));
+        if (autopilotStanding) {
+          const files = this.bridge.developerAutonomy.routineFiles(autopilotStanding, instruction, intent.file);
+          const gated = cursorStandingGate(autopilotStanding, files);
+          if (gated) return gated;
+        }
+      }
       // Autopilot enrollment may have just added cognitive discovery files. Prefer
       // OpenCode planning over asking the caller to name exact files again.
       const cognitive = await require('./cognitive-router').prepare(this, { instruction, request_id }, principal);
       if (cognitive) return cognitive;
     }
     const policies = this.bridge.developerAutonomy.activePolicyForRepository(workspace);
-    const standing = scope.developer_autonomy_policy_id
-      ? policies.find(policy => policy.policy_id === scope.developer_autonomy_policy_id)
-      : policies.length === 1 ? policies[0] : null;
+    const standing = selectStanding(policies);
     if (standing) {
       const files = this.bridge.developerAutonomy.routineFiles(standing, instruction, intent.file);
-      const wantsCursor = require('./projectless-sandbox').explicitlyRequestsCursor(instruction)
-        || (() => {
-          try { return require('./cognitive-router').requestedWorker(instruction, { cursorDisabled: false }) === 'cursor'; }
-          catch { return false; }
-        })();
+      const wantsCursor = wantsCursorEarly;
       // Explicit Cursor must never silently become Local OpenCode on the standing
       // DA path — including when routineFiles already resolved a fixture path.
       if (wantsCursor) {
-        if (this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
-          const record = {
-            version: 1, instruction, intent, clarify: true, authority: false,
-            project_id: standing.project_id, project_name: project.name, workspace,
-            requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
-            intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
-            presentation: {
-              worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
-              workspace_label: readablePath(workspace),
-              status: 'Cursor execution disabled in Airodrom; use local OpenCode only',
-            },
-          };
-          this.write(request_id, principal, record, 'blocked');
-          return {
-            state: 'BLOCKED',
-            code: 'CURSOR_EXECUTION_DISABLED',
-            message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
-            blockers: ['CURSOR_EXECUTION_DISABLED'],
-            authority: false,
-            execution_authorized: false,
-            requested_specialist: 'cursor',
-            planner: 'opencode',
-            evaluator: 'opencode',
-            next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
-            presentation: record.presentation,
-          };
-        }
-        const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
-        if (!cognitiveReady) {
-          const record = {
-            version: 1, instruction, intent, clarify: true, authority: false,
-            project_id: standing.project_id, project_name: project.name, workspace,
-            requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
-            intake_blockers: ['standing_cognitive_enrollment_required'],
-            presentation: {
-              worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
-              workspace_label: readablePath(workspace),
-              status: 'Standing enrollment needs cognitive discovery files before Cursor planning',
-            },
-          };
-          this.write(request_id, principal, record, 'clarify');
-          return {
-            state: 'CLARIFY',
-            code: 'standing_cognitive_enrollment_required',
-            message: 'Project ' + project.name + ' is authorized, but Cursor planning needs a standing Developer Autonomy enrollment with cognitive discovery files. Enroll once from Control Center → Developer Autonomy for this repository, then retry the same request. Do not use the projectless two-file fixture syntax for enrolled work.',
-            blockers: ['standing_cognitive_enrollment_required'],
-            authority: false,
-            execution_authorized: false,
-            requested_specialist: 'cursor',
-            next_action: 'enroll_developer_autonomy_cognitive_for_repository',
-            presentation: record.presentation,
-          };
-        }
+        const gated = cursorStandingGate(standing, files);
+        if (gated) return gated;
+        // Explicit Cursor with cognitive enrollment: never fall through to Local OpenCode standing activate.
+        const cognitive = await require('./cognitive-router').prepare(this, { instruction, request_id }, principal);
+        if (cognitive) return cognitive;
+        const blocked = {
+          version: 1, instruction, intent, clarify: true, authority: false,
+          project_id: standing.project_id, project_name: project.name, workspace,
+          requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+          intake_blockers: ['standing_cognitive_cursor_admission_failed'],
+          presentation: {
+            worker: 'cursor', files: files || standing.cognitive.files || [], measurable: false,
+            project_name: project.name, workspace_label: readablePath(workspace),
+            status: 'Cursor specialist preserved; cognitive admission could not start',
+          },
+        };
+        this.write(request_id, principal, blocked, 'blocked');
+        return {
+          state: 'BLOCKED',
+          code: 'standing_cognitive_cursor_admission_failed',
+          message: 'Cursor was explicitly requested and remains the specialist, but cognitive admission could not start under the standing enrollment. Inspect Developer Autonomy cognitive files and worker allowlist; do not substitute Local OpenCode.',
+          blockers: ['standing_cognitive_cursor_admission_failed'],
+          authority: false,
+          execution_authorized: false,
+          requested_specialist: 'cursor',
+          planner: 'opencode',
+          evaluator: 'opencode',
+          next_action: 'inspect_developer_autonomy_cognitive_enrollment',
+          presentation: blocked.presentation,
+        };
       }
       if (!files.length) {
         return { state: 'CLARIFY', message: 'Name the exact repository file or files to change within this enrollment.', authority: false, execution_authorized: false, next_action: 'identify_files' };
@@ -525,7 +613,37 @@ class ZeroSetupWork {
       // Authenticated owner intake always activates standing consent. Autopilot ON also
       // activates it for authenticated MCP handoff sessions. Cursor spend stays separate.
       const mayActivate = principal === 'operator' || (autopilotOn && mcpHandoff);
-      return mayActivate ? this.activateAutonomy(this.read(request_id)) : this.statusView(this.read(request_id));
+      if (!mayActivate) return this.statusView(this.read(request_id));
+      try {
+        return this.activateAutonomy(this.read(request_id));
+      } catch (error) {
+        const live = this.read(request_id);
+        const capacity = /Concurrent Mission budget exhausted/i.test(String(error.message || ''));
+        live.intake_blockers = capacity
+          ? ['concurrent_mission_budget_exhausted']
+          : ['standing_activation_failed'];
+        live.blocker_message = String(error.message || 'standing activation failed').slice(0, 400);
+        live.presentation = {
+          ...(live.presentation || {}),
+          status: capacity
+            ? 'Standing activation blocked: concurrent Mission budget exhausted'
+            : ('Standing activation failed: ' + live.blocker_message),
+        };
+        this.write(request_id, principal, live, 'blocked');
+        return {
+          state: 'BLOCKED',
+          code: live.intake_blockers[0],
+          message: live.blocker_message,
+          blockers: live.intake_blockers,
+          authority: false,
+          execution_authorized: false,
+          requested_specialist: live.requested_specialist || 'opencode',
+          planner: live.planner || 'opencode',
+          evaluator: live.evaluator || 'opencode',
+          next_action: capacity ? 'reconcile_idle_or_settle_active_missions' : 'inspect_standing_enrollment',
+          presentation: live.presentation,
+        };
+      }
     }
     const existing = this.existingTemplate(workspace, project.projectId);
     const goal = existing?.template
@@ -689,6 +807,13 @@ class ZeroSetupWork {
       : ownerIntake ? ['standing_policy_requires_authenticated_owner_intake']
       : waiting ? ['owner_approval_required'] : []);
     if (unboundedProjectless) presentation.status = 'Needs bounded file scope and verification';
+    const requestedSpecialist = live.requested_specialist
+      || live.work_spec?.worker
+      || (presentation.worker === 'cursor' || /cursor/i.test(String(presentation.worker || '')) ? 'cursor' : null)
+      || (presentation.worker === 'Local OpenCode' ? 'opencode' : null);
+    if (requestedSpecialist === 'cursor' && presentation.worker === 'Local OpenCode') {
+      presentation.worker = 'cursor';
+    }
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
       message: live.intake_blockers?.includes('projectless_exact_two_file_syntax_required')
@@ -697,6 +822,8 @@ class ZeroSetupWork {
         ? ('Project ' + (live.project_name || 'named') + ' was recognized, but standing Developer Autonomy enrollment is required before Mission preparation. Do not use the projectless two-file fixture syntax for enrolled work.')
         : live.intake_blockers?.includes('standing_cognitive_enrollment_required')
         ? ('Project ' + (live.project_name || 'named') + ' is authorized. Cursor planning needs cognitive discovery files on the standing enrollment. Do not use the projectless two-file fixture syntax.')
+        : live.intake_blockers?.includes('standing_cursor_worker_not_enrolled')
+        ? ('Project ' + (live.project_name || 'named') + ' has a standing policy, but Cursor is not on that policy worker allowlist.')
         : live.intake_blockers?.includes('ENROLLED_REPOSITORY_AMBIGUOUS')
         ? 'Multiple authorized repositories match that request. Choose one enrolled project or repository.'
         : live.intake_blockers?.length
@@ -712,6 +839,9 @@ class ZeroSetupWork {
         : presentation.status,
       presentation,
       blockers,
+      requested_specialist: requestedSpecialist || undefined,
+      planner: live.planner || 'opencode',
+      evaluator: live.evaluator || 'opencode',
       admission: { standard_approval_supported: waiting && !unboundedProjectless && !cursorApproval, authority: false },
       next_action: live.intake_blockers || unboundedProjectless ? 'define_bounded_projectless_work' : cursorApproval ? 'authorize_cursor_via_authenticated_local_api' : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
       outcome,

@@ -670,6 +670,7 @@
   "tests/cursor-evaluation-budget.test.js",
   "tests/cursor-fixtures.test.js",
   "tests/cursor-risk-acceptance.test.js",
+  "tests/cursor-admission-closeout.test.js",
   "tests/cursor-roundtrip-reliability.test.js",
   "tests/cursor-runtime-status.test.js",
   "tests/cursor-spend-admission.test.js",
