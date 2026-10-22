@@ -434,7 +434,8 @@ class ZeroSetupWork {
       if (withCognitive.length === 1) return withCognitive[0];
       return null;
     };
-    const cursorStandingGate = (standing, files) => {
+    const cursorStandingGate = (standingIn, files) => {
+      let standing = standingIn;
       if (this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
         const record = {
           version: 1, instruction, intent, clarify: true, authority: false,
@@ -461,6 +462,15 @@ class ZeroSetupWork {
           next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
           presentation: record.presentation,
         };
+      }
+      // Active standing enrollment is enough to auto-prepare cognitive discovery from
+      // prior same-repo enrollment files or Autopilot-admissible paths. Autopilot MCP
+      // and the local operator share that authority; bare MCP without Autopilot does not.
+      const mayEnsureCognitive = principal === 'operator' || (autopilotOn && mcpHandoff);
+      if (mayEnsureCognitive && !(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length)) {
+        try {
+          standing = this.bridge.developerAutonomy.ensureCognitiveDiscovery(standing.policy_id, 'operator') || standing;
+        } catch { /* fall through to precise cognitive gate */ }
       }
       const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
       if (!cognitiveReady) {

@@ -3,8 +3,8 @@
 ## Cursor Mission admission closeout (2026-10-22)
 
 - Request `chatgpt_cursor_live_roundtrip_20261022_v1` is historical WAIT evidence and must not be replayed. After install, a **fresh** ChatGPT-origin request is required for Gate B.
-- MCP host-execution delegation authorizes only `enable_cursor` / `disable_cursor`. It does **not** enroll Cursor on Developer Autonomy worker allowlists, grant scoped disclosure, or authorize subscription spend.
-- Standing policies with `workers:['opencode']` (including Autopilot OpenCode-only aliases) reject explicit Cursor with `standing_cursor_worker_not_enrolled` once host Cursor execution is enabled. Cognitive discovery files are also required for enrolled Cursor planning.
+- MCP host-execution delegation authorizes only `enable_cursor` / `disable_cursor`. It does **not** grant scoped disclosure or subscription spend.
+- Active standing DA enrollments missing cognitive discovery are auto-prepared from prior same-repo files or Autopilot-admissible paths when Autopilot MCP / operator Cursor intake runs; bare MCP without Autopilot still requires cognitive enrollment or Autopilot ON. Cursor spend/disclosure remain separately gated.
 - Idle `needs_rework` / `blocked` Missions with remaining repair budget no longer occupy concurrent admission once writers and leases are gone; genuine active writers still count. Retained evidence worktrees do not consume concurrent Mission slots unless policy says otherwise.
 - Full ChatGPT → OpenCode → Cursor → OpenCode → Airodrom live Acceptance remains **PENDING** until the owner enrolls Cursor on the standing DA policy and issues a bounded spend/disclosure grant. Do not fabricate grants from chat text.
 

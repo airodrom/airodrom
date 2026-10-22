@@ -757,6 +757,88 @@ class DeveloperAutonomy {
     return active;
   }
 
+  // Reuse prior same-repo cognitive discovery or Autopilot-admissible files so an
+  // already-authorized standing enrollment does not require manual re-enrollment
+  // solely to attach planning discovery for Cursor. Never expands repository scope.
+  resolveCognitiveFiles(policy) {
+    const root = fs.realpathSync(policy.repository);
+    const { DEFAULT_DENIED_PATHS, globMatch } = require('./mission-contract');
+    const { planningContextAdmissible } = require('./opencode-adapter');
+    const usable = (file) => {
+      if (typeof file !== 'string' || !file || DEFAULT_DENIED_PATHS.some(pattern => globMatch(pattern, file))) return false;
+      try {
+        const target = path.join(root, file);
+        return fs.lstatSync(target).isFile() && fs.realpathSync(target) === target
+          && planningContextAdmissible(fs.readFileSync(target, 'utf8'));
+      } catch { return false; }
+    };
+    const fromRelated = [];
+    for (const row of this.db.prepare('SELECT policy_id FROM cp_developer_autonomy_policies WHERE repository=?').all(root)) {
+      try {
+        const related = this.readPolicy(row.policy_id)?.record;
+        for (const file of related?.cognitive?.files || []) if (usable(file) && !fromRelated.includes(file)) fromRelated.push(file);
+      } catch { /* skip invalid related policies */ }
+    }
+    if (fromRelated.length) return fromRelated.slice(0, 8);
+    return [
+      'README.md', 'CHANGELOG.md', 'docs/README.md',
+      'docs/operations/founder-current-state.md', 'lib/platform/manifest.json',
+      'src/index.js', 'fixture.txt', 'recovery-proof.txt',
+    ].filter(usable).slice(0, 8);
+  }
+
+  // Attach cognitive discovery (and Cursor worker when host Cursor is enabled) to an
+  // already-active standing policy. Re-seals the policy; does not widen repository,
+  // budgets, or NEVER_AUTO. Spend/disclosure stay separately gated.
+  ensureCognitiveDiscovery(policyId, owner = 'operator') {
+    this.owner(owner);
+    identifier(policyId);
+    const current = this.inspect(policyId);
+    if (!current || current.state !== 'active') throw Error('Active Developer Autonomy policy required');
+    const files = current.cognitive?.files?.length ? [...current.cognitive.files] : this.resolveCognitiveFiles(current);
+    if (!files.length) return current;
+    const cursorAllowed = !this.bridge.hostExecutionPolicy?.cursorDisabled?.();
+    const workers = [...new Set([...(Array.isArray(current.workers) ? current.workers : ['opencode']), ...(cursorAllowed ? ['cursor'] : [])])]
+      .filter(w => ['opencode', 'cursor'].includes(w));
+    workers.sort();
+    const sameCognitive = current.cognitive?.files?.length
+      && current.cognitive.files.length === files.length
+      && current.cognitive.files.every((file, i) => file === files[i]);
+    const sameWorkers = Array.isArray(current.workers)
+      && current.workers.length === workers.length
+      && current.workers.every((w, i) => w === workers[i]);
+    if (sameCognitive && sameWorkers) return current;
+
+    const r = this.readPolicy(policyId);
+    const repairAttempts = Math.min(1, Number(current.budgets?.max_repairs) || 0);
+    const cognitive = require('./cognitive-router').enrollment({
+      version: 3,
+      files,
+      delegated_callers: Array.isArray(current.cognitive?.delegated_callers) ? [...current.cognitive.delegated_callers] : [],
+      planning_attempts: 2,
+      planning_ms: 120000,
+      execution_ms: 120000,
+      repair_attempts: repairAttempts,
+      max_assignments: 2,
+      acceptance: 'automatic',
+    }, current.repository);
+    const next = { ...r.record, cognitive, workers };
+    this.assertPolicyBoundaries(next);
+    const hash = fingerprint(next);
+    const seal = this.bridge.missionAuthority.sealManifest({
+      mission_id: 'developer-autonomy:' + policyId,
+      manifest_hash: hash
+    });
+    if (!seal) throw Error('Existing operator signing authority required');
+    const now = Date.now();
+    this.db.prepare('UPDATE cp_developer_autonomy_policies SET record=?, updated_at=? WHERE policy_id=? AND state=?')
+      .run(JSON.stringify({ record: next, hash, seal }), now, policyId, 'active');
+    this.bridge.controlStore.event('developer_autonomy.cognitive_ensured', null, {
+      policy_id: policyId, files: files.length, workers, authority: false
+    });
+    return this.inspect(policyId);
+  }
+
   revoke(input, owner) {
     this.owner(owner);
     object(input, ['policy_id', 'policy_hash', 'confirmed']);
