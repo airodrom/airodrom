@@ -4173,6 +4173,55 @@
       "note": "A"
     }
   },
+  "cp_standing_cursor_development": {
+    "fields": [
+      "id",
+      "repository",
+      "policy_id",
+      "state",
+      "enrolled_at",
+      "enrolled_by",
+      "enroll_request_id",
+      "revoked_at",
+      "revoked_by",
+      "revoke_request_id",
+      "expires_at",
+      "acknowledge_unknown_cost",
+      "max_invocations_per_mission",
+      "max_runtime_ms",
+      "max_missions",
+      "missions_used",
+      "path_allowlist",
+      "disclosure_providers",
+      "data_classes",
+      "seal",
+      "note"
+    ],
+    "source": "src/host-execution-policy.js",
+    "classification": {
+      "id": "A",
+      "repository": "A",
+      "policy_id": "A",
+      "state": "A",
+      "enrolled_at": "A",
+      "enrolled_by": "A",
+      "enroll_request_id": "A",
+      "revoked_at": "A",
+      "revoked_by": "A",
+      "revoke_request_id": "A",
+      "expires_at": "A",
+      "acknowledge_unknown_cost": "A",
+      "max_invocations_per_mission": "A",
+      "max_runtime_ms": "A",
+      "max_missions": "A",
+      "missions_used": "A",
+      "path_allowlist": "A",
+      "disclosure_providers": "A",
+      "data_classes": "A",
+      "seal": "A",
+      "note": "A"
+    }
+  },
   "cp_project_defaults": {
     "fields": [
       "project_id",
