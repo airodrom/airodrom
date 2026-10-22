@@ -444,15 +444,22 @@ class ZeroSetupWork {
       : policies.length === 1 ? policies[0] : null;
     if (standing) {
       const files = this.bridge.developerAutonomy.routineFiles(standing, instruction, intent.file);
-      if (!files.length) {
-        const wantsCursor = require('./projectless-sandbox').explicitlyRequestsCursor(instruction);
-        if (wantsCursor && this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
+      const wantsCursor = require('./projectless-sandbox').explicitlyRequestsCursor(instruction)
+        || (() => {
+          try { return require('./cognitive-router').requestedWorker(instruction, { cursorDisabled: false }) === 'cursor'; }
+          catch { return false; }
+        })();
+      // Explicit Cursor must never silently become Local OpenCode on the standing
+      // DA path — including when routineFiles already resolved a fixture path.
+      if (wantsCursor) {
+        if (this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
           const record = {
             version: 1, instruction, intent, clarify: true, authority: false,
             project_id: standing.project_id, project_name: project.name, workspace,
+            requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
             intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
             presentation: {
-              worker: 'cursor', files: [], measurable: false, project_name: project.name,
+              worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
               workspace_label: readablePath(workspace),
               status: 'Cursor execution disabled in Airodrom; use local OpenCode only',
             },
@@ -465,18 +472,22 @@ class ZeroSetupWork {
             blockers: ['CURSOR_EXECUTION_DISABLED'],
             authority: false,
             execution_authorized: false,
+            requested_specialist: 'cursor',
+            planner: 'opencode',
+            evaluator: 'opencode',
             next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
             presentation: record.presentation,
           };
         }
         const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
-        if (wantsCursor && !cognitiveReady) {
+        if (!cognitiveReady) {
           const record = {
             version: 1, instruction, intent, clarify: true, authority: false,
             project_id: standing.project_id, project_name: project.name, workspace,
+            requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
             intake_blockers: ['standing_cognitive_enrollment_required'],
             presentation: {
-              worker: 'cursor', files: [], measurable: false, project_name: project.name,
+              worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
               workspace_label: readablePath(workspace),
               status: 'Standing enrollment needs cognitive discovery files before Cursor planning',
             },
@@ -489,10 +500,13 @@ class ZeroSetupWork {
             blockers: ['standing_cognitive_enrollment_required'],
             authority: false,
             execution_authorized: false,
+            requested_specialist: 'cursor',
             next_action: 'enroll_developer_autonomy_cognitive_for_repository',
             presentation: record.presentation,
           };
         }
+      }
+      if (!files.length) {
         return { state: 'CLARIFY', message: 'Name the exact repository file or files to change within this enrollment.', authority: false, execution_authorized: false, next_action: 'identify_files' };
       }
       const record = {
@@ -500,6 +514,7 @@ class ZeroSetupWork {
         project_name: project.name, workspace, developer_autonomy_policy_id: standing.policy_id,
         developer_autonomy_policy_hash: standing.policy_hash, allowed_files: files,
         mission_id: null, plan_id: null, execution_enabled: false, authority: false,
+        requested_specialist: 'opencode', planner: 'opencode', evaluator: 'opencode',
         presentation: { brand: 'AIRODROM', goal: intent.objective, project_name: project.name,
           workspace_label: readablePath(workspace), files, worker: 'Local OpenCode',
           verification: 'Enrolled independent verification', completion_policy: 'Owner Acceptance remains required.',

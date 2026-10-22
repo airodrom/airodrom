@@ -19,13 +19,48 @@ id. Cursor may appear in `agent_status` as installed/observable while
 While `cp_host_execution_policy.cursor_execution_disabled=1`, explicit Cursor
 requests and automatic Cursor selection fail with durable
 `CURSOR_EXECUTION_DISABLED`. Local OpenCode is the default specialist for
-ordinary enrolled work; planner and evaluator roles remain OpenCode. Cursor
-adapter code and historical Missions stay available for authenticated
-reactivation. External Cursor billing is unaffected.
+ordinary enrolled work **only when no specific specialist was requested**;
+planner and evaluator roles remain OpenCode. Cursor adapter code and historical
+Missions stay available for authenticated reactivation. External Cursor billing
+is unaffected.
 
-Local-only example:
+Canonical sealed roles when Cursor is requested:
+
+| Field | Value |
+|------|--------|
+| `planner` | `opencode` |
+| `requested_specialist` | `cursor` (identity fixed; never rewritten to OpenCode) |
+| `evaluator` | `opencode` |
+| `execution_authorized` | `false` while host policy disables Cursor |
+
+Standing Developer Autonomy enrollment must not silently dispatch Local OpenCode
+when the instruction explicitly requests Cursor. Phrases such as “Have Cursor
+change …”, “Ask Cursor …”, and “Cursor change …” are explicit specialist
+selection (shared by MCP `ask_airodrom` / `prepare_mission` and operator intake).
+Architecture narration (“OpenCode → Cursor → OpenCode”) is **not** specialist
+selection. When Cursor is disabled, return `CURSOR_EXECUTION_DISABLED` with zero
+worker dispatches; do not clamp an explicit Cursor request onto OpenCode.
+
+Local-only example (implicit specialist / auto):
 
 > Start the Arecibo release-readiness audit using local OpenCode only. Do not deploy production, call Cursor, enable Plaid LIVE, or use external AI providers.
+
+### Cursor round-trip reliability V1 (2026-10-22)
+
+Historical ChatGPT request `chatgpt_cursor_roundtrip_probe_20261022_v1` /
+Mission `db7c6eaa-…` acknowledged Cursor, then standing DA + resolved files
+selected Local OpenCode and reached `INITIAL_VERIFICATION` / `needs_rework`.
+Cancellation `chatgpt_cursor_roundtrip_cancel_20261022_v1` was not durably
+recorded (handoff cancel used ephemeral IDs and did not accept ask-origin
+ownership). That Mission and cancel attempt remain historical evidence and are
+not replayed.
+
+Repair: fail-closed explicit specialist selection on standing DA and cognitive
+coerce; durable replay-safe `cancel_mission` via `cp_requests` with ask-origin
+ownership. **Gate A** (disabled Cursor refusal, no spend) is the live acceptance
+while host policy keeps Cursor disabled. **Gate B** (full Cursor round trip) stays
+**PENDING** until the owner re-enables bounded Cursor execution through the
+authenticated host-policy process.
 
 ### Local OpenCode evaluation recovery (V1)
 

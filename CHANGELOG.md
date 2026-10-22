@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Cursor round-trip reliability: explicit Cursor specialist identity is preserved and fails closed with `CURSOR_EXECUTION_DISABLED` (no silent OpenCode substitution on standing DA or cognitive coerce); MCP/operator parsers recognize “Have/Ask Cursor …” phrases; architecture-path narration is not specialist selection; `cancel_mission` is durable and replay-safe for ask-origin Missions ([docs/COGNITIVE-MISSION-ROUTER-V1.md](docs/COGNITIVE-MISSION-ROUTER-V1.md), [docs/CURRENT-STATE.md](docs/CURRENT-STATE.md), [docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)). Historical Mission `db7c6eaa-…` stays immutable; Gate B remains pending while Cursor execution stays disabled.
+
 ### Added
 - Local-First Autopilot V3: durable host execution policy disables paid Cursor dispatch by default (`CURSOR_EXECUTION_DISABLED`), keeps adapters and Milestone A/B evidence, leaves any external Cursor subscription unaffected, and re-enables only via authenticated operator API ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md), [docs/adr/0060-host-execution-policy.md](docs/adr/0060-host-execution-policy.md)).
 - Compact schema-first OpenCode planning with a separate planning stream budget and bounded overflow recovery so ordinary local Autopilot work does not depend on Cursor ([docs/GLOBAL-AUTOPILOT-V1.md](docs/GLOBAL-AUTOPILOT-V1.md)).

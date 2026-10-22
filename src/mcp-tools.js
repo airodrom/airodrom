@@ -228,7 +228,7 @@ class McpTools {
     if(name==='submit_mission')return require('./mission-handoff').submit(this.bridge,args.packet,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
     if(name==='get_worker_catalog')return require('./model-worker-router').inspect(this.bridge);
     if(name==='get_mission_handoff')return require('./mission-handoff').status(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
-    if(name==='cancel_mission_handoff')return require('./mission-handoff').cancel(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
+    if(name==='cancel_mission_handoff')return require('./mission-handoff').cancel(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()),args.request_id||null);
     if(name==='list_authorized_scopes'){
       const projects=[],goals=[];
       for(const p of this.bridge.projects.listProjects({status:'active'})||[]){
@@ -258,7 +258,7 @@ class McpTools {
       this.bridge.controlStore.event('mission.correction_requested',m.id,{source:'mcp',untrusted:true,note_length:String(args.note).length,authority:false});
       return {state:'WAIT',mission_id:m.id,message:'Correction request recorded as untrusted data. The owner decides rework or Acceptance in Control Center or the Terminal; no corrective Mission is created from ChatGPT text.',authority:false};
     }
-    if(name==='cancel_mission')return require('./mission-handoff').cancel(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()));
+    if(name==='cancel_mission')return require('./mission-handoff').cancel(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()),args.request_id);
     if(name==='list_goal_plans')return {items:(this.bridge.autonomousExecution?.list(args.limit||20)||this.bridge.missions.goalPlanner.list(args.limit||20)).map(p=>({plan_id:p.id,goal_id:p.goal_id,project_id:p.project_id,state:p.state,execution_enabled:!!p.execution_enabled,ready:p.ready,blocked:p.blocked,authority:false})),authority:false};
     if(name==='inspect_goal_plan'){const view=this.bridge.missions.goalPlanner.inspect(args.plan_id);return {...view,authority:false};}
     if(name==='inspect_autonomous_goal'){const view=this.bridge.autonomousExecution.inspect(args.plan_id);return {plan_id:view.id,state:view.state,execution_enabled:view.execution_enabled,autonomous:view.autonomous,ready:view.ready,blocked:view.blocked,stages:view.stages,authority:false};}

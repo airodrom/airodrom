@@ -116,10 +116,10 @@ function parseNaturalWorkSpec(instruction) {
 }
 
 function explicitlyRequestsCursor(instruction) {
-  // Destination phrases ("in Cursor", "using Cursor") are explicit worker selection.
+  // Destination / imperative phrases are explicit specialist selection.
   // Bare "Cursor" without a destination verb stays unrecognized here and is handled
   // by the cognitive worker parser, which still fails closed when ambiguous.
-  return /\b(?:use|using|with|via|in)\s+cursor\b|\bcursor[- ]only\b|\bassign(?:ed)?\s+to\s+cursor\b/i.test(instruction);
+  return /\b(?:use|using|with|via|in|have|ask)\s+cursor\b|\bcursor[- ]only\b|\bassign(?:ed)?\s+to\s+cursor\b|\bcursor\s+(?:to\s+)?(?:change|edit|modify|write|update|implement|execute|run)\b/i.test(instruction);
 }
 function workPresentation(spec) {
   spec = normalizeWorkSpec(spec);

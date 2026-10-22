@@ -667,6 +667,7 @@
   "tests/cp-request-identity.test.js",
   "tests/cursor-enrollment-qualification.test.js",
   "tests/cursor-evaluation-budget.test.js",
+  "tests/cursor-roundtrip-reliability.test.js",
   "tests/cursor-fixtures.test.js",
   "tests/cursor-risk-acceptance.test.js",
   "tests/cursor-runtime-status.test.js",

@@ -1,5 +1,11 @@
 # Known limitations
 
+## Cursor round-trip Gate B (2026-10-22)
+
+- Gate A (explicit Cursor while `cursor_execution_disabled=1`) returns durable `CURSOR_EXECUTION_DISABLED` with zero dispatches. That is not a Gate B PASS.
+- Full ChatGPT → Airodrom → OpenCode → Cursor → OpenCode → Airodrom → ChatGPT live spend remains **PENDING** until the owner re-enables bounded Cursor through authenticated host-execution policy. Do not treat disabled-worker routing as round-trip acceptance.
+- Historical Mission `db7c6eaa-…` and cancel request `chatgpt_cursor_roundtrip_cancel_20261022_v1` stay immutable; uncertain cancel outcomes are not rewritten to success.
+
 ## Local-first Autopilot discovery size (2026-10-20)
 
 - Autopilot discovery and cognitive planning forward only files ≤ `MAX_DISCOVERY_FILE` (16KB) that also pass the OpenCode sensitivity gate. Larger enrolled indexes (for example Arecibo `docs/README.md`) remain on disk but are never planner or specialist input, so OpenCode cannot exhaust `MAX_OUTPUT` by dumping them into the event stream.
