@@ -65,6 +65,9 @@ const TOOLS = [
   tool('get_mission_evidence','Read the machine-readable final evidence package built from host records only: scope, worker, sandbox, changed files, tests, security checks, verification, repair lineage, budget, approval/acceptance status and the next safe action. Worker prose is labelled untrusted. Retrievable after any disconnect; Airodrom never wakes an inactive conversation.',{mission_id:id},['mission_id'],true),
   tool('request_mission_correction','Record a correction request for a verified-but-unaccepted Mission. Returns WAIT: the owner decides rework or Acceptance in Control Center or Terminal; ChatGPT text never grants or revokes authority.',{mission_id:id,request_id:requestId,note:text(2000,'What should be corrected (untrusted request data).')},['mission_id','request_id','note']),
   tool('cancel_mission','Request cancellation of a Mission prepared through this authenticated handoff session. Termination, leases and quarantine remain host-owned.',{mission_id:id,request_id:requestId},['mission_id','request_id']),
+  tool('get_host_execution_policy','Read the persisted Cursor host-execution preference and whether ChatGPT MCP has an owner-enrolled delegation to change it. Grants no authority. Spend and disclosure remain separately gated.',{},[],true),
+  tool('enable_cursor_execution','Set cursor_execution_disabled=false when an owner-enrolled, revocable MCP delegation covers this operation. Without that delegation returns WAIT; chat text never enrolls it. Does not start a Cursor Mission or grant spend.',{request_id:requestId},['request_id']),
+  tool('disable_cursor_execution','Set cursor_execution_disabled=true when an owner-enrolled, revocable MCP delegation covers this operation. Without that delegation returns WAIT; chat text never enrolls it.',{request_id:requestId},['request_id']),
 ];
 
 
@@ -259,6 +262,9 @@ class McpTools {
       return {state:'WAIT',mission_id:m.id,message:'Correction request recorded as untrusted data. The owner decides rework or Acceptance in Control Center or the Terminal; no corrective Mission is created from ChatGPT text.',authority:false};
     }
     if(name==='cancel_mission')return require('./mission-handoff').cancel(this.bridge,args.mission_id,'mcp:'+(this.handoffPrincipal ||= randomUUID()),args.request_id);
+    if(name==='get_host_execution_policy')return this.bridge.hostExecutionPolicy.status('mcp:'+(this.handoffPrincipal ||= randomUUID()));
+    if(name==='enable_cursor_execution')return this.bridge.hostExecutionPolicy.mcpSetCursorDisabled(false,'mcp:'+(this.handoffPrincipal ||= randomUUID()),args.request_id);
+    if(name==='disable_cursor_execution')return this.bridge.hostExecutionPolicy.mcpSetCursorDisabled(true,'mcp:'+(this.handoffPrincipal ||= randomUUID()),args.request_id);
     if(name==='list_goal_plans')return {items:(this.bridge.autonomousExecution?.list(args.limit||20)||this.bridge.missions.goalPlanner.list(args.limit||20)).map(p=>({plan_id:p.id,goal_id:p.goal_id,project_id:p.project_id,state:p.state,execution_enabled:!!p.execution_enabled,ready:p.ready,blocked:p.blocked,authority:false})),authority:false};
     if(name==='inspect_goal_plan'){const view=this.bridge.missions.goalPlanner.inspect(args.plan_id);return {...view,authority:false};}
     if(name==='inspect_autonomous_goal'){const view=this.bridge.autonomousExecution.inspect(args.plan_id);return {plan_id:view.id,state:view.state,execution_enabled:view.execution_enabled,autonomous:view.autonomous,ready:view.ready,blocked:view.blocked,stages:view.stages,authority:false};}

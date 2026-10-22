@@ -472,6 +472,8 @@ class ControlServer {
       if(url.pathname==='/api/assistant/autopilot/stop')return this.json(res,200,this.bridge.globalAutopilot.stop(body,'operator'));
       if(url.pathname==='/api/assistant/host-execution-policy/disable-cursor')return this.json(res,200,this.bridge.hostExecutionPolicy.disableCursor(body,'operator'));
       if(url.pathname==='/api/assistant/host-execution-policy/enable-cursor')return this.json(res,200,this.bridge.hostExecutionPolicy.enableCursor(body,'operator'));
+      if(url.pathname==='/api/assistant/host-execution-policy/enroll-mcp-delegation')return this.json(res,200,this.bridge.hostExecutionPolicy.enrollMcpDelegation(body,'operator'));
+      if(url.pathname==='/api/assistant/host-execution-policy/revoke-mcp-delegation')return this.json(res,200,this.bridge.hostExecutionPolicy.revokeMcpDelegation(body,'operator'));
       if(url.pathname==='/api/assistant/developer-autonomy/enroll')return this.json(res,201,this.bridge.developerAutonomy.enroll(body,'operator'));
       if(url.pathname==='/api/assistant/project-defaults/set')return this.json(res,200,this.bridge.projectDefaults.setDefault(body,'operator'));
       if(url.pathname==='/api/assistant/project-defaults/clear')return this.json(res,200,this.bridge.projectDefaults.clear(body,'operator'));
