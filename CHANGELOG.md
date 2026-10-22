@@ -1,6 +1,8 @@
 ## Unreleased
 
 ### Fixed
+- Cognitive envelope sealing no longer treats “read-only analysis” as a global read-only Mission when the instruction also requests an edit; task operations outside sealed scope coerce into the envelope before fail-closed, without broadening authorization.
+- After a completed Cursor specialist assignment, host verification and OpenCode evaluation use local approval checks instead of re-requiring live Cursor dispatch qualification, so a verified no-change read can advance its dependent authorized edit (`worker_execution_unqualified` no longer blocks that handoff).
 - Classify `cp_standing_cursor_development` in memory retention fields so host boot is not blocked by identity migration after standing Cursor grants are introduced.
 
 ### Added
