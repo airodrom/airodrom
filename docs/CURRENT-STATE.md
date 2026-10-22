@@ -1,13 +1,14 @@
 # Current state (2026-10-10)
 
-## Cursor Round-Trip Reliability & Acceptance V1 — SOURCE (2026-10-22)
+## Cursor Round-Trip Reliability & Acceptance V1 — INSTALLED (2026-10-22)
 
-- **Reconciled Mission:** `db7c6eaa-d623-4e9f-822c-b8b50bc9c0c2` / request `chatgpt_cursor_roundtrip_probe_20261022_v1` — Cursor explicitly requested; standing DA dispatched Local OpenCode; settled `needs_rework` after failed verification. Historical evidence immutable.
-- **Cancellation:** `chatgpt_cursor_roundtrip_cancel_20261022_v1` — not durably recorded (ask-origin ownership + ephemeral cancel IDs). Classified **uncertain / not acknowledged** at the time; repair makes cancel durable and replay-safe without rewriting history.
-- **Root cause:** standing DA path dispatched OpenCode when routine files resolved, skipping the Cursor disabled gate; phrase gaps (“Have Cursor change”); architecture path prose could confuse specialist parsing; cancel did not bind ask-origin Missions to `cp_requests`.
-- **Repair:** fail-closed explicit `requested_specialist=cursor` with `CURSOR_EXECUTION_DISABLED` (no OpenCode fallback); shared MCP/operator parsers; durable cancel; Cursor remains disabled (`cp_host_execution_policy`).
-- **Gates:** Gate A = disabled-worker refusal (no spend). Gate B = full Cursor round trip **PENDING** until owner re-enables bounded Cursor via authenticated policy.
-- Protected checkout `~/code/airodrom` and draft PR #148 untouched.
+- **Merged / installed:** PR #200 → `5c91f9f70d40242964a8dce3125a9defd6a8e5f0` at `…/airodrom-install-bcedc6d`. Rollback checkpoint `~/.airodrom/activation/checkpoint-pre-a843741-20261022T205931Z` → previous `a843741`.
+- **Reconciled Mission:** `db7c6eaa-d623-4e9f-822c-b8b50bc9c0c2` / request `chatgpt_cursor_roundtrip_probe_20261022_v1` — Cursor explicitly requested; standing DA dispatched Local OpenCode; settled `needs_rework` after failed verification. Historical evidence immutable. Cancel `chatgpt_cursor_roundtrip_cancel_20261022_v1` never recorded (**uncertain / not acknowledged**); leases released; no active Cursor runs.
+- **Root cause:** standing DA OpenCode dispatch when routine files resolved (skipped Cursor disabled gate); phrase gaps (“Have Cursor change”); cancel lacked ask-origin + durable `request_id`.
+- **Repair:** fail-closed explicit Cursor (no OpenCode substitution); durable replay-safe cancel; Cursor stays disabled (`cursor_execution_disabled=1`).
+- **Gate A (host MCP entry, not ChatGPT-typed):** `host_gate_a_standing_da_20261022T210210Z_v1` → durable `BLOCKED` / `CURSOR_EXECUTION_DISABLED`; `execution_authorized=false`; zero new Missions; zero `cp_runs` with `agent_id=cursor`; `get_ask_status` ~1.7s. Fixture suite also proves `requested_specialist=cursor` on standing DA.
+- **Gate B:** **PENDING** (Cursor execution remains disabled; no paid spend).
+- Protected checkout `~/code/airodrom` @ `a1f97c50` and draft PR #148 untouched.
 
 ## MCP Recovery & Cursor Mission Connectivity V1 — SOURCE (2026-10-20)
 

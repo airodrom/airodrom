@@ -57,10 +57,10 @@ not replayed.
 
 Repair: fail-closed explicit specialist selection on standing DA and cognitive
 coerce; durable replay-safe `cancel_mission` via `cp_requests` with ask-origin
-ownership. **Gate A** (disabled Cursor refusal, no spend) is the live acceptance
-while host policy keeps Cursor disabled. **Gate B** (full Cursor round trip) stays
-**PENDING** until the owner re-enables bounded Cursor execution through the
-authenticated host-policy process.
+ownership. Installed on `5c91f9f` (PR #200). **Gate A PASS** (host MCP entry
+`host_gate_a_standing_da_20261022T210210Z_v1`: durable `CURSOR_EXECUTION_DISABLED`,
+zero Cursor dispatches; not ChatGPT-typed). **Gate B PENDING** until the owner
+re-enables bounded Cursor execution through the authenticated host-policy process.
 
 ### Local OpenCode evaluation recovery (V1)
 
