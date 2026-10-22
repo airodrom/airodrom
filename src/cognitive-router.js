@@ -72,6 +72,14 @@ const ARCHITECTURE_PATH_PHRASES = [
   /\b(?:chatgpt|airodrom|opencode|cursor)(?:\s*(?:→|->|to)\s*(?:chatgpt|airodrom|opencode|cursor)){2,}\b/ig,
   /\bmission\s+path\b/ig
 ];
+// Negated worker prose must not become a competing specialist selection.
+// e.g. "do not substitute OpenCode implementation" / "do not use OpenCode to implement"
+const NEGATED_WORKER_PHRASES = [
+  /\b(?:do\s+not|don't|never)\s+substitute\s+(?:local\s+)?(?:opencode|cursor|host)(?:\s+(?:for\s+)?(?:implementation|implements?|specialist))?\b/ig,
+  /\b(?:do\s+not|don't|never)\s+(?:use|call|dispatch|assign)\s+(?:local\s+)?(?:opencode|cursor|host)(?:\s+to\s+(?:implement(?:ation|s)?|execute|edit|run|change|modify|write|update))?\b/ig,
+  /\bwithout\s+(?:substituting\s+)?(?:local\s+)?(?:opencode|cursor|host)(?:\s+(?:for\s+)?(?:implementation|implements?|specialist))?\b/ig,
+  /\b(?:not|no)\s+(?:local\s+)?(?:opencode|cursor|host)\s+(?:for\s+)?(?:implementation|implements?)\b/ig,
+];
 
 function resolveWorkerRoles(instruction, options = {}) {
   if (/\b(?:codex|claude(?:[- ]code)?)\b/i.test(instruction)) C.fail('cognitive_named_worker_unavailable');
@@ -90,6 +98,7 @@ function resolveWorkerRoles(instruction, options = {}) {
   }
   for (const pattern of AIRODROM_VERIFY_PHRASES) text = text.replace(pattern, ' ');
   for (const pattern of ARCHITECTURE_PATH_PHRASES) text = text.replace(pattern, ' ');
+  for (const pattern of NEGATED_WORKER_PHRASES) text = text.replace(pattern, ' ');
   // Local-first: "using local OpenCode only" strips Cursor destination phrases.
   if (/\blocal\s+opencode\s+only\b|\bopencode\s+only\b|\bwithout\s+cursor\b|\bdo\s+not\s+(?:call|use|dispatch)\s+cursor\b/i.test(original)) {
     text = text.replace(/\bin\s+cursor\b|\busing\s+cursor\b|\bvia\s+cursor\b|\bhave\s+cursor\b/ig, ' ');
@@ -425,7 +434,8 @@ async function prepare(zero, { instruction, request_id }, principal) {
   try {
     requested = requestedWorker(instruction, { cursorDisabled });
   } catch (error) {
-    if (String(error.code || error.message) === 'CURSOR_EXECUTION_DISABLED') {
+    const code = String(error.code || error.message);
+    if (code === 'CURSOR_EXECUTION_DISABLED') {
       const blocked = {
         version: 1, request_id, principal, instruction, state: 'blocked',
         developer_autonomy_policy_id: p.policy_id, developer_autonomy_policy_hash: p.policy_hash,
@@ -438,6 +448,23 @@ async function prepare(zero, { instruction, request_id }, principal) {
       };
       zero.write(request_id, principal, blocked, 'blocked');
       return view(blocked, b);
+    }
+    // Durable clarify for intake parse failures so get_ask_status is recoverable
+    // instead of "Prepared ask request unavailable".
+    if (code === 'cognitive_ambiguous_worker' || code === 'cognitive_explicit_worker_syntax_required'
+      || code === 'cognitive_named_worker_unavailable') {
+      const clarify = {
+        version: 1, request_id, principal, instruction, state: 'clarify',
+        developer_autonomy_policy_id: p.policy_id, developer_autonomy_policy_hash: p.policy_hash,
+        project_id: p.project_id, goal_id: p.goal_id, mission_id: null,
+        planner: 'opencode', evaluator: 'opencode',
+        cognitive: { version: p.cognitive.version, planning_attempts: 0 },
+        blockers: [code], authority: false,
+        presentation: { worker: 'unresolved', files: p.cognitive.files || [], measurable: false,
+          status: 'Worker role parsing needs a clearer planner/specialist/evaluator assignment' },
+      };
+      zero.write(request_id, principal, clarify, 'clarify');
+      return view(clarify, b);
     }
     throw error;
   }
