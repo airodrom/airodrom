@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Classify `cp_standing_cursor_development` in memory retention fields so host boot is not blocked by identity migration after standing Cursor grants are introduced.
+
 ### Added
 - Owner-enrolled standing Cursor development grants on host execution policy: finite, revocable, repository-scoped subscription + scoped disclosure for public fixture paths so eligible cognitive Cursor Missions skip per-Mission spend confirmation while preserving UNKNOWN_SUBSCRIPTION observability and fail-closed bounds ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
 
