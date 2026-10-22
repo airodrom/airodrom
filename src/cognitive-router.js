@@ -565,13 +565,41 @@ async function executeReserved(zero, record, p, instruction) {
     const qualified = ['host', ...(ready.ready ? ['opencode'] : []), ...(cursor?.ready && cursor?.tiers?.qualified ? ['cursor'] : [])];
     const worker = route(envelope, proposal, qualified, { cursorDisabled });
     record.cognitive.proposal = proposal; record.cognitive.worker = worker;
-    // Existing DA grants are local-only. Listing Cursor never grants disclosure/spend.
+    // Existing DA grants are local-only. Listing Cursor never grants disclosure/spend
+    // unless an owner-enrolled standing Cursor development grant covers this Mission.
     if (worker === 'cursor') {
       if (cursorDisabled) C.fail('CURSOR_EXECUTION_DISABLED');
       if (envelope.version < 3 && envelope.limits.repair_attempts) C.fail('cognitive_external_repair_authorization_unavailable');
+      const maxInvocations = proposal.tasks.filter(t => t.worker === 'cursor').length + envelope.limits.repair_attempts;
+      const standing = b.hostExecutionPolicy?.matchStandingCursorDevelopment?.({
+        repository: p.repository,
+        files: proposal.files,
+        max_invocations: maxInvocations,
+        max_runtime_ms: envelope.limits.execution_ms,
+        data_class: 'public',
+      }) || null;
+      if (standing) {
+        record.state = 'awaiting_approval';
+        record.blockers = [];
+        record.presentation = {
+          files: proposal.files, worker: 'cursor', measurable: true,
+          repair_budget: envelope.limits.repair_attempts, max_invocations: maxInvocations,
+          success_criteria: envelope.verification,
+          status: 'Standing Cursor development grant covers disclosure and subscription bounds',
+        };
+        zero.write(request_id, record.principal, record, 'awaiting_approval');
+        const approved = await approve(zero, record, {
+          confirmed: true,
+          channel: 'control_center',
+          subscription_execution: standing.subscription_execution,
+        }, 'operator');
+        try { b.hostExecutionPolicy.consumeStandingCursorDevelopment(standing.id, request_id); }
+        catch { /* Mission already authorized; consumption is accounting only */ }
+        return approved;
+      }
       record.state = 'awaiting_approval';
       record.blockers = ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'];
-      record.presentation = { files: proposal.files, worker: 'cursor', measurable: true, repair_budget: envelope.limits.repair_attempts, max_invocations: proposal.tasks.filter(t=>t.worker==='cursor').length+envelope.limits.repair_attempts,
+      record.presentation = { files: proposal.files, worker: 'cursor', measurable: true, repair_budget: envelope.limits.repair_attempts, max_invocations: maxInvocations,
         success_criteria: envelope.verification, status: 'Scoped local owner disclosure and subscription grant required' };
       // No DA grant is converted into external authority. The existing operator
       // approval endpoint supplies an exact, finite subscription grant separately.

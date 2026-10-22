@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Owner-enrolled standing Cursor development grants on host execution policy: finite, revocable, repository-scoped subscription + scoped disclosure for public fixture paths so eligible cognitive Cursor Missions skip per-Mission spend confirmation while preserving UNKNOWN_SUBSCRIPTION observability and fail-closed bounds ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
+
 ### Fixed
 - Explicit Cursor envelopes no longer fail planning with `cognitive_explicit_worker_changed` when OpenCode’s proposal assigns itself: `validateProposal` coerces tasks to the envelope specialist before fail-closed, and the planning prompt requires the explicit worker when set.
 - Negated worker prose such as “do not substitute OpenCode implementation” no longer competes with an explicit Cursor specialist (`cognitive_ambiguous_worker`); MCP and operator intake share the same role normalizer, and intake parse failures write a durable clarify row instead of leaving `get_ask_status` as Prepared ask unavailable.
