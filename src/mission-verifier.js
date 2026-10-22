@@ -42,7 +42,11 @@ class MissionVerifier {
       // The existing job cancellation path enforces the shorter graph deadline.
     }
     const requestId=capabilityRequestId(run.id,name,input);
-    const current=()=>{if(Date.now()>=deadline)throw Error('gateway_program_runtime_exhausted');if(bounded){const m=this.store.requireMission(mission.id);specialist.assertRoot(this.bridge,m);this.bridge.missions.assertAuthority(m);}};
+    // Host verification capabilities run after the specialist worker finished.
+    // Re-checking live Cursor qualifiedFor here turned successful no-change reads
+    // into verification_available/worker_execution_unqualified and blocked the
+    // dependent edit. Approval-bound Missions assert local evaluation only.
+    const current=()=>{if(Date.now()>=deadline)throw Error('gateway_program_runtime_exhausted');if(bounded){const m=this.store.requireMission(mission.id);specialist.assertRoot(this.bridge,m);if(m.envelope.approval_id)this.bridge.missionApprovals.assertLocalEvaluation(m);else this.bridge.missions.assertAuthority(m);}};
     const invoke=()=>{if(bounded)current();return this.bridge.invokeCapability(task.id,{name,input,requestId});};
     const watch=bounded?setInterval(()=>{try{current();}catch{for(const job of this.bridge.capabilityHost.jobs.jobs.values())if(job.taskId===task.id)this.bridge.capabilityHost.jobs.cancel(job);}},100):null;
     watch?.unref?.();

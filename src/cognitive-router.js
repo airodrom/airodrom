@@ -126,6 +126,22 @@ function requestedWorker(instruction, options = {}) {
   return resolveWorkerRoles(instruction, options).specialist;
 }
 
+// Seal read vs edit from the instruction without false positives.
+// "Do not create a separate Cursor read-only analysis assignment … edit FILE"
+// must remain ['read','edit']. A global read-only cue without positive mutation
+// intent seals ['read'] only. Negated "do not edit" must not count as edit intent.
+// Never broaden authorization after sealing.
+function sealedOperations(instruction, requested) {
+  if (requested === 'host') return ['read'];
+  const text = String(instruction || '');
+  const readOnlyCue = /\bread[- ]only\b|\bdo not (?:edit|modify|write)\b/i.test(text);
+  const positive = text
+    .replace(/\bdo not (?:edit|modify|write|change)(?:\s*,\s*(?:or\s+)?(?:edit|modify|write|change))*/gi, ' ')
+    .replace(/\bread[- ]only\b/gi, ' ');
+  const mutationCue = /\b(?:edit|change|modify|write|append|replace|update|rewrite)\b/i.test(positive);
+  return readOnlyCue && !mutationCue ? ['read'] : ['read', 'edit'];
+}
+
 // OpenCode sometimes wraps the proposal, returns an empty task list, or emits
 // more assignments than the sealed execution ceiling. Host coercion keeps the
 // envelope identity authoritative and never invents paths outside permitted_paths.
@@ -274,6 +290,14 @@ function validateProposal(raw, envelope) {
   }
   if (p.version !== e.version) C.fail('cognitive_version_binding_mismatch');
   if (p.request_id !== e.request_id || p.envelope_hash !== e.hash) C.fail('cognitive_request_binding_mismatch');
+  // Clamp task operations / verification labels into the sealed envelope before
+  // fail-closed. Paths outside permitted_paths stay hard failures — never broaden.
+  if (p.tasks.some(t => !e.operations.includes(t.operation)) || p.verification.some(v => !e.verification.includes(v))
+      || (e.version === 3 && (p.tasks.length > e.limits.execution_attempts
+        || p.tasks.some(t => !e.eligible_workers.includes(t.worker))
+        || (e.requested_worker !== 'auto' && p.tasks.some(t => t.worker !== e.requested_worker))))) {
+    p = C.parse('PlanningProposal', coercePlanningProposal(p, envelope));
+  }
   if (p.files.some(f => !e.permitted_paths.includes(f) || denied(f, e.denied_paths)) ||
       p.tasks.some(t => !e.operations.includes(t.operation)) || p.verification.some(v => !e.verification.includes(v))) C.fail('cognitive_plan_outside_scope');
   if (e.version === 3) {
@@ -533,7 +557,7 @@ async function executeReserved(zero, record, p, instruction) {
     const envelope = C.parse('RequestEnvelope', C.seal({ version: p.cognitive.version, request_id, caller: record.principal,
       delegation: { policy_id: p.policy_id, policy_hash: p.policy_hash }, repository_id: p.project_id + ':' + p.policy_id,
       workspace_id: ws.workspace_id, git_anchor: captured.head, integrity: captured.integrity,
-      permitted_paths: planningFiles, denied_paths: [...DEFAULT_DENIED_PATHS], operations: requested === 'host' || /\bread[- ]only\b|\bdo not (?:edit|modify|write)\b/i.test(instruction) ? ['read'] : ['read', 'edit'],
+      permitted_paths: planningFiles, denied_paths: [...DEFAULT_DENIED_PATHS], operations: sealedOperations(instruction, requested),
       eligible_workers: ['host', ...enrolledWorkers],
       verification: [p.verification_defaults.diff_check, ...p.verification_defaults.tests].sort(),
       limits: { planning_attempts: p.cognitive.planning_attempts, execution_attempts: p.cognitive.version === 3 ? p.cognitive.max_assignments : 1, repair_attempts: p.cognitive.repair_attempts || 0, planning_ms: p.cognitive.planning_ms, execution_ms: p.cognitive.execution_ms },

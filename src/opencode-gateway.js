@@ -112,11 +112,13 @@ async function evaluate(bridge, mission, worker, verification) {
     continuation = true;
   }
   const currentMission = store.requireMission(mission.id);
-  // Cursor subscription approvals use assertLocalEvaluation so a paid grant TTL
-  // cannot strand an already-verified local OpenCode evaluation. Developer
-  // Autonomy / Autopilot OpenCode Missions have no approval_id — keep assertAuthority.
+  // The worker run already completed. Local OpenCode evaluation must not re-require
+  // live Cursor dispatch qualification (flaky readiness refresh previously blocked
+  // successful read-only assignments with worker_execution_unqualified). Approval-
+  // bound Missions use assertLocalEvaluation; DA / Autopilot without approval_id
+  // keep assertAuthority. This does not dispatch Cursor or broaden spend.
   const assertEvalAuthority = (current) => {
-    if (continuation && current.envelope.approval_id) bridge.missionApprovals.assertLocalEvaluation(current);
+    if (current.envelope.approval_id) bridge.missionApprovals.assertLocalEvaluation(current);
     else bridge.missions.assertAuthority(current);
   };
   assertEvalAuthority(currentMission);
