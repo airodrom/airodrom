@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## Standing Cursor development authorization — SOURCE (2026-10-22)
+
+- **Owner need:** recurring Cursor development in the approved chatgpt-handoff disposable repository must not re-prompt `BLOCKED_SPEND_AUTHORIZATION` / `scoped_external_disclosure_required` for every eligible Mission.
+- **Mechanism:** authenticated operator enrolls `cp_standing_cursor_development` via host execution policy (finite missions, invocations, runtime, public path allowlist, acknowledged unknown subscription cost). Cognitive Cursor planning auto-consumes a covering grant; otherwise WAIT remains.
+- **Out of scope:** paid overages, unapproved repositories, private data, production, and historical request mutation. Do not run a paid Cursor Mission solely to configure the grant.
+
 ## Cognitive enrollment auto-prepare for standing DA — SOURCE (2026-10-22)
 
 - **Cause:** `chatgpt-handoff` cognitive policy expired while Autopilot standing for the same repo remained active without cognitive files → `standing_cognitive_enrollment_required` for Cursor.
