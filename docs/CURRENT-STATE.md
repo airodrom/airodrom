@@ -1,5 +1,13 @@
 # Current state (2026-10-10)
 
+## Cursor Mission Admission & Round-Trip Closeout V1 — SOURCE (2026-10-22)
+
+- **Reconciled request:** `chatgpt_cursor_live_roundtrip_20261022_v1` remains `awaiting_approval` / WAIT; `mission_id=null`; no Cursor dispatch; historical proposal wrongly showed `Local OpenCode` / `requested_specialist=opencode`. Do not replay.
+- **Admission cause:** phrase “OpenCode as planner and evaluator and Cursor as the explicitly requested implementation specialist” failed closed into standing OpenCode activate; Autopilot OpenCode-only policy `autopilot-9e6bc9470984` (no cognitive) was selected beside `chatgpt-handoff`; MCP host-policy delegation (`enable_cursor`/`disable_cursor` only) is not DA Cursor worker allowlist or spend; Autopilot activate then hit `Concurrent Mission budget exhausted` on idle grant `bd44d3de-…` (parent+repair `needs_rework`, `canRepair`, writers gone) and statusView reported `standing_policy_requires_authenticated_owner_intake`.
+- **Repair:** preserve planner=`opencode` / specialist=`cursor` / evaluator=`opencode`; standing + cognitive fail-closed gates (`CURSOR_EXECUTION_DISABLED`, `standing_cognitive_enrollment_required`, `standing_cursor_worker_not_enrolled`) before PLANNING or Local OpenCode activate; prefer cognitive/Cursor-capable standing policy when Autopilot and named enrollments share a repo; idle terminal `needs_rework`/`blocked` frees concurrent admission while the grant stays active for repair; capacity activate failures return `concurrent_mission_budget_exhausted` instead of a false owner-intake WAIT.
+- **Precise owner action for live Cursor round trip:** re-enroll Developer Autonomy for `chatgpt-handoff-repo` with `workers` including `cursor`, cognitive discovery files, and (if MCP is the caller) delegated caller or Autopilot ON; then issue scoped disclosure + subscription execution grant. Host Cursor activation (PR #202) alone is insufficient.
+- **Gate B / ChatGPT-origin Cursor Mission:** still **PENDING** until that enrollment + spend grant exist. Protected checkout `~/code/airodrom` and draft PR #148 untouched.
+
 ## Cursor Round-Trip Reliability & Acceptance V1 — INSTALLED (2026-10-22)
 
 - **Merged / installed:** PR #200 → `5c91f9f70d40242964a8dce3125a9defd6a8e5f0` at `…/airodrom-install-bcedc6d`. Rollback checkpoint `~/.airodrom/activation/checkpoint-pre-a843741-20261022T205931Z` → previous `a843741`.

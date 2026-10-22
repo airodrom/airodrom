@@ -45,7 +45,9 @@ const OPENCODE_ROLE_PHRASES = [
   new RegExp(String.raw`\b(?:use|using|via|with)\s+opencode\s+for\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
   new RegExp(String.raw`\bopencode\s+for\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
   new RegExp(String.raw`\b${PLAN_EVAL_ROLE}\s+(?:with|via|using)\s+opencode\b`, 'ig'),
-  /\bopencode\s+as\s+(?:the\s+)?(?:planner|evaluator|planning|evaluation)\b/ig,
+  /\bopencode\s+as\s+(?:the\s+)?(?:planner|evaluator|planning|evaluation)(?:\s+and\s+(?:planner|evaluator|planning|evaluation))?\b/ig,
+  // "use OpenCode as planner and evaluator"
+  /\b(?:use|using|via|with)\s+opencode\s+as\s+(?:the\s+)?(?:planner|evaluator|planning|evaluation)(?:\s+and\s+(?:planner|evaluator|planning|evaluation))?\b/ig,
   /\b(?:planner|evaluator)\s*[:=]\s*opencode\b/ig
 ];
 const AIRODROM_VERIFY_PHRASES = [
@@ -56,7 +58,9 @@ const SPECIALIST_MATCH = new RegExp(
   String.raw`\b(?:use|using|via|with|in|have|ask)\s+(cursor|opencode|host)\b` +
   String.raw`|\b(cursor|opencode|host)[- ]only\b` +
   String.raw`|\bassign(?:ed)?\s+to\s+(cursor|opencode|host)\b` +
-  String.raw`|\b(cursor|opencode|host)\s+as\s+(?:the\s+)?specialist\b` +
+  // "Cursor as specialist" / "Cursor as the explicitly requested implementation specialist"
+  String.raw`|\b(cursor|opencode|host)\s+as\s+(?:the\s+)?(?:\w+\s+){0,4}(?:implementation\s+)?specialist\b` +
+  String.raw`|\b(cursor|opencode|host)\s+as\s+(?:the\s+)?(?:explicitly\s+requested\s+)?(?:implementation\s+)?(?:specialist|worker)\b` +
   String.raw`|\b(cursor|opencode|host)\s+to\s+(?:implement(?:ation|s)?|execute|edit|run|change|modify|write|update)\b` +
   String.raw`|\b(cursor|opencode|host)\s+(?:change|edit|modify|write|update|implement|execute|run)\b` +
   String.raw`|\b(cursor|opencode|host)\s+(?:for\s+)?(?:implementation|implements?|specialist)\b` +
@@ -91,7 +95,7 @@ function resolveWorkerRoles(instruction, options = {}) {
     text = text.replace(/\bin\s+cursor\b|\busing\s+cursor\b|\bvia\s+cursor\b|\bhave\s+cursor\b/ig, ' ');
   }
   const specialists = [...text.matchAll(SPECIALIST_MATCH)]
-    .map(m => (m[1] || m[2] || m[3] || m[4] || m[5] || m[6] || m[7] || m[8]).toLowerCase());
+    .map(m => (m[1] || m[2] || m[3] || m[4] || m[5] || m[6] || m[7] || m[8] || m[9]).toLowerCase());
   const unique = [...new Set(specialists)];
   if (unique.length > 1) C.fail('cognitive_ambiguous_worker');
   // A named worker in unrecognized prose must never silently become an auto route.
@@ -345,12 +349,28 @@ function view(record, bridge) {
     try { bridge.zeroSetupWork?.write?.(record.request_id, record.principal, record, 'blocked'); } catch { /* best-effort durable rewrite */ }
   }
   const state = record.state === 'rejected' ? 'CANCELLED' : interrupted || record.state === 'blocked' && (!mission || mission.state === 'ready') ? 'BLOCKED' : mission ? ({ completed: 'ACCEPTED', awaiting_acceptance: 'AWAITING_ACCEPTANCE', needs_rework: 'NEEDS_REWORK', cancelled: 'CANCELLED', blocked: 'BLOCKED', running: 'RUNNING', dispatching: 'DISPATCHED', ready: 'SEALED' }[mission.state] || mission.state.toUpperCase()) : record.state === 'planning' ? 'PLANNING' : record.state === 'awaiting_approval' ? 'WAIT' : 'BLOCKED';
+  const requestedSpecialist = record.requested_specialist
+    || record.cognitive?.worker
+    || (record.presentation?.worker === 'cursor' ? 'cursor' : undefined);
   return { state,
     request_id: record.request_id, mission_id: mission?.id || null, root_mission_id: record.mission_id || null, execution_authorized: !!record.mission_id && ['SEALED', 'DISPATCHED', 'RUNNING'].includes(state),
-    blockers: interrupted ? ['cognitive_planning_reconciliation_required'] : mission?.reason && state === 'BLOCKED' ? [mission.reason] : record.blockers || [], next_action: record.mission_id ? 'get_mission_evidence' : state === 'WAIT' ? 'authorize_cursor_via_authenticated_local_api' : (record.blockers || []).includes('CURSOR_EXECUTION_DISABLED') ? 'enable_cursor_via_authenticated_local_api_or_use_local_opencode' : 'inspect_enrollment_and_prepare_new_request',
+    blockers: interrupted ? ['cognitive_planning_reconciliation_required'] : mission?.reason && state === 'BLOCKED' ? [mission.reason] : record.blockers || [],
+    next_action: record.mission_id ? 'get_mission_evidence'
+      : state === 'WAIT' ? 'authorize_cursor_via_authenticated_local_api'
+      : (record.blockers || []).includes('CURSOR_EXECUTION_DISABLED') ? 'enable_cursor_via_authenticated_local_api_or_use_local_opencode'
+      : (record.blockers || []).includes('standing_cursor_worker_not_enrolled') ? 'enroll_developer_autonomy_with_cursor_worker'
+      : 'inspect_enrollment_and_prepare_new_request',
     presentation: record.presentation || { files: record.cognitive?.proposal?.files || [], worker: record.cognitive?.worker || 'planner', measurable: true },
+    requested_specialist: requestedSpecialist,
+    planner: record.planner || 'opencode',
+    evaluator: record.evaluator || 'opencode',
     admission: { standard_approval_supported: false, authority: false },
-    message: record.mission_id ? 'Mission state: ' + state + '. Retrieve durable host evidence for verification and Acceptance.' : 'Planning requires current enrolled scope, caller delegation, and registered verification.',
+    message: record.mission_id ? 'Mission state: ' + state + '. Retrieve durable host evidence for verification and Acceptance.'
+      : (record.blockers || []).includes('standing_cursor_worker_not_enrolled')
+        ? 'Standing enrollment allows Local OpenCode only; Cursor is not on the worker allowlist. Re-enroll Developer Autonomy with Cursor permitted. Chat text cannot expand the allowlist.'
+      : (record.blockers || []).includes('CURSOR_EXECUTION_DISABLED')
+        ? 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center.'
+      : 'Planning requires current enrolled scope, caller delegation, and registered verification.',
     cognitive: { version: record.cognitive?.envelope?.version || 1, envelope_hash: record.cognitive?.envelope?.hash || null, planning_attempts: record.cognitive?.planning_attempts || 0, planner_run_ids: record.cognitive?.planner_run_ids || [] }, authority: false };
 }
 
@@ -398,9 +418,51 @@ async function prepare(zero, { instruction, request_id }, principal) {
   if (matches.length !== 1) C.fail('cognitive_repository_ambiguous');
   if (principal !== 'operator' && !/^mcp:[0-9a-f-]{36}$/i.test(principal)) C.fail('cognitive_authenticated_caller_required');
   const p = matches[0];
+  const cursorDisabled = !!b.hostExecutionPolicy?.cursorDisabled?.();
+  // Fail closed before reserving PLANNING when Cursor is named but not authorized.
+  // Otherwise ask_airodrom acknowledges PLANNING under an OpenCode-only enrollment.
+  let requested = 'auto';
+  try {
+    requested = requestedWorker(instruction, { cursorDisabled });
+  } catch (error) {
+    if (String(error.code || error.message) === 'CURSOR_EXECUTION_DISABLED') {
+      const blocked = {
+        version: 1, request_id, principal, instruction, state: 'blocked',
+        developer_autonomy_policy_id: p.policy_id, developer_autonomy_policy_hash: p.policy_hash,
+        project_id: p.project_id, goal_id: p.goal_id, mission_id: null,
+        requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+        cognitive: { version: p.cognitive.version, planning_attempts: 0 },
+        blockers: ['CURSOR_EXECUTION_DISABLED'], authority: false,
+        presentation: { worker: 'cursor', files: p.cognitive.files || [], measurable: false,
+          status: 'Cursor execution disabled in Airodrom; use local OpenCode only' },
+      };
+      zero.write(request_id, principal, blocked, 'blocked');
+      return view(blocked, b);
+    }
+    throw error;
+  }
+  if (requested === 'cursor') {
+    const workers = Array.isArray(p.workers) ? p.workers : [];
+    if (workers.length && !workers.includes('cursor')) {
+      const blocked = {
+        version: 1, request_id, principal, instruction, state: 'blocked',
+        developer_autonomy_policy_id: p.policy_id, developer_autonomy_policy_hash: p.policy_hash,
+        project_id: p.project_id, goal_id: p.goal_id, mission_id: null,
+        requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+        cognitive: { version: p.cognitive.version, planning_attempts: 0 },
+        blockers: ['standing_cursor_worker_not_enrolled'], authority: false,
+        presentation: { worker: 'cursor', files: p.cognitive.files || [], measurable: false,
+          status: 'Standing enrollment allows Local OpenCode only; Cursor is not on the worker allowlist' },
+      };
+      zero.write(request_id, principal, blocked, 'blocked');
+      return view(blocked, b);
+    }
+  }
   const record = { version: 1, request_id, principal, instruction, state: 'planning',
     developer_autonomy_policy_id: p.policy_id, developer_autonomy_policy_hash: p.policy_hash,
     project_id: p.project_id, goal_id: p.goal_id, mission_id: null,
+    requested_specialist: requested === 'auto' ? undefined : requested,
+    planner: 'opencode', evaluator: 'opencode',
     cognitive: { version: p.cognitive.version, planning_attempts: 0 }, blockers: [], authority: false };
   // Reserve before the first await. Concurrent replay cannot allocate a second planner.
   zero.write(request_id, principal, record, 'planning');

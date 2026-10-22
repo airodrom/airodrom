@@ -475,7 +475,17 @@ class DeveloperAutonomy {
       const grant = JSON.parse(row.record).record, missions = this.grantMissions(row.grant_id);
       const settled = this.lineageSettled(missions) && this.workspaceIdle(grant.scope.workspace);
       if (settled && row.state === 'active') this.db.prepare("UPDATE cp_developer_autonomy_grants SET state='consumed' WHERE grant_id=?").run(row.grant_id);
-      if (missions.length ? !settled : row.state === 'active' && row.expires_at > Date.now()) count++;
+      if (!missions.length) {
+        if (row.state === 'active' && row.expires_at > Date.now()) count++;
+        continue;
+      }
+      if (settled) continue;
+      // Idle needs_rework/blocked lineages keep the grant for possible repair, but
+      // must not occupy concurrent admission slots once writers are gone.
+      const idleTerminal = this.workspaceIdle(grant.scope.workspace)
+        && missions.every(m => ['needs_rework', 'blocked', 'completed', 'cancelled'].includes(m.state));
+      if (idleTerminal) continue;
+      count++;
     }
     return count;
   }
