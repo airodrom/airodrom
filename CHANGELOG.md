@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Explicit Cursor envelopes no longer fail planning with `cognitive_explicit_worker_changed` when OpenCode’s proposal assigns itself: `validateProposal` coerces tasks to the envelope specialist before fail-closed, and the planning prompt requires the explicit worker when set.
 - Negated worker prose such as “do not substitute OpenCode implementation” no longer competes with an explicit Cursor specialist (`cognitive_ambiguous_worker`); MCP and operator intake share the same role normalizer, and intake parse failures write a durable clarify row instead of leaving `get_ask_status` as Prepared ask unavailable.
 - Standing Cursor gates also call `ensureCognitiveDiscovery` when cognitive files already exist but the DA worker allowlist is still OpenCode-only, so host-authorized Cursor does not stop on `standing_cursor_worker_not_enrolled` after cognitive auto-prepare ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
 - Active standing Developer Autonomy enrollments without cognitive discovery no longer return `standing_cognitive_enrollment_required` for Cursor: discovery is auto-prepared from prior same-repo cognitive files or Autopilot-admissible paths, and Cursor is added to the worker allowlist when host Cursor execution is enabled. Spend/disclosure remain separately gated ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
