@@ -95,6 +95,11 @@ function fixture(t) {
   const childProcess = {
     spawnSync: () => ({ status: 0, stdout: '2026.09.28-64d2043\n' }),
     spawn(_command, _argv, options) {
+      if (_argv.includes('--version')) {
+        const child = new EventEmitter(); child.stdout = new EventEmitter(); child.kill = () => {};
+        queueMicrotask(() => { child.stdout.emit('data', Buffer.from('2026.09.28-64d2043\n')); child.emit('close', 0, null); });
+        return child;
+      }
       io.spawns++;
       io.stagingRoots.push(path.dirname(options.cwd));
       const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.pid = 991122;
@@ -120,13 +125,15 @@ function fixture(t) {
     if (io.terminationUnverified && signal === 0) return true;
     throw Object.assign(Error('Synthetic process already terminated'), { code: 'ESRCH' });
   } });
-  const { CursorWorker } = loadSource('cursor-worker.js', { ...shared, 'node:fs': fsProbe, 'node:child_process': childProcess,
+  const decision = loadSource('cursor-execution-decision.js', shared);
+  const { CursorWorker } = loadSource('cursor-worker.js', { ...shared, './cursor-execution-decision': decision, 'node:fs': fsProbe, 'node:child_process': childProcess,
     './agent-adapter': { AgentAdapterError: class extends Error { constructor(code, message) { super(message); this.code = code; } } },
     './memory-content-erasure': { assertContext() {} }, './personal-memory': { containsSecret: () => false },
     './sandbox-policy': { makeProfile: () => '(deny network*)' }, './live-observatory': { record() {} },
     './bounded-worker': { async proxy() { return { port: 41000, stats: () => ({ synthetic: true }), async close() { io.closes++; } }; } },
   }, { process: proc, setInterval: fn => { io.interval = fn; return { unref() {} }; }, clearInterval() {} });
   const worker = new CursorWorker(b, { executable: path.join(install, 'agent') });
+  b.cursorWorker = worker;
   worker.credentialSource = () => ({ kind: 'file_store', available: true, path: credential });
   worker.qualification = () => ({ runtime_version: '2026.09.28-64d2043', execution_qualified: true });
   const args = { task, repo: workspace, prompt: 'Set the two declared files to the exact requested content.', context: { id: task.contextPackId }, requestId: randomUUID() };

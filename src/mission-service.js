@@ -207,7 +207,7 @@ class MissionService {
     const cursorRoute=mission.envelope.preferred_agent==='cursor';
     // A governed Cursor Mission (contract present) dispatches only through the qualified
     // sandboxed worker. Without a contract Cursor never executes outside test fixtures.
-    if(cursorRoute&&mission.envelope.contract){if(!this.bridge.cursorWorker?.qualifiedFor?.(mission))throw Error('worker_execution_unqualified');}
+    if(cursorRoute&&mission.envelope.contract){const Decision=require('./cursor-execution-decision');Decision.assertAllowed(Decision.decideAuthority(this.bridge,mission));}
     else if(cursorRoute&&!fixtureMode)throw Error('worker_execution_unqualified');
     if(mission.envelope.worker_contract)this.bridge.workers.assertMission(mission);else if(!fixtureMode&&!(cursorRoute&&mission.envelope.contract)&&[mission.envelope.preferred_agent,...mission.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     this.program.assert(mission);
@@ -308,6 +308,7 @@ class MissionService {
         route=this.bridge.authorityRuntime?.routing?await this.bridge.authorityRuntime.route(m,await this.agents.refresh()):{selected:choice.selected,reason:'durable_compatible_fallback',transport:'native'};
         if(route.selected!==fallback.selected_fallback)throw Error('Governed fallback requires WAIT and reconciliation');
       }else route=require('./specialist-gateway').enabled(m)?await require('./specialist-gateway').select(this,m,dispatch):await this.agents.select(m.envelope);
+      if(route && JSON.parse(dispatch.route||'null')?.transient_retries)route={...route,transient_retries:JSON.parse(dispatch.route).transient_retries};
       transaction(this.db,()=>{this.db.prepare('UPDATE cp_dispatches SET route=?,updated_at=? WHERE id=?').run(JSON.stringify(route),Date.now(),dispatch.id);this.store.event('agent.route.planned',m.id,route);});
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
@@ -347,11 +348,14 @@ class MissionService {
     }catch(error){
       const current=this.store.getMission(m.id);if(current.state==='cancelled')return;
       const code=String(error.code||error.message||'').slice(0,200);
-      // Transient Cursor runtime unreadiness: requeue the same dispatch once the
-      // next tick can refresh readiness. Never invent a second Cursor launch.
+      // Retry only this never-started dispatch. Earlier verified assignments are
+      // not replayed; any current run or invocation makes retry unsafe.
       const transient=error.transient===true||require('./cursor-execution-decision').isTransient(code);
-      if(transient&&!this.db.prepare("SELECT 1 FROM cp_run_results WHERE mission_id=?").get(m.id)){
-        const attempts=Number(JSON.parse(dispatch.route||'null')?.transient_retries||0);
+      const pending=this.db.prepare('SELECT state,run_id,route FROM cp_dispatches WHERE id=?').get(dispatch.id);
+      if(transient&&pending?.state==='dispatching'&&!pending.run_id
+        &&!this.db.prepare('SELECT 1 FROM cp_runs WHERE task_id=?').get(dispatch.task_id)
+        &&!this.db.prepare('SELECT 1 FROM cp_invocations WHERE task_id=?').get(dispatch.task_id)){
+        const attempts=Number(JSON.parse(pending.route||'null')?.transient_retries||0);
         if(attempts<2){
           transaction(this.db,()=>{
             this.db.prepare("UPDATE cp_dispatches SET state='queued',route=?,updated_at=? WHERE id=? AND state='dispatching'")

@@ -286,7 +286,7 @@ class CursorWorker {
     return value;
   }
 
-  /** Mission-level qualification: governed contract with disclosure for Cursor, allowlist of known hosts, worker ready. */
+  /** Sealed Mission compatibility; runtime readiness is checked explicitly at launch. */
   qualifiedFor(mission, { readiness = null } = {}) {
     const c = mission?.envelope?.contract;
     if (!c || mission.envelope.preferred_agent !== ID) return false;
@@ -298,12 +298,9 @@ class CursorWorker {
     if (c.permissions.personal_memory?.mode !== 'none' || c.permissions.vault_access?.mode !== 'none') return false;
     if (!mission.envelope.approval_id) return false;
     if (readiness) return readiness.ready === true;
-    if (this.options.fixtureExecutable) return true;
-    // Contract checks above already passed. A cold process has no lastReadiness until
-    // agents.refresh() or execute(); blocking here rejects an otherwise ready worker.
-    // Live readiness is still enforced at launch (after refresh) and inside execute().
-    if (!this.lastReadiness) return true;
-    return this.lastReadiness.ready === true;
+    // Cached status is observational, including in production. Queueing, result
+    // application and grant monitors must not depend on a stale CLI probe.
+    return true;
   }
 
   stageCredential(root) {
@@ -499,8 +496,9 @@ class CursorWorker {
     const assignment=require('./specialist-gateway').adapterScope(b,task,ID);
     if (m.task_id !== task.id || m.envelope.workspace !== repo || context?.id !== task.contextPackId || m.envelope.preferred_agent !== ID || m.envelope.fallback_agents.length) fail('cursor_mission_binding');
     b.hostExecutionPolicy?.assertCursorAllowed?.('dispatch');
-    const readiness = await this.readiness(); this.lastReadiness = readiness;
-    if (!this.qualifiedFor(m, { readiness })) fail('cursor_mission_unqualified');
+    const Decision = require('./cursor-execution-decision');
+    const readiness = await Decision.refreshReadiness(b, { fresh: true });
+    Decision.assertAllowed(Decision.decide(b, m, { readiness, now: b.controlStore.now() }));
     b.missions.assertAuthority(m);
     require('./memory-content-erasure').assertContext(b.controlStore.db, task.contextPackId);
     if (this.active.size) fail('cursor_worker_busy');

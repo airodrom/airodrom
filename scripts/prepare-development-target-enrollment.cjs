@@ -13,6 +13,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { randomUUID } = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -119,9 +120,9 @@ async function main() {
 
     if (target.id === 'airodrom') {
       const repoCandidates = [
-        '/Users/andrew/code/airodrom-da-main',
-        '/Users/andrew/code/airodrom-source-main',
-        '/Users/andrew/code/airodrom',
+        path.join(os.homedir(), 'code', 'airodrom-da-main'),
+        path.join(os.homedir(), 'code', 'airodrom-source-main'),
+        path.join(os.homedir(), 'code', 'airodrom'),
       ];
       const repository = repoCandidates.find(p => {
         try {
@@ -167,7 +168,7 @@ async function main() {
             acceptance: 'automatic',
           },
           setup_steps: [
-            'Create clean worktree at /Users/andrew/code/airodrom-da-main from origin/main if missing',
+            'Create clean worktree at ~/code/airodrom-da-main from origin/main if missing',
             'Register Control Center project "Airodrom Source" with that repository',
             'Create goal "Bounded source development"',
             'Set project_id and goal_id on this payload',
@@ -175,7 +176,7 @@ async function main() {
           ],
           authority: false,
         } : {
-          required_root: '/Users/andrew/code/airodrom-da-main',
+          required_root: path.join(os.homedir(), 'code', 'airodrom-da-main'),
           message: 'Create an isolated clean worktree of airodrom/airodrom with .vscode/tasks.json before enrollment.',
           authority: false,
         },

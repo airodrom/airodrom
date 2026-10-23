@@ -478,9 +478,20 @@ function view(record, bridge) {
   const requestedSpecialist = record.requested_specialist
     || record.cognitive?.worker
     || (record.presentation?.worker === 'cursor' ? 'cursor' : undefined);
+  // Older intake could race the READY watchdog during a redundant readiness
+  // await. Durable Mission progress supersedes that duplicate-admission error;
+  // retain the historical request record, and never suppress a current blocker.
+  const obsoleteAdmission = mission && ['DISPATCHED', 'RUNNING', 'VERIFYING', 'AWAITING_ACCEPTANCE', 'ACCEPTED'].includes(state)
+    && record.blockers?.length > 0
+    && record.blockers.every(code => ['gateway_assignment_state', 'gateway_assignment_active_or_uncertain'].includes(code));
+  const presentation = { ...(record.presentation || { files: record.cognitive?.proposal?.files || [], worker: record.cognitive?.worker || 'planner', measurable: true }) };
+  if (obsoleteAdmission) {
+    for (const key of ['registry_id', 'category', 'next_safe_action', 'owner_approval_required', 'security_critical', 'enforcement', 'recovery_receipt_id', 'recovery_operation', 'recovery_performed', 'owner_gate']) delete presentation[key];
+    presentation.status = state === 'ACCEPTED' ? 'Completed' : state === 'AWAITING_ACCEPTANCE' ? 'Awaiting acceptance' : 'Working';
+  }
   return { state,
     request_id: record.request_id, mission_id: mission?.id || null, root_mission_id: record.mission_id || null, execution_authorized: !!record.mission_id && ['SEALED', 'DISPATCHED', 'RUNNING'].includes(state),
-    blockers: interrupted ? ['cognitive_planning_reconciliation_required'] : mission?.reason && state === 'BLOCKED' ? [mission.reason] : record.blockers || [],
+    blockers: interrupted ? ['cognitive_planning_reconciliation_required'] : mission?.reason && state === 'BLOCKED' ? [mission.reason] : obsoleteAdmission ? [] : record.blockers || [],
     next_action: record.mission_id ? 'get_mission_evidence'
       : state === 'WAIT' && (record.blockers || []).some(code => String(code).startsWith('STANDING_CURSOR_GRANT_'))
         ? (record.presentation?.standing_cursor_diagnosis?.next_action || 'enroll_standing_cursor_development_via_authenticated_local_api')
@@ -488,7 +499,7 @@ function view(record, bridge) {
       : (record.blockers || []).includes('CURSOR_EXECUTION_DISABLED') ? 'enable_cursor_via_authenticated_local_api_or_use_local_opencode'
       : (record.blockers || []).includes('standing_cursor_worker_not_enrolled') ? 'enroll_developer_autonomy_with_cursor_worker'
       : 'inspect_enrollment_and_prepare_new_request',
-    presentation: record.presentation || { files: record.cognitive?.proposal?.files || [], worker: record.cognitive?.worker || 'planner', measurable: true },
+    presentation,
     requested_specialist: requestedSpecialist,
     planner: record.planner || 'opencode',
     evaluator: record.evaluator || 'opencode',
@@ -917,7 +928,8 @@ async function approve(zero, record, confirmation, owner) {
   mission = b.missions.create({ ...input, contract: preview, approval_id: approval.approval_id, cognitive_request_id: record.request_id }, 'operator');
   record.mission_id = mission.id; record.state = 'approved'; zero.write(record.request_id, record.principal, record, 'approved');
   b.missionApprovals.bind(approval.approval_id, mission.id, 'operator');
-  b.cursorWorker.lastReadiness = await b.cursorWorker.readiness();
+  // Queue atomically before yielding to the READY watchdog. Specialist selection
+  // and Cursor dispatch each perform the fresh runtime probe at their boundary.
   b.missions.dispatch(mission.id, { request_id: 'cognitive-dispatch:' + record.request_id });
   return view(record, b);
   } catch (error) {

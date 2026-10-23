@@ -64,6 +64,8 @@ async function specialistCursorFixture(t) {
     }
     if (o.coordination) {
       f.evaluations.push(o.coordination);
+      const override = await f.onEvaluation?.(o);
+      if (override) return override;
       return {
         result: {
           summary: JSON.stringify({
@@ -82,6 +84,248 @@ async function specialistCursorFixture(t) {
   };
   return f;
 }
+
+async function startCursorGraph(f) {
+  const request_id = randomUUID();
+  const instruction = 'In Fixture project, using Cursor, read fixture.txt then change alpha to beta.';
+  let v = await f.bridge.zeroSetupWork.ask({ request_id, instruction }, 'operator');
+  for (let i = 0; i < 200 && v.state === 'PLANNING'; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    v = await f.bridge.zeroSetupWork.ask({ request_id, instruction }, 'operator');
+  }
+  if (v.state === 'WAIT') {
+    v = await f.bridge.zeroSetupWork.approve({
+      request_id: v.request_id, confirmed: true, channel: 'control_center',
+      subscription_execution: {
+        provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 2, max_runtime_ms: 120000,
+      },
+    }, 'operator');
+  }
+  assert.ok(v.mission_id, JSON.stringify(v));
+  return v;
+}
+
+const invalidEvaluation = summary => ({ result: { summary }, changes: [], provenance: { termination_verified: true } });
+test('Cursor intake avoids a duplicate-admission blocker and projects obsolete startup errors from live Mission state', async t => {
+  const f = await specialistCursorFixture(t), b = f.bridge;
+  const readiness = b.cursorWorker.readiness.bind(b.cursorWorker);
+  b.cursorWorker.readiness = async options => {
+    await new Promise(resolve => setTimeout(resolve, 30));
+    return readiness(options);
+  };
+  const v = await startCursorGraph(f);
+  assert.deepEqual(v.blockers, []);
+  const m = await f.settle(v.mission_id, 'completed');
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  const record = { ...b.zeroSetupWork.read(v.request_id), state: 'blocked', blockers: ['gateway_assignment_state'],
+    presentation: { worker: 'cursor', status: 'gateway_assignment_state', owner_approval_required: true, owner_gate: { required: true }, registry_id: 'unknown_blocker' } };
+  const before = JSON.stringify(record);
+  const projected = require('../src/cognitive-router').view(record, b);
+  assert.equal(projected.state, 'ACCEPTED');
+  assert.deepEqual(projected.blockers, []);
+  assert.equal(projected.presentation.owner_gate, undefined);
+  assert.equal(projected.presentation.status, 'Completed');
+  assert.equal(JSON.stringify(record), before, 'historical intake evidence is immutable');
+  const denied = require('../src/cognitive-router').view({ ...record, blockers: ['CURSOR_EXECUTION_DISABLED'] }, b);
+  assert.deepEqual(denied.blockers, ['CURSOR_EXECUTION_DISABLED']);
+});
+test('all evaluator recovery entry points enforce failure class, termination and the existing run budget', () => {
+  const G = require('../src/opencode-gateway');
+  const m = { state: 'blocked', reason: 'EVALUATION_UNAVAILABLE: opencode_runtime_unavailable' };
+  const attempt = { run_id: 'worker', verification: { status: 'passed' } };
+  const run = { id: 'eval', agent_id: 'opencode', state: 'failed', pid: 10, termination_verified: 1,
+    resolution: 'opencode_evaluation_result_invalid', result: { gateway: { worker_run_id: 'worker',
+      failure_class: 'opencode_evaluation_result_invalid', failure_code: 'gateway_json_required' } } };
+  assert.equal(G.preStartEvaluationRetryable(m, [run], attempt), true);
+  assert.equal(G.preStartEvaluationRetryable(m, [run, { ...run, id: 'eval-2' }], attempt), true);
+  assert.equal(G.preStartEvaluationRetryable(m, [run, run, run], attempt), false);
+  assert.equal(G.preStartEvaluationRetryable(m, [{ ...run, termination_verified: 0 }], attempt), false);
+  for (const code of ['gateway_result_binding_mismatch', 'opencode_sensitive_context', 'opencode_evaluation_authority_denied']) {
+    const denied = { ...run, result: { gateway: { ...run.result.gateway, failure_code: code } } };
+    assert.equal(G.preStartEvaluationRetryable(m, [denied], attempt), false, code);
+  }
+  assert.equal(G.evaluationContinuation({ ...m, reason: 'EVALUATION_UNAVAILABLE: opencode_sensitive_context' }, attempt), false);
+});
+async function awaitGraph(f, id, predicate, timeout = 60000) {
+  const expires = Date.now() + timeout;
+  while (Date.now() < expires) {
+    await f.bridge.missions.tick();
+    const m = f.bridge.missions.detail(id);
+    if (predicate(m)) return m;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  const m = f.bridge.missions.detail(id);
+  if (predicate(m)) return m;
+  assert.fail(JSON.stringify({ state: m.state, reason: m.reason, evaluations: f.evaluations.length }));
+}
+
+test('local evaluator recovers from unavailable then malformed JSON without replaying Cursor', async t => {
+  const f = await specialistCursorFixture(t);
+  f.onEvaluation = async () => {
+    if (f.evaluations.length === 1) throw Object.assign(Error('opencode_runtime_unavailable'), { code: 'opencode_runtime_unavailable' });
+    if (f.evaluations.length === 2) {
+      // Keep the evaluator active past the initial deferred-retry timer, as the
+      // real model does. Instant fixture replies otherwise hide the lost wake.
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      return invalidEvaluation('Evaluation complete, but no JSON was returned.');
+    }
+  };
+  const v = await startCursorGraph(f);
+  const m = await awaitGraph(f, v.mission_id, m => m.state === 'completed');
+  assert.equal(f.evaluations.length, 4);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  assert.ok(m.specialists.assignments.every(a => a.state === 'ready' && a.attempts.length === 1));
+  assert.equal(m.acceptance.length, 1);
+});
+
+test('malformed evaluator responses stop at the existing three-run ceiling and show the latest failure', async t => {
+  const f = await specialistCursorFixture(t);
+  f.onEvaluation = async () => {
+    if (f.evaluations.length === 1) throw Object.assign(Error('opencode_runtime_unavailable'), { code: 'opencode_runtime_unavailable' });
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    return invalidEvaluation('No evaluation JSON.');
+  };
+  const v = await startCursorGraph(f);
+  const m = await awaitGraph(f, v.mission_id, m => f.evaluations.length === 3 && m.runs.filter(r => r.agent_id === 'opencode' && r.state === 'failed').length === 3);
+  await new Promise(resolve => setTimeout(resolve, 2200));
+  assert.equal(f.evaluations.length, 3);
+  assert.match(m.reason, /opencode_evaluation_result_invalid/);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 1);
+  assert.equal(m.specialists.assignments[1].attempts.length, 0);
+  assert.equal(m.acceptance.length, 0);
+  assert.equal(f.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(m.id).n, 0);
+});
+
+test('a malformed final evaluation recovers through acceptance without replaying either Cursor assignment', async t => {
+  const f = await specialistCursorFixture(t);
+  f.onEvaluation = () => f.evaluations.length === 2 ? invalidEvaluation('Missing final JSON.') : undefined;
+  const v = await startCursorGraph(f);
+  const m = await awaitGraph(f, v.mission_id, m => m.state === 'completed', 20000);
+  assert.equal(f.evaluations.length, 3);
+  assert.equal(f.evaluations[2].assignment_contract.stage, 'final');
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  assert.equal(m.acceptance.length, 1);
+  assert.ok(m.specialists.assignments.every(a => a.state === 'ready' && a.attempts.length === 1));
+  assert.equal(f.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(m.id).n, 0);
+});
+
+for (const mutation of ['none', 'workspace', 'revocation', 'receipt']) test(`saved READY receipt recovery: ${mutation}`, async t => {
+  const f = await specialistCursorFixture(t), service = f.bridge.missions;
+  f.onEvaluation = () => f.evaluations.length === 2 ? invalidEvaluation('Missing final JSON.') : undefined;
+  const persist = service.verifier.persist.bind(service.verifier);
+  let failFinalization = true;
+  service.verifier.persist = (...args) => {
+    if (failFinalization && args[0].state === 'blocked') throw Object.assign(Error('gateway_parent_stopped'), { code: 'gateway_parent_stopped' });
+    return persist(...args);
+  };
+  const v = await startCursorGraph(f);
+  await awaitGraph(f, v.mission_id, m => m.reason === 'EVALUATION_UNAVAILABLE: gateway_parent_stopped');
+  const blocked = service.store.requireMission(v.mission_id);
+  if (mutation === 'workspace') require('node:fs').writeFileSync(path.join(blocked.envelope.workspace, 'fixture.txt'), 'changed after verification\n');
+  if (mutation === 'revocation') f.bridge.missionApprovals.revoke(blocked.envelope.approval_id, { request_id: randomUUID(), reason: 'Fixture revocation', confirmed: true });
+  if (mutation === 'receipt') {
+    const worker = f.bridge.missions.detail(v.mission_id).runs.filter(r => r.agent_id === 'cursor').at(-1);
+    const receipt = require('../src/opencode-gateway').receipt(f.bridge, v.mission_id, worker.id);
+    receipt.result.gateway.binding_hash = 'ab'.repeat(32);
+    service.db.prepare('UPDATE cp_runs SET result=? WHERE id=?').run(JSON.stringify(receipt.result), receipt.id);
+  }
+  failFinalization = false;
+  // Exercise the same durable recovery entry point used on service restart.
+  require('../src/specialist-gateway').recover(service, service.store.requireMission(v.mission_id));
+  const error = { workspace: 'gateway_workspace_changed', revocation: 'approval_revoked', receipt: 'gateway_evaluation_stale' }[mutation];
+  const m = await awaitGraph(f, v.mission_id, m => error
+    ? m.reason === 'EVALUATION_UNAVAILABLE: ' + error : m.state === 'completed');
+  assert.equal(f.evaluations.length, 3, 'the saved evaluator receipt must be reused');
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  assert.equal(m.acceptance.length, error ? 0 : 1);
+  if (error) assert.equal(m.state, 'blocked');
+});
+
+test('a mismatched evaluator binding does not trigger an automatic syntax retry', async t => {
+  const f = await specialistCursorFixture(t);
+  f.onEvaluation = o => invalidEvaluation(JSON.stringify({ ...o.coordination.result_contract, binding_hash: 'ab'.repeat(32), recommendation: 'ready', summary: 'Wrong binding.' }));
+  const v = await startCursorGraph(f), m = await f.settle(v.mission_id, 'blocked');
+  await new Promise(resolve => setTimeout(resolve, 2200));
+  assert.equal(f.evaluations.length, 1);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 1);
+  assert.equal(m.acceptance.length, 0);
+});
+
+test('dependent Cursor edit completes despite a stale negative readiness observation after the read', async (t) => {
+  const f = await specialistCursorFixture(t), b = f.bridge, worker = b.cursorWorker;
+  // Exercise production qualification semantics; only the subprocess is synthetic.
+  const qualifiedFor = worker.qualifiedFor;
+  worker.qualifiedFor = (m, opts) => qualifiedFor.call({ options: {}, lastReadiness: worker.lastReadiness }, m, opts);
+  f.onEvaluation = () => {
+    if (f.evaluations.length === 1) worker.lastReadiness = {
+      ...cursorReady(), ready: false, available: false, reason: 'cursor_version_unavailable',
+    };
+  };
+  const v = await startCursorGraph(f);
+  const m = await f.settle(v.mission_id, 'completed');
+  assert.deepEqual(m.specialists.assignments.map(a => [a.operation, a.state, a.attempts.length]), [
+    ['read', 'ready', 1], ['edit', 'ready', 1],
+  ]);
+  assert.equal(f.evaluations.length, 2);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  assert.equal(m.acceptance.length, 1);
+  assert.equal(require('node:fs').readFileSync(path.join(m.envelope.workspace, 'fixture.txt'), 'utf8'), 'beta\n');
+  assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(m.id).n, 0);
+});
+
+test('dependent dispatch retries a fresh transient probe without replaying the completed read', async (t) => {
+  const f = await specialistCursorFixture(t), worker = f.bridge.cursorWorker;
+  const readiness = worker.readiness.bind(worker);
+  let injected = 0;
+  worker.readiness = async (opts = {}) => {
+    if (opts.fresh && f.evaluations.length === 1 && injected++ === 0) return {
+      ...cursorReady(), ready: false, available: false, reason: 'cursor_version_unavailable',
+    };
+    return readiness(opts);
+  };
+  const v = await startCursorGraph(f), m = await f.settle(v.mission_id, 'completed');
+  assert.equal(f.evaluations.length, 2);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  assert.ok(m.specialists.assignments.every(a => a.attempts.length === 1));
+  const rows = f.bridge.controlStore.db.prepare('SELECT route FROM cp_dispatches WHERE mission_id=?').all(m.id);
+  assert.equal(rows.length, 2);
+  assert.equal(rows.map(r => JSON.parse(r.route).transient_retries || 0).reduce((a, b) => a + b), 1);
+});
+
+test('persistent dependent runtime failure stops after two retries with no second worker run', async (t) => {
+  const f = await specialistCursorFixture(t), worker = f.bridge.cursorWorker;
+  const readiness = worker.readiness.bind(worker);
+  let probes = 0;
+  worker.readiness = async (opts = {}) => {
+    if (opts.fresh && f.evaluations.length === 1) {
+      probes++;
+      return { ...cursorReady(), ready: false, available: false, reason: 'cursor_version_unavailable' };
+    }
+    return readiness(opts);
+  };
+  const v = await startCursorGraph(f), m = await f.settle(v.mission_id, 'blocked');
+  assert.equal(m.reason, 'cursor_version_unavailable');
+  assert.equal(probes, 3);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 1);
+  assert.equal(m.acceptance.length, 0);
+  assert.equal(require('node:fs').readFileSync(path.join(m.envelope.workspace, 'fixture.txt'), 'utf8'), 'alpha\n');
+});
+
+test('a transient failure after a dependent run starts never retries that run', async (t) => {
+  const f = await specialistCursorFixture(t), worker = f.bridge.cursorWorker;
+  const execute = worker.execute.bind(worker);
+  let calls = 0;
+  worker.execute = async o => {
+    calls++;
+    if (calls === 2) throw Object.assign(Error('cursor_version_unavailable'), { transient: true });
+    return execute(o);
+  };
+  const v = await startCursorGraph(f), m = await f.settle(v.mission_id, 'needs_rework');
+  assert.equal(calls, 2);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  assert.ok(m.specialists.assignments.every(a => a.attempts.length === 1));
+  assert.equal(m.acceptance.length, 0);
+});
 
 test('registry normalizes cognitive_worker_unqualified:cursor', () => {
   const entry = Registry.resolve('cognitive_worker_unqualified:cursor');
@@ -126,6 +370,18 @@ test('qualified Cursor with Mission grant allows dispatch', async (t) => {
   assert.equal(decision.allow, true, JSON.stringify(decision));
   assert.equal(decision.dimensions.standing_or_mission_grant_covers, true);
   assert.equal(decision.dimensions.external_disclosure_covered, true);
+  f.bridge.cursorWorker.lastReadiness = { ...readiness, ready: false, reason: 'cursor_version_unavailable' };
+  assert.equal(Decision.decideAuthority(f.bridge, m).allow, true);
+  assert.equal(Decision.decide(f.bridge, m).code, 'cursor_version_unavailable');
+  const changed = structuredClone(m);
+  changed.envelope.contract.permissions.allowed_write_paths = ['outside.txt'];
+  assert.equal(Decision.decideAuthority(f.bridge, changed).allow, false, 'modified scope stays denied');
+  f.bridge.missionApprovals.revoke(m.envelope.approval_id, {
+    request_id: randomUUID(), confirmed: true, reason: 'Synthetic revocation test',
+  }, 'operator');
+  const revoked = Decision.decide(f.bridge, m, { readiness });
+  assert.equal(revoked.allow, false);
+  assert.match(revoked.code, /revoked/);
 });
 
 test('Cursor available but grant missing blocks', async (t) => {
