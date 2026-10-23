@@ -91,12 +91,11 @@ class ZeroSetupWork {
   // Discover an enrolled Project without allocating a projectless sandbox.
   resolveEnrolledProject(instruction) {
     const projects = this.activeProjects();
-    const { matchNamedProjects, preferUniqueProject } = require('./project-resolution');
+    const {
+      matchNamedProjects, preferUniqueProject, requestsAirodromSource,
+      findEnrolledAirodromSource, isFixtureOrHandoffPath,
+    } = require('./project-resolution');
     const { liveRepositories } = require('./project-defaults');
-    const namedHits = matchNamedProjects(instruction, projects).map(hit => ({
-      ...hit,
-      repositories: liveRepositories(hit.project),
-    }));
     const activeRepositories = new Set();
     const defaultProjectIds = new Set();
     try {
@@ -107,8 +106,37 @@ class ZeroSetupWork {
         if (item?.project_id && item?.repository) defaultProjectIds.add(item.project_id);
       }
     } catch { /* enrollment store unavailable */ }
-    const namedChoice = preferUniqueProject(namedHits, { activeRepositories, defaultProjectIds });
+    // Explicit airodrom/airodrom source prose binds before any fixture name match.
+    // Negated "not chatgpt-handoff" must never select the handoff enrollment.
+    if (requestsAirodromSource(instruction)) {
+      const source = findEnrolledAirodromSource(projects.map(p => ({
+        ...p, repositories: liveRepositories(p),
+      })), { activeRepositories });
+      if (source.ok) {
+        return { ok: true, project: source.project, workspace: source.workspace, projectless: false, source_bound: true };
+      }
+      return { ...source, projectless: false };
+    }
+    const namedHits = matchNamedProjects(instruction, projects).map(hit => ({
+      ...hit,
+      repositories: liveRepositories(hit.project),
+    }));
+    // Drop fixture/handoff hits when the instruction explicitly excludes them.
+    const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
+    const filteredHits = excludeFixtures
+      ? namedHits.filter(hit => !isFixtureOrHandoffPath(hit.project.name)
+        && !(hit.repositories || []).some(isFixtureOrHandoffPath))
+      : namedHits;
+    const namedChoice = preferUniqueProject(filteredHits, { activeRepositories, defaultProjectIds });
     if (namedChoice.ok) {
+      if (excludeFixtures && isFixtureOrHandoffPath(namedChoice.project.name)) {
+        return {
+          ok: false, clarify: true, projectless: false,
+          code: 'CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED',
+          message: 'That request excluded fixture/handoff projects. Name an enrolled non-fixture repository, or enroll airodrom/airodrom for source work.',
+          choices: [],
+        };
+      }
       const selected = this.bridge.projectDefaults.selectRepository(namedChoice.project, { instruction });
       if (selected.ok) return { ok: true, project: selected.project, workspace: selected.workspace, projectless: false, defaulted: !!selected.defaulted };
       return { ...selected, projectless: false };
@@ -125,7 +153,17 @@ class ZeroSetupWork {
       };
     }
     const authorized = explicitAuthorizedRepository(instruction, projects);
-    if (authorized) return { ok: true, project: authorized.project, workspace: authorized.workspace, projectless: false };
+    if (authorized) {
+      if (excludeFixtures && isFixtureOrHandoffPath(authorized.workspace)) {
+        return {
+          ok: false, clarify: true, projectless: false,
+          code: 'CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED',
+          message: 'Fixture/handoff repository path rejected for this request.',
+          choices: [],
+        };
+      }
+      return { ok: true, project: authorized.project, workspace: authorized.workspace, projectless: false };
+    }
     if (explicitUnauthorizedPath(instruction, projects)) {
       return { ok: false, clarify: true, projectless: false, message: 'That repository is not authorized. No files were opened.', choices: [] };
     }

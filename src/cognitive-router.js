@@ -345,10 +345,23 @@ function policyFor(bridge, instruction) {
   const candidates = (bridge.developerAutonomy?.list?.('operator') || []).filter(p => p.state === 'active' && p.cognitive);
   if (!candidates.length) return [];
   const projects = bridge.projects.listProjects({ status: 'active' });
-  const { instructionMentions } = require('./project-resolution');
+  const {
+    instructionMentions, requestsAirodromSource, isFixtureOrHandoffPath, findEnrolledAirodromSource,
+  } = require('./project-resolution');
+  // Source-development requests never bind fixture/handoff cognitive policies.
+  if (requestsAirodromSource(instruction)) {
+    const source = findEnrolledAirodromSource(projects, {
+      activeRepositories: new Set(candidates.map(p => p.repository)),
+    });
+    if (!source.ok) return [];
+    return candidates.filter(p => p.repository === source.workspace && p.project_id === source.project.projectId);
+  }
+  const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
   return candidates.filter(p => {
+    if (excludeFixtures && isFixtureOrHandoffPath(p.repository)) return false;
     const project = projects.find(project => project.projectId === p.project_id && project.repositories?.includes(p.repository));
     if (!project) return false;
+    if (excludeFixtures && isFixtureOrHandoffPath(project.name)) return false;
     if (instruction.includes(p.repository)) return true;
     return !!instructionMentions(instruction, project.name, p.alias);
   });
@@ -451,10 +464,31 @@ async function prepare(zero, { instruction, request_id }, principal) {
     return view(prior, b);
   }
   const matches = policyFor(b, instruction);
-  if (!matches.length) return null; // Preserve the existing exact-file/template intake.
+  if (!matches.length) {
+    const { requestsAirodromSource } = require('./project-resolution');
+    if (requestsAirodromSource(instruction)) {
+      const blocked = {
+        version: 1, request_id, principal, instruction, state: 'blocked',
+        mission_id: null, planner: 'opencode', evaluator: 'opencode',
+        blockers: ['SOURCE_REPOSITORY_NOT_ENROLLED'], authority: false,
+        presentation: {
+          worker: 'cursor', files: [], measurable: false,
+          status: 'airodrom/airodrom source is not enrolled; fixture/handoff grants do not apply',
+        },
+      };
+      zero.write(request_id, principal, blocked, 'blocked');
+      return view(blocked, b);
+    }
+    return null; // Preserve the existing exact-file/template intake.
+  }
   if (matches.length !== 1) C.fail('cognitive_repository_ambiguous');
   if (principal !== 'operator' && !/^mcp:[0-9a-f-]{36}$/i.test(principal)) C.fail('cognitive_authenticated_caller_required');
   const p = matches[0];
+  // Fixture standing grants never authorize airodrom/airodrom source paths.
+  if (require('./project-resolution').isFixtureOrHandoffPath(p.repository)
+    && require('./project-resolution').requestsAirodromSource(instruction)) {
+    C.fail('CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED');
+  }
   const cursorDisabled = !!b.hostExecutionPolicy?.cursorDisabled?.();
   // Fail closed before reserving PLANNING when Cursor is named but not authorized.
   // Otherwise ask_airodrom acknowledges PLANNING under an OpenCode-only enrollment.
@@ -563,6 +597,16 @@ async function executeReserved(zero, record, p, instruction) {
       limits: { planning_attempts: p.cognitive.planning_attempts, execution_attempts: p.cognitive.version === 3 ? p.cognitive.max_assignments : 1, repair_attempts: p.cognitive.repair_attempts || 0, planning_ms: p.cognitive.planning_ms, execution_ms: p.cognitive.execution_ms },
       requested_worker: requested, instruction_hash: canonicalHash(instruction), expires_at: Math.min(p.expires_at, Date.now() + p.budgets.grant_ttl_minutes * 60000) }));
     record.cognitive.envelope = envelope; record.cognitive.workspace_identity = captured.workspace_identity;
+    // Bind enrolled repository identity into the ask record before planning completes.
+    // Planner paths must stay inside this repository; fixture grants cannot retarget.
+    record.repository_binding = {
+      project_id: p.project_id,
+      policy_id: p.policy_id,
+      repository: p.repository,
+      repository_id: envelope.repository_id,
+      workspace_id: ws.workspace_id,
+      authority: false,
+    };
     let proposal;
     while (record.cognitive.planning_attempts < envelope.limits.planning_attempts) {
       assertDelegation(b, record); integrity.assertCurrent(ws.path, envelope, captured.workspace_identity);

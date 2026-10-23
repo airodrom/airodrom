@@ -1,6 +1,11 @@
 ## Unreleased
 
 ### Fixed
+- Source-development ChatGPT asks no longer resolve into chatgpt-handoff / recovery-proof via negated name matches; explicit `airodrom/airodrom` targets bind before planning or fail closed with `SOURCE_REPOSITORY_NOT_ENROLLED` instead of fixture fallback.
+- Terminal Mission states enqueue durable, duplicate-safe outbox notifications (no polling); ChatGPT push only when a trigger is configured, otherwise inbox retrieval via MCP.
+- Mission engineering progress is exposed chronologically through `get_mission_engineering_report` with worker-reported vs host-verified provenance.
+
+### Fixed
 - Cognitive envelope sealing no longer treats “read-only analysis” as a global read-only Mission when the instruction also requests an edit; task operations outside sealed scope coerce into the envelope before fail-closed, without broadening authorization.
 - After a completed Cursor specialist assignment, host verification and OpenCode evaluation use local approval checks instead of re-requiring live Cursor dispatch qualification, so a verified no-change read can advance its dependent authorized edit (`worker_execution_unqualified` no longer blocks that handoff).
 - Classify `cp_standing_cursor_development` in memory retention fields so host boot is not blocked by identity migration after standing Cursor grants are introduced.
