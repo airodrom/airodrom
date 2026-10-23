@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Treat the host verifier's typed repository Git revision as an opaque coordinate, preventing intermittent payment-card false positives while continuing to screen arbitrary evidence text and malformed coordinates.
 - Separate Cursor Mission authorization from cached runtime readiness at dependent dispatch; share authority checks with fresh launch decisions and bound transient retries to the current never-started assignment ([details](docs/CURSOR-EXECUTION-DECISION-V1.md), ADR 0062).
 - Continue bounded local evaluation recovery after malformed model JSON, without repeating the completed worker; retain the latest evaluation failure in Mission diagnostics. Binding and authority failures do not gain automatic syntax retries.
 - Queue approved Cursor intake before yielding to the READY watchdog, preventing duplicate-admission errors; active/completed Missions no longer display obsolete intake blockers as a new owner gate.

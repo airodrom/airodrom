@@ -107,6 +107,26 @@ test('typed contract Git anchors accept card-shaped hashes without exempting tex
  assert.equal(s.integrity().ok, true);
 });
 
+test('host verification repository revisions are typed coordinates while free text remains screened', () => {
+ const { safe } = require('../src/authority-store');
+ const head = 'a4111111111111111' + 'b'.repeat(23);
+ const make = revision => ({ verifier_type: 'host', verifier_id: 'airodrom:host-verifier', evidence: [
+  { id: 'repository_v2', status: 'passed', evidence: { version: 2, manifest: { version: 2, repository: { head: revision } } } },
+ ] });
+ for (const revision of [head, head + 'c'.repeat(24)]) assert.doesNotThrow(() => safe(make(revision)));
+ for (const mutate of [
+  x => { x.verifier_type = 'agent'; },
+  x => { x.evidence[0].id = 'worker_claim'; },
+  x => { x.evidence[0].evidence.manifest.repository.head = '4111111111111111'; },
+  x => { x.evidence[0].evidence.manifest.repository.head = [head]; },
+  x => { x.evidence[0].evidence.manifest.repository.description = head; },
+  x => { x.evidence[0].evidence.manifest.repository.head = 'sk-fixtureprivatecredential'; },
+  x => { x.evidence[0].evidence.manifest.version = 1; },
+  x => { x.evidence = { 0: x.evidence[0] }; },
+  x => { x.summary = 'sk-fixtureprivatecredential'; },
+ ]) { const value = make(head); mutate(value); assert.throws(() => safe(value), /Sensitive authority data rejected/); }
+});
+
 test('generated grant manifest UUID is opaque only at its exact typed coordinate', t => {
  const { s } = fixture(t), { safe } = require('../src/authority-store');
  const { containsSecret } = require('../src/personal-memory');

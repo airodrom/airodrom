@@ -231,7 +231,10 @@ test('stage-confused evaluator response does not unlock the dependent edit', asy
   }
   assert.ok(view.mission_id, JSON.stringify(view));
   const mission = await f.settle(view.mission_id, 'blocked');
-  assert.match(String(mission.reason || ''), /opencode_evaluation_stage_mismatch|gateway_evaluation_stage_mismatch/);
+  // A bounded recovery can encounter a later authority failure. The Mission
+  // reason reports that latest error; the original stage rejection is durable.
+  assert.ok(mission.runs.some(r => r.result?.gateway?.failure_code === 'gateway_evaluation_stage_mismatch'));
+  assert.equal(mission.acceptance.length, 0);
   const assignments = mission.specialists?.assignments || [];
   assert.ok(assignments.every(a => a.id !== 'change-1' || !['ready', 'running', 'evaluating'].includes(a.state)));
   assert.equal(
