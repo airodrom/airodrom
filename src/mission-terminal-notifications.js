@@ -70,6 +70,7 @@ function ensureSchema(db) {
     destination TEXT NOT NULL,
     outbox_id TEXT,
     created_at INTEGER NOT NULL,
+    request_id TEXT,
     UNIQUE(mission_id, revision, status)
   );
   CREATE INDEX IF NOT EXISTS cp_mission_notifications_mission

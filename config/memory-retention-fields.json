@@ -4361,7 +4361,8 @@
       "summary",
       "destination",
       "outbox_id",
-      "created_at"
+      "created_at",
+      "request_id"
     ],
     "source": "src/mission-terminal-notifications.js",
     "classification": {
@@ -4373,7 +4374,8 @@
       "summary": "A",
       "destination": "A",
       "outbox_id": "A",
-      "created_at": "A"
+      "created_at": "A",
+      "request_id": "A"
     }
   }
 }
