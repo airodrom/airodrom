@@ -106,18 +106,43 @@ async function proxy(hosts,controller,onEvent,options={}){
  // tunnels (auth, config, skills, agent); keep other workers on the tight default.
  const maxConnections=Number.isInteger(options.maxConnections)&&options.maxConnections>=1&&options.maxConnections<=256?options.maxConnections:16;
  let bytes=0,connections=0,stopped=false;const sockets=new Set();
- const denied=reason=>onEvent?.({type:'worker.proxy_denied',reason,authority:false});
+ // Never collapse abort / TLS / upstream failures into dns_boundary. Host is
+ // disclosure-safe (allowlisted provider names only; denied hosts stay opaque).
+ const denied=(reason, detail={})=>onEvent?.({
+  type:'worker.proxy_denied', reason, host: detail.host || null,
+  category: detail.category || reason,
+  authorized_provider: detail.authorized === true,
+  fatal: detail.fatal === true,
+  next_safe_action: detail.next_safe_action || null,
+  authority:false,
+ });
  const stop=()=>{stopped=true;for(const s of sockets)s.destroy();};controller.signal.addEventListener('abort',stop,{once:true});
  const server=http.createServer((req,res)=>{res.writeHead(403);res.end();});server.on('connect',async(req,client,head)=>{
-  sockets.add(client);client.on('error',()=>{});client.on('close',()=>sockets.delete(client));const m=/^([a-z0-9.-]+):443$/.exec(req.url||'');onEvent?.({type:'worker.proxy',host:m&&hosts.includes(m[1])?m[1]:'[denied]',authority:false});
-  if(stopped||!m||!hosts.includes(m[1])||++connections>maxConnections){denied(stopped?'stopped':!m||!hosts.includes(m[1])?'endpoint':'connection_bound');client.destroy();return;}
-  try{const rows=await dns.lookup(m[1],{all:true});if(stopped||controller.signal.aborted||!rows.length||rows.some(r=>!require('./research-network').publicAddress(r.address,r.family)))throw Error();
+  sockets.add(client);client.on('error',()=>{});client.on('close',()=>sockets.delete(client));
+  const m=/^([a-z0-9.-]+):443$/.exec(req.url||'');
+  const connectHost=m?m[1]:null;
+  const authorized=!!(connectHost&&hosts.includes(connectHost));
+  onEvent?.({type:'worker.proxy',host:authorized?connectHost:'[denied]',authority:false});
+  if(stopped||controller.signal.aborted){denied('aborted',{host:authorized?connectHost:null,authorized,fatal:true,category:'subscription_or_signal_abort',next_safe_action:'inspect_subscription_deadline_or_cancel_signal'});client.destroy();return;}
+  if(!connectHost||!authorized){denied('endpoint',{host:null,authorized:false,fatal:true,category:'unauthorized_host',next_safe_action:'keep_denied_or_add_exact_known_provider_host'});client.destroy();return;}
+  if(++connections>maxConnections){denied('connection_bound',{host:connectHost,authorized:true,fatal:false,category:'connect_budget',next_safe_action:'retry_within_proxy_connection_budget'});client.destroy();return;}
+  let rows;
+  try{rows=await dns.lookup(connectHost,{all:true});}
+  catch{denied('dns_unavailable',{host:connectHost,authorized:true,fatal:false,category:'resolver_error',next_safe_action:'retry_when_resolver_healthy'});client.destroy();return;}
+  if(stopped||controller.signal.aborted){denied('aborted',{host:connectHost,authorized:true,fatal:true,category:'subscription_or_signal_abort',next_safe_action:'inspect_subscription_deadline_or_cancel_signal'});client.destroy();return;}
+  if(!rows.length){denied('dns_unavailable',{host:connectHost,authorized:true,fatal:false,category:'empty_answer',next_safe_action:'retry_when_resolver_healthy'});client.destroy();return;}
+  // Deny when any answer is non-public (DNS rebinding / private / metadata).
+  if(rows.some(r=>!require('./research-network').publicAddress(r.address,r.family))){
+   denied('dns_boundary',{host:connectHost,authorized:true,fatal:true,category:'private_or_rebinding',next_safe_action:'keep_denied_private_dns_answers'});
+   client.destroy();return;
+  }
+  try{
    client.setTimeout(30000,()=>client.destroy());client.write('HTTP/1.1 200 Connection Established\r\n\r\n');let hello=head;
    const meter=c=>{bytes+=c.length;if(bytes>16777216){stop();controller.abort();}};
-   const receive=c=>{hello=Buffer.concat([hello,c]);meter(c);if(hello.length>16384){denied('tls_bound');client.destroy();return;}let host;try{host=clientHelloHost(hello);}catch{denied('tls_client_hello');client.destroy();return;}if(host===null)return;if(host!==m[1]){denied('tls_sni');client.destroy();return;}client.removeListener('data',receive);client.pause();
-    const upstream=net.connect({host:rows[0].address,port:443,family:rows[0].family});sockets.add(upstream);upstream.on('error',()=>{denied('upstream');client.destroy();});upstream.on('close',()=>{sockets.delete(upstream);client.destroy();});client.on('close',()=>upstream.destroy());upstream.setTimeout(30000,()=>upstream.destroy());upstream.on('data',meter);client.on('data',meter);upstream.on('connect',()=>{if(stopped||client.destroyed)return upstream.destroy();upstream.write(hello);client.pipe(upstream);upstream.pipe(client);client.resume();});
+   const receive=c=>{hello=Buffer.concat([hello,c]);meter(c);if(hello.length>16384){denied('tls_bound',{host:connectHost,authorized:true,fatal:false});client.destroy();return;}let host;try{host=clientHelloHost(hello);}catch{denied('tls_client_hello',{host:connectHost,authorized:true,fatal:false});client.destroy();return;}if(host===null)return;if(host!==connectHost){denied('tls_sni',{host:connectHost,authorized:true,fatal:true,category:'sni_mismatch'});client.destroy();return;}client.removeListener('data',receive);client.pause();
+    const upstream=net.connect({host:rows[0].address,port:443,family:rows[0].family});sockets.add(upstream);upstream.on('error',()=>{denied('upstream',{host:connectHost,authorized:true,fatal:false,category:'upstream_connect',next_safe_action:'transient_provider_connect_retry_ok'});client.destroy();});upstream.on('close',()=>{sockets.delete(upstream);client.destroy();});client.on('close',()=>upstream.destroy());upstream.setTimeout(30000,()=>upstream.destroy());upstream.on('data',meter);client.on('data',meter);upstream.on('connect',()=>{if(stopped||client.destroyed)return upstream.destroy();upstream.write(hello);client.pipe(upstream);upstream.pipe(client);client.resume();});
    };client.on('data',receive);if(head.length){hello=Buffer.alloc(0);receive(head);}
-  }catch{denied('dns_boundary');client.destroy();}
+  }catch{denied('tls_protocol',{host:connectHost,authorized:true,fatal:false,category:'tls_setup'});client.destroy();}
  });await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
  return {port:server.address().port,stats:()=>({transport_bytes:bytes,connections}),close:async()=>{stop();controller.signal.removeEventListener('abort',stop);await new Promise(r=>server.close(r));}};
 }

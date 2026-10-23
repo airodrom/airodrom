@@ -244,14 +244,29 @@ function engineeringReport(bridge, missionId, { limit = 200 } = {}) {
   }
   const notifications = require('./mission-terminal-notifications').listForMission(bridge, base.mission_id);
   let limitsBlockers = evidence.limits_blockers || null;
-  if (!limitsBlockers && ['blocked', 'needs_rework'].includes(mission.state)) {
+  let recoveryReceipt = null;
+  if (['blocked', 'needs_rework'].includes(mission.state)) {
     try {
-      limitsBlockers = require('./limits-blockers-registry').reportForBlock(bridge, {
-        codes: [mission.reason, mission.envelope?.block_reason, evidence.status].filter(Boolean),
-        mission_id: base.mission_id,
-        request_id: mission.envelope?.cognitive_request_id || null,
-      });
-    } catch { limitsBlockers = null; }
+      const codes = [mission.reason, mission.envelope?.block_reason, evidence.status].filter(Boolean);
+      if (!limitsBlockers) {
+        limitsBlockers = require('./limits-blockers-registry').reportForBlock(bridge, {
+          codes: codes.length ? codes : [mission.state],
+          mission_id: base.mission_id,
+          request_id: mission.envelope?.cognitive_request_id || null,
+        });
+      }
+      // Read-only: do not re-dispatch recovery from report reads; surface latest receipt if present.
+      const db = bridge.controlStore?.db;
+      if (db) {
+        try {
+          const row = db.prepare(
+            `SELECT receipt_json FROM cp_limits_blocker_recovery_attempts
+             WHERE mission_id=? ORDER BY created_at DESC LIMIT 1`
+          ).get(base.mission_id);
+          if (row?.receipt_json) recoveryReceipt = JSON.parse(row.receipt_json);
+        } catch { /* schema may not exist yet */ }
+      }
+    } catch { /* annotation must not break engineering report */ }
   }
   return {
     mission_id: base.mission_id,
@@ -273,6 +288,17 @@ function engineeringReport(bridge, missionId, { limit = 200 } = {}) {
     acceptance_status: evidence.acceptance_status || null,
     notifications: notifications.notifications,
     limits_blockers: limitsBlockers,
+    blocker_recovery: recoveryReceipt ? {
+      receipt_id: recoveryReceipt.id,
+      registry_id: recoveryReceipt.registry_id,
+      category: recoveryReceipt.category,
+      operation: recoveryReceipt.plan?.operation || recoveryReceipt.recovery?.operation || null,
+      performed: !!recoveryReceipt.recovery?.performed,
+      verification: recoveryReceipt.verification || null,
+      owner_gate: recoveryReceipt.owner_gate || null,
+      resumed: !!recoveryReceipt.resumed,
+      authority: false,
+    } : null,
     authority: false,
     note: 'Worker-reported stages are untrusted claims. Host-verified stages come from Airodrom ledger and independent verification.',
   };

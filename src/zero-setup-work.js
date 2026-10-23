@@ -85,15 +85,21 @@ class ZeroSetupWork {
         const codes = Array.isArray(record.blockers) && record.blockers.length
           ? record.blockers
           : [record.presentation?.status || state];
-        record.limits_blockers = require('./limits-blockers-registry').reportForBlock(this.bridge, {
+        const L = require('./limits-blockers-registry');
+        const report = L.reportForBlock(this.bridge, {
           codes, request_id: requestId, mission_id: record.mission_id || null,
         });
+        record.limits_blockers = report;
+        record.recovery_attempt = L.attemptAuthorizedRecovery(this.bridge, report, 'operator');
         record.presentation = {
           ...(record.presentation || {}),
-          registry_id: record.limits_blockers.primary_registry_id,
-          next_safe_action: record.limits_blockers.next_safe_action,
-          owner_approval_required: record.limits_blockers.owner_approval_required,
-          security_critical: record.limits_blockers.security_critical,
+          registry_id: report.primary_registry_id,
+          next_safe_action: report.next_safe_action,
+          owner_approval_required: report.owner_approval_required,
+          security_critical: report.security_critical,
+          recovery_receipt_id: record.recovery_attempt?.recovery_receipt?.id || null,
+          recovery_performed: !!record.recovery_attempt?.performed,
+          owner_gate: record.recovery_attempt?.owner_gate || null,
         };
       } catch { /* annotation must not block durable ask write */ }
     }

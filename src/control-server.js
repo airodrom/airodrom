@@ -348,6 +348,9 @@ class ControlServer {
         const code=url.searchParams.get('code')||'';
         return this.json(res,200,{...require('./limits-blockers-registry').resolve(code),authority:false});
       }
+      if(req.method==='GET'&&url.pathname==='/api/assistant/limits-blockers/recovery-coverage'){
+        return this.json(res,200,require('./limits-blockers-recovery').coverage());
+      }
       if(req.method==='GET'&&url.pathname==='/api/assistant/project-defaults')return this.json(res,200,{items:this.bridge.projectDefaults.list(),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/policy'){const id=url.searchParams.get('policy_id');return this.json(res,200,this.bridge.developerAutonomy.inspect(id)||{error:'Policy unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/grant'){const id=url.searchParams.get('grant_id');return this.json(res,200,this.bridge.developerAutonomy.inspectGrant(id)||{error:'Grant unavailable',authority:false});}
@@ -491,6 +494,8 @@ class ControlServer {
       if(url.pathname==='/api/assistant/host-execution-policy/revoke-mcp-delegation')return this.json(res,200,this.bridge.hostExecutionPolicy.revokeMcpDelegation(body,'operator'));
       if(url.pathname==='/api/assistant/host-execution-policy/enroll-standing-cursor-development')return this.json(res,201,this.bridge.hostExecutionPolicy.enrollStandingCursorDevelopment(body,'operator'));
       if(url.pathname==='/api/assistant/host-execution-policy/revoke-standing-cursor-development')return this.json(res,200,this.bridge.hostExecutionPolicy.revokeStandingCursorDevelopment(body,'operator'));
+      if(url.pathname==='/api/assistant/host-execution-policy/raise-standing-cursor-runtime')return this.json(res,200,this.bridge.hostExecutionPolicy.raiseStandingCursorRuntimeCeiling(body,'operator'));
+      if(url.pathname==='/api/assistant/developer-autonomy/ensure-cognitive')return this.json(res,200,this.bridge.developerAutonomy.ensureCognitiveDiscovery(body.policy_id,'operator'));
       if(url.pathname==='/api/assistant/developer-autonomy/enroll')return this.json(res,201,this.bridge.developerAutonomy.enroll(body,'operator'));
       if(url.pathname==='/api/assistant/project-defaults/set')return this.json(res,200,this.bridge.projectDefaults.setDefault(body,'operator'));
       if(url.pathname==='/api/assistant/project-defaults/clear')return this.json(res,200,this.bridge.projectDefaults.clear(body,'operator'));

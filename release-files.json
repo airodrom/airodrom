@@ -430,6 +430,7 @@
   "src/level1-restricted-worker.js",
   "src/live-activity-board.js",
   "src/limits-blockers-registry.js",
+  "src/limits-blockers-recovery.js",
   "src/live-observatory.js",
   "src/local-bootstrap.js",
   "src/local-model-capability.js",

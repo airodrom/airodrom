@@ -951,7 +951,13 @@ class DeveloperAutonomy {
     const sameWorkers = Array.isArray(current.workers)
       && current.workers.length === workers.length
       && current.workers.every((w, i) => w === workers[i]);
-    if (sameCognitive && sameWorkers) return current;
+    // Cursor multi-task assignments need the 120s cognitive execution ceiling.
+    // Do not leave older 60s enrollments stale when files/workers already match.
+    const timingStale = !Number.isSafeInteger(current.cognitive?.execution_ms)
+      || current.cognitive.execution_ms < 120000
+      || !Number.isSafeInteger(current.cognitive?.planning_ms)
+      || current.cognitive.planning_ms < 120000;
+    if (sameCognitive && sameWorkers && !timingStale) return current;
 
     const r = this.readPolicy(policyId);
     const repairAttempts = Math.min(1, Number(current.budgets?.max_repairs) || 0);

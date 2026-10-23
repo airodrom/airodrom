@@ -1,5 +1,17 @@
 # Known limitations
 
+## Autonomous blocker recovery (2026-10-22)
+
+- Universal automatic **diagnosis** for all registry entries; executable recovery only for allowlisted host ops with evidence. Owner-only gates (enrollment, standing grant create/renew, disk free space, disclosure) still require one consolidated owner action.
+- Security-critical blockers investigate and fail closed — never auto-grant access or fabricate verification.
+- Recovery attempt budget is 2 per Mission/request lineage; exhausted budget consolidates to owner inspect.
+
+## Cursor proxy DNS / subscription deadline (2026-10-22)
+
+- True `dns_boundary` (private/rebinding answers) remains fail-closed. Do not widen `KNOWN_PROVIDER_HOSTS` with wildcards.
+- Standing Cursor `max_runtime_ms` defaults historically at 60s are too short for multi-task Cursor assignments; raise to 120s (host max) and ensure DA cognitive `execution_ms` is 120000. Raise-only API does not recreate disclosure acknowledgement.
+- Upstream CONNECT failures to public provider IPs are often transient and non-fatal; they alone do not cancel a Mission.
+
 ## Limits & Blockers Registry (2026-10-22)
 
 - The registry covers material, operator-facing limits and recurring blockers; not every internal sandbox/token string is catalogued. Unregistered codes surface as `unknown_blocker` rather than invented classifications.

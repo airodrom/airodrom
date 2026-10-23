@@ -386,7 +386,11 @@ class CursorWorker {
       const credential = this.stageCredential(root);
       const proxyController = new AbortController();
       controller.signal.addEventListener('abort', () => proxyController.abort(), { once: true });
-      proxy = await require('./bounded-worker').proxy(allowedHosts, proxyController, e => emit({ provenance: 'SANDBOX_OBSERVED', kind: e.type, host: e.host || null, reason: e.reason || null }), { maxConnections: CURSOR_PROXY_CONNECTIONS });
+      proxy = await require('./bounded-worker').proxy(allowedHosts, proxyController, e => emit({
+        provenance: 'SANDBOX_OBSERVED', kind: e.type, host: e.host || null, reason: e.reason || null,
+        category: e.category || null, authorized_provider: e.authorized_provider === true,
+        fatal: e.fatal === true, next_safe_action: e.next_safe_action || null,
+      }), { maxConnections: CURSOR_PROXY_CONNECTIONS });
       const prompt = 'Read ' + path.join(root, 'brief', 'mission.json') + ' and complete the objective exactly as its rules describe. Use only the Read and Write tools on the listed files. Your final message must be the single JSON result object described in that file and nothing else.';
       const cursorDataDir = path.join(root, 'state', 'cursor-data');
       const env = {
@@ -446,7 +450,13 @@ class CursorWorker {
       if (!outcome.termination_verified) { cleanup = false; fail('cursor_termination_unverified'); }
       // Host-authored permission files must be byte-identical; a worker that rewrote them is denied.
       if (hash(fs.readFileSync(projectConfig)) !== configHashes.project || hash(fs.readFileSync(homeConfig)) !== configHashes.home) fail('cursor_permission_file_tampered');
-      if (outcome.cancelled) fail('cursor_cancelled');
+      if (outcome.cancelled) {
+        // Subscription/grant abort must not be reported as a DNS boundary failure.
+        if (admitted?.reservation?.deadline_at && Date.now() >= admitted.reservation.deadline_at - 250) {
+          fail('cursor_subscription_deadline');
+        }
+        fail('cursor_cancelled');
+      }
       if (outcome.timedOut) fail('cursor_timeout');
       if (outcome.overflow) fail('cursor_output_overflow');
       // Host inventory of the staging workspace is authoritative.
