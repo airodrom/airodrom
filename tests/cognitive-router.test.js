@@ -296,7 +296,7 @@ test('strict versioned schemas reject dependency cycles, unknown fields and tamp
 test('read-only proposals use existing host capabilities and cannot satisfy an unmet coding criterion', async t => {
   const f = await setup(t), normal = f.proposal;
   f.proposal = e => ({ ...normal(e), tasks: [{ ...normal(e).tasks[0], operation: 'read', description: 'Inspect fixture.txt' }] });
-  const result = await f.ask(); assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
+  const result = await f.ask(randomUUID(), caller, 'In Fixture project read fixture.txt without editing it.'); assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
   const done = await f.settle(result.mission_id, 'needs_rework');
   assert.equal(done.envelope.preferred_agent, 'host');
   assert.deepEqual(done.envelope.contract.permissions.allowed_write_paths, []);
@@ -400,3 +400,34 @@ test('integrity excludes no tracked files, rejects scoped symlinks and ignored i
 });
 
 module.exports = { setup };
+
+
+test('explicit unenrolled request is rejected before planner or grant creation', async t => {
+  const f = await setup(t);
+  const p = await f.ask(randomUUID(), caller, 'In Fixture project edit recovery-proof.txt to the required bytes.');
+  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_not_enrolled']);
+  assert.equal(f.plannerCalls, 0);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_developer_autonomy_grants').get().n, 0);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+});
+
+test('missing explicitly requested file fails before planning instead of selecting another file', async t => {
+  const f = await setup(t), original = f.bridge.developerAutonomy.prepareWorkspaceAsync.bind(f.bridge.developerAutonomy);
+  f.bridge.developerAutonomy.prepareWorkspaceAsync = async (...args) => {
+    const ws = await original(...args); fs.unlinkSync(path.join(ws.path, 'fixture.txt')); return ws;
+  };
+  const p = await f.ask();
+  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_missing_or_inadmissible']);
+  assert.equal(f.plannerCalls, 0);
+});
+
+test('substitution proposal is refused before Mission dispatch and keeps original requested evidence', async t => {
+  const f = await setup(t), normal = f.proposal;
+  f.proposal = e => { const p = normal(e); p.tasks[0].paths = ['AGENTS.md']; p.files = ['AGENTS.md']; return p; };
+  const p = await f.ask();
+  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_plan_mismatch']);
+  assert.equal(f.plannerCalls, 2);
+  const r = f.bridge.zeroSetupWork.read(p.request_id);
+  assert.deepEqual(r.cognitive.envelope.requested_scope.bindings, [{ operation: 'edit', path: 'fixture.txt' }]);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+});

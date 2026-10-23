@@ -16,9 +16,19 @@ function cursorReady() {
   };
 }
 
-async function specialistCursorFixture(t) {
+async function specialistCursorFixture(t, { proof = false } = {}) {
   const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 45000 });
   const b = f.bridge;
+  const file = proof ? 'recovery-proof.txt' : 'fixture.txt';
+  if (proof) {
+    const fs = require('node:fs');
+    fs.renameSync(path.join(f.repo, 'fixture.txt'), path.join(f.repo, file));
+    fs.writeFileSync(path.join(f.repo, 'AGENTS.md'), 'Preserve this independent file.\n');
+    fs.writeFileSync(path.join(f.repo, 'tests/fixture.test.cjs'), "require('node:assert/strict').equal(require('node:fs').readFileSync('recovery-proof.txt','utf8'),'AIRODROM-CHATGPT-HANDOFF-PASS\\n');\n");
+    const git = args => require('node:child_process').execFileSync('/usr/bin/git', ['-C', f.repo, ...args], { stdio: 'pipe' });
+    git(['add', '.']); git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'Exact file scope fixture']);
+    f.instruction = 'In Fixture project using Cursor, read recovery-proof.txt then edit recovery-proof.txt to exact_file_bytes 4149524f44524f4d2d434841544750542d48414e444f46462d504153530a';
+  }
   b.missionAuthority.initializeOperatorKey();
   qualifyCanonical(b);
   b.expandedAutonomy.setMode({
@@ -38,18 +48,18 @@ async function specialistCursorFixture(t) {
     workflows: ['routine_edit', 'test'], workers: ['opencode', 'cursor'], duration_days: 1, confirmed: true,
     diff_check: 'diff-check', default_tests: ['fixture-test'], budgets: { max_repairs: 0 },
     cognitive: {
-      version: 3, files: ['fixture.txt'], delegated_callers: [], planning_attempts: 2,
+      version: 3, files: proof ? [file, 'AGENTS.md'] : [file], delegated_callers: [], planning_attempts: 2,
       planning_ms: 120000, execution_ms: 120000, repair_attempts: 0, max_assignments: 2, acceptance: 'automatic',
     },
   }, 'operator');
   f.plan = [
     {
-      id: 'read-1', worker: 'cursor', role: 'analysis', operation: 'read', paths: ['fixture.txt'],
-      description: 'Read fixture.txt', depends_on: [], verification: [],
+      id: 'read-1', worker: 'cursor', role: 'analysis', operation: 'read', paths: [file],
+      description: 'Read ' + file, depends_on: [], verification: [],
     },
     {
-      id: 'change-1', worker: 'cursor', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
-      description: 'Change alpha to beta', depends_on: ['read-1'], verification: [],
+      id: 'change-1', worker: 'cursor', role: 'implementation', operation: 'edit', paths: [file],
+      description: proof ? 'Edit recovery-proof.txt to exact_file_bytes 4149524f44524f4d2d434841544750542d48414e444f46462d504153530a' : 'Change alpha to beta', depends_on: ['read-1'], verification: [],
     },
   ];
   f.evaluations = [];
@@ -85,9 +95,9 @@ async function specialistCursorFixture(t) {
   return f;
 }
 
-async function startCursorGraph(f) {
+async function startCursorGraph(f, { expectBlocked = false } = {}) {
   const request_id = randomUUID();
-  const instruction = 'In Fixture project, using Cursor, read fixture.txt then change alpha to beta.';
+  const instruction = f.instruction || 'In Fixture project, using Cursor, read fixture.txt then change fixture.txt from alpha to beta.';
   let v = await f.bridge.zeroSetupWork.ask({ request_id, instruction }, 'operator');
   for (let i = 0; i < 200 && v.state === 'PLANNING'; i++) {
     await new Promise((r) => setTimeout(r, 20));
@@ -101,7 +111,8 @@ async function startCursorGraph(f) {
       },
     }, 'operator');
   }
-  assert.ok(v.mission_id, JSON.stringify(v));
+  if (expectBlocked) { assert.equal(v.state, 'BLOCKED', JSON.stringify(v)); assert.equal(v.mission_id, null); }
+  else assert.ok(v.mission_id, JSON.stringify(v));
   return v;
 }
 
@@ -343,7 +354,7 @@ test('qualified Cursor with Mission grant allows dispatch', async (t) => {
   const f = await specialistCursorFixture(t);
   const view = await (async () => {
     const request_id = randomUUID();
-    const instruction = 'In Fixture project, using Cursor, read fixture.txt then change alpha to beta.';
+    const instruction = 'In Fixture project, using Cursor, read fixture.txt then change fixture.txt from alpha to beta.';
     let v = await f.bridge.zeroSetupWork.ask({
       request_id, instruction,
       // Force Cursor path through standing-style approve when WAIT.
@@ -465,4 +476,51 @@ test('security-critical standing mismatch remains fail-closed', () => {
   const entry = Registry.resolve('STANDING_CURSOR_GRANT_MISMATCH');
   assert.equal(entry.category, 'security_critical');
   assert.equal(entry.security_critical, true);
+});
+
+
+test('exact recovery-proof read and edit pass host scope, bytes, settlement, and durable evidence', async t => {
+  const f = await specialistCursorFixture(t, { proof: true });
+  const v = await startCursorGraph(f), m = await f.settle(v.mission_id, 'completed');
+  const E = require('../src/mission-evidence'), fs = require('node:fs');
+  const e = E.evidencePackage(f.bridge, m.id);
+  assert.equal(fs.readFileSync(path.join(m.envelope.workspace, 'recovery-proof.txt'), 'utf8'), 'AIRODROM-CHATGPT-HANDOFF-PASS\n');
+  assert.equal(fs.readFileSync(path.join(m.envelope.workspace, 'AGENTS.md'), 'utf8'), 'Preserve this independent file.\n');
+  assert.equal(e.file_scope.host_verification.status, 'passed');
+  assert.deepEqual(e.file_scope.executed_changes, ['recovery-proof.txt']);
+  assert.equal(e.verification.result, 'passed'); assert.equal(e.settlement_status, 'settled');
+  assert.equal(e.acceptance_status, 'accepted'); assert.equal(f.evaluations.length, 2);
+  assert.ok(e.cognitive.leases.every(l => l.state === 'released'));
+  assert.equal(e.cognitive.termination, 'verified');
+  const saved = JSON.stringify(e.file_scope);
+  await f.reopen(); assert.equal(JSON.stringify(E.evidencePackage(f.bridge, m.id).file_scope), saved);
+});
+
+test('enrolled AGENTS substitution is rejected before any Cursor dispatch', async t => {
+  const f = await specialistCursorFixture(t, { proof: true });
+  f.plan = f.plan.map(task => ({ ...task, paths: ['AGENTS.md'] }));
+  const v = await startCursorGraph(f, { expectBlocked: true });
+  assert.equal(v.state, 'BLOCKED'); assert.deepEqual(v.blockers, ['requested_file_plan_mismatch']);
+  assert.equal(f.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE agent_id='cursor'").get().n, 0);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n, 0);
+});
+
+test('acceptance independently refuses wrong-file bytes after READY and successful verification', async t => {
+  const f = await specialistCursorFixture(t, { proof: true });
+  const originalList = f.bridge.policy.list.bind(f.bridge.policy);
+  f.onEvaluation = async o => {
+    if (o.coordination.specialist_return.assignment.id === 'change-1') {
+      const m = f.bridge.controlStore.requireMission(o.coordination.specialist_return.assignment.parent_mission_id);
+      f.bridge.policy.list = () => [...originalList(), { status: 'pending', taskId: m.task_id }];
+    }
+  };
+  const v = await startCursorGraph(f), m = await f.settle(v.mission_id, 'awaiting_acceptance');
+  const e = require('../src/mission-evidence').evidencePackage(f.bridge, m.id);
+  assert.equal(e.verification.result, 'passed'); assert.equal(f.evaluations.length, 2);
+  const fs = require('node:fs');
+  fs.writeFileSync(path.join(m.envelope.workspace, 'recovery-proof.txt'), 'alpha\n');
+  fs.writeFileSync(path.join(m.envelope.workspace, 'AGENTS.md'), 'AIRODROM-CHATGPT-HANDOFF-PASS\n');
+  f.bridge.policy.list = originalList;
+  assert.throws(() => f.bridge.missions.accept(m.id, { request_id: randomUUID(), verification_id: m.verifications[0].id, decision: 'accept', rationale: 'Attempt acceptance against independent current scope check' }, 'operator'), /requested_file_execution_mismatch/);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_acceptances WHERE mission_id=?').get(m.id).n, 0);
 });

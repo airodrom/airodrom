@@ -156,16 +156,14 @@ function projectExcludedByTarget(project, target) {
 function targetInstructionHit(instruction, target) {
   const text = String(instruction || '');
   if (!text) return false;
-  // Negating the display name or repository id must not select the target.
-  if (mentionIsNegated(instruction, target.display_name)) return false;
-  if (mentionIsNegated(instruction, target.repository_id)) return false;
-  if (mentionIsNegated(instruction, target.id)) return false;
+  // Match and negate the SAME target phrase. A success marker containing the
+  // product name must not make a separate "do not edit Airodrom source" positive.
   for (const re of target.instruction_res || []) {
-    if (!re.test(text)) continue;
-    // If the only matches sit under negation of a related product token, skip.
-    const product = target.display_name.toLowerCase();
-    if (mentionIsNegated(instruction, product)) continue;
-    return true;
+    for (const match of text.matchAll(new RegExp(re.source, re.flags.replace('g', '') + 'g'))) {
+      const before = text.slice(0, match.index).split(/[.;\n]/).at(-1);
+      if (/\b(?:not|never|neither|except|excluding|without|instead\s+of|rather\s+than|other\s+than|outside|don't)\b[\s\w,/'"-]*$/i.test(before)) continue;
+      return true;
+    }
   }
   return false;
 }

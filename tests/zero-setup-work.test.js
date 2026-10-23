@@ -70,7 +70,8 @@ test('MCP catalog includes ask_airodrom and get_ask_status', () => {
   assert.ok(names.includes('get_ask_status'));
   assert.ok(names.includes('list_authorized_scopes'));
   for (const n of ['prepare_mission', 'inspect_mission_proposal', 'get_mission_status', 'get_mission_events', 'get_mission_evidence', 'request_mission_correction', 'cancel_mission']) assert.ok(names.includes(n), n);
-  assert.equal(names.length, 43);
+  assert.equal(names.length, 53);
+  assert.equal(new Set(names).size, 53, 'Every registered tool has a unique name');
 });
 
 test('approval boundary rejects unconfirmed approve and MCP cannot register templates', async t => {

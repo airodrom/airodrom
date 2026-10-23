@@ -103,6 +103,14 @@ function evidencePackage(bridge, missionId) {
   const nextSafeAction=specialists&&['ready','dispatching','running','verifying'].includes(final.state)?'Wait; sealed specialist work, evaluation and bounded repair advance automatically.':specialists&&final.state==='awaiting_acceptance'?'Automatic completion is pending current policy, protected-action clearance or settlement; no routine manual Acceptance is required.':legacyNextSafeAction;
   return {
     schema_version: 1,
+    ...(final.envelope.cognitive?.envelope.requested_scope ? { file_scope: {
+      version: 1,
+      requested: final.envelope.cognitive.envelope.requested_scope.bindings,
+      proposed: final.envelope.cognitive.proposal.tasks.map(t => ({ id: t.id, operation: t.operation, paths: t.paths })),
+      authorized: final.envelope.allowed_files,
+      executed_changes: changedFiles.map(f => f.path),
+      host_verification: (latestVerification?.evidence || []).find(c => c.id === 'requested_file_scope') || null
+    } } : {}),
     ...(specialists?{specialists}:{}),
     ...(final.envelope.cognitive ? { gateway: require('./opencode-gateway').evidence(bridge, final),
     cognitive: require('./cognitive-router').evidence(bridge, final, detail, latestVerification, changedFiles) } : {}),

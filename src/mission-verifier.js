@@ -126,6 +126,11 @@ class MissionVerifier {
       const creation=envelope.baseline;
       if(creation.version===2)add('creation_repository_v2',require('./repository-verification').compare(creation,snapshot,envelope.allowed_files,[],{allowPreDirtyScope:repairScope,...grantBinding}).status,{baseline_hash:creation.hash,identity_and_original_scope_checked:true});
       for(const [file,digest]of Object.entries(creation.files))if(!envelope.allowed_files.includes(file)&&snapshot.files[file]!==digest&&!protectedChanged.includes(file))protectedChanged.push(file);
+      if (envelope.cognitive) {
+        require('./cognitive-router').assertBound(this.bridge, mission);
+        const scopeCheck = require('./requested-file-scope').verification(mission, snapshot, assignmentCheck?.assignment, baseline);
+        if (scopeCheck) add(scopeCheck.id, scopeCheck.status, scopeCheck.evidence);
+      }
       add('workspace', 'passed',{exists:true});
       add('protected_files',protectedChanged.length||baseline.head!==snapshot.head?'failed':'passed',{changed:protectedChanged,head_unchanged:baseline.head===snapshot.head});
       const readonly=assignmentCheck?.assignment.operation==='read'||(envelope.cognitive?.envelope.version===3&&envelope.cognitive.proposal.tasks.every(t=>t.operation==='read'));

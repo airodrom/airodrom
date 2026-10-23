@@ -581,6 +581,11 @@ class MissionService {
       const authorityExpiredBlock=m.state==='blocked'&&m.reason==='Mission authority expired';
       if(m.state!=='awaiting_acceptance'&&!authorityExpiredBlock)throw Error('Mission is not awaiting acceptance');
       if(input.decision==='accept'){this.bridge.workTemplates.assertMission(m);this.bridge.developerAutonomy.assertMission(m,{allowExpiredGrant:true});}
+      if(input.decision==='accept' && m.envelope.cognitive){
+        require('./cognitive-router').assertBound(this.bridge,m);
+        const check=require('./requested-file-scope').verification(m,workspaceSnapshot(m.envelope.workspace));
+        if(check && check.status!=='passed')throw Error('requested_file_execution_mismatch');
+      }
       if(input.decision==='accept')this.program.assertAcceptance(m,input.verification_id);
       const v=this.db.prepare('SELECT * FROM cp_verifications WHERE id=? AND mission_id=?').get(input.verification_id,id);
       const workspaceHash=(m.envelope.kind==='browser_research'?this.research.safeSnapshot(m):workspaceSnapshot(m.envelope.workspace)).hash;

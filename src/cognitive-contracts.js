@@ -45,7 +45,7 @@ function parse(kind, data) {
     try { data = require('./authority-json').parseAuthorityJSON(data); } catch { fail('cognitive_json_required'); }
   }
   if (!schemas[kind]) fail('cognitive_contract_unknown');
-  object(data, schemas[kind]);
+  object(data, [...schemas[kind], ...(kind === 'RequestEnvelope' ? ['requested_scope'] : [])], schemas[kind]);
   if (![1, 2, 3].includes(data.version)) fail('cognitive_version_unsupported');
   if (kind === 'RequestEnvelope') {
     string(data.request_id); string(data.caller); object(data.delegation, ['policy_id', 'policy_hash']);
@@ -54,6 +54,7 @@ function parse(kind, data) {
     integrity(data.integrity); list(data.permitted_paths, relative, 8); list(data.denied_paths, string, 80);
     list(data.operations, x => choice(x, ['read', 'edit']), 2); list(data.eligible_workers, x => choice(x, ['host', 'opencode', 'cursor']), 3);
     list(data.verification, string, 5); limits(data.limits, data.version); choice(data.requested_worker, ['auto', 'host', 'opencode', 'cursor']);
+    if (Object.hasOwn(data, 'requested_scope')) require('./requested-file-scope').parse(data.requested_scope);
     digest(data.instruction_hash); integer(data.expires_at, 1, Number.MAX_SAFE_INTEGER); checkHash(data);
   } else if (kind === 'PlanningProposal') {
     string(data.request_id); digest(data.envelope_hash); list(data.files, relative, 8);

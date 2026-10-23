@@ -136,7 +136,7 @@ test('read-then-edit specialist graph advances after host-verified read evaluati
   };
 
   const request_id = randomUUID();
-  const instruction = 'In Fixture project read fixture.txt then change alpha to beta, preserving one final newline.';
+  const instruction = 'In Fixture project read fixture.txt then change fixture.txt from alpha to beta, preserving one final newline.';
   let view = await b.zeroSetupWork.ask({ request_id, instruction }, 'operator');
   for (let i = 0; i < 200 && view.state === 'PLANNING'; i++) {
     await new Promise(r => setTimeout(r, 20));
@@ -220,13 +220,13 @@ test('stage-confused evaluator response does not unlock the dependent edit', asy
   const request_id = randomUUID();
   let view = await b.zeroSetupWork.ask({
     request_id,
-    instruction: 'In Fixture project read fixture.txt then change alpha to beta.',
+    instruction: 'In Fixture project read fixture.txt then change fixture.txt from alpha to beta.',
   }, 'operator');
   for (let i = 0; i < 200 && view.state === 'PLANNING'; i++) {
     await new Promise(r => setTimeout(r, 20));
     view = await b.zeroSetupWork.ask({
       request_id,
-      instruction: 'In Fixture project read fixture.txt then change alpha to beta.',
+      instruction: 'In Fixture project read fixture.txt then change fixture.txt from alpha to beta.',
     }, 'operator');
   }
   assert.ok(view.mission_id, JSON.stringify(view));
