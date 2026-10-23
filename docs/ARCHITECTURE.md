@@ -45,12 +45,36 @@ compatibility. Earlier single-worker/version 2 descriptions remain historical.
 ### Canonical multi-agent path (Milestone B)
 
 ```text
-USER → ChatGPT → AIRODROM → OPENCODE → CURSOR / CLAUDE CODE / CODEX → OPENCODE → AIRODROM → ChatGPT → USER
+USER → ChatGPT → AIRODROM → OPENCODE (planner) → CURSOR (implementation) → OPENCODE (evaluator) → AIRODROM (independent verifier) → ChatGPT → USER
 ```
 
-Airodrom is the sole governing authority. OpenCode is the central cognitive hub
-(plan, then evaluate). Cursor, Claude Code, and Codex are specialized workers.
-Every specialist result returns to OpenCode for evaluation; Airodrom performs
-independent final verification and settlement. The specialist gateway transports
-and governs; it is not a second cognitive planner. See
-[Milestone B Cursor readiness](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md).
+Airodrom is the sole governing authority. OpenCode plans and evaluates. Cursor is
+the mandated implementation specialist for ChatGPT-initiated development Missions
+on this path. Airodrom owns authorization, dispatch, verification, Mission state,
+and settlement. ChatGPT initiates Missions and retrieves progress/results; it
+never substitutes Codex, Work, or an alternative coding agent, and never silently
+falls back to disposable fixture workspaces.
+
+**Repository binding invariants (regression prevention):**
+
+1. Explicit project/repository targets resolve before OpenCode planning.
+2. Selected repository identity is sealed into the Mission / cognitive envelope.
+3. Negated names (`not chatgpt-handoff`) never select a project.
+4. Fixture / handoff standing grants never authorize `airodrom/airodrom` source edits.
+5. Unauthorized source requests fail closed with `SOURCE_REPOSITORY_NOT_ENROLLED`
+   rather than guessing another workspace.
+6. Planner paths outside the sealed repository are rejected before Cursor dispatch.
+
+**Engineering visibility:** durable ledger events (including Cursor `worker.trace`
+with provenance tags) are retrievable via `get_mission_events` /
+`get_mission_engineering_report`. Worker claims are labelled untrusted; host
+verification remains authoritative.
+
+**Terminal notifications:** Mission state transitions enqueue duplicate-safe
+outbox notifications (`ACCEPTED` / `BLOCKED` / `FAILED` / `CANCELLED` /
+`NEEDS_REWORK` / `OWNER_ACTION_REQUIRED`). Delivery does not poll and cannot
+alter settlement. ChatGPT unsolicited push requires a configured trigger; otherwise
+results remain inbox-retrievable via `list_mission_notifications`.
+
+See [Milestone B Cursor readiness](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)
+and [CURRENT-STATE.md](CURRENT-STATE.md).

@@ -168,13 +168,24 @@ class ControlPlaneStore {
       this.event('mission.request_received',id);this.event('mission.created',id,{legacy,grant_id:grant});this.event('mission.authority_registered',id);return this.getMission(id);
     });
   }
-  state(id,state,reason=null) { if(!STATES.has(state))throw new Error('Invalid Mission state');const next=canonicalize(state);return transaction(this.db,()=>{
+  state(id,state,reason=null) { if(!STATES.has(state))throw new Error('Invalid Mission state');const next=canonicalize(state);const updated=transaction(this.db,()=>{
     const m=this.requireMission(id);if(m.envelope.kind==='work_request'&&!['draft','cancelled'].includes(next))throw Error('Work request draft grants no execution authority');if(m.envelope.control_version===2)assertTransition(m.state,next);if(['completed','cancelled'].includes(m.state)&&next!==m.state)throw new Error('Terminal Mission cannot resume');
     if(this.authorityRuntime?.active)this.authorityRuntime.store.setState(id,next);
     this.db.prepare(`UPDATE cp_missions SET state=?,reason=?,updated_at=?,revision=revision+${this.authorityRuntime?.active?0:1} WHERE id=?`).run(next,reason?text(reason,'state reason',1000):null,this.now(),id);
     this.db.prepare('UPDATE project_missions SET status=?,updated_at=? WHERE mission_id=?').run(['completed','cancelled'].includes(next)?next:['blocked','needs_rework'].includes(next)?'blocked':'active',this.now(),id);
-    this.event(`mission.${next}`,id,{previous:m.state,state:next,requested:state});return this.getMission(id);
-  }); }
+    this.event(`mission.${next}`,id,{previous:m.state,state:next,requested:state});return { previous:m.state, mission:this.getMission(id) };
+  });
+    // Event-driven terminal notifications: after the state transaction commits so
+    // delivery failures cannot roll back Mission settlement.
+    try {
+      if (updated.previous !== updated.mission.state) {
+        require('./mission-terminal-notifications').onMissionState(this.bridge, updated.mission, {
+          previous: updated.previous, state: updated.mission.state,
+        });
+      }
+    } catch { /* notification never alters settlement */ }
+    return updated.mission;
+  }
   run(id){require('./memory-content-erasure').assertReadable(this.db);const r=this.db.prepare('SELECT * FROM cp_runs WHERE id=?').get(id);return r?{...r,result:r.result?JSON.parse(r.result):null}:null;}
   startRun({id,taskId,missionId=null,agentId='host',generation=1,nativeSessionId=null,role='worker'}) {require('./removed-runtime').assertExecutable(agentId);return transaction(this.db,()=>{this.lifecycle?.assertOpen();
     if(missionId&&this.requireMission(missionId).envelope.kind==='work_request')throw Error('Work request draft grants no execution authority');

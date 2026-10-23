@@ -41,6 +41,9 @@ const STAGES = Object.freeze({
  'mission.paused':['Mission','Mission paused'], 'mission.blocked':['Mission','Mission blocked'], 'mission.needs_rework':['Mission','Rework required'],
  'mission.cancelled':['Mission','Cancellation recorded; termination checked separately'], 'mission.completed':['Mission','Mission completed'],
  'mission.accepted':['Settlement','Acceptance recorded'], 'mission.settled':['Settlement','Local Settlement recorded'],
+ 'mission.terminal_notification_enqueued':['Settlement','Terminal notification enqueued'],
+ 'gateway.assignments.sealed':['Planning','Specialist plan sealed'],
+ 'worker.trace':['Worker','Worker activity observed'],
  'whatsapp.inbound.received':['System','WhatsApp webhook received'], 'whatsapp.inbound.verified':['System','WhatsApp signature verified'],
  'whatsapp.inbound.stored':['System','WhatsApp message stored'], 'whatsapp.inbound.available':['System','WhatsApp message available in inbox'],
  'whatsapp.inbound.rejected':['System','WhatsApp webhook rejected'], 'whatsapp.inbound.duplicate':['System','WhatsApp duplicate ignored'],
@@ -61,7 +64,8 @@ const DISPLAY_STAGE = Object.freeze({
  'fs.file_read':'execution','fs.file_created':'execution','fs.file_modified':'execution','fs.file_deleted':'execution','git.diff_observed':'execution','git.diff.observed':'execution','git.branch.observed':'execution','git.baseline.observed':'execution',
  'shell.command.requested':'execution','shell.command.completed':'execution','test.started':'execution','test.completed':'execution','test.observed':'execution',
  'verification.started':'verification','verification.completed':'verification','verification.failed':'verification','acceptance.started':'verification','acceptance.passed':'verification','acceptance.operator_review':'acceptance',
- 'mission.awaiting_acceptance':'acceptance','mission.waiting_for_operator':'acceptance','mission.accepted':'acceptance','mission.settled':'settlement'
+ 'mission.awaiting_acceptance':'acceptance','mission.waiting_for_operator':'acceptance','mission.accepted':'acceptance','mission.settled':'settlement',
+ 'mission.terminal_notification_enqueued':'settlement','gateway.assignments.sealed':'request','worker.trace':'execution'
 });
 function eventView(event) {
  const mapping = STAGES[event.event_type]; if (!mapping) return null;

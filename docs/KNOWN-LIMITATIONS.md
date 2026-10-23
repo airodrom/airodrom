@@ -1,5 +1,12 @@
 # Known limitations
 
+## Source repository routing and notifications (2026-10-22)
+
+- `airodrom/airodrom` source development requires an enrolled Developer Autonomy policy on that repository. Fixture / chatgpt-handoff standing grants never authorize source edits; requests fail with `SOURCE_REPOSITORY_NOT_ENROLLED` instead of falling back.
+- ChatGPT unsolicited push notifications require a valid `~/.airodrom/chatgpt-trigger.json`. Without it, terminal notifications are durable in `cp_mission_notifications` / outbox and retrievable via `list_mission_notifications` — do not claim live ChatGPT push without a delivery receipt.
+- Notification delivery failures never alter Mission settlement. Disable with `local.json` → `mission_notifications.enabled=false`.
+- Historical misrouted Missions that bound source prose to chatgpt-handoff remain immutable evidence; do not replay those request ids.
+
 ## Cursor Mission admission closeout (2026-10-22)
 
 - Request `chatgpt_cursor_live_roundtrip_20261022_v1` is historical WAIT evidence and must not be replayed. After install, a **fresh** ChatGPT-origin request is required for Gate B.

@@ -164,18 +164,99 @@ function missionEvents(bridge, missionId, { limit = 100 } = {}) {
   const lineage = lineageFor(bridge, mission);
   const events = [];
   for (const item of lineage) {
-    for (const e of bridge.ledger.list({ missionId: item.mission_id, limit, order: 'asc' }).events) {
-      events.push({ at: e.timestamp_ms, mission_id: item.mission_id, type: e.event_type, status: e.status || null, metadata: compactMetadata(e.metadata) });
+    for (const e of bridge.ledger.list({ missionId: item.mission_id, limit: Math.max(limit, 200), order: 'asc' }).events) {
+      events.push({
+        event_id: e.event_id,
+        sequence: e.sequence,
+        at: e.timestamp_ms,
+        mission_id: item.mission_id,
+        type: e.event_type,
+        status: e.status || null,
+        metadata: compactMetadata(e.metadata),
+        run_id: e.run_id || null,
+      });
     }
   }
-  events.sort((a, b) => a.at - b.at);
-  return { mission_id: id, lineage: lineage.map(l => l.mission_id), events: events.slice(-limit), authority: false };
+  events.sort((a, b) => (a.sequence || a.at) - (b.sequence || b.at));
+  const sliced = events.slice(-limit);
+  return {
+    mission_id: id,
+    lineage: lineage.map(l => l.mission_id),
+    events: sliced,
+    cursor: sliced.length ? (sliced[sliced.length - 1].sequence || sliced[sliced.length - 1].at) : null,
+    authority: false,
+  };
+}
+
+/**
+ * Chronological engineering report for ChatGPT retrieval.
+ * Separates worker-reported claims from host-verified evidence. Never invents
+ * private model reasoning or unverified actions.
+ */
+function engineeringReport(bridge, missionId, { limit = 200 } = {}) {
+  const base = missionEvents(bridge, missionId, { limit });
+  const mission = bridge.controlStore.getMission(base.mission_id);
+  const evidence = evidencePackage(bridge, base.mission_id);
+  const stages = [];
+  for (const e of base.events) {
+    const provenance = e.metadata?.provenance || null;
+    const claim = provenance === 'WORKER_REPORTED' || (e.type === 'worker.trace' && provenance !== 'HOST_MEDIATED');
+    const host = provenance === 'HOST_MEDIATED' || /^(mission\.|verification\.|acceptance\.|gateway\.|runtime\.execution)/.test(e.type);
+    let label = e.type;
+    if (e.type === 'mission.created') label = 'Mission created';
+    else if (e.type === 'mission.approval.bound' || e.type === 'mission.approval.issued') label = 'Mission authorized';
+    else if (e.type === 'gateway.assignments.sealed') label = 'OpenCode plan sealed';
+    else if (e.type === 'runtime.execution.started' && e.metadata?.agent_id === 'cursor') label = 'Cursor startup';
+    else if (e.type === 'worker.trace' && e.metadata?.kind === 'worker.tool_started' && e.metadata?.path) label = 'File inspected (worker-reported)';
+    else if (e.type === 'worker.trace' && e.metadata?.kind === 'worker.tool_completed' && e.metadata?.path) label = 'File tool completed (worker-reported)';
+    else if (e.type === 'worker.terminated' || (e.type === 'worker.trace' && e.metadata?.kind === 'worker.exited')) label = 'Worker execution result';
+    else if (e.type === 'gateway.evaluated') label = 'OpenCode evaluation';
+    else if (e.type === 'verification.completed' || e.type === 'verification.failed') label = 'Airodrom independent verification';
+    else if (e.type === 'mission.completed' || e.type === 'mission.accepted') label = 'Mission Acceptance';
+    else if (e.type === 'mission.blocked' || e.type === 'mission.needs_rework' || e.type === 'mission.cancelled') label = 'Mission ' + (e.metadata?.state || e.type.split('.')[1]);
+    else if (e.type === 'mission.terminal_notification_enqueued') label = 'Terminal notification enqueued';
+    stages.push({
+      event_id: e.event_id,
+      sequence: e.sequence,
+      at: e.at,
+      mission_id: e.mission_id,
+      type: e.type,
+      label,
+      evidence_class: claim ? 'worker_reported_untrusted' : host ? 'host_verified' : 'observed',
+      path: e.metadata?.path || null,
+      tool: e.metadata?.tool || null,
+      agent_id: e.metadata?.agent_id || null,
+      recommendation: e.metadata?.recommendation || null,
+      termination_verified: e.metadata?.termination_verified ?? null,
+      authority: false,
+    });
+  }
+  const notifications = require('./mission-terminal-notifications').listForMission(bridge, base.mission_id);
+  return {
+    mission_id: base.mission_id,
+    lineage: base.lineage,
+    repository_binding: {
+      project_id: mission.project_id || null,
+      repository_id: mission.envelope?.cognitive?.envelope?.repository_id || null,
+      workspace: mission.envelope?.workspace || null,
+      preferred_agent: mission.envelope?.preferred_agent || null,
+      allowed_files: mission.envelope?.allowed_files || [],
+    },
+    stages,
+    cursor: base.cursor,
+    host_verified_changes: evidence.changed_files || [],
+    verification_status: evidence.verification?.result || evidence.status || null,
+    acceptance_status: evidence.acceptance_status || null,
+    notifications: notifications.notifications,
+    authority: false,
+    note: 'Worker-reported stages are untrusted claims. Host-verified stages come from Airodrom ledger and independent verification.',
+  };
 }
 
 function compactMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') return {};
-  const keep = ['assignment_id', 'worker', 'role', 'repair', 'worker_run_id', 'binding_hash', 'result_hash', 'recommendation', 'state', 'previous', 'reason', 'kind', 'provenance', 'agent_id', 'plan_id', 'stage_id', 'repair_mission_id', 'parent_mission_id', 'diagnosis', 'classification', 'attempt', 'max_repairs', 'approval_id', 'result', 'phase', 'tool', 'scope', 'path', 'exit_code', 'termination_verified', 'dispatch_path'];
+  const keep = ['assignment_id', 'worker', 'role', 'repair', 'worker_run_id', 'binding_hash', 'result_hash', 'recommendation', 'state', 'previous', 'reason', 'kind', 'provenance', 'agent_id', 'plan_id', 'stage_id', 'repair_mission_id', 'parent_mission_id', 'diagnosis', 'classification', 'attempt', 'max_repairs', 'approval_id', 'result', 'phase', 'tool', 'scope', 'path', 'exit_code', 'termination_verified', 'dispatch_path', 'notification_id', 'destination', 'status', 'files', 'writable', 'sandbox_id'];
   return Object.fromEntries(Object.entries(metadata).filter(([k]) => keep.includes(k)));
 }
 
-module.exports = { evidencePackage, missionEvents, lineageFor, planFor, PHASES };
+module.exports = { evidencePackage, missionEvents, engineeringReport, lineageFor, planFor, PHASES };

@@ -1,5 +1,14 @@
 # Current state (2026-10-10)
 
+## Source routing, engineering visibility, terminal notifications — SOURCE (2026-10-22)
+
+- **Misroute cause:** ChatGPT source-development instructions that said “not chatgpt-handoff / not recovery proof” still matched those project names as positive mentions, then preferred the enrolled handoff DA + standing Cursor grant (`recovery-proof.txt`). There is no enrolled DA policy for `~/code/airodrom` / `airodrom/airodrom`.
+- **Repair:** negation-aware project matching; explicit `airodrom/airodrom` source resolution before fixture hits; fail closed with `SOURCE_REPOSITORY_NOT_ENROLLED` / `CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED`; seal repository binding on cognitive asks; standing Cursor grants remain repository-scoped.
+- **Visibility:** `get_mission_engineering_report` + richer `get_mission_events` expose chronological Cursor/OpenCode/host evidence with worker vs host provenance.
+- **Notifications:** terminal Mission states enqueue durable outbox notifications (no hourly poll). Destination is `chatgpt_trigger` only when configured; otherwise `mission_notification_inbox` via `list_mission_notifications`. Owner may set `local.json` `mission_notifications.enabled=false`.
+- **Historical:** Missions `76be0b40-…`, `c5e20cbc-…`, ask `airodrom_source_notifications_scope_20261022_v1`, and successful handoff `987ac2c5-…` stay immutable.
+- **Owner next step for real source work:** enroll Developer Autonomy for the authorized `airodrom/airodrom` checkout (not chatgpt-handoff), then issue a fresh ChatGPT ask. Do not treat fixture grants as source authorization.
+
 ## Standing Cursor development authorization — SOURCE (2026-10-22)
 
 - **Owner need:** recurring Cursor development in the approved chatgpt-handoff disposable repository must not re-prompt `BLOCKED_SPEND_AUTHORIZATION` / `scoped_external_disclosure_required` for every eligible Mission.

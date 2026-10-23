@@ -354,6 +354,8 @@ class BridgeController extends EventEmitter {
       }
       await backupBeforeMigration(this.memory.db, path.join(this.dataDir, 'memory.sqlite'));
       this.controlStore = new ControlPlaneStore({ db: this.memory.db, ledger: this.ledger });
+      this.controlStore.bridge = this;
+      require('./mission-terminal-notifications').registerOutboxHandlers(this);
       this.hostReasoningAdmission = new (require('./host-reasoning-admission').HostReasoningAdmission)(this);
       this.providerGateway = new (require('./provider-gateway').ProviderGateway)({
         db: this.memory.db,

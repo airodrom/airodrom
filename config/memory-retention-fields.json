@@ -4350,5 +4350,30 @@
       "created_by": "B",
       "request_id": "A"
     }
+  },
+  "cp_mission_notifications": {
+    "fields": [
+      "id",
+      "mission_id",
+      "revision",
+      "status",
+      "state",
+      "summary",
+      "destination",
+      "outbox_id",
+      "created_at"
+    ],
+    "source": "src/mission-terminal-notifications.js",
+    "classification": {
+      "id": "A",
+      "mission_id": "A",
+      "revision": "A",
+      "status": "A",
+      "state": "A",
+      "summary": "A",
+      "destination": "A",
+      "outbox_id": "A",
+      "created_at": "A"
+    }
   }
 }
