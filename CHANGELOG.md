@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Developer Autonomy workspace preparation admits on filesystem free space after a protected reserve instead of aggregating Git history, retained clones, and `node_modules` against signed `max_disk_mb`; legacy policies stay valid and capacity errors are distinct from the old budget string.
 - Authoritative Airodrom/Arecibo routing now requires an active Developer Autonomy policy on the matched repository root; a registered project alone no longer counts as enrollment.
 
 ### Added

@@ -1,5 +1,10 @@
 # Known limitations
 
+## Developer Autonomy disk admission (2026-10-22)
+
+- Workspace preparation no longer fails solely because signed `max_disk_mb` (often 4 GB) was exceeded by Git history + clones + `node_modules`. Admission is filesystem free space after reserve. Genuine full disks still fail closed with an explicit capacity error.
+- Do not reintroduce an aggregate DA “disk budget” ceiling as a substitute for volume capacity checks.
+
 ## Automatic multi-project development (2026-10-22)
 
 - Product routing is catalog-driven (`config/development-targets-v1.json`). Ambiguous dual-product asks return `DEVELOPMENT_TARGET_AMBIGUOUS` rather than picking an unrelated active project.

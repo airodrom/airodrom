@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## Developer Autonomy disk admission — SOURCE (2026-10-22)
+
+- **Cause:** `assertDiskBudget` charged Git object stores, retained clones, and `node_modules` against signed `max_disk_mb` (often 4096), yielding recurring `Developer Autonomy disk budget exhausted` on otherwise authorized Airodrom Source / Arecibo work.
+- **Repair:** preparation admits on filesystem free space after a protected reserve; `max_disk_mb` stays on signed policies for compatibility only; local clones hardlink Git objects; existing worktrees are never deleted for capacity; capacity errors are distinct from the legacy budget string.
+- **Policy `a99c2399-…` (airodrom-source-cursor-dev)** remains active and unmodified; workspace prep must succeed without rewriting that grant when free space exists.
+
 ## Automatic multi-project development (Airodrom + Arecibo) — SOURCE (2026-10-22)
 
 - **Catalog:** `config/development-targets-v1.json` defines authoritative targets `airodrom/airodrom` and `arecibo-inc/arecibo-core`. Add a third repository by appending an entry; do not redesign the ChatGPT → Airodrom → OpenCode → Cursor path.

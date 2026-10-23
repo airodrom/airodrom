@@ -126,7 +126,9 @@ function boundedDependencyBytes(root, maxBytes, allowedRoot = root) {
     if (++entries > 200000) throw Error('Dependency file count exceeds bounded inspection');
     // Count the target, not the small size of a symlink directory entry.
     bytes += stat.size;
-    if (bytes > maxBytes) throw Error('Developer Autonomy disk budget exhausted');
+    if (bytes > maxBytes) {
+      throw Error('Insufficient filesystem free space for dependency materialization (dependency tree exceeds available capacity after reserve)');
+    }
     if (!stat.isDirectory()) return;
     let children;
     try { children = fs.readdirSync(canonical); }
