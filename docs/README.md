@@ -27,6 +27,8 @@
 
 **Milestone B (OpenCode ↔ Cursor):** [MILESTONE-B-CURSOR-SPECIALIST-READINESS.md](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md) — canonical USER → ChatGPT → Airodrom → OpenCode → Cursor → OpenCode → Airodrom path; evidence packet; spend boundaries.
 
+**Standing Cursor development:** [STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md) — owner-enrolled finite grants that stop recurring spend/disclosure WAIT for routine authorized Cursor work; project-scoped; fail-closed recovery.
+
 **macOS Desktop Activation V1** (Menu V3 + login startup — SHIPPED + INSTALLED): [MACOS-DESKTOP-ACTIVATION-V1.md](MACOS-DESKTOP-ACTIVATION-V1.md).
 
 **Final Product Consolidation V1** (local usable release stop line): [FINAL-PRODUCT-CONSOLIDATION-V1.md](FINAL-PRODUCT-CONSOLIDATION-V1.md).

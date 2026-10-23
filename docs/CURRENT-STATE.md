@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## Permanent Cursor authorization automation — SOURCE (2026-10-22)
+
+- **Cause:** Active Developer Autonomy policies with Cursor on the worker allowlist do **not** satisfy cognitive spend/disclosure admission. Only an owner-enrolled `cp_standing_cursor_development` grant auto-covers routine Cursor Missions. Live host had a standing grant for chatgpt-handoff only; Airodrom Source (`a99c2399-…` / `airodrom-da-main`) and Arecibo Core (`d07c3c39-…` / `arecibo-core-autopilot-main`) therefore returned recurring `scoped_external_disclosure_required` + `BLOCKED_SPEND_AUTHORIZATION`.
+- **Repair:** policy-bound standing-grant matching + exact mismatch diagnosis (`STANDING_CURSOR_GRANT_*`); owner enrolls one finite standing grant per repository via `POST /api/assistant/host-execution-policy/enroll-standing-cursor-development` (`acknowledge_unknown_cost`, cognitive path allowlist, DA `policy_id`). Eligible Missions reuse the grant without a second per-Mission approval. Grants never cross projects; fixture grants never authorize source work.
+- **Canonical doc:** [STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md).
+
 ## Developer Autonomy disk admission — SOURCE (2026-10-22)
 
 - **Cause:** `assertDiskBudget` charged Git object stores, retained clones, and `node_modules` against signed `max_disk_mb` (often 4096), yielding recurring `Developer Autonomy disk budget exhausted` on otherwise authorized Airodrom Source / Arecibo work.
@@ -26,9 +32,10 @@
 
 ## Standing Cursor development authorization — SOURCE (2026-10-22)
 
-- **Owner need:** recurring Cursor development in the approved chatgpt-handoff disposable repository must not re-prompt `BLOCKED_SPEND_AUTHORIZATION` / `scoped_external_disclosure_required` for every eligible Mission.
-- **Mechanism:** authenticated operator enrolls `cp_standing_cursor_development` via host execution policy (finite missions, invocations, runtime, public path allowlist, acknowledged unknown subscription cost). Cognitive Cursor planning auto-consumes a covering grant; otherwise WAIT remains.
-- **Out of scope:** paid overages, unapproved repositories, private data, production, and historical request mutation. Do not run a paid Cursor Mission solely to configure the grant.
+- **Owner need:** recurring Cursor development on an approved enrolled repository must not re-prompt `BLOCKED_SPEND_AUTHORIZATION` / `scoped_external_disclosure_required` for every eligible Mission.
+- **Mechanism:** authenticated operator enrolls `cp_standing_cursor_development` via host execution policy (finite missions, invocations, runtime, public path allowlist, acknowledged unknown subscription cost, optional DA `policy_id` binding). Cognitive Cursor planning auto-consumes a covering grant; otherwise WAIT with exact `STANDING_CURSOR_GRANT_*` diagnosis. See [STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md).
+- **Projects:** Airodrom Source and Arecibo Core each need their own grant; chatgpt-handoff fixture grant never covers them.
+- **Out of scope:** paid overages, unapproved repositories, private data, production, credentials, cross-repo access, and historical request mutation. Do not run a paid Cursor Mission solely to configure the grant.
 
 ## Cognitive enrollment auto-prepare for standing DA — SOURCE (2026-10-22)
 

@@ -407,6 +407,8 @@ function view(record, bridge) {
     request_id: record.request_id, mission_id: mission?.id || null, root_mission_id: record.mission_id || null, execution_authorized: !!record.mission_id && ['SEALED', 'DISPATCHED', 'RUNNING'].includes(state),
     blockers: interrupted ? ['cognitive_planning_reconciliation_required'] : mission?.reason && state === 'BLOCKED' ? [mission.reason] : record.blockers || [],
     next_action: record.mission_id ? 'get_mission_evidence'
+      : state === 'WAIT' && (record.blockers || []).some(code => String(code).startsWith('STANDING_CURSOR_GRANT_'))
+        ? (record.presentation?.standing_cursor_diagnosis?.next_action || 'enroll_standing_cursor_development_via_authenticated_local_api')
       : state === 'WAIT' ? 'authorize_cursor_via_authenticated_local_api'
       : (record.blockers || []).includes('CURSOR_EXECUTION_DISABLED') ? 'enable_cursor_via_authenticated_local_api_or_use_local_opencode'
       : (record.blockers || []).includes('standing_cursor_worker_not_enrolled') ? 'enroll_developer_autonomy_with_cursor_worker'
@@ -421,6 +423,9 @@ function view(record, bridge) {
         ? 'Standing enrollment allows Local OpenCode only; Cursor is not on the worker allowlist. Re-enroll Developer Autonomy with Cursor permitted. Chat text cannot expand the allowlist.'
       : (record.blockers || []).includes('CURSOR_EXECUTION_DISABLED')
         ? 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center.'
+      : (record.blockers || []).some(code => String(code).startsWith('STANDING_CURSOR_GRANT_'))
+        ? (record.presentation?.standing_cursor_diagnosis?.reason
+          || 'Standing Cursor development grant does not cover this Mission. Enroll or renew via the authenticated local owner API.')
       : 'Planning requires current enrolled scope, caller delegation, and registered verification.',
     cognitive: { version: record.cognitive?.envelope?.version || 1, envelope_hash: record.cognitive?.envelope?.hash || null, planning_attempts: record.cognitive?.planning_attempts || 0, planner_run_ids: record.cognitive?.planner_run_ids || [] }, authority: false };
 }
@@ -653,13 +658,15 @@ async function executeReserved(zero, record, p, instruction) {
       if (cursorDisabled) C.fail('CURSOR_EXECUTION_DISABLED');
       if (envelope.version < 3 && envelope.limits.repair_attempts) C.fail('cognitive_external_repair_authorization_unavailable');
       const maxInvocations = proposal.tasks.filter(t => t.worker === 'cursor').length + envelope.limits.repair_attempts;
-      const standing = b.hostExecutionPolicy?.matchStandingCursorDevelopment?.({
+      const standingQuery = {
         repository: p.repository,
         files: proposal.files,
         max_invocations: maxInvocations,
         max_runtime_ms: envelope.limits.execution_ms,
         data_class: 'public',
-      }) || null;
+        policy_id: p.policy_id || null,
+      };
+      const standing = b.hostExecutionPolicy?.matchStandingCursorDevelopment?.(standingQuery) || null;
       if (standing) {
         record.state = 'awaiting_approval';
         record.blockers = [];
@@ -667,6 +674,7 @@ async function executeReserved(zero, record, p, instruction) {
           files: proposal.files, worker: 'cursor', measurable: true,
           repair_budget: envelope.limits.repair_attempts, max_invocations: maxInvocations,
           success_criteria: envelope.verification,
+          standing_grant_id: standing.id,
           status: 'Standing Cursor development grant covers disclosure and subscription bounds',
         };
         zero.write(request_id, record.principal, record, 'awaiting_approval');
@@ -679,11 +687,21 @@ async function executeReserved(zero, record, p, instruction) {
         catch { /* Mission already authorized; consumption is accounting only */ }
         return approved;
       }
+      const diagnosis = b.hostExecutionPolicy?.diagnoseStandingCursorDevelopment?.(standingQuery) || null;
       record.state = 'awaiting_approval';
-      record.blockers = ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'];
-      record.presentation = { files: proposal.files, worker: 'cursor', measurable: true, repair_budget: envelope.limits.repair_attempts, max_invocations: maxInvocations,
-        success_criteria: envelope.verification, status: 'Scoped local owner disclosure and subscription grant required' };
-      // No DA grant is converted into external authority. The existing operator
+      record.blockers = diagnosis?.code
+        ? [diagnosis.code, 'scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']
+        : ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION'];
+      record.presentation = {
+        files: proposal.files, worker: 'cursor', measurable: true,
+        repair_budget: envelope.limits.repair_attempts, max_invocations: maxInvocations,
+        success_criteria: envelope.verification,
+        standing_cursor_diagnosis: diagnosis || undefined,
+        status: diagnosis?.reason
+          || 'Scoped local owner disclosure and subscription grant required',
+      };
+      // No DA grant is converted into external authority. Standing Cursor grants
+      // (owner-enrolled) auto-cover eligible Missions; otherwise the operator
       // approval endpoint supplies an exact, finite subscription grant separately.
       zero.write(request_id, record.principal, record, 'awaiting_approval');
       return view(record, b);
