@@ -634,7 +634,7 @@ test('settled retained worktrees do not exhaust the concurrent worktree budget',
   b.missions.cancel(next.id, {request_id:randomUUID()});
 });
 
-test('ready and unsettled worktrees still occupy the concurrent worktree budget', async t => {
+test('ready workspaces with active leases occupy the concurrent budget until verified release', async t => {
   const f = await setup(t), da = f.bridge.developerAutonomy;
   const policy = da.enroll({
     ...f.enrollInput,
@@ -647,12 +647,18 @@ test('ready and unsettled worktrees still occupy the concurrent worktree budget'
     prefer_disposable: true
   }, 'operator');
   assert.equal(ready.state, 'ready');
+  const store = f.bridge.controlStore, runId = randomUUID();
+  store.startRun({ id: runId, taskId: randomUUID(), agentId: 'host', role: 'planner' });
+  store.acquireLease({ resource: ready.path, runId, mode: 'read' });
   assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
   assert.throws(() => da.prepareWorkspace({
     policy_id: policy.policy_id,
     request_id: randomUUID(),
     prefer_disposable: true
   }, 'operator'), /Worktree budget exhausted/);
+  store.updateRun(runId, { state: 'completed', processState: 'not_started', verified: true });
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
+  assert.equal(da.prepareWorkspace({ policy_id: policy.policy_id, request_id: randomUUID(), prefer_disposable: true }, 'operator').state, 'ready');
 });
 
 test('idle held unique evidence does not exhaust the concurrent worktree budget', async t => {
@@ -667,7 +673,8 @@ test('idle held unique evidence does not exhaust the concurrent worktree budget'
     request_id: randomUUID(),
     prefer_disposable: true
   }, 'operator');
-  assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
+  assert.equal(da.capacityInventory(policy.policy_id).non_occupying[0].classification, 'idle_unbound_ready');
   // Unique commit on the disposable clone forces HOLD on cleanup (evidence retain).
   require('child_process').execFileSync('git', ['-C', ready.path, 'commit', '--allow-empty', '-m', 'unique evidence'], {stdio: 'pipe'});
   const held = da.cleanupWorkspace({ workspace_id: ready.workspace_id, confirmed: true }, 'operator');
@@ -682,7 +689,8 @@ test('idle held unique evidence does not exhaust the concurrent worktree budget'
   }, 'operator');
   assert.equal(next.state, 'ready');
   assert.notEqual(next.workspace_id, ready.workspace_id);
-  assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
+  assert.ok(da.capacityInventory(policy.policy_id).non_occupying.some(s => s.workspace_id === held.workspace_id && s.classification === 'retained_evidence'));
 });
 
 test('idle ready clones without grants do not block filesystem-capacity preparation', async t => {
