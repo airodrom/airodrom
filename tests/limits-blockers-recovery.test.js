@@ -53,17 +53,17 @@ function tmpDbBridge() {
   return bridge;
 }
 
-test('coverage: all 27 canonical operational blockers have auto-diagnosis', () => {
+test('coverage: all 29 canonical operational blockers have auto-diagnosis', () => {
   const cov = Recovery.coverage();
-  assert.equal(cov.canonical_operational_owner.required, 27);
-  assert.equal(cov.canonical_operational_owner.covered, 27);
-  assert.ok(cov.security_fail_closed >= 21);
+  assert.equal(cov.canonical_operational_owner.required, 29);
+  assert.equal(cov.canonical_operational_owner.covered, 29);
+  assert.ok(cov.security_fail_closed >= 22);
 });
 
-test('security-critical: none of the 21 invent executable authority bypass', () => {
+test('security-critical: none of the 22 invent executable authority bypass', () => {
   const registry = Registry.loadRegistry();
   const sec = registry.entries.filter(e => e.category === 'security_critical');
-  assert.equal(sec.length, 21);
+  assert.equal(sec.length, 22);
   for (const entry of sec) {
     const plan = Recovery.planFor(entry);
     assert.equal(plan.operation === 'security_investigate_fail_closed' || plan.security_fail_closed === true
