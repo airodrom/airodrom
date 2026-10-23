@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## Developer Autonomy worktree capacity lifecycle — SOURCE (2026-10-22)
+
+- **Cause:** Concurrent `max_worktrees` counted every `ready` workspace, including grantless idle clones left by interrupted/failed cognitive planning. Four clean disposable leftovers under Airodrom Source policy `a99c2399-…` filled the ceiling and blocked `chatgpt_post217_multitask_live_acceptance_20261022_v1` with generic `Worktree budget exhausted` before planning completed.
+- **Repair:** Concurrent slots cover only active writers, unsettled Mission lineages, active grants, and invalid prep. Idle grantless ready / settled evidence remain on disk without consuming execution capacity (aligned with disk admission). Exhaustion reports policy id, limit, occupied classifications, and recovery action. Protected dirty/unique workspaces stay preserved; reclaim still deletes only demonstrably clean disposables.
+- Historical blocked ask remains immutable; issue a fresh ChatGPT-origin Mission after install.
+
 ## Cognitive plan files mismatch & pre-Mission notifications — SOURCE (2026-10-22)
 
 - **Cause:** OpenCode planning echoed every cognitive discovery path into `PlanningProposal.files` while tasks only referenced a legitimate subset (e.g. `README.md` read→edit). Host parse required exact equality between `files` and the union of `task.paths`, yielding durable `cognitive_plan_files_mismatch` (requests `chatgpt_airodrom_multitask_trigger_20261022_v2`, `chatgpt_post215_standing_grant_probe_20261022_v1`). Terminal ask `BLOCKED` had no Mission id, so mission-only notifications never fired.
