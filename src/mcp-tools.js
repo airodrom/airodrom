@@ -63,7 +63,7 @@ const TOOLS = [
   tool('get_mission_status','Read the derived recovery phase and owner-readable status for a Mission or any Mission in its repair lineage. Grants no authority.',{mission_id:id},['mission_id'],true),
   tool('get_mission_events','Read the compact durable event timeline (flight recorder subset) for a Mission lineage. Grants no authority.',{mission_id:id,limit:{type:'integer',minimum:1,maximum:200}},['mission_id'],true),
   tool('get_mission_engineering_report','Read the chronological engineering progress report for a Mission: planning, Cursor activity, host-verified changes, OpenCode evaluation, independent verification, Acceptance, and terminal notifications. Worker claims are labelled untrusted. Grants no authority.',{mission_id:id,limit:{type:'integer',minimum:1,maximum:200}},['mission_id'],true),
-  tool('list_mission_notifications','Read durable terminal Mission notifications (ACCEPTED/BLOCKED/FAILED/CANCELLED/NEEDS_REWORK/OWNER_ACTION_REQUIRED) from the event-driven outbox inbox. Grants no authority. Does not poll Mission state.',{after:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50},mission_id:id},[],true),
+  tool('list_mission_notifications','Read durable terminal Mission and ask notifications (ACCEPTED/BLOCKED/WAIT/FAILED/CANCELLED/NEEDS_REWORK/OWNER_ACTION_REQUIRED) from the event-driven outbox inbox. Covers pre-Mission planning/authorization failures keyed by request_id when mission_id is absent. Grants no authority. Does not poll Mission state.',{after:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50},mission_id:id,request_id:requestId},[],true),
   tool('list_development_targets','Read the authoritative multi-project development catalog (Airodrom, Arecibo, and any future entries) plus live enrollment readiness for each repository. Grants no authority. Does not enroll or expand grants.',{},[],true),
   tool('resolve_development_target','Resolve which authoritative development repository an instruction would select, without starting a Mission. Fail-closed codes surface when authorization is missing. Grants no authority.',{instruction:text(4000,'Natural-language development instruction to resolve.')},['instruction'],true),
   tool('get_mission_evidence','Read the machine-readable final evidence package built from host records only: scope, worker, sandbox, changed files, tests, security checks, verification, repair lineage, budget, approval/acceptance status and the next safe action. Worker prose is labelled untrusted. Retrievable after any disconnect; Airodrom never wakes an inactive conversation.',{mission_id:id},['mission_id'],true),
@@ -262,6 +262,7 @@ class McpTools {
     if(name==='list_mission_notifications'){
       const N=require('./mission-terminal-notifications');
       if(args.mission_id)return N.listForMission(this.bridge,args.mission_id,{limit:args.limit||20});
+      if(args.request_id)return N.listForRequest(this.bridge,args.request_id,{limit:args.limit||20});
       return N.listRecent(this.bridge,{after:args.after||0,limit:args.limit||20});
     }
     if(name==='list_development_targets'||name==='resolve_development_target'){

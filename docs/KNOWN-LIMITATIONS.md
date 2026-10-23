@@ -1,5 +1,10 @@
 # Known limitations
 
+## Cognitive planning file sets (2026-10-22)
+
+- `PlanningProposal.files` is normalized to the union of `task.paths`. Unread discovery/context files must not be treated as required edit targets; out-of-scope paths still fail closed with explicit mismatched path detail.
+- Pre-Mission `BLOCKED`/`WAIT` notifications are durable in `cp_mission_notifications` (request_id identity) and retrievable via `list_mission_notifications`. Unsolicited ChatGPT push still requires a configured trigger; inbox remains the supported fallback. Unchanged WAIT replays do not create duplicates.
+
 ## Standing Cursor development grants (2026-10-22)
 
 - DA Cursor on the worker allowlist alone never skips spend/disclosure WAIT. A covering owner-enrolled standing Cursor grant is required per repository ([STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md)).
