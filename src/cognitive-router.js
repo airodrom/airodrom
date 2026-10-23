@@ -346,15 +346,16 @@ function policyFor(bridge, instruction) {
   if (!candidates.length) return [];
   const projects = bridge.projects.listProjects({ status: 'active' });
   const {
-    instructionMentions, requestsAirodromSource, isFixtureOrHandoffPath, findEnrolledAirodromSource,
+    instructionMentions, isFixtureOrHandoffPath, resolveAuthoritativeDevelopment,
   } = require('./project-resolution');
-  // Source-development requests never bind fixture/handoff cognitive policies.
-  if (requestsAirodromSource(instruction)) {
-    const source = findEnrolledAirodromSource(projects, {
-      activeRepositories: new Set(candidates.map(p => p.repository)),
-    });
-    if (!source.ok) return [];
-    return candidates.filter(p => p.repository === source.workspace && p.project_id === source.project.projectId);
+  // Authoritative product requests never bind fixture/handoff cognitive policies.
+  const authoritative = resolveAuthoritativeDevelopment(instruction, projects, {
+    activeRepositories: new Set(candidates.map(p => p.repository)),
+  });
+  if (authoritative.matched) {
+    if (!authoritative.ok) return [];
+    return candidates.filter(p => p.repository === authoritative.workspace
+      && p.project_id === (authoritative.project.projectId || authoritative.project.project_id));
   }
   const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
   return candidates.filter(p => {
@@ -465,15 +466,25 @@ async function prepare(zero, { instruction, request_id }, principal) {
   }
   const matches = policyFor(b, instruction);
   if (!matches.length) {
-    const { requestsAirodromSource } = require('./project-resolution');
-    if (requestsAirodromSource(instruction)) {
+    const { resolveAuthoritativeDevelopment } = require('./project-resolution');
+    const projects = b.projects.listProjects({ status: 'active' });
+    const authoritative = resolveAuthoritativeDevelopment(instruction, projects, {
+      activeRepositories: new Set((b.developerAutonomy?.list?.('operator') || [])
+        .filter(p => p.state === 'active' && p.repository).map(p => p.repository)),
+    });
+    if (authoritative.matched && !authoritative.ok) {
       const blocked = {
         version: 1, request_id, principal, instruction, state: 'blocked',
         mission_id: null, planner: 'opencode', evaluator: 'opencode',
-        blockers: ['SOURCE_REPOSITORY_NOT_ENROLLED'], authority: false,
+        blockers: [authoritative.code || 'SOURCE_REPOSITORY_NOT_ENROLLED'], authority: false,
         presentation: {
           worker: 'cursor', files: [], measurable: false,
-          status: 'airodrom/airodrom source is not enrolled; fixture/handoff grants do not apply',
+          status: (authoritative.repository_id || 'target') + ' is not enrolled; other-project grants do not apply',
+        },
+        repository_binding: {
+          repository_id: authoritative.repository_id || null,
+          target_id: authoritative.target_id || null,
+          authority: false,
         },
       };
       zero.write(request_id, principal, blocked, 'blocked');
@@ -484,9 +495,9 @@ async function prepare(zero, { instruction, request_id }, principal) {
   if (matches.length !== 1) C.fail('cognitive_repository_ambiguous');
   if (principal !== 'operator' && !/^mcp:[0-9a-f-]{36}$/i.test(principal)) C.fail('cognitive_authenticated_caller_required');
   const p = matches[0];
-  // Fixture standing grants never authorize airodrom/airodrom source paths.
-  if (require('./project-resolution').isFixtureOrHandoffPath(p.repository)
-    && require('./project-resolution').requestsAirodromSource(instruction)) {
+  // Fixture standing grants never authorize authoritative product source paths.
+  const { isFixtureOrHandoffPath, detectAuthoritativeTargets } = require('./project-resolution');
+  if (isFixtureOrHandoffPath(p.repository) && detectAuthoritativeTargets(instruction).length) {
     C.fail('CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED');
   }
   const cursorDisabled = !!b.hostExecutionPolicy?.cursorDisabled?.();
@@ -599,13 +610,16 @@ async function executeReserved(zero, record, p, instruction) {
     record.cognitive.envelope = envelope; record.cognitive.workspace_identity = captured.workspace_identity;
     // Bind enrolled repository identity into the ask record before planning completes.
     // Planner paths must stay inside this repository; fixture grants cannot retarget.
+    const targetHit = require('./project-resolution').detectAuthoritativeTargets(instruction)[0] || null;
     record.repository_binding = {
       project_id: p.project_id,
       policy_id: p.policy_id,
       repository: p.repository,
-      repository_id: envelope.repository_id,
+      repository_id: targetHit?.repository_id || envelope.repository_id,
+      target_id: targetHit?.id || null,
       workspace_id: ws.workspace_id,
       authority: false,
+      cross_project_grant: false,
     };
     let proposal;
     while (record.cognitive.planning_attempts < envelope.limits.planning_attempts) {

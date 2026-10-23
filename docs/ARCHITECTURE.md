@@ -59,11 +59,27 @@ falls back to disposable fixture workspaces.
 
 1. Explicit project/repository targets resolve before OpenCode planning.
 2. Selected repository identity is sealed into the Mission / cognitive envelope.
-3. Negated names (`not chatgpt-handoff`) never select a project.
-4. Fixture / handoff standing grants never authorize `airodrom/airodrom` source edits.
-5. Unauthorized source requests fail closed with `SOURCE_REPOSITORY_NOT_ENROLLED`
-   rather than guessing another workspace.
+3. Negated names (`not chatgpt-handoff`, `not Arecibo`) never select a project.
+4. Fixture / handoff standing grants never authorize `airodrom/airodrom` or
+   `arecibo-inc/arecibo-core` source edits.
+5. Unauthorized product requests fail closed with target-specific codes
+   (`SOURCE_REPOSITORY_NOT_ENROLLED`, `ARECIBO_REPOSITORY_NOT_ENROLLED`) rather
+   than guessing another workspace.
 6. Planner paths outside the sealed repository are rejected before Cursor dispatch.
+7. Standing Developer Autonomy grants never transfer across projects.
+8. Authoritative targets live in `config/development-targets-v1.json`. Adding a
+   third development repository means appending a catalog entry—not changing the
+   ChatGPT → Airodrom → OpenCode → Cursor architecture.
+
+**Automatic multi-project selection precedence:**
+
+1. Explicit repository identifier (`airodrom/airodrom`, `arecibo-inc/arecibo-core`).
+2. Explicit product/project name (`Airodrom`, `Arecibo Core`).
+3. Instruction patterns for known product work (notifications, Command Center, …).
+4. Otherwise fail closed and ask which authorized repository to use.
+
+Use MCP `list_development_targets` / `resolve_development_target` to inspect live
+enrollment readiness without starting a Mission.
 
 **Engineering visibility:** durable ledger events (including Cursor `worker.trace`
 with provenance tags) are retrievable via `get_mission_events` /

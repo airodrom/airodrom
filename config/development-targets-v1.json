@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "description": "Authoritative multi-project development targets. Add a third repository by appending an entry; routing code reads this catalog and does not hard-code product pairs.",
+  "targets": [
+    {
+      "id": "airodrom",
+      "repository_id": "airodrom/airodrom",
+      "display_name": "Airodrom",
+      "not_enrolled_code": "SOURCE_REPOSITORY_NOT_ENROLLED",
+      "ambiguous_code": "AIRODROM_SOURCE_AMBIGUOUS",
+      "path_suffixes": [
+        "/code/airodrom",
+        "/code/airodrom-da-main",
+        "/code/airodrom-source-main"
+      ],
+      "remote_patterns": [
+        "github.com/airodrom/airodrom",
+        "airodrom/airodrom"
+      ],
+      "instruction_patterns": [
+        "\\bairodrom\\s*/\\s*airodrom\\b",
+        "\\bgithub\\.com/airodrom/airodrom\\b",
+        "(?:^|[\\s`\"'(])(?:~/code/airodrom|/Users/[^/\\s]+/code/airodrom(?:-da-main|-source-main)?)(?:/|\\b)",
+        "\\bairodrom\\s+source\\s+(?:repository|repo|project|checkout|tree)\\b",
+        "\\b(?:existing\\s+)?airodrom\\s+SOURCE\\s+repository\\b",
+        "\\b(?:real|canonical|operator)\\s+airodrom\\s+(?:source|repository|checkout)\\b",
+        "\\b(?:fix|improve|implement|work\\s+on|develop|check)\\s+airodrom\\b",
+        "\\bairodrom\\s+(?:notifications?|missions?|routing|control\\s+plane|source)\\b"
+      ],
+      "project_name_patterns": [
+        "^airodrom$",
+        "^airodrom\\s+source"
+      ],
+      "exclude_name_patterns": [
+        "qualification",
+        "fixture",
+        "disposable",
+        "handoff",
+        "proof",
+        "event-"
+      ],
+      "preferred_basename": "airodrom",
+      "default_worker": "cursor",
+      "notes": "Never authorize via chatgpt-handoff or recovery-proof fixture grants."
+    },
+    {
+      "id": "arecibo",
+      "repository_id": "arecibo-inc/arecibo-core",
+      "display_name": "Arecibo",
+      "not_enrolled_code": "ARECIBO_REPOSITORY_NOT_ENROLLED",
+      "ambiguous_code": "ARECIBO_REPOSITORY_AMBIGUOUS",
+      "path_suffixes": [
+        "/code/arecibo-core-autopilot-main",
+        "/code/arecibo-core"
+      ],
+      "remote_patterns": [
+        "github.com/arecibo-inc/arecibo-core",
+        "arecibo-inc/arecibo-core"
+      ],
+      "instruction_patterns": [
+        "\\barecibo-inc\\s*/\\s*arecibo-core\\b",
+        "\\bgithub\\.com/arecibo-inc/arecibo-core\\b",
+        "(?:^|[\\s`\"'(])(?:~/code/arecibo-core(?:-autopilot-main)?|/Users/[^/\\s]+/code/arecibo-core(?:-autopilot-main)?)(?:/|\\b)",
+        "\\barecibo\\s+core\\b",
+        "\\b(?:fix|improve|implement|work\\s+on|develop|check)\\s+arecibo\\b",
+        "\\barecibo\\s+(?:command\\s+center|merchant|settings|prs?|fintech|mcc)\\b",
+        "\\bcommand\\s+center\\b[\\s\\w,]{0,40}\\barecibo\\b",
+        "\\barecibo\\b[\\s\\w,]{0,40}\\bcommand\\s+center\\b"
+      ],
+      "project_name_patterns": [
+        "^arecibo\\s+core$",
+        "^arecibo$"
+      ],
+      "exclude_name_patterns": [
+        "product research",
+        "fixture",
+        "disposable"
+      ],
+      "preferred_basename": "arecibo-core-autopilot-main",
+      "default_worker": "cursor",
+      "notes": "Routine development never authorizes Production deploy, Plaid LIVE, financial-data disclosure, or sensitive infrastructure mutation."
+    }
+  ]
+}
