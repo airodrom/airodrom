@@ -92,7 +92,11 @@ function payload(kind, value) {
   return safe(value);
 }
 class AuthorityStore {
-  constructor(db, { now = Date.now, operatorId = 'local-operator', restoreFromBackup = false, erasureSourceDb = null } = {}) {
+  #scanMissionEnvelope;
+  constructor(db, { now = Date.now, operatorId = 'local-operator', restoreFromBackup = false, erasureSourceDb = null, scanMissionEnvelope = null } = {}) {
+    // Trusted host dependency, never an input/body option. Default stores have
+    // no coordinate proof; both writes still screen all unprojected content.
+    this.#scanMissionEnvelope = scanMissionEnvelope;
     this.db=db; this.now=now; this.operatorId=operatorId;
     this.operator=Object.freeze({type:'operator',id:operatorId}); this.host=Object.freeze({type:'host',id:'authority-plane'});
     migrateAuthority(db,this.now());
@@ -230,7 +234,8 @@ class AuthorityStore {
     });
   }
   createMission(input,by=this.operator) {
-    actor(by);safe(input);
+    actor(by);safe(by.type === 'host' && this.#scanMissionEnvelope
+      ? {...input,envelope:this.#scanMissionEnvelope(input.id,input.envelope)} : input);
     return transaction(this.db,()=>{
       const id=input.id||randomUUID();if(this.getMission(id))throw new Error('Mission already exists');
       this.db.prepare('INSERT INTO authority_missions VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,input.project_id||null,input.goal_id||null,input.task_id||null,input.owner||by.id,1,'ready',input.acceptance_strength||'criteria',this.now(),this.now());
@@ -241,7 +246,8 @@ class AuthorityStore {
     // Historical envelopes are retained verbatim as non-authorizing snapshots.
     // Their repository manifests include secret-looking *filenames*, not secret
     // values. New requests still cross the strict admission boundary.
-    if(quality==='legacy_snapshot')canonicalSerialize(envelope);else safe(envelope);
+    if(quality==='legacy_snapshot')canonicalSerialize(envelope);else safe(by.type === 'host' && this.#scanMissionEnvelope
+      ? this.#scanMissionEnvelope(id,envelope) : envelope);
     const m=this.getMission(id),hash=canonicalHash(envelope);
     this.db.prepare('INSERT INTO authority_mission_revisions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,revision,envelope.objective||'Legacy mission',envelope.task_type||'legacy',json(envelope),json(envelope.workspace_descriptor||{path:envelope.workspace||null}),json(envelope.context_manifest||{}),json(envelope.dispatch_policy||{}),json(envelope.capability_scopes||[]),json(envelope.constraints||''),envelope.policy_version||'legacy-v1',envelope.checkpoint_id||null,by.type,by.id,this.now(),hash,quality);
     for (const [i,criterion] of (envelope.criteria||[]).entries()) {

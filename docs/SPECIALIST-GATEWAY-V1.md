@@ -173,3 +173,12 @@ syntax, host verifier identity and the nested record shape are required; prose,
 worker claims, unavailable sources and malformed or spoofed paths stay screened.
 This is a scan-only correction: evidence bytes, seals, authority and acceptance
 requirements are unchanged, with no database migration or disposition rollback.
+
+Canonical authority creation additionally derives its scan view from the exact
+registered Mission and retained cognitive request. The host validates the sealed
+request/workspace/scope binding and the registered workspace filesystem identity
+before projecting a request UUID or workspace basename at explicit fields. Parent
+paths, file suffixes, unknown fields and prose remain screened; default stores and
+standalone input have no such proof. Both initial creation and revision insertion
+check the same current binding, and persist the original envelope bytes. Historical
+UUIDs remain usable without rewriting identities or weakening admission.

@@ -5,9 +5,15 @@ const { AuthorityRouter, POLICY_ID } = require('./authority-router');
 const { migrateLegacy, importProject } = require('./authority-migration');
 const { canonicalHash } = require('./authority-hash');
 const { transaction } = require('./control-transaction');
+function portableEnvelope(source) {
+  const envelope={...source};
+  if(envelope.baseline)envelope.baseline={version:envelope.baseline.version||1,manifest_hash:canonicalHash(envelope.baseline)};
+  if(envelope.cognitive)envelope.cognitive={version:1,manifest_hash:canonicalHash(envelope.cognitive)};
+  return envelope;
+}
 class AuthorityRuntime {
   constructor(bridge) {
-    this.bridge=bridge;this.store=new AuthorityStore(bridge.memory.db);this.db=this.store.db;
+    this.bridge=bridge;this.store=new AuthorityStore(bridge.memory.db,{scanMissionEnvelope:(id,envelope)=>this.#missionScanView(id,envelope)});this.db=this.store.db;
     this.migration=migrateLegacy(this.store);this.memory=new AuthorityMemory(this.store);this.router=new AuthorityRouter(this.store,this.memory);
     this.qualification=new (require('./authority-qualification').AuthorityQualification)(this);
     bridge.controlStore.authorityRuntime=this;
@@ -22,14 +28,46 @@ class AuthorityRuntime {
   get active() { return this.state().memory_state==='enabled'; }
   get routing() { return this.active&&this.state().router_state==='enabled'; }
   project(id) { importProject(this.store,id); }
+  #missionScanView(id,envelope) {
+    const b=this.bridge,m=id&&b.controlStore.getMission(id),c=m?.envelope.cognitive;
+    // Only exact bytes already registered by the canonical host creation path
+    // may use its typed coordinates. Standalone/caller-supplied envelopes cannot.
+    if(!c || canonicalHash(portableEnvelope(m.envelope))!==canonicalHash(envelope))return envelope;
+    const C=require('./cognitive-contracts'),e=C.parse('RequestEnvelope',c.envelope),sealed=C.parse('SealedMissionContract',c.sealed);
+    const record=b.zeroSetupWork.read(e.request_id),project=envelope.contract?.project;
+    if(!record || canonicalHash(record.cognitive?.envelope)!==canonicalHash(e) || record.workspace!==envelope.workspace
+      || sealed.request_id!==e.request_id || sealed.workspace_id!==e.workspace_id || sealed.envelope_hash!==e.hash
+      || sealed.mission_scope_hash!==envelope.contract?.scope_fingerprint)throw Error('Host Mission scan binding changed');
+    const ws=b.developerAutonomy.inspectWorkspace(e.workspace_id),path=require('node:path');
+    if(!ws || ws.path!==envelope.workspace || ws.workspace_id!==e.workspace_id || project?.repository!==ws.workspace_id
+      || project.workspace!==ws.path || project.authorized_worktree!==ws.path || path.basename(ws.path)!==ws.workspace_id
+      || path.join(ws.container,ws.workspace_id)!==ws.path)throw Error('Host Mission scan workspace changed');
+    b.developerAutonomy.assertWorkspace(ws);
+    b.developerAutonomy.workspacePath(ws.path);
+    const stat=require('node:fs').lstatSync(ws.path);
+    if(canonicalHash(c.workspace_identity)!==canonicalHash(record.cognitive.workspace_identity)
+      || canonicalHash({dev:stat.dev,ino:stat.ino,mode:stat.mode&0o777})!==canonicalHash(c.workspace_identity))throw Error('Host Mission scan workspace identity changed');
+    const view=JSON.parse(JSON.stringify(envelope));
+    const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+    if(!uuid.test(ws.workspace_id))return envelope;
+    const root=path.join(ws.container,'host-workspace-id');
+    const workspacePath=value=>typeof value==='string'&&(value===ws.path||value.startsWith(ws.path+path.sep))
+      ?root+value.slice(ws.path.length):value;
+    view.workspace=workspacePath(view.workspace);
+    view.contract.project.repository='host-workspace-id';
+    for(const key of ['workspace','authorized_worktree'])view.contract.project[key]=workspacePath(view.contract.project[key]);
+    for(const key of ['read','write'])if(Array.isArray(view.authority?.filesystem?.[key]))view.authority.filesystem[key]=view.authority.filesystem[key].map(workspacePath);
+    for(const key of ['root','git_dir','common_dir'])if(view.verification_manifest?.repository)view.verification_manifest.repository[key]=workspacePath(view.verification_manifest.repository[key]);
+    const nonce=view.contract.identity?.idempotency_key;
+    if(uuid.test(e.request_id)&&['cognitive:','cognitive-cursor:'].some(prefix=>nonce===prefix+e.request_id))view.contract.identity.idempotency_key='host-request-id';
+    return view;
+  }
   registerMission(m) {
     if(m.project_id)this.project(m.project_id);
-    const envelope={...m.envelope};
+    const envelope=portableEnvelope(m.envelope);
     // The full host-produced repository manifest stays in the immutable legacy
     // envelope. The portable revision commits to it without copying Git internals.
-    if(envelope.baseline)envelope.baseline={version:envelope.baseline.version||1,manifest_hash:canonicalHash(envelope.baseline)};
     // Cognitive data remains in the canonical Mission; the portable authority revision commits to all bytes.
-    if(envelope.cognitive)envelope.cognitive={version:1,manifest_hash:canonicalHash(envelope.cognitive)};
     return this.store.createMission({id:m.id,project_id:m.project_id,goal_id:m.goal_id,task_id:m.task_id,owner:m.owner,acceptance_strength:m.acceptance_strength,envelope},this.store.host);
   }
   recordResult(runId,result) {

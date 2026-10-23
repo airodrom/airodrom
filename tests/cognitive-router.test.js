@@ -86,20 +86,26 @@ test('exact enrolled alias outranks shared words and expired enrollments while e
 test('a slow planner acknowledges PLANNING before OpenCode returns and the same request does not plan twice', async t => {
   const f = await setup(t);
   const planner = f.bridge.opencodeAdapter.execute;
+  let releasePlanner;
+  const plannerGate = new Promise(resolve => { releasePlanner = resolve; });
+  t.after(() => releasePlanner());
   f.bridge.opencodeAdapter.execute = async options => {
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await plannerGate;
     return planner(options);
   };
   const id = randomUUID();
   const instruction = 'In Fixture project change fixture.txt from alpha to beta, preserving one final newline.';
-  const started = Date.now();
-  const ack = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller);
-  assert.ok(Date.now() - started < 150, String(Date.now() - started));
+  let timer;
+  const bound = new Promise((_, reject) => { timer = setTimeout(() => { releasePlanner(); reject(Error('Acknowledgement waited for planner completion')); }, 5000); });
+  let ack;
+  try { ack = await Promise.race([f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller), bound]); }
+  finally { clearTimeout(timer); }
   assert.equal(ack.state, 'PLANNING');
   assert.equal(ack.request_id, id);
   const replay = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller);
   assert.equal(replay.state, 'PLANNING');
   await assert.rejects(f.bridge.zeroSetupWork.ask({ request_id: id, instruction: instruction + ' again' }, caller), /replay/);
+  releasePlanner();
   const done = await f.ask(id);
   assert.ok(done.mission_id && ['DISPATCHED', 'RUNNING'].includes(done.state), JSON.stringify(done));
   assert.equal(f.plannerCalls, 1);

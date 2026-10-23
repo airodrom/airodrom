@@ -179,3 +179,19 @@ test('host verifier baseline revisions persist without exempting untrusted evide
  assert.equal(s.listVerificationsForMission(mission.id).length, 3);
  assert.equal(s.integrity().ok, true);
 });
+
+test('unproved cognitive nonce and workspace coordinates retain normal secret screening', t => {
+ const { s } = fixture(t), { safe } = require('../src/authority-store');
+ const nonce = 'a4e32e0a-30a5-4bb4-a5e2-898472350870';
+ assert.equal(require('../src/personal-memory').containsSecret(nonce), true);
+ for (const envelope of [
+  { contract: { identity: { schema_version: 1, idempotency_key: 'cognitive-cursor:' + nonce } } },
+  { workspace: '/private/tmp/worktrees/' + nonce },
+  { contract: { project: { repository: nonce } } },
+  { objective: nonce },
+ ]) {
+  assert.throws(() => safe({ envelope }), /Sensitive authority data rejected/);
+  assert.throws(() => s.createMission({ envelope }, s.host), /Sensitive authority data rejected/);
+ }
+ assert.equal(s.db.prepare('SELECT count(*) n FROM authority_missions').get().n, 0);
+});

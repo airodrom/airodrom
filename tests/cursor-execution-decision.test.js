@@ -96,7 +96,7 @@ async function specialistCursorFixture(t, { proof = false } = {}) {
 }
 
 async function startCursorGraph(f, { expectBlocked = false } = {}) {
-  const request_id = randomUUID();
+  const request_id = f.requestId || randomUUID();
   const instruction = f.instruction || 'In Fixture project, using Cursor, read fixture.txt then change fixture.txt from alpha to beta.';
   let v = await f.bridge.zeroSetupWork.ask({ request_id, instruction }, 'operator');
   for (let i = 0; i < 200 && v.state === 'PLANNING'; i++) {
@@ -547,4 +547,64 @@ test('acceptance independently refuses wrong-file bytes after READY and successf
   f.bridge.policy.list = originalList;
   assert.throws(() => f.bridge.missions.accept(m.id, { request_id: randomUUID(), verification_id: m.verifications[0].id, decision: 'accept', rationale: 'Attempt acceptance against independent current scope check' }, 'operator'), /requested_file_execution_mismatch/);
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_acceptances WHERE mission_id=?').get(m.id).n, 0);
+});
+
+
+test('canonical host creation binds card-shaped request and registered workspace coordinates', async t => {
+  const f = await specialistCursorFixture(t), b = f.bridge;
+  const nonce = 'a4e32e0a-30a5-4bb4-a5e2-898472350870';
+  const crypto = require('node:crypto'), fs = require('node:fs'), { Module } = require('node:module');
+  assert.equal(require('../src/personal-memory').containsSecret(nonce), true);
+  // Substitute only the workspace UUID source; registration, filesystem identity,
+  // canonical creation, host scanning and both workers use the real paths.
+  const filename = require.resolve('../src/developer-autonomy'), isolated = new Module(filename, module);
+  isolated.filename = filename; isolated.paths = module.paths;
+  const originalRequire = isolated.require.bind(isolated); let allocated = false;
+  isolated.require = name => name === 'node:crypto' ? { ...crypto, randomUUID: () => {
+    if (!allocated) { allocated = true; return nonce; } return crypto.randomUUID();
+  } } : originalRequire(name);
+  isolated._compile(fs.readFileSync(filename, 'utf8'), filename);
+  b.developerAutonomy = new isolated.exports.DeveloperAutonomy(b);
+  f.requestId = nonce;
+  const v = await startCursorGraph(f), m = await awaitGraph(f, v.mission_id, m => m.state === 'completed');
+  assert.equal(allocated, true);
+  assert.equal(path.basename(m.envelope.workspace), nonce);
+  assert.equal(m.envelope.contract.identity.idempotency_key, 'cognitive-cursor:' + nonce);
+  const portable = b.authorityRuntime.store.getMissionRevision(m.id, 1).envelope;
+  assert.equal(portable.workspace, m.envelope.workspace, 'stored authority bytes are not projected');
+  assert.deepEqual(portable.contract, m.envelope.contract);
+  assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
+  assert.equal(f.evaluations.length, 2);
+  assert.equal(m.acceptance.length, 1);
+  assert.throws(() => b.authorityRuntime.store.createMission({ id: randomUUID(), envelope: portable }, b.authorityRuntime.store.host), /Sensitive authority data rejected/);
+  const altered = structuredClone(portable); altered.objective = nonce;
+  assert.throws(() => b.authorityRuntime.store.createMission({ id: m.id, envelope: altered }, b.authorityRuntime.store.host), /Sensitive authority data rejected/);
+  const db = b.controlStore.db;
+  for (const mutate of [
+    e => { e.objective = nonce; },
+    e => { e.authority.filesystem.write = [e.workspace + '/' + nonce + '.txt']; },
+    e => { e.contract.project.extra_path = e.workspace; },
+    e => { e.contract.identity.idempotency_key = 'unbound:' + nonce; },
+  ]) {
+    db.exec('SAVEPOINT coordinate_probe');
+    try {
+      const canonical = structuredClone(m.envelope); mutate(canonical);
+      db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify(canonical), m.id);
+      const input = { ...canonical, baseline: portable.baseline, cognitive: portable.cognitive };
+      assert.throws(() => b.authorityRuntime.store.createMission({ id: m.id, envelope: input }, b.authorityRuntime.store.host), /Sensitive authority data rejected/);
+    } finally { db.exec('ROLLBACK TO coordinate_probe; RELEASE coordinate_probe'); }
+  }
+  for (const mutation of ['missing', 'identity', 'container']) {
+    db.exec('SAVEPOINT coordinate_probe');
+    try {
+      if (mutation === 'missing') db.prepare('DELETE FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').run(nonce);
+      else {
+        const ws = b.developerAutonomy.inspectWorkspace(nonce);
+        if (mutation === 'identity') ws.identities[0].ino++; else ws.container = path.dirname(ws.container);
+        db.prepare('UPDATE cp_developer_autonomy_workspaces SET record=? WHERE workspace_id=?').run(JSON.stringify(ws), nonce);
+      }
+      assert.throws(() => b.authorityRuntime.store.createMission({ id: m.id, envelope: portable }, b.authorityRuntime.store.host), /Host Mission scan workspace changed|Workspace identity changed/);
+    } finally { db.exec('ROLLBACK TO coordinate_probe; RELEASE coordinate_probe'); }
+  }
+  assert.equal(b.authorityRuntime.store.integrity().ok, true);
 });
