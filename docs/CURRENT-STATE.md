@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## Limits & Blockers Registry V1 — SOURCE (2026-10-22)
+
+- **Canonical registry:** `config/limits-blockers-registry-v1.json` with live diagnostics in `src/limits-blockers-registry.js`.
+- **Entry points:** MCP `get_limits_blockers` / `inspect_blocker`; `GET /api/assistant/limits-blockers`; Control Center **System Health → Limits & Blockers**.
+- **Behavior:** Blocked asks/Missions attach `limits_blockers` (registry id, enforcement, next_safe_action). Unknown codes → `unknown_blocker`. Security-critical always fail closed. Automatic recovery only through existing host-authorized ops (e.g. idle ready reclaim). Docs: [operations/LIMITS-AND-BLOCKERS-REGISTRY.md](operations/LIMITS-AND-BLOCKERS-REGISTRY.md).
+
 ## Developer Autonomy worktree capacity lifecycle — SOURCE (2026-10-22)
 
 - **Cause:** Concurrent `max_worktrees` counted every `ready` workspace, including grantless idle clones left by interrupted/failed cognitive planning. Four clean disposable leftovers under Airodrom Source policy `a99c2399-…` filled the ceiling and blocked `chatgpt_post217_multitask_live_acceptance_20261022_v1` with generic `Worktree budget exhausted` before planning completed.

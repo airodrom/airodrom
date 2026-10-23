@@ -150,6 +150,17 @@ function evidencePackage(bridge, missionId) {
       requires_owner: specialists&&['ready','dispatching','running','verifying','completed','awaiting_acceptance'].includes(final.state)?[]:final.state === 'awaiting_acceptance' ? ['Acceptance'] : final.state === 'completed' ? [] : ['Inspect diagnostics'],
     },
     next_safe_action: nextSafeAction,
+    limits_blockers: (() => {
+      try {
+        if (!['blocked', 'needs_rework'].includes(final.state)) return null;
+        const codes = [final.reason, final.envelope?.block_reason, phase?.reason].filter(Boolean);
+        if (!codes.length) codes.push(final.state);
+        return require('./limits-blockers-registry').reportForBlock(bridge, {
+          codes, mission_id: final.id,
+          request_id: final.envelope?.cognitive_request_id || null,
+        });
+      } catch { return null; }
+    })(),
     authority: false,
     generated_at: Date.now(),
   };
@@ -232,6 +243,16 @@ function engineeringReport(bridge, missionId, { limit = 200 } = {}) {
     });
   }
   const notifications = require('./mission-terminal-notifications').listForMission(bridge, base.mission_id);
+  let limitsBlockers = evidence.limits_blockers || null;
+  if (!limitsBlockers && ['blocked', 'needs_rework'].includes(mission.state)) {
+    try {
+      limitsBlockers = require('./limits-blockers-registry').reportForBlock(bridge, {
+        codes: [mission.reason, mission.envelope?.block_reason, evidence.status].filter(Boolean),
+        mission_id: base.mission_id,
+        request_id: mission.envelope?.cognitive_request_id || null,
+      });
+    } catch { limitsBlockers = null; }
+  }
   return {
     mission_id: base.mission_id,
     lineage: base.lineage,
@@ -251,6 +272,7 @@ function engineeringReport(bridge, missionId, { limit = 200 } = {}) {
     verification_status: evidence.verification?.result || evidence.status || null,
     acceptance_status: evidence.acceptance_status || null,
     notifications: notifications.notifications,
+    limits_blockers: limitsBlockers,
     authority: false,
     note: 'Worker-reported stages are untrusted claims. Host-verified stages come from Airodrom ledger and independent verification.',
   };

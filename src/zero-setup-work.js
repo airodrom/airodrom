@@ -80,6 +80,23 @@ class ZeroSetupWork {
     const previous = (() => {
       try { return this.read(requestId)?.state || null; } catch { return null; }
     })();
+    if (state === 'blocked' && !record.limits_blockers) {
+      try {
+        const codes = Array.isArray(record.blockers) && record.blockers.length
+          ? record.blockers
+          : [record.presentation?.status || state];
+        record.limits_blockers = require('./limits-blockers-registry').reportForBlock(this.bridge, {
+          codes, request_id: requestId, mission_id: record.mission_id || null,
+        });
+        record.presentation = {
+          ...(record.presentation || {}),
+          registry_id: record.limits_blockers.primary_registry_id,
+          next_safe_action: record.limits_blockers.next_safe_action,
+          owner_approval_required: record.limits_blockers.owner_approval_required,
+          security_critical: record.limits_blockers.security_critical,
+        };
+      } catch { /* annotation must not block durable ask write */ }
+    }
     const now = Date.now();
     this.db.prepare(`INSERT INTO cp_zero_setup_requests VALUES(?,?,?,?,?,?)
       ON CONFLICT(request_id) DO UPDATE SET record=excluded.record, state=excluded.state, updated_at=excluded.updated_at`)

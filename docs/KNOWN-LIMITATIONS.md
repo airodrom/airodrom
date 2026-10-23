@@ -1,5 +1,11 @@
 # Known limitations
 
+## Limits & Blockers Registry (2026-10-22)
+
+- The registry covers material, operator-facing limits and recurring blockers; not every internal sandbox/token string is catalogued. Unregistered codes surface as `unknown_blocker` rather than invented classifications.
+- Live diagnostics never fabricate counts; unavailable stores report Unavailable. Automatic recovery is not performed by the diagnostic tools themselves.
+- Unsolicited ChatGPT push of blocker notifications still requires a configured trigger; durable inbox/`list_mission_notifications` remains the supported path.
+
 ## Developer Autonomy concurrent worktrees (2026-10-22)
 
 - `max_worktrees` remains a concurrent execution ceiling (default 4), not an on-disk retention quota. Idle grantless ready clones and settled evidence do not occupy slots; active writers, unsettled Missions, active grants, and invalid prep still do.

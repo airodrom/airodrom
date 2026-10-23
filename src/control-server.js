@@ -333,6 +333,21 @@ class ControlServer {
       if(req.method==='GET'&&url.pathname==='/api/assistant/autopilot/activity')return this.json(res,200,{items:this.bridge.globalAutopilot.activity(Number(url.searchParams.get('limit')||50)||50),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/host-execution-policy')return this.json(res,200,this.bridge.hostExecutionPolicy.status('operator'));
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy')return this.json(res,200,this.bridge.developerAutonomy.status('operator'));
+      if(req.method==='GET'&&url.pathname==='/api/assistant/limits-blockers'){
+        const filters={
+          category:url.searchParams.get('category')||null,
+          severity:url.searchParams.get('severity')||null,
+          recoverability:url.searchParams.get('recoverability')||null,
+          policy_id:url.searchParams.get('policy_id')||null,
+          project_id:url.searchParams.get('project_id')||null,
+          limit:Number(url.searchParams.get('limit')||20)||20,
+        };
+        return this.json(res,200,require('./limits-blockers-registry').diagnostics(this.bridge,filters));
+      }
+      if(req.method==='GET'&&url.pathname==='/api/assistant/limits-blockers/inspect'){
+        const code=url.searchParams.get('code')||'';
+        return this.json(res,200,{...require('./limits-blockers-registry').resolve(code),authority:false});
+      }
       if(req.method==='GET'&&url.pathname==='/api/assistant/project-defaults')return this.json(res,200,{items:this.bridge.projectDefaults.list(),authority:false});
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/policy'){const id=url.searchParams.get('policy_id');return this.json(res,200,this.bridge.developerAutonomy.inspect(id)||{error:'Policy unavailable',authority:false});}
       if(req.method==='GET'&&url.pathname==='/api/assistant/developer-autonomy/grant'){const id=url.searchParams.get('grant_id');return this.json(res,200,this.bridge.developerAutonomy.inspectGrant(id)||{error:'Grant unavailable',authority:false});}

@@ -21,6 +21,8 @@
 **Control Center & Premium macOS Experience V4** (SHIPPED + INSTALLED): [CONTROL-CENTER-MACOS-UX-V4.md](CONTROL-CENTER-MACOS-UX-V4.md).
 **Live Execution Monitor V1** (source candidate): [LIVE-EXECUTION-MONITOR-V1.md](LIVE-EXECUTION-MONITOR-V1.md) — active-Mission three-column Observatory UI; see also [Live Agent Observatory](LIVE-AGENT-OBSERVATORY-V1.md).
 
+**Limits & Blockers Registry V1:** [operations/LIMITS-AND-BLOCKERS-REGISTRY.md](operations/LIMITS-AND-BLOCKERS-REGISTRY.md) — canonical limits/blockers catalog, live diagnostics, safe recovery classes.
+
 **Operational recovery V1:** [OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](OPERATIONAL-RECOVERY-LIFECYCLE-V1.md) — bounded identity reads, writer-death reconciliation, checkpoint copy modes.
 
 **ChatGPT handoff / Milestone A:** [CHATGPT-HANDOFF-V8-VERIFICATION.md](CHATGPT-HANDOFF-V8-VERIFICATION.md) — exact-byte contract, v8 failure forensics, host v11 PASS, genuine remote **v9 PASS** (Milestone A complete).

@@ -1,0 +1,1358 @@
+{
+  "version": 1,
+  "id": "limits-blockers-registry-v1",
+  "title": "Airodrom Limits & Blockers Registry",
+  "description": "Source-grounded registry of operational limits, execution blockers, authorization gates, and recovery procedures. Live diagnostics combine these definitions with authoritative host state. Error messages never authorize recovery.",
+  "categories": {
+    "operational_auto": "Operational — automatically recoverable when an existing host-authorized operation and required evidence are present.",
+    "operational_owner": "Operational — owner action required; Airodrom must not invent grants, enrollments, or spend.",
+    "security_critical": "Security-critical — always fail closed; never auto-recover from the message alone."
+  },
+  "discovery": {
+    "method": "manual_audit_plus_code_literal_validation",
+    "sources": [
+      "src/developer-autonomy.js",
+      "src/host-execution-policy.js",
+      "src/cognitive-router.js",
+      "src/cognitive-contracts.js",
+      "src/mission-contract.js",
+      "src/zero-setup-work.js",
+      "src/project-resolution.js",
+      "src/cursor-worker.js",
+      "src/specialist-gateway.js",
+      "src/mission-verifier.js",
+      "src/opencode-gateway.js",
+      "src/mission-service.js",
+      "src/mission-terminal-notifications.js"
+    ],
+    "note": "Unknown runtime codes resolve as unknown_blocker rather than inventing classifications."
+  },
+  "entries": [
+    {
+      "id": "worktree_budget_exhausted",
+      "codes": [
+        "WORKTREE_BUDGET_EXHAUSTED"
+      ],
+      "description": "Concurrent Developer Autonomy worktree slots are full for the policy.",
+      "category": "operational_auto",
+      "severity": "error",
+      "source": {
+        "file": "src/developer-autonomy.js",
+        "symbol": "worktreeBudgetError"
+      },
+      "configured_limit": {
+        "field": "budgets.max_worktrees",
+        "default": 4,
+        "max": 8
+      },
+      "runtime_usage": "DeveloperAutonomy.capacityInventory / occupiedWorktrees",
+      "failure_condition": "occupiedWorktrees(policy) >= budgets.max_worktrees",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": {
+        "host_operation": "reclaimIdleReadyWorkspaces",
+        "requires": [
+          "idle",
+          "grantless",
+          "disposable",
+          "cleanupDecision.clean"
+        ],
+        "note": "Accounting no longer charges idle grantless ready; reclaim only cleans disposable leftovers."
+      },
+      "next_safe_action": "reclaim_idle_ready_or_retry_after_settlement",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "da_filesystem_capacity_exhausted",
+      "codes": [
+        "DA_FILESYSTEM_CAPACITY_EXHAUSTED",
+        "Insufficient filesystem free space for Developer Autonomy"
+      ],
+      "description": "Volume free space after reserve is insufficient for workspace preparation. Not a legacy max_disk_mb aggregate.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/developer-autonomy.js",
+        "symbol": "assertPreparationCapacity"
+      },
+      "configured_limit": {
+        "field": "FREE_SPACE_RESERVE_BYTES",
+        "default_bytes": 5368709120,
+        "ratio": 0.05
+      },
+      "runtime_usage": "filesystemCapacity(worktrees root)",
+      "failure_condition": "neededBytes > available_bytes after reserve",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "free_volume_space_or_reduce_materialization_then_retry",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md",
+        "docs/GLOBAL-AUTOPILOT-V1.md"
+      ]
+    },
+    {
+      "id": "da_disk_budget_legacy",
+      "codes": [
+        "Developer Autonomy disk budget exhausted",
+        "DA_DISK_BUDGET_EXHAUSTED"
+      ],
+      "description": "Historical aggregate max_disk_mb admission ceiling. Removed as an admission gate in PR #214; max_disk_mb remains signed-record compatibility only.",
+      "category": "operational_auto",
+      "severity": "warning",
+      "source": {
+        "file": "src/developer-autonomy.js",
+        "symbol": "assertPreparationCapacity"
+      },
+      "configured_limit": {
+        "field": "budgets.max_disk_mb",
+        "default": 2048,
+        "note": "compatibility only"
+      },
+      "runtime_usage": null,
+      "failure_condition": "legacy; no longer enforced as aggregate clone ceiling",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "use_filesystem_capacity_diagnostics",
+      "owner_approval_required": false,
+      "historical_status": "fixed_defect",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "concurrent_mission_budget_exhausted",
+      "codes": [
+        "Concurrent Mission budget exhausted"
+      ],
+      "description": "Active Missions under the DA policy exceed max_concurrent_missions.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/developer-autonomy.js",
+        "symbol": "issueGrant"
+      },
+      "configured_limit": {
+        "field": "budgets.max_concurrent_missions",
+        "default": 1,
+        "max": 2
+      },
+      "runtime_usage": "grant/mission concurrency counters",
+      "failure_condition": "concurrent >= budgets.max_concurrent_missions",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "wait_for_settlement_or_cancel_idle_mission",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "da_file_ceiling",
+      "codes": [
+        "Exact non-secret, non-verifier file required"
+      ],
+      "description": "Allowed file list violates DA file rules or exceeds max_files.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/developer-autonomy.js",
+        "symbol": "file"
+      },
+      "configured_limit": {
+        "field": "budgets.max_files",
+        "default": 8,
+        "max": 16
+      },
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "da_repair_budget",
+      "codes": [
+        "Developer Autonomy repair budget exhausted",
+        "Repair budget exceeds standing policy"
+      ],
+      "description": "Repair attempts exceed policy repair budget.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/developer-autonomy.js",
+        "symbol": "assertRepair"
+      },
+      "configured_limit": {
+        "field": "budgets.max_repairs",
+        "default": 2
+      },
+      "runtime_usage": null,
+      "failure_condition": "repair attempts >= budgets.max_repairs or requested repair_budget exceeds policy",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_authorize_new_repair_or_accept_terminal",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "source_repository_not_enrolled",
+      "codes": [
+        "SOURCE_REPOSITORY_NOT_ENROLLED"
+      ],
+      "description": "Requested repository is not enrolled under an active Developer Autonomy / cognitive policy.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/project-resolution.js",
+        "symbol": "resolve"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_enroll_repository_under_da_policy",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "arecibo_repository_not_enrolled",
+      "codes": [
+        "ARECIBO_REPOSITORY_NOT_ENROLLED"
+      ],
+      "description": "Arecibo Core repository is not enrolled for the requested work.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/project-resolution.js",
+        "symbol": "resolve"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_enroll_arecibo_repository",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "enrolled_repository_ambiguous",
+      "codes": [
+        "ENROLLED_REPOSITORY_AMBIGUOUS"
+      ],
+      "description": "Instruction matches multiple enrolled repositories; host will not guess.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/project-resolution.js",
+        "symbol": "resolve"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_disambiguate_repository_in_instruction",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "enrolled_workspace_required",
+      "codes": [
+        "ENROLLED_WORKSPACE_REQUIRED"
+      ],
+      "description": "Projectless or unbound request requires an enrolled workspace binding.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/project-defaults.js",
+        "symbol": "requireEnrolledWorkspace"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_bind_or_enroll_workspace",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cross_project_fixture_fallback_rejected",
+      "codes": [
+        "CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED"
+      ],
+      "description": "Host refused borrowing another project fixture/grant when capacity or enrollment failed.",
+      "category": "security_critical",
+      "severity": "critical",
+      "source": {
+        "file": "src/zero-setup-work.js",
+        "symbol": "resolveEnrolledProject"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "blocked_spend_authorization",
+      "codes": [
+        "BLOCKED_SPEND_AUTHORIZATION"
+      ],
+      "description": "Paid or subscription Cursor execution lacks a current scoped owner spend authorization.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "approve"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_issue_or_confirm_scoped_subscription_grant",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "scoped_external_disclosure_required",
+      "codes": [
+        "scoped_external_disclosure_required"
+      ],
+      "description": "External disclosure / subscription disclosure has not been acknowledged for this Cursor path.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/zero-setup-work.js",
+        "symbol": "ask"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_acknowledge_scoped_external_disclosure",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_missing",
+      "codes": [
+        "STANDING_CURSOR_GRANT_MISSING"
+      ],
+      "description": "No standing Cursor development grant covers this request.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_create_standing_cursor_grant",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_policy_mismatch",
+      "codes": [
+        "STANDING_CURSOR_GRANT_POLICY_MISMATCH"
+      ],
+      "description": "Standing Cursor grant does not match the Developer Autonomy policy identity.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_path_mismatch",
+      "codes": [
+        "STANDING_CURSOR_GRANT_PATH_MISMATCH"
+      ],
+      "description": "Standing Cursor grant path/repository binding does not match the requested workspace.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_data_class_mismatch",
+      "codes": [
+        "STANDING_CURSOR_GRANT_DATA_CLASS_MISMATCH"
+      ],
+      "description": "Standing Cursor grant data class does not cover the Mission data class.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_expired",
+      "codes": [
+        "STANDING_CURSOR_GRANT_EXPIRED"
+      ],
+      "description": "Standing Cursor grant TTL expired.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_renew_standing_cursor_grant",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_revoked",
+      "codes": [
+        "STANDING_CURSOR_GRANT_REVOKED"
+      ],
+      "description": "Standing Cursor grant was revoked.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_issue_new_standing_cursor_grant",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_exhausted",
+      "codes": [
+        "STANDING_CURSOR_GRANT_EXHAUSTED"
+      ],
+      "description": "Standing Cursor grant invocation/runtime budget is exhausted.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_renew_or_raise_standing_cursor_limits",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_invocation_limit",
+      "codes": [
+        "STANDING_CURSOR_GRANT_INVOCATION_LIMIT"
+      ],
+      "description": "Standing Cursor grant invocation count would be exceeded.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": {
+        "field": "standing.max_invocations"
+      },
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_raise_invocation_limit_or_wait",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_runtime_limit",
+      "codes": [
+        "STANDING_CURSOR_GRANT_RUNTIME_LIMIT"
+      ],
+      "description": "Standing Cursor grant runtime budget would be exceeded.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": {
+        "field": "standing.max_runtime_ms"
+      },
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_raise_runtime_limit_or_narrow_work",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "standing_cursor_grant_mismatch",
+      "codes": [
+        "STANDING_CURSOR_GRANT_MISMATCH"
+      ],
+      "description": "Standing Cursor grant failed generic match after specific mismatch checks.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "matchStandingCursorDevelopment"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cursor_execution_disabled",
+      "codes": [
+        "CURSOR_EXECUTION_DISABLED"
+      ],
+      "description": "Host policy has Cursor execution disabled.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "cursorDisabled"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_enable_cursor_execution_via_authenticated_api",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "mcp_host_execution_delegation_required",
+      "codes": [
+        "MCP_HOST_EXECUTION_DELEGATION_REQUIRED"
+      ],
+      "description": "MCP caller lacks current host execution delegation for this action.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/host-execution-policy.js",
+        "symbol": "assertDelegation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "secret_detected_in_work_instruction",
+      "codes": [
+        "SECRET_DETECTED_IN_WORK_INSTRUCTION"
+      ],
+      "description": "Work instruction contained secret-shaped material; refused.",
+      "category": "security_critical",
+      "severity": "critical",
+      "source": {
+        "file": "src/zero-setup-work.js",
+        "symbol": "ask"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_redact_and_resubmit_without_secrets",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_plan_files_mismatch",
+      "codes": [
+        "cognitive_plan_files_mismatch"
+      ],
+      "description": "Planner file set is empty or does not normalize into authorized files.",
+      "category": "operational_auto",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-contracts.js",
+        "symbol": "parse"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": {
+        "host_operation": "planner_retry_with_normalized_files",
+        "note": "PR #216/#217 fixed normalization; retries stay within planning attempts."
+      },
+      "next_safe_action": "retry_planning_within_budget_or_clarify_files",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_explicit_worker_syntax_required",
+      "codes": [
+        "cognitive_explicit_worker_syntax_required"
+      ],
+      "description": "Instruction requires explicit worker syntax the planner did not receive.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "prepare"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "resubmit_with_explicit_worker_syntax",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_ambiguous_worker",
+      "codes": [
+        "cognitive_ambiguous_worker"
+      ],
+      "description": "Multiple workers could apply; host requires an explicit choice.",
+      "category": "operational_owner",
+      "severity": "warning",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "prepare"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "resubmit_with_explicit_worker",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_caller_delegation_required",
+      "codes": [
+        "cognitive_caller_delegation_required"
+      ],
+      "description": "Caller is not on the enrolled cognitive delegated_callers list.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "assertDelegation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_delegation_expired_or_revoked",
+      "codes": [
+        "cognitive_delegation_expired_or_revoked"
+      ],
+      "description": "Cognitive caller delegation expired or was revoked.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "assertDelegation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_renew_cognitive_delegation",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_denied_path",
+      "codes": [
+        "cognitive_denied_path"
+      ],
+      "description": "Plan referenced a path outside sealed cognitive authorization.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "validateProposal"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_subscription_bound_exceeded",
+      "codes": [
+        "cognitive_subscription_bound_exceeded"
+      ],
+      "description": "Requested subscription invocation/runtime exceeds sealed envelope limits.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "approve"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_no_bypass",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_assignment_limit",
+      "codes": [
+        "cognitive_assignment_limit"
+      ],
+      "description": "Planner exceeded max_assignments for the cognitive enrollment.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "validateProposal"
+      },
+      "configured_limit": {
+        "field": "cognitive.max_assignments",
+        "default": 3
+      },
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "narrow_plan_or_owner_raise_assignment_limit",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_envelope_expired",
+      "codes": [
+        "cognitive_envelope_expired"
+      ],
+      "description": "Sealed cognitive request envelope expired before dispatch.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "assertDelegation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "resubmit_fresh_request",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "cognitive_request_replay_mismatch",
+      "codes": [
+        "cognitive_request_replay_mismatch"
+      ],
+      "description": "request_id reuse with changed instruction/payload is denied.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "prepare"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_use_new_request_id",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "worker_execution_unqualified",
+      "codes": [
+        "worker_execution_unqualified"
+      ],
+      "description": "Preferred external worker is not qualified for governed execution on this Mission.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/mission-service.js",
+        "symbol": "dispatch"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_qualify_worker_or_select_qualified_route",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "evaluation_unavailable",
+      "codes": [
+        "EVALUATION_UNAVAILABLE"
+      ],
+      "description": "OpenCode evaluation could not complete; Mission blocked with durable reason.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/specialist-gateway.js",
+        "symbol": "evaluate"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "inspect_gateway_diagnostics_then_owner_retry_or_cancel",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "gateway_evaluation_deadline",
+      "codes": [
+        "gateway_evaluation_deadline"
+      ],
+      "description": "OpenCode evaluation exceeded deadline.",
+      "category": "operational_auto",
+      "severity": "error",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "evaluate"
+      },
+      "configured_limit": {
+        "field": "envelope.limits / evaluation deadline"
+      },
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": null,
+      "next_safe_action": "reconcile_evaluation_then_retry_within_policy",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "gateway_assignment_budget_exhausted",
+      "codes": [
+        "gateway_assignment_budget_exhausted"
+      ],
+      "description": "Specialist assignment budget exhausted for the sealed graph.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/specialist-gateway.js",
+        "symbol": "dispatch"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_inspect_graph_then_authorize_repair_or_stop",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "quarantined_lease_not_reconciled",
+      "codes": [
+        "quarantined_lease_not_reconciled"
+      ],
+      "description": "A quarantined writer lease remains unreconciliation; fail closed.",
+      "category": "security_critical",
+      "severity": "critical",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "assert"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_owner_reconcile_lease",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "verification_failed",
+      "codes": [
+        "verification.failed",
+        "VERIFICATION_FAILED"
+      ],
+      "description": "Independent host verification failed.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/mission-verifier.js",
+        "symbol": "verify"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_inspect_verification_evidence",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "writer_still_alive",
+      "codes": [
+        "writer_still_alive"
+      ],
+      "description": "Writer process still present; capacity/settlement cannot release safely.",
+      "category": "security_critical",
+      "severity": "critical",
+      "source": {
+        "file": "src/writer-death-recovery.js",
+        "symbol": "assertWriterDead"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_wait_for_termination_evidence",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "termination_unverified",
+      "codes": [
+        "termination_unverified",
+        "cursor_termination_unverified",
+        "opencode_termination_unverified"
+      ],
+      "description": "Worker termination was not independently verified.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/cursor-worker.js",
+        "symbol": "settle"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_reconcile_termination",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "bridge_restart_cooldown",
+      "codes": [
+        "BRIDGE_RESTART_COOLDOWN"
+      ],
+      "description": "Bridge restart refused during cooldown.",
+      "category": "operational_auto",
+      "severity": "warning",
+      "source": {
+        "file": "src/bridge-restart.js",
+        "symbol": "restart"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": null,
+      "next_safe_action": "wait_cooldown_then_retry",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "runtime_removed",
+      "codes": [
+        "RUNTIME_REMOVED"
+      ],
+      "description": "Requested runtime (for example Pi) has been removed from the product.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/removed-runtime.js",
+        "symbol": "assert"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "select_supported_runtime",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "idempotency_conflict",
+      "codes": [
+        "IDEMPOTENCY_CONFLICT"
+      ],
+      "description": "Idempotent request_id conflicts with a different payload.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/orchestrator.js",
+        "symbol": "invoke"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "fail_closed_use_new_request_id",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "repair_blocked",
+      "codes": [
+        "REPAIR_BLOCKED"
+      ],
+      "description": "Repair path is blocked by policy, budget, or unresolved evidence.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/recovery-phase.js",
+        "symbol": "phase"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_inspect_recovery_phase",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    },
+    {
+      "id": "owner_action_required",
+      "codes": [
+        "OWNER_ACTION_REQUIRED"
+      ],
+      "description": "Terminal state requires an authenticated owner decision.",
+      "category": "operational_owner",
+      "severity": "warning",
+      "source": {
+        "file": "src/mission-terminal-notifications.js",
+        "symbol": "statusFor"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "owner_decide_in_control_center",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ]
+    }
+  ],
+  "authority": false
+}
