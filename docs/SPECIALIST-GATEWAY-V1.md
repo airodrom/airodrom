@@ -139,6 +139,12 @@ only when a durable starting or running evaluator belongs to the exact verified
 assignment. A stale unavailable node or an exhausted/terminated attempt does not
 justify that projection. This changes reporting only, not admission or authority.
 
+Bounded event retrieval selects the newest records from each Mission in the
+lineage, then returns them chronologically. Long worker traces cannot permanently
+hide later evaluation, Acceptance or Settlement events behind the first page.
+The event response remains a bounded subset; use canonical evidence and stored
+records when a complete independent audit is required.
+
 Candidate qualification also exercises standalone identity read validation.
 Connection-local validation probes are registered without creating migration
 tables or granting migration authority. Read-only stores keep rejecting legacy

@@ -194,7 +194,9 @@ function missionEvents(bridge, missionId, { limit = 100 } = {}) {
   const lineage = lineageFor(bridge, mission);
   const events = [];
   for (const item of lineage) {
-    for (const e of bridge.ledger.list({ missionId: item.mission_id, limit: Math.max(limit, 200), order: 'asc' }).events) {
+    // Fetch the newest bounded slice first. An ascending limited read would
+    // permanently hide later evaluation, Acceptance and Settlement events.
+    for (const e of bridge.ledger.list({ missionId: item.mission_id, limit: Math.max(limit, 200), order: 'desc' }).events) {
       events.push({
         event_id: e.event_id,
         sequence: e.sequence,
