@@ -50,8 +50,9 @@ function isSettledFailedEvaluator(run) {
   return !!g && !g.evaluation;
 }
 function evaluationReasonRetryable(reason) {
-  const text = String(reason || '');
-  return /EVALUATION_UNAVAILABLE|opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout|opencode_evaluation_cancelled|opencode_evaluation_stage_mismatch|gateway_evaluation_stage_mismatch|gateway_evaluation/.test(text);
+  const code = String(reason || '').replace(/^EVALUATION_UNAVAILABLE:\s*/, '');
+  return automaticEvaluationRetryable({ code })
+    || ['opencode_evaluation_result_invalid', 'opencode_evaluator_termination_unverified', 'opencode_evaluation_cancelled', 'gateway_evaluation_reconciliation_required'].includes(code);
 }
 function preStartEvaluationRetryable(mission, opencodeRuns, attempt) {
   // Local OpenCode evaluation retry of an already host-verified worker result.
@@ -66,7 +67,16 @@ function preStartEvaluationRetryable(mission, opencodeRuns, attempt) {
   if (forWorker.some(r => r.state === 'completed' && r.termination_verified === 1 && gatewayResult(r)?.evaluation)) return false;
   // Budget: ≤2 prior settled failures (never-started + raced abort), then one clean retry.
   if (forWorker.length >= 3) return false;
-  return forWorker.every(r => isNeverStartedEvaluator(r) || isSettledFailedEvaluator(r));
+  return forWorker.every(r => {
+    if (!isNeverStartedEvaluator(r) && !isSettledFailedEvaluator(r)) return false;
+    const failure = gatewayResult(r);
+    // All recovery entry points share the failure classification, including the
+    // program tick and restart path. A stale runtime error on the Mission cannot
+    // make a later binding/authority failure eligible for retry.
+    if (r.resolution === 'gateway_evaluation_timed_out') return true;
+    if (!failure?.failure_class) return r.resolution === 'gateway_evaluation_unavailable';
+    return automaticEvaluationRetryable({ code: failure.failure_class, cause: { code: failure.failure_code } });
+  });
 }
 function evaluationAllowanceMs(mission, now) {
   const planning = mission.envelope.cognitive.envelope.limits.planning_ms;
@@ -94,6 +104,14 @@ function classifyEvaluationFailure(error, { started, returned } = {}) {
   if (/unsupported|version_unqualified|pins_changed|platform_unqualified/i.test(code)) return 'opencode_runtime_unsupported';
   if (/unavailable|provider|not_configured|opencode_unavailable/i.test(code)) return 'opencode_runtime_unavailable';
   return code.startsWith('opencode_') ? code : 'opencode_runtime_unavailable';
+}
+function automaticEvaluationRetryable(error) {
+  const code = String(error?.code || error?.message || '');
+  if (/^(opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider.*|opencode_evaluation_timeout|opencode_evaluation_stage_mismatch|gateway_evaluation_stage_mismatch)$/.test(code)) return true;
+  // Malformed model syntax is retryable within the existing local evaluation
+  // budget. Binding, authority, secret-screening and uncertain termination are not.
+  return code === 'opencode_evaluation_result_invalid'
+    && ['gateway_json_required', 'opencode_malformed_result'].includes(error?.cause?.code);
 }
 function localEvaluationTimeoutMs(mission, now, continuation) {
   // A never-started local evaluation keeps the enrolled planning allowance.
@@ -288,7 +306,7 @@ async function evaluate(bridge, mission, worker, verification) {
     ? specialist.active(bridge, mission, worker.task_id).assignment
     : null;
   const finalConsolidation = specialist.enabled(mission)
-    ? mission.state === 'verifying'
+    ? specialist.inspect(bridge, mission).assignments.every(a => a.id === assignment.id || a.state === 'ready')
     : true;
   const assignmentBrief = assignmentEvaluationBrief({
     assignment,
@@ -494,7 +512,7 @@ module.exports = {
   enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt,
   parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs,
   localEvaluationTimeoutMs, evaluationContinuation, preStartEvaluationRetryable,
-  isNeverStartedEvaluator, isSettledFailedEvaluator, classifyEvaluationFailure,
+  isNeverStartedEvaluator, isSettledFailedEvaluator, classifyEvaluationFailure, automaticEvaluationRetryable,
   reconcileBlockedEvaluation,
   assignmentEvaluationBrief, evaluationObjective, isStageConfusedBlocked, assertEvaluationSemantics,
 };

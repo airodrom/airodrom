@@ -15,7 +15,7 @@
     },
     {
       "path": "docs/harness/decisions.md",
-      "source_hash": "d0938c1d12f85766d20d0c478ce8b3e74b771ccb45dac047bdf82adde4e2a7e5",
+      "source_hash": "b6f5cbfad2b05091a515c35a781d36163679e5991a5b7e6422a60836fa84a906",
       "source_type": "canonical_doc",
       "trust": "canonical"
     }
@@ -170,6 +170,17 @@
         "agents",
         "runtime",
         "rollback"
+      ]
+    },
+    {
+      "key": "14-requested-file-scope",
+      "category": "architecture_decision",
+      "source_ref": "docs/harness/decisions.md",
+      "content": "Explicit requested file operations narrow enrollment. Planning, dispatch, recovery, host verification, and Acceptance must preserve their exact paths; a different enrolled file cannot satisfy the request.",
+      "tags": [
+        "missions",
+        "scope",
+        "verification"
       ]
     }
   ]

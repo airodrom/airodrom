@@ -69,26 +69,65 @@ test('delegated ordinary text plans read-only, seals, verifies independently, an
   assert.throws(() => f.bridge.missions.queue(m.id), /execution_attempts|current state/);
 });
 
+test('exact enrolled alias outranks shared words and expired enrollments while exact ambiguity fails closed', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.inspect(f.policy.policy_id);
+  const other = { ...policy, policy_id: randomUUID(), alias: 'cognitive-second' };
+  da.list = () => [policy, other, { ...policy, policy_id: randomUUID(), expires_at: Date.now() - 1 }];
+  const v = await f.ask(randomUUID(), caller, 'Use cognitive-fixture to edit fixture.txt from alpha to beta.');
+  assert.ok(v.mission_id, JSON.stringify(v));
+  assert.equal(f.bridge.missions.require(v.mission_id).envelope.cognitive.envelope.delegation.policy_id, policy.policy_id);
+  await f.settle(v.mission_id);
+  const calls = f.plannerCalls;
+  await assert.rejects(f.ask(randomUUID(), caller, 'Use cognitive-fixture and cognitive-second to edit fixture.txt.'), /cognitive_repository_ambiguous/);
+  assert.equal(f.plannerCalls, calls);
+});
+
 test('a slow planner acknowledges PLANNING before OpenCode returns and the same request does not plan twice', async t => {
   const f = await setup(t);
   const planner = f.bridge.opencodeAdapter.execute;
+  let releasePlanner;
+  const plannerGate = new Promise(resolve => { releasePlanner = resolve; });
+  t.after(() => releasePlanner());
   f.bridge.opencodeAdapter.execute = async options => {
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await plannerGate;
     return planner(options);
   };
   const id = randomUUID();
   const instruction = 'In Fixture project change fixture.txt from alpha to beta, preserving one final newline.';
-  const started = Date.now();
-  const ack = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller);
-  assert.ok(Date.now() - started < 150, String(Date.now() - started));
+  let timer;
+  const bound = new Promise((_, reject) => { timer = setTimeout(() => { releasePlanner(); reject(Error('Acknowledgement waited for planner completion')); }, 5000); });
+  let ack;
+  try { ack = await Promise.race([f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller), bound]); }
+  finally { clearTimeout(timer); }
   assert.equal(ack.state, 'PLANNING');
   assert.equal(ack.request_id, id);
   const replay = await f.bridge.zeroSetupWork.ask({ request_id: id, instruction }, caller);
   assert.equal(replay.state, 'PLANNING');
   await assert.rejects(f.bridge.zeroSetupWork.ask({ request_id: id, instruction: instruction + ' again' }, caller), /replay/);
+  releasePlanner();
   const done = await f.ask(id);
   assert.ok(done.mission_id && ['DISPATCHED', 'RUNNING'].includes(done.state), JSON.stringify(done));
   assert.equal(f.plannerCalls, 1);
+});
+
+test('exact project names outrank incidental tokens while multiple exact enrollments stay ambiguous', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.inspect(f.policy.policy_id);
+  const project = f.bridge.projects.getProject(policy.project_id);
+  const otherProject = { ...project, projectId: randomUUID(), name: 'Source Tools' };
+  const other = { ...policy, policy_id: randomUUID(), project_id: otherProject.projectId, alias: 'source-tools' };
+  f.bridge.projects.listProjects = () => [project, otherProject];
+  da.list = () => [policy, other];
+  const v = await f.ask(randomUUID(), caller, `In ${project.name} change fixture.txt from alpha to beta. Preserve source formatting.`);
+  assert.ok(v.mission_id, JSON.stringify(v));
+  assert.equal(f.bridge.missions.require(v.mission_id).envelope.cognitive.envelope.delegation.policy_id, policy.policy_id);
+  await f.settle(v.mission_id);
+  const calls = f.plannerCalls;
+  await assert.rejects(f.ask(randomUUID(), caller, `Use ${project.name} and Source Tools to edit fixture.txt.`), /cognitive_repository_ambiguous/);
+  da.list = () => [policy, { ...policy, policy_id: randomUUID(), alias: 'another-policy' }];
+  await assert.rejects(f.ask(randomUUID(), caller, `In ${project.name} edit fixture.txt.`), /cognitive_repository_ambiguous/);
+  assert.equal(f.plannerCalls, calls);
 });
 
 test('status reads stay responsive while disposable workspace preparation awaits', async t => {
@@ -296,7 +335,7 @@ test('strict versioned schemas reject dependency cycles, unknown fields and tamp
 test('read-only proposals use existing host capabilities and cannot satisfy an unmet coding criterion', async t => {
   const f = await setup(t), normal = f.proposal;
   f.proposal = e => ({ ...normal(e), tasks: [{ ...normal(e).tasks[0], operation: 'read', description: 'Inspect fixture.txt' }] });
-  const result = await f.ask(); assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
+  const result = await f.ask(randomUUID(), caller, 'In Fixture project read fixture.txt without editing it.'); assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
   const done = await f.settle(result.mission_id, 'needs_rework');
   assert.equal(done.envelope.preferred_agent, 'host');
   assert.deepEqual(done.envelope.contract.permissions.allowed_write_paths, []);
@@ -400,3 +439,34 @@ test('integrity excludes no tracked files, rejects scoped symlinks and ignored i
 });
 
 module.exports = { setup };
+
+
+test('explicit unenrolled request is rejected before planner or grant creation', async t => {
+  const f = await setup(t);
+  const p = await f.ask(randomUUID(), caller, 'In Fixture project edit recovery-proof.txt to the required bytes.');
+  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_not_enrolled']);
+  assert.equal(f.plannerCalls, 0);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_developer_autonomy_grants').get().n, 0);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+});
+
+test('missing explicitly requested file fails before planning instead of selecting another file', async t => {
+  const f = await setup(t), original = f.bridge.developerAutonomy.prepareWorkspaceAsync.bind(f.bridge.developerAutonomy);
+  f.bridge.developerAutonomy.prepareWorkspaceAsync = async (...args) => {
+    const ws = await original(...args); fs.unlinkSync(path.join(ws.path, 'fixture.txt')); return ws;
+  };
+  const p = await f.ask();
+  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_missing_or_inadmissible']);
+  assert.equal(f.plannerCalls, 0);
+});
+
+test('substitution proposal is refused before Mission dispatch and keeps original requested evidence', async t => {
+  const f = await setup(t), normal = f.proposal;
+  f.proposal = e => { const p = normal(e); p.tasks[0].paths = ['AGENTS.md']; p.files = ['AGENTS.md']; return p; };
+  const p = await f.ask();
+  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_plan_mismatch']);
+  assert.equal(f.plannerCalls, 2);
+  const r = f.bridge.zeroSetupWork.read(p.request_id);
+  assert.deepEqual(r.cognitive.envelope.requested_scope.bindings, [{ operation: 'edit', path: 'fixture.txt' }]);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+});

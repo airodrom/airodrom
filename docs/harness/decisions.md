@@ -17,3 +17,7 @@ Commit state and effect intents together. Claim delivery effectively-once only w
 Codex is handoff-first until a supported native transport exists. Cursor editor installation does not establish executable agent integration.
 
 See [architecture](../ARCHITECTURE.md) and the [runtime matrix](../RUNTIME-SUPPORT-MATRIX.md).
+
+Explicit requested file operations narrow enrollment. Planning, dispatch, recovery, host verification, and Acceptance must preserve their exact paths; a different enrolled file cannot satisfy the request.
+
+See [requested file scope](../adr/0063-requested-file-scope.md) for literal request syntax, fail-closed admission, evidence, and historical compatibility.

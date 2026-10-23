@@ -138,14 +138,7 @@ async function select(service,m,dispatch) {
     const readiness=await Decision.refreshReadiness(service.bridge,{fresh:true});
     observations.cursor={...(observations.cursor||{}),...readiness,governed_worker:true,available:readiness?.ready===true};
     const decision=Decision.decide(service.bridge,m,{readiness,now:service.store.now()});
-    if (!decision.allow) {
-      const err=Error(decision.code);
-      err.code=decision.code;
-      err.transient=decision.transient===true;
-      err.dimensions=decision.dimensions;
-      err.detail=decision.detail;
-      throw err;
-    }
+    Decision.assertAllowed(decision);
   } else {
     const o=observations[worker];
     if (!o?.available) fail(o?.reason || ('cognitive_worker_unqualified:'+worker));
@@ -278,18 +271,34 @@ async function retryPreStartEvaluation(service, m) {
     if (!['cursor', 'opencode'].includes(worker.agent_id)) return false;
     // Historical Autopilot acceptance Mission stays immutable: never auto-replay it.
     if (m.id === '98a67bd6-b6db-44be-ba3e-390ec3ce8478') return false;
-    if (!require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
+    const gateway = require('./opencode-gateway');
+    const prior = gateway.receipt(service.bridge, m.id, worker.id);
+    // A previous recovery may have durably stored READY before finalization
+    // rolled back. Resume that receipt, never spend another worker/evaluator run.
+    // Restrict this to the known finalization fault; other stop reasons stay closed.
+    const resumeReceipt = m.reason === 'EVALUATION_UNAVAILABLE: gateway_parent_stopped'
+      && m.task_id === worker.task_id
+      && !attempt.evaluation_run_id && attempt.verification?.status === 'passed'
+      && prior?.state === 'completed' && prior.termination_verified === 1
+      && prior.result?.gateway?.evaluation?.recommendation === 'ready'
+      && runs.filter(r => service.store.run(r.id).result?.gateway?.worker_run_id === worker.id)
+        .every(r => r.termination_verified === 1);
+    if (!resumeReceipt && !gateway.preStartEvaluationRetryable(m, runs, attempt)) return false;
     // A negative cache is not launch authority. A positive cache is enough to
     // enter evaluation; execute() probes again before the process starts.
-    let ready = { ready: false };
+    let ready = { ready: resumeReceipt };
     try {
-      ready = await service.bridge.opencodeAdapter.readiness();
+      if (!resumeReceipt) ready = await service.bridge.opencodeAdapter.readiness();
       if (!ready.ready) ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
     } catch { ready = { ready: false }; }
     if (!ready.ready) return deferEvaluationRetry(service, m);
     // recover() runs while admission is still closed. Starting the evaluator
     // then rolls back. Wait until the service is open; this is not a new Cursor run.
     if (service.bridge.lifecycle && service.bridge.lifecycle.state() !== 'open') return deferEvaluationRetry(service, m);
+    require('./cognitive-router').assertBound(service.bridge, m);
+    if (m.envelope.approval_id) service.bridge.missionApprovals.assertLocalEvaluation(m);
+    else service.assertAuthority(m);
+    if (workspaceSnapshot(m.envelope.workspace).hash !== attempt.verification.workspace_hash) fail('gateway_workspace_changed');
     save(service.bridge, m, node, 'evaluating');
     const evaluation = await require('./opencode-gateway').evaluate(service.bridge, service.store.requireMission(m.id), worker, attempt.verification);
     const current = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
@@ -303,9 +312,12 @@ async function retryPreStartEvaluation(service, m) {
       transaction(service.db, () => {
         save(service.bridge, m, current, 'ready');
         if (final) {
-          assertReceipts(service.bridge, service.store.requireMission(m.id), worker.id);
+          // Persist the verified lifecycle edge before asserting the active root.
+          // Both changes and receipt validation share one transaction: invalid or
+          // stale evidence rolls the whole transition back to BLOCKED.
           service.verifier.persist(service.store.requireMission(m.id), worker, attempt.verification);
           service.db.prepare("UPDATE cp_mission_programs SET state='waiting_acceptance' WHERE id=?").run(m.id);
+          assertReceipts(service.bridge, service.store.requireMission(m.id), worker.id);
         } else {
           // Intermediate assignment: reopen so the existing scheduler can queue the next node.
           // blocked → ready is the authorized lifecycle edge (not blocked → running).
@@ -324,11 +336,17 @@ async function retryPreStartEvaluation(service, m) {
     const node = nodes(service.bridge, m).find(n => n.attempts?.length === 1 && ['evaluating', 'unavailable'].includes(n.state));
     if (node) save(service.bridge, m, node, 'unavailable');
     const code = String(error.code || error.message);
+    // A retry can fail differently from the initial evaluator. Update diagnostic
+    // text only; this is not a blocked -> blocked lifecycle/authority transition.
+    transaction(service.db, () => {
+      service.db.prepare("UPDATE cp_missions SET reason=?,updated_at=? WHERE id=? AND state='blocked'")
+        .run('EVALUATION_UNAVAILABLE: ' + code.slice(0, 160), service.store.now(), m.id);
+      service.store.event('gateway.evaluation_retry_failed', m.id, { code: code.slice(0, 120), authority: false });
+    });
     if (code.includes('Service admission is closed')
-      || /opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout/.test(code)) {
+      || require('./opencode-gateway').automaticEvaluationRetryable(error)) {
       return deferEvaluationRetry(service, m);
     }
-    try { service.store.event('gateway.evaluation_retry_failed', m.id, { code: code.slice(0, 120), authority: false }); } catch { /* The Mission stays blocked either way. */ }
     return false;
   } finally {
     localEvalRetries.delete(m.id);
@@ -561,7 +579,7 @@ async function processResult(service,row) {
       if(['running','verifying','awaiting_acceptance'].includes(current.state))store.state(m.id,'blocked','EVALUATION_UNAVAILABLE: '+detail);
       // Local OpenCode (and Cursor→OpenCode) evaluator never-started misses are
       // retryable once host verification already passed. Do not wait for reboot.
-      if (verification?.status === 'passed' && /opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout|opencode_evaluation_stage_mismatch|gateway_evaluation_stage_mismatch/.test(detail)) {
+      if (verification?.status === 'passed' && gateway.automaticEvaluationRetryable(error)) {
         deferEvaluationRetry(service, store.requireMission(m.id));
       }
     }

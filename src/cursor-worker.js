@@ -21,6 +21,7 @@ const ID = 'cursor';
 // Only dispatch() can mint a one-use ticket after durable host admission. A
 // request/body, worker output, or forged readiness string cannot manufacture one.
 const executionTickets = new WeakMap();
+const objectiveProofs = new WeakMap();
 const MAX_OUTPUT = 2 * 1024 * 1024;
 const MAX_FILE = 262144;
 const MAX_PROMPT = 24000;
@@ -286,7 +287,7 @@ class CursorWorker {
     return value;
   }
 
-  /** Mission-level qualification: governed contract with disclosure for Cursor, allowlist of known hosts, worker ready. */
+  /** Sealed Mission compatibility; runtime readiness is checked explicitly at launch. */
   qualifiedFor(mission, { readiness = null } = {}) {
     const c = mission?.envelope?.contract;
     if (!c || mission.envelope.preferred_agent !== ID) return false;
@@ -298,12 +299,9 @@ class CursorWorker {
     if (c.permissions.personal_memory?.mode !== 'none' || c.permissions.vault_access?.mode !== 'none') return false;
     if (!mission.envelope.approval_id) return false;
     if (readiness) return readiness.ready === true;
-    if (this.options.fixtureExecutable) return true;
-    // Contract checks above already passed. A cold process has no lastReadiness until
-    // agents.refresh() or execute(); blocking here rejects an otherwise ready worker.
-    // Live readiness is still enforced at launch (after refresh) and inside execute().
-    if (!this.lastReadiness) return true;
-    return this.lastReadiness.ready === true;
+    // Cached status is observational, including in production. Queueing, result
+    // application and grant monitors must not depend on a stale CLI probe.
+    return true;
   }
 
   stageCredential(root) {
@@ -328,7 +326,7 @@ class CursorWorker {
    * Execute one bounded Cursor run.
    * @returns {{result, changes, provenance, trace}}
    */
-  async execute({ workspace, files, writable = [], objective, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onEvent = null, model = null, hosts = null, admission = null } = {}) {
+  async execute({ workspace, files, writable = [], objective, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onEvent = null, model = null, hosts = null, admission = null, objectiveProof = null } = {}) {
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > MAX_TIMEOUT_MS || signal?.aborted) fail('cursor_timeout_or_cancel_bound');
     const readiness = await this.readiness();
     this.lastReadiness = readiness;
@@ -349,7 +347,13 @@ class CursorWorker {
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || fs.realpathSync(workspace) !== workspace || !Array.isArray(files) || !files.length || files.length > 8 || new Set(files).size !== files.length || !Array.isArray(writable) || new Set(writable).size !== writable.length || writable.some(f => !files.includes(f))) fail('cursor_workspace_binding');
     files.forEach(relative); writable.forEach(relative);
     if (typeof objective !== 'string' || !objective.trim() || Buffer.byteLength(objective) > MAX_PROMPT || /\0/.test(objective)) fail('cursor_prompt_bound');
-    if (require('./personal-memory').containsSecret(objective)) fail('cursor_sensitive_prompt');
+    let objectiveView = objective;
+    if (objectiveProof !== null) {
+      const proof = objectiveProofs.get(objectiveProof); objectiveProofs.delete(objectiveProof);
+      if (!proof || proof.worker !== this || proof.objective !== objective) fail('cursor_objective_binding');
+      objectiveView = proof.view;
+    }
+    if (require('./personal-memory').containsSecret(objectiveView)) fail('cursor_sensitive_prompt');
     const allowedHosts = (hosts && hosts.length ? hosts : require('./mission-contract').KNOWN_PROVIDER_HOSTS.cursor).map(h => h.replace(/:\d+$/, ''));
     const install = this.install();
     const sandboxId = randomUUID();
@@ -499,11 +503,19 @@ class CursorWorker {
     const assignment=require('./specialist-gateway').adapterScope(b,task,ID);
     if (m.task_id !== task.id || m.envelope.workspace !== repo || context?.id !== task.contextPackId || m.envelope.preferred_agent !== ID || m.envelope.fallback_agents.length) fail('cursor_mission_binding');
     b.hostExecutionPolicy?.assertCursorAllowed?.('dispatch');
-    const readiness = await this.readiness(); this.lastReadiness = readiness;
-    if (!this.qualifiedFor(m, { readiness })) fail('cursor_mission_unqualified');
+    const Decision = require('./cursor-execution-decision');
+    const readiness = await Decision.refreshReadiness(b, { fresh: true });
+    Decision.assertAllowed(Decision.decide(b, m, { readiness, now: b.controlStore.now() }));
     b.missions.assertAuthority(m);
     require('./memory-content-erasure').assertContext(b.controlStore.db, task.contextPackId);
     if (this.active.size) fail('cursor_worker_busy');
+    let objectiveProof = null;
+    if (assignment) {
+      const input = require('./specialist-gateway').workerInput(b, m, task.id);
+      if (JSON.stringify(input) !== prompt) fail('cursor_objective_binding');
+      objectiveProof = Object.freeze({});
+      objectiveProofs.set(objectiveProof, { worker: this, objective: prompt, view: JSON.stringify(require('./specialist-scan-view').specialistObjectiveSafetyView(input)) });
+    }
     const controller = new AbortController();
     const runId = b.controlContext.inspect(context.id).run_id;
     const contract = m.envelope.contract;
@@ -533,7 +545,7 @@ class CursorWorker {
       this.active.set(task.id, controller);
       const result = await this.execute({
         workspace: repo, files, writable, objective: prompt, timeoutMs, signal: controller.signal,
-        model, admission: ticket,
+        model, admission: ticket, objectiveProof,
         hosts: contract.permissions.network.allow,
         onEvent: event => {
           if (count++ >= MAX_TRACE_EVENTS) return;
@@ -563,6 +575,7 @@ class CursorWorker {
       throw error;
     } finally {
       executionTickets.delete(ticket);
+      if (objectiveProof) objectiveProofs.delete(objectiveProof);
       clearTimeout(deadlineTimer); clearInterval(grantMonitor);
       this.active.delete(task.id);
       // No automatic refunds; a failed/unknown launch still consumes its slot.

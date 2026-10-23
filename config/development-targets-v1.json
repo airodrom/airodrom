@@ -20,7 +20,7 @@
       "instruction_patterns": [
         "\\bairodrom\\s*/\\s*airodrom\\b",
         "\\bgithub\\.com/airodrom/airodrom\\b",
-        "(?:^|[\\s`\"'(])(?:~/code/airodrom|/Users/[^/\\s]+/code/airodrom(?:-da-main|-source-main)?)(?:/|\\b)",
+        "(?:^|[\\s`\"'(])(?:~/code/airodrom|/(?:Users|home)/[^/\\s]+/code/airodrom(?:-da-main|-source-main)?)(?:/|\\b)",
         "\\bairodrom\\s+source\\s+(?:repository|repo|project|checkout|tree)\\b",
         "\\b(?:existing\\s+)?airodrom\\s+SOURCE\\s+repository\\b",
         "\\b(?:real|canonical|operator)\\s+airodrom\\s+(?:source|repository|checkout)\\b",
@@ -60,7 +60,7 @@
       "instruction_patterns": [
         "\\barecibo-inc\\s*/\\s*arecibo-core\\b",
         "\\bgithub\\.com/arecibo-inc/arecibo-core\\b",
-        "(?:^|[\\s`\"'(])(?:~/code/arecibo-core(?:-autopilot-main)?|/Users/[^/\\s]+/code/arecibo-core(?:-autopilot-main)?)(?:/|\\b)",
+        "(?:^|[\\s`\"'(])(?:~/code/arecibo-core(?:-autopilot-main)?|/(?:Users|home)/[^/\\s]+/code/arecibo-core(?:-autopilot-main)?)(?:/|\\b)",
         "\\barecibo\\s+core\\b",
         "\\b(?:fix|improve|implement|work\\s+on|develop|check)\\s+arecibo\\b",
         "\\barecibo\\s+(?:command\\s+center|merchant|settings|prs?|fintech|mcc)\\b",

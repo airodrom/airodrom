@@ -41,6 +41,18 @@ Architecture narration (“OpenCode → Cursor → OpenCode”) is **not** speci
 selection. When Cursor is disabled, return `CURSOR_EXECUTION_DISABLED` with zero
 worker dispatches; do not clamp an explicit Cursor request onto OpenCode.
 
+Literal `Cursor reads <path>` and `Cursor edits <path>` clauses also select Cursor,
+as does `Cursor is the sole implementation specialist`. `OpenCode is planner and
+evaluator only` assigns those roles without making OpenCode a competing specialist.
+File operations still require exact literal paths and the existing enrollment.
+
+For non-authoritative project work, an exact enrolled alias takes precedence over
+shared words; otherwise an exact enrolled project name or repository path outranks
+incidental tokens. Multiple exact matches remain ambiguous. Denials such as
+`No source edits` cannot select a source enrollment. This selection does not change
+the policy's file, worker, budget or verification authority. See
+[ADR 0063](adr/0063-requested-file-scope.md) for the literal scope contract.
+
 Local-only example (implicit specialist / auto):
 
 > Start the Arecibo release-readiness audit using local OpenCode only. Do not deploy production, call Cursor, enable Plaid LIVE, or use external AI providers.

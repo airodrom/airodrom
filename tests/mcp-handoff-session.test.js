@@ -20,6 +20,8 @@ async function call(port, token, name, args, session) {
 
 test('natural Cursor intake crosses authenticated HTTP MCP; missing grant, session replay and foreign scope fail closed', async t => {
   const f = await fixture(t);
+  assert.equal(f.bridge.hostExecutionPolicy.cursorDisabled(), true);
+  f.bridge.hostExecutionPolicy.enableCursor({ confirmed: true, request_id: randomUUID() }, 'operator');
   const server = new (require('../src/control-server'))(f.bridge, { port: 0 });
   await server.start();
   t.after(() => server.close());
@@ -55,7 +57,7 @@ test('natural Cursor intake crosses authenticated HTTP MCP; missing grant, sessi
   // Decode and screen literal data too; escaping letters cannot bypass intake's
   // existing private-content gate. This value is synthetic, not a credential.
   const privateArgs = { request_id: randomUUID(), objective: objective.replace('alpha\\n', '\\u006dailbox number 123') };
-  assert.match((await call(server.port, server.mcpToken, 'prepare_mission', privateArgs, session)).body.error, /Secrets and private identifiers/);
+  assert.match((await call(server.port, server.mcpToken, 'prepare_mission', privateArgs, session)).body.error, /SECRET_DETECTED_IN_WORK_INSTRUCTION/);
   assert.equal(f.bridge.zeroSetupWork.read(privateArgs.request_id), null);
   const other = (await post('/api/mcp/session', {})).body.session_id;
   assert.match((await call(server.port, server.mcpToken, 'prepare_mission', args, other)).body.error, /original authenticated/);

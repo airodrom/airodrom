@@ -75,6 +75,17 @@ function evidencePackage(bridge, missionId) {
       phase = Object.values(view.autonomous.phases || {}).find(p => p.mission_id === final.id || p.parent_mission_id === final.id || p.mission_id === root.id || p.parent_mission_id === root.id) || null;
     } catch { autonomous = null; }
   }
+  // ADR 0059: a retry keeps the parent BLOCKED until its receipt is validated.
+  // Report only a durable, currently starting/running evaluator of that exact
+  // verified assignment; an unavailable node alone does not imply a retry.
+  const evaluationRetry = specialists && final.state === 'blocked' && specialists.assignments.some(a =>
+    a.state === 'evaluating' && a.attempts.some(attempt =>
+      require('./opencode-gateway').evaluationContinuation(final, attempt) &&
+      (detail.runs || []).some(run => run.agent_id === 'opencode' &&
+        ['starting', 'running'].includes(run.state) && run.termination_verified !== 1 &&
+        run.result?.gateway?.worker_run_id === attempt.run_id)));
+  if (evaluationRetry) phase = { phase: 'EVALUATION_RETRY', observing: true, reason: final.reason,
+    message: 'Wait; Airodrom is retrying the read-only evaluation within the existing budget.' };
   const approval = final.envelope.approval_id && bridge.missionApprovals ? bridge.missionApprovals.view(final.envelope.approval_id) : null;
   const contract = final.envelope.contract || null;
   const changedFiles = [];
@@ -98,11 +109,19 @@ function evidencePackage(bridge, missionId) {
   };
   const spend = contract?.budget?.spend_observability === 'UNKNOWN_SUBSCRIPTION' || lastWorkerRun?.agent_id === 'cursor' ? 'UNKNOWN (subscription-backed worker; no per-run billing is observable)' : 'LOCAL_NO_SPEND (local inference)';
   const unauthorized = (latestVerification?.evidence || []).filter(c => ['protected_files', 'repository_v2', 'creation_repository_v2', 'verifier_inputs_unchanged', 'protected_tests_unchanged'].includes(c.id) && c.status === 'failed').map(c => c.id);
-  const status = final.state === 'completed' ? (specialists?'AUTOMATICALLY_ACCEPTED':'OWNER_ACCEPTED') : final.state === 'awaiting_acceptance' ? 'VERIFIED_AWAITING_ACCEPTANCE' : final.state === 'cancelled' ? 'CANCELLED' : phase?.phase || final.state.toUpperCase();
-  const legacyNextSafeAction = final.state === 'awaiting_acceptance' ? 'Owner reviews evidence and records Acceptance (accept or rework) in Control Center or Terminal.' : final.state === 'completed' ? 'None required for this Mission. Merge, installation and production remain separate owner-controlled actions.' : phase?.observing ? 'Wait; Airodrom is still executing or repairing within the approved scope.' : phase?.message || 'Owner inspects diagnostics; no automatic retry is pending.';
+  const status = evaluationRetry ? 'RECOVERING' : final.state === 'completed' ? (specialists?'AUTOMATICALLY_ACCEPTED':'OWNER_ACCEPTED') : final.state === 'awaiting_acceptance' ? 'VERIFIED_AWAITING_ACCEPTANCE' : final.state === 'cancelled' ? 'CANCELLED' : phase?.phase || final.state.toUpperCase();
+  const legacyNextSafeAction = evaluationRetry ? phase.message : final.state === 'awaiting_acceptance' ? 'Owner reviews evidence and records Acceptance (accept or rework) in Control Center or Terminal.' : final.state === 'completed' ? 'None required for this Mission. Merge, installation and production remain separate owner-controlled actions.' : phase?.observing ? 'Wait; Airodrom is still executing or repairing within the approved scope.' : phase?.message || 'Owner inspects diagnostics; no automatic retry is pending.';
   const nextSafeAction=specialists&&['ready','dispatching','running','verifying'].includes(final.state)?'Wait; sealed specialist work, evaluation and bounded repair advance automatically.':specialists&&final.state==='awaiting_acceptance'?'Automatic completion is pending current policy, protected-action clearance or settlement; no routine manual Acceptance is required.':legacyNextSafeAction;
   return {
     schema_version: 1,
+    ...(final.envelope.cognitive?.envelope.requested_scope ? { file_scope: {
+      version: 1,
+      requested: final.envelope.cognitive.envelope.requested_scope.bindings,
+      proposed: final.envelope.cognitive.proposal.tasks.map(t => ({ id: t.id, operation: t.operation, paths: t.paths })),
+      authorized: final.envelope.allowed_files,
+      executed_changes: changedFiles.map(f => f.path),
+      host_verification: (latestVerification?.evidence || []).find(c => c.id === 'requested_file_scope') || null
+    } } : {}),
     ...(specialists?{specialists}:{}),
     ...(final.envelope.cognitive ? { gateway: require('./opencode-gateway').evidence(bridge, final),
     cognitive: require('./cognitive-router').evidence(bridge, final, detail, latestVerification, changedFiles) } : {}),
@@ -147,7 +166,7 @@ function evidencePackage(bridge, missionId) {
       original_goal_resumed: !!planId && (final.state === 'awaiting_acceptance' || final.state === 'completed'),
       unauthorized_changes: unauthorized.length > 0,
       pr_created: false, merged: false, installed: false,
-      requires_owner: specialists&&['ready','dispatching','running','verifying','completed','awaiting_acceptance'].includes(final.state)?[]:final.state === 'awaiting_acceptance' ? ['Acceptance'] : final.state === 'completed' ? [] : ['Inspect diagnostics'],
+      requires_owner: evaluationRetry||specialists&&['ready','dispatching','running','verifying','completed','awaiting_acceptance'].includes(final.state)?[]:final.state === 'awaiting_acceptance' ? ['Acceptance'] : final.state === 'completed' ? [] : ['Inspect diagnostics'],
     },
     next_safe_action: nextSafeAction,
     limits_blockers: (() => {
@@ -175,7 +194,9 @@ function missionEvents(bridge, missionId, { limit = 100 } = {}) {
   const lineage = lineageFor(bridge, mission);
   const events = [];
   for (const item of lineage) {
-    for (const e of bridge.ledger.list({ missionId: item.mission_id, limit: Math.max(limit, 200), order: 'asc' }).events) {
+    // Fetch the newest bounded slice first. An ascending limited read would
+    // permanently hide later evaluation, Acceptance and Settlement events.
+    for (const e of bridge.ledger.list({ missionId: item.mission_id, limit: Math.max(limit, 200), order: 'desc' }).events) {
       events.push({
         event_id: e.event_id,
         sequence: e.sequence,

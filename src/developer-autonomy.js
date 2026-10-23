@@ -300,6 +300,20 @@ class DeveloperAutonomy {
     if (require('./control-execution').repositoryRoot(workspace.path) !== workspace.path) throw Error('Workspace repository changed');
   }
 
+  workspacePath(value) {
+    // A host-generated UUID can contain digits that pass the card checksum.
+    // Only a registered, identity-verified workspace basename is a typed ID.
+    // Parent paths and all unregistered values retain ordinary secret screening.
+    if (typeof value !== 'string' || Buffer.byteLength(value) > 1000 || value.includes('\0')) return text(value, 'workspace', 1000);
+    const id = path.basename(value);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)) return text(value, 'workspace', 1000);
+    const ws = this.inspectWorkspace(id);
+    if (!ws || ws.path !== value || path.join(ws.container, ws.workspace_id) !== value) return text(value, 'workspace', 1000);
+    this.assertWorkspace(ws);
+    text(path.join(ws.container, 'host-workspace-id'), 'workspace', 1000);
+    return value;
+  }
+
   assertAuxiliaryText(policy, name, currentText) {
     const trusted = policy.verifier_baseline;
     const expected = new Map((trusted?.files || []).map(entry => [entry.path, entry.sha256]));
@@ -1299,7 +1313,7 @@ class DeveloperAutonomy {
     identifier(input.policy_id);
     identifier(input.request_id);
     text(input.objective, 'objective', 4000);
-    text(input.workspace, 'workspace', 1000);
+    this.workspacePath(input.workspace);
     const policy = this.inspect(input.policy_id);
     if (!policy || policy.state !== 'active') throw Error('Active Developer Autonomy policy required');
     this.assertPolicyBoundaries(policy);

@@ -15,6 +15,11 @@ After READY auto-admit (ADR 0061), Mission `63385742…` queued a Cursor assignm
 
 Introduce one authoritative Cursor decision module with explicit readiness vs authority dimensions. Specialist select must use a fresh readiness probe and that decision. Transient runtime failures requeue the same dispatch (bounded). Register `cognitive_worker_unqualified` (suffix-normalized) and `cursor_runtime_not_ready` with `refresh_cursor_execution_decision` recovery. Never auto-enroll or invent spend.
 
+Dependent dispatch uses the same authority component without cached runtime status.
+Full launch decisions add fresh readiness. Retry eligibility and the finite retry
+counter belong to the current never-started dispatch; completed predecessor results
+do not disable recovery, and current task runs/invocations prohibit replay.
+
 ## Alternatives considered
 
 - Treat menu “available” as dispatch authority — rejected; conflates observation with spend.

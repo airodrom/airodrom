@@ -86,6 +86,9 @@ test('watchdog expires idle authority and resume cannot restore it',async t=>{
 
 test('mission subprocess sandbox denies external files, secrets and Git metadata writes',async t=>{
  const {root,workspace}=isolated(t);const {HostExecutor}=require('../src/host-exec');
+ // Observe and clean only this test's temp directory, never concurrent Missions.
+ const privateTempParent=path.join(root,'temporary');fs.mkdirSync(privateTempParent);
+ t.mock.method(require('node:os'),'tmpdir',()=>privateTempParent);
  const executor=new HostExecutor({allowed:[process.execPath],home:root}),a=authority(workspace,'development',{permissions:{network:[]}});
  fs.writeFileSync(path.join(root,'outside.txt'),'fixture');fs.writeFileSync(path.join(workspace,'.env'),'fixture');fs.mkdirSync(path.join(workspace,'.git'));
  const script=`const fs=require('node:fs');let denied=0;for(const file of ${JSON.stringify([path.join(root,'outside.txt'),path.join(workspace,'.env')])})try{fs.readFileSync(file)}catch{denied++}try{fs.writeFileSync(${JSON.stringify(path.join(root,'outside-write'))},'x')}catch{denied++}try{fs.writeFileSync(${JSON.stringify(path.join(workspace,'.git','mutation'))},'x')}catch{denied++}console.log(denied)`;

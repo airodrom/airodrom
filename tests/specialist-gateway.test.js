@@ -7,6 +7,7 @@ async function setup(t,{cursor=false,repairs=2,manual=false}={}) {
  const f=await fixture(t,{opencode:runtime(t).options,settleTimeoutMs:30000}),b=f.bridge;
  b.missionAuthority.initializeOperatorKey();qualifyCanonical(b);
  if(!manual)b.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,request_id:randomUUID(),sync_risk_acceptance:false},'operator');
+ if(cursor)b.hostExecutionPolicy.enableCursor({confirmed:true,request_id:randomUUID()},'operator');
  if(cursor)b.cursorWorker=new(require('../src/cursor-worker').CursorWorker)(b,{fixtureExecutable:path.join(__dirname,'fixtures/cursor-agent-fixture.cjs')});
  const p=b.projects.listProjects({status:'active'})[0],g=b.projects.summary(p.projectId).goals[0];
  f.policy=b.developerAutonomy.enroll({alias:'specialist-fixture',repository:f.repo,project_id:p.projectId,goal_id:g.goalId,workflows:['routine_edit','test','repair'],workers:cursor?['opencode','cursor']:['opencode'],duration_days:1,confirmed:true,diff_check:'diff-check',default_tests:['fixture-test'],budgets:{max_repairs:repairs},cognitive:{version:3,files:['fixture.txt'],delegated_callers:[],planning_attempts:2,planning_ms:120000,execution_ms:120000,repair_attempts:repairs,max_assignments:3,acceptance:'automatic'}},'operator');
@@ -18,7 +19,7 @@ async function setup(t,{cursor=false,repairs=2,manual=false}={}) {
   if(o.coordination){f.evaluations.push(o.coordination);assert.deepEqual(o.writable,[]);return{result:{summary:JSON.stringify(await f.evaluate(o))},changes:[],provenance:{runtime_id:'opencode',sandbox:'fixture',termination_verified:true,authority:false}};}
   f.calls.push({files:o.files,writable:o.writable,input:JSON.parse(o.objective)});return f.worker(o.writable.length?o:{...o,objective:'Inspect current files without changes',objectiveProof:null});
  };};f.bindAdapter();
- f.ask=async()=>{const request_id=randomUUID(),instruction='In Fixture project change fixture.txt from alpha to beta and independently review it.';let view=await b.zeroSetupWork.ask({request_id,instruction},'operator');for(let i=0;i<200&&view.state==='PLANNING';i++){await new Promise(r=>setTimeout(r,20));view=await b.zeroSetupWork.ask({request_id,instruction},'operator');}return view;};
+ f.ask=async({review=true}={})=>{const request_id=randomUUID(),instruction='In Fixture project change fixture.txt from alpha to beta'+(review?' and independently review fixture.txt.':'.');let view=await b.zeroSetupWork.ask({request_id,instruction},'operator');for(let i=0;i<200&&view.state==='PLANNING';i++){await new Promise(r=>setTimeout(r,20));view=await b.zeroSetupWork.ask({request_id,instruction},'operator');}return view;};
  return f;
 }
 test('specialist graph returns each result to OpenCode and automatically accepts after final host checks',async t=>{
@@ -39,7 +40,7 @@ test('mixed Cursor and OpenCode tasks preserve worker identity and share one par
 test('final evaluator requests one bounded edit repair and completion remains automatic',async t=>{
  const f=await setup(t,{repairs:1});f.plan=f.plan.slice(0,1);
  f.evaluate=o=>({...o.coordination.result_contract,recommendation:f.evaluations.length===1?'repair':'ready',summary:'Bounded correction then re-evaluation.'});
- const p=await f.ask(),m=await f.settle(p.mission_id,'completed');
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'completed');
  assert.equal(f.calls[1].input.repair_context.summary,'Bounded correction then re-evaluation.');assert.ok(f.calls[1].input.repair_context.evaluation_run_id);assert.ok(f.calls[1].input.repair_context.host_checks.length);
  assert.equal(m.specialists.repair_attempts,1);assert.equal(m.specialists.assignments[0].attempts.length,2);assert.equal(f.evaluations.length,2);assert.equal(m.acceptance.length,1);
 });
@@ -54,19 +55,19 @@ test('read-only reviewer returns a correction to the original editor and is re-r
 test('repair ceiling stops repeated evaluator demands without another dispatch',async t=>{
  const f=await setup(t,{repairs:1});f.plan=f.plan.slice(0,1);
  f.evaluate=o=>({...o.coordination.result_contract,recommendation:'repair',summary:'Further correction requested.'});
- const p=await f.ask(),m=await f.settle(p.mission_id,'needs_rework');
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
  assert.equal(f.calls.length,2);assert.equal(m.acceptance.length,0);assert.equal(m.specialists.repair_attempts,1);
 });
 test('program cancellation during evaluation prevents final acceptance',async t=>{
  const f=await setup(t);f.plan=f.plan.slice(0,1);
  f.evaluate=o=>{f.bridge.missions.program.cancel(o.coordination.specialist_return.assignment.parent_mission_id,randomUUID());return {...o.coordination.result_contract,summary:'Cancellation was requested.'};};
- const p=await f.ask(),m=await f.settle(p.mission_id,'cancelled');assert.equal(m.acceptance.length,0);
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'cancelled');assert.equal(m.acceptance.length,0);
 });
 test('pending protected action blocks automatic acceptance without discarding verified results',async t=>{
  const f=await setup(t);f.plan=f.plan.slice(0,1);
  const list=f.bridge.policy.list.bind(f.bridge.policy);
  f.evaluate=o=>{const m=f.bridge.controlStore.requireMission(o.coordination.specialist_return.assignment.parent_mission_id);f.bridge.policy.list=()=>[...list(),{status:'pending',taskId:m.task_id}];return {...o.coordination.result_contract,summary:'Verified result retained.'};};
- const p=await f.ask(),m=await f.settle(p.mission_id,'awaiting_acceptance');assert.equal(m.acceptance.length,0);
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'awaiting_acceptance');assert.equal(m.acceptance.length,0);
  assert.equal(require('../src/specialist-gateway').autoAccept(f.bridge,m.id).reason,'pending_protected_action');
  f.bridge.policy.list=list;assert.equal(require('../src/specialist-gateway').autoAccept(f.bridge,m.id).accepted,true);
 });

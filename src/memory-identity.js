@@ -9,6 +9,7 @@ const states=new WeakMap();
 // Cache only a successful validation stamp, never rows, refs or personal data.
 // Transactions do not participate: rollback can reuse a schema number.
 const readableStamps=new WeakMap();
+const readProbes=new WeakSet();
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEGACY=/(?:sha256:|arch:|operator_text:)[0-9a-f]{64}|(?:^|[:/._-])[0-9a-f]{64}(?=$|[:/._-])/i;
 const CONTENT_IDS={authority_memory_candidates:'id',authority_memories:'id',authority_context_pack_manifests:'id',authority_context_pack_diffs:'id',authority_memory_conflicts:'id',authority_routing_decisions:'id',authority_runtime_capability_observations:'id',authority_evidence_records:'id',authority_qualification_receipts:'id',personal_memories:'memory_id',architecture_memory_versions:'version_hash',cp_context_packs:'id',cp_candidates:'id',cp_artifacts:'id',authority_artifact_records:'id',chatgpt_events:'record_id',cp_requests:'record_id',cp_invocations:'origin_event_id',cp_provider_requests:'record_id',cp_mission_budget_usage:'record_id',cp_mission_program_nodes:'record_id',cp_slack_outbox:'id',cp_slack_health_outbox:'id'};
@@ -26,8 +27,18 @@ function hasLegacyIdentifiers(value,key='',allowed=new Set()) {
   if(value&&typeof value==='object')return Object.entries(value).some(([k,v])=>legacy(k)||hasLegacyIdentifiers(v,k,allowed));
   return false;
 }
+function installReadProbes(db) {
+  // ADR 0004: standalone stores still require the same fail-closed read checks.
+  // Connection-local functions require no schema writes or migration authority.
+  if(readProbes.has(db))return;
+  db.function('memory_identity_legacy',v=>legacy(v)?1:0);
+  db.function('memory_identity_uuid',v=>UUID.test(String(v??''))?1:0);
+  db.function('memory_identity_bad_correlation',(table,column,value,eventType)=>legacy(value)&&!safeCorrelation(table,{[column]:value,event_type:eventType},column)?1:0);
+  readProbes.add(db);
+}
 function install(db) {
-  let s=states.get(db);if(!s){s={writing:false,ports:new Map()};states.set(db,s);db.function('memory_identity_migration',()=>s.writing?1:0);db.function('memory_identity_legacy',v=>legacy(v)?1:0);db.function('memory_identity_json_legacy',v=>{try{return hasLegacyIdentifiers(JSON.parse(v),'',nonContentIds(db))?1:0;}catch{return 1;}});}
+  installReadProbes(db);
+  let s=states.get(db);if(!s){s={writing:false,ports:new Map()};states.set(db,s);db.function('memory_identity_migration',()=>s.writing?1:0);db.function('memory_identity_json_legacy',v=>{try{return hasLegacyIdentifiers(JSON.parse(v),'',nonContentIds(db))?1:0;}catch{return 1;}});}
   db.exec(`CREATE TABLE IF NOT EXISTS memory_identity_meta(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL,generation INTEGER NOT NULL);
     INSERT OR IGNORE INTO memory_identity_meta VALUES(1,1,0);
     CREATE TABLE IF NOT EXISTS memory_identity_progress(id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL CHECK(state IN('pending','applying','failed','complete')),safe_error_class TEXT,updated_at INTEGER NOT NULL);
@@ -36,11 +47,6 @@ function install(db) {
     CREATE TRIGGER IF NOT EXISTS memory_identity_lineage_no_update BEFORE UPDATE ON memory_identity_lineage BEGIN SELECT RAISE(ABORT,'Immutable opaque identity lineage');END;
     CREATE TRIGGER IF NOT EXISTS memory_identity_lineage_no_delete BEFORE DELETE ON memory_identity_lineage BEGIN SELECT RAISE(ABORT,'Durable opaque identity lineage');END;`);
   if(db.prepare('SELECT version FROM memory_identity_meta WHERE id=1').get()?.version!==1)throw Error('Unsupported identity migration version');
-  if(!s.probes){
-    s.probes=true;
-    db.function('memory_identity_uuid',v=>UUID.test(String(v??''))?1:0);
-    db.function('memory_identity_bad_correlation',(table,column,value,eventType)=>legacy(value)&&!safeCorrelation(table,{[column]:value,event_type:eventType},column)?1:0);
-  }
   return s;
 }
 function columns(db,t) {
@@ -311,6 +317,7 @@ function readStamp(db) {
 }
 function sameStamp(a,b){return !!a&&a.schema===b.schema&&a.data===b.data&&a.changes===b.changes&&a.layout===b.layout;}
 function assertReadable(db) {
+  installReadProbes(db);
   if(exists(db,'memory_identity_meta')&&!states.has(db))install(db);
   const witness=states.get(db)?.witness;if(witness&&sourceState(witness.sourceDb)!==witness.sourceHash)throw Error('Stale identity/erasure generation requires recovery');
   const cacheable=db.isTransaction===false&&!states.get(db)?.writing;

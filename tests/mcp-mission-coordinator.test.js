@@ -13,6 +13,15 @@ const { diagnose: discoveryDiagnose } = require('../src/mcp-discovery');
 
 function server(f) { return new McpTools(f.bridge); }
 
+test('bounded Mission event timeline includes the newest settlement-side events after long histories', async t => {
+  const f=await fixture(t),m=f.create();
+  for(let i=0;i<220;i++)f.bridge.controlStore.event('fixture.progress',m.id,{attempt:i,authority:false});
+  const view=missionEvents(f.bridge,m.id,{limit:5});
+  assert.equal(view.events.length,5);
+  assert.deepEqual(view.events.map(e=>e.metadata.attempt),[215,216,217,218,219]);
+  assert.ok(view.events.every((e,i)=>i===0||e.sequence>view.events[i-1].sequence));
+});
+
 test('MCP inspect reports missing projectless scope instead of offering an unusable approval', async t => {
   const f = await fixture(t), mcp = server(f), request_id = 'scope-' + randomUUID();
   f.bridge.globalAutopilot.enable({ request_id: 'enable-' + randomUUID(), confirmed: true }, 'operator');
@@ -28,6 +37,10 @@ test('MCP inspect reports missing projectless scope instead of offering an unusa
   assert.equal(inspected.next_action, 'define_bounded_projectless_work');
   assert.deepEqual(inspected.blockers, ['projectless_scope_required', 'measurable_success_criteria_required']);
   const cursorRequest = 'cursor-' + randomUUID();
+  // This case tests the disclosure/spend gate after an explicit fixture owner
+  // opt-in. The default host policy intentionally refuses Cursor earlier.
+  assert.equal(f.bridge.hostExecutionPolicy.cursorDisabled(), true);
+  f.bridge.hostExecutionPolicy.enableCursor({ confirmed: true, request_id: randomUUID() }, 'operator');
   await mcp.call('prepare_mission', { objective: 'AIRODROM_WORK_V1\n' + JSON.stringify({ version: 1, worker: 'cursor',
     files: [{ path: 'result.txt', content: 'expected\n' }] }), request_id: cursorRequest }, { name: 'chatgpt', version: '1' });
   const cursorRecord = f.bridge.zeroSetupWork.read(cursorRequest);

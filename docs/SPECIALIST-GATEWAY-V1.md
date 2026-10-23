@@ -106,3 +106,79 @@ source must understand tagged graphs or reject their execution and display them
 read-only. The former array-only graph implementation cannot serve as an unguarded
 rollback after version 3 records have been written. Keep admission closed if safe
 compatibility cannot be established.
+## Failure-injected qualification and recovery observations
+
+On 2026-10-23 a governed run against installed revision `faa204d` passed this
+procedure: exactly two Cursor assignments, one injected evaluator interruption,
+one automatic local evaluation retry, two READY evaluations, 17/17 final host
+checks, canonical automatic Acceptance and Settlement, and four released leases.
+Only the explicitly bound proof file changed. The installed source fingerprint
+was unchanged throughout. Private host receipts and independent database/file
+verification remain in the operator evidence bundle; this observation alone does
+not qualify the later release candidate or claim its CI gates passed.
+
+A live recovery qualification must distinguish an interrupted evaluator from a
+repeated implementation assignment. Bind the test to one enrolled request and
+the exact read-only evaluator process after the first worker's host verification.
+Keep the dependent edit pending. Inject at most one process interruption; do not
+change grants, budgets, file contents, evaluator results, or canonical database
+rows. The host must independently establish termination before retrying.
+
+Verify the complete durable sequence: one completed read, one failed and
+reconciled evaluation, one READY retry bound to the same read receipt, one
+dependent edit, and one final READY evaluation. Independently check requested,
+planned and changed paths; exact final bytes; all registered and security checks;
+current acceptance and settlement records; and zero held or quarantined leases.
+Two Cursor tasks plus three evaluator attempts (two READY and one failed) prove
+evaluation recovery without spending an implementation repair. They do not prove
+an edit-repair cycle, every failure class, or filesystem-level read tracing.
+
+During a bounded evaluator retry the canonical parent remains BLOCKED until the
+receipt passes validation. The evidence API derives RECOVERING / EVALUATION_RETRY
+only when a durable starting or running evaluator belongs to the exact verified
+assignment. A stale unavailable node or an exhausted/terminated attempt does not
+justify that projection. This changes reporting only, not admission or authority.
+
+Bounded event retrieval selects the newest records from each Mission in the
+lineage, then returns them chronologically. Long worker traces cannot permanently
+hide later evaluation, Acceptance or Settlement events behind the first page.
+The event response remains a bounded subset; use canonical evidence and stored
+records when a complete independent audit is required.
+
+Candidate qualification also exercises standalone identity read validation.
+Connection-local validation probes are registered without creating migration
+tables or granting migration authority. Read-only stores keep rejecting legacy
+references, malformed opaque origins and unsafe correlations.
+
+Bound each explicitly authorized hosted qualification run with a 45-minute
+monitor that cancels unfinished work at its deadline. Restore the prior CI
+disabled state after the bounded attempt. A timeout or failed gate keeps release
+on HOLD; it is not an authorized skip. Workflow edits may require additional
+repository credential scope and are not necessary for this bounded procedure.
+
+Cursor and OpenCode use the same typed scan projection for host-assembled
+specialist packets. A valid digest can incidentally contain a Luhn-valid number;
+that does not make its sealed coordinate a payment identifier. Dispatch must
+rebuild and match the exact host packet before minting a one-use, worker-bound
+scan proof. Only known valid coordinate fields are projected for screening;
+user prose, paths, feedback summaries, unknown fields and malformed values stay
+subject to secret checks. The worker receives the original packet bytes. Neither
+a serialized packet nor a fabricated proof can obtain this exception directly.
+
+The portable authority verification record also recognizes the exact host verifier
+`verifier_inputs_unchanged.evidence.trusted_source.base_commit_sha` coordinate
+when the trusted source is available. A Git revision can otherwise coincidentally
+match the payment-card detector after both READY evaluations. SHA-1/SHA-256
+syntax, host verifier identity and the nested record shape are required; prose,
+worker claims, unavailable sources and malformed or spoofed paths stay screened.
+This is a scan-only correction: evidence bytes, seals, authority and acceptance
+requirements are unchanged, with no database migration or disposition rollback.
+
+Canonical authority creation additionally derives its scan view from the exact
+registered Mission and retained cognitive request. The host validates the sealed
+request/workspace/scope binding and the registered workspace filesystem identity
+before projecting a request UUID or workspace basename at explicit fields. Parent
+paths, file suffixes, unknown fields and prose remain screened; default stores and
+standalone input have no such proof. Both initial creation and revision insertion
+check the same current binding, and persist the original envelope bytes. Historical
+UUIDs remain usable without rewriting identities or weakening admission.

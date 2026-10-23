@@ -23,7 +23,8 @@
       "src/mission-verifier.js",
       "src/opencode-gateway.js",
       "src/mission-service.js",
-      "src/mission-terminal-notifications.js"
+      "src/mission-terminal-notifications.js",
+      "src/requested-file-scope.js"
     ],
     "note": "Unknown runtime codes resolve as unknown_blocker rather than inventing classifications."
   },
@@ -2623,7 +2624,7 @@
       "codes": [
         "RUNTIME_REMOVED"
       ],
-      "description": "Requested runtime (for example Pi) has been removed from the product.",
+      "description": "Requested runtime has been removed from the product.",
       "category": "operational_owner",
       "severity": "error",
       "source": {
@@ -3040,6 +3041,59 @@
         "note": "retry_when_resolver_healthy",
         "owner_gate_if_needed": false,
         "security_fail_closed": false
+      }
+    },
+    {
+      "id": "requested_file_scope_integrity",
+      "codes": [
+        "requested_file_not_enrolled",
+        "requested_file_creation_not_authorized",
+        "requested_file_missing_or_inadmissible",
+        "requested_file_plan_mismatch",
+        "requested_file_dependency_mismatch",
+        "requested_file_constraint_changed",
+        "requested_file_execution_mismatch",
+        "requested_file_path_invalid",
+        "requested_file_operation_required",
+        "requested_file_scope_version",
+        "requested_file_operation_invalid"
+      ],
+      "description": "The explicit request does not match enrolled, proposed, dispatched, or observed file operations.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/requested-file-scope.js",
+        "symbol": "assertProposal"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "preserve_request_scope_and_correct_proposal_or_enrollment",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/adr/0063-requested-file-scope.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
       }
     }
   ],

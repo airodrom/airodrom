@@ -44,7 +44,19 @@ function safe(value) {
       ].some(expected => coordinatePath.length === expected.length && coordinatePath.every((key, i) => key === expected[i]));
       // Git revisions are typed host-observed coordinates. Their hexadecimal digits
       // can coincidentally match a payment-card pattern; free text remains scanned.
-      const gitHead = typedGitField && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
+      const verificationRecord = Array.isArray(value.evidence) && segments[0] === 'evidence'
+        ? value.evidence[segments[1]] : null;
+      const typedVerificationHead = value.verifier_type === 'host' && value.verifier_id === 'airodrom:host-verifier'
+        && segments.length === 6 && /^\d+$/.test(segments[1])
+        && segments.slice(2).join('.') === 'evidence.manifest.repository.head'
+        && verificationRecord?.id === 'repository_v2' && verificationRecord.evidence?.version === 2
+        && verificationRecord.evidence.manifest?.version === 2;
+      const typedVerifierBaseline = value.verifier_type === 'host' && value.verifier_id === 'airodrom:host-verifier'
+        && segments.length === 5 && /^\d+$/.test(segments[1])
+        && segments.slice(2).join('.') === 'evidence.trusted_source.base_commit_sha'
+        && verificationRecord?.id === 'verifier_inputs_unchanged'
+        && verificationRecord.evidence?.trusted_source?.available === true;
+      const gitHead = (typedGitField || typedVerificationHead || typedVerifierBaseline) && typeof v === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
       const grantManifestId = coordinatePath.length === 2 && coordinatePath[0] === 'manifest' && coordinatePath[1] === 'id' &&
         typeof v === 'string' && /^da-grant-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v);
       const coordinate = typeof v === 'string' && (
@@ -80,7 +92,11 @@ function payload(kind, value) {
   return safe(value);
 }
 class AuthorityStore {
-  constructor(db, { now = Date.now, operatorId = 'local-operator', restoreFromBackup = false, erasureSourceDb = null } = {}) {
+  #scanMissionEnvelope;
+  constructor(db, { now = Date.now, operatorId = 'local-operator', restoreFromBackup = false, erasureSourceDb = null, scanMissionEnvelope = null } = {}) {
+    // Trusted host dependency, never an input/body option. Default stores have
+    // no coordinate proof; both writes still screen all unprojected content.
+    this.#scanMissionEnvelope = scanMissionEnvelope;
     this.db=db; this.now=now; this.operatorId=operatorId;
     this.operator=Object.freeze({type:'operator',id:operatorId}); this.host=Object.freeze({type:'host',id:'authority-plane'});
     migrateAuthority(db,this.now());
@@ -218,7 +234,8 @@ class AuthorityStore {
     });
   }
   createMission(input,by=this.operator) {
-    actor(by);safe(input);
+    actor(by);safe(by.type === 'host' && this.#scanMissionEnvelope
+      ? {...input,envelope:this.#scanMissionEnvelope(input.id,input.envelope)} : input);
     return transaction(this.db,()=>{
       const id=input.id||randomUUID();if(this.getMission(id))throw new Error('Mission already exists');
       this.db.prepare('INSERT INTO authority_missions VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,input.project_id||null,input.goal_id||null,input.task_id||null,input.owner||by.id,1,'ready',input.acceptance_strength||'criteria',this.now(),this.now());
@@ -229,7 +246,8 @@ class AuthorityStore {
     // Historical envelopes are retained verbatim as non-authorizing snapshots.
     // Their repository manifests include secret-looking *filenames*, not secret
     // values. New requests still cross the strict admission boundary.
-    if(quality==='legacy_snapshot')canonicalSerialize(envelope);else safe(envelope);
+    if(quality==='legacy_snapshot')canonicalSerialize(envelope);else safe(by.type === 'host' && this.#scanMissionEnvelope
+      ? this.#scanMissionEnvelope(id,envelope) : envelope);
     const m=this.getMission(id),hash=canonicalHash(envelope);
     this.db.prepare('INSERT INTO authority_mission_revisions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,revision,envelope.objective||'Legacy mission',envelope.task_type||'legacy',json(envelope),json(envelope.workspace_descriptor||{path:envelope.workspace||null}),json(envelope.context_manifest||{}),json(envelope.dispatch_policy||{}),json(envelope.capability_scopes||[]),json(envelope.constraints||''),envelope.policy_version||'legacy-v1',envelope.checkpoint_id||null,by.type,by.id,this.now(),hash,quality);
     for (const [i,criterion] of (envelope.criteria||[]).entries()) {

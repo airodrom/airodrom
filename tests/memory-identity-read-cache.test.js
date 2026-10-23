@@ -12,6 +12,27 @@ function fixture(t,{file=false}={}){
 }
 function observe(db){const original=db.prepare.bind(db),queries=[];db.prepare=(sql,...args)=>{queries.push(sql);return original(sql,...args);};return{queries,restore(){db.prepare=original;}};}
 function scans(q){return q.filter(sql=>/^PRAGMA table_(?:xinfo|info)|SELECT .* FROM "cp_context_packs"/i.test(sql));}
+test('standalone read-only stores register validation probes without creating migration state',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'identity-read-probes-')),file=path.join(dir,'store.sqlite');
+  const writer=new DatabaseSync(file);
+  writer.exec('CREATE TABLE cp_context_packs(id TEXT PRIMARY KEY,refs TEXT,selection TEXT,content_hash TEXT,created_at INTEGER); CREATE TABLE cp_requests(owner TEXT,request_id TEXT,record_id TEXT)');
+  writer.prepare('INSERT INTO cp_context_packs VALUES(?,?,?,?,?)').run(randomUUID(),'[]','{}','fixture',1);
+  writer.prepare('INSERT INTO cp_requests VALUES(?,?,?)').run('operator','fixture-request',randomUUID());
+  const reader=new DatabaseSync(file,{readOnly:true});
+  t.after(()=>{reader.close();writer.close();fs.rmSync(dir,{recursive:true,force:true});});
+  const schema=writer.prepare('SELECT name,sql FROM sqlite_master ORDER BY name').all();
+  identity.assertReadable(reader);
+  assert.deepEqual(writer.prepare('SELECT name,sql FROM sqlite_master ORDER BY name').all(),schema);
+  assert.equal(writer.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_identity_meta'").get(),undefined);
+  writer.prepare('UPDATE cp_context_packs SET refs=?').run(JSON.stringify([{memory_id:BAD}]));
+  assert.throws(()=>identity.assertReadable(reader),/Legacy retained reference/);
+  writer.prepare('UPDATE cp_context_packs SET refs=?').run('[]');
+  writer.prepare('UPDATE cp_requests SET record_id=?').run('invalid-origin');
+  assert.throws(()=>identity.assertReadable(reader),/Request origin unavailable/);
+  writer.prepare('UPDATE cp_requests SET record_id=?').run(randomUUID());
+  writer.prepare('UPDATE cp_requests SET request_id=?').run(BAD);
+  assert.throws(()=>identity.assertReadable(reader),/Legacy content-derived correlation/);
+});
 test('unchanged reads reuse validity only and never reselect stored payload',t=>{
   const f=fixture(t),o=observe(f.db);identity.assertReadable(f.db);assert.ok(scans(o.queries).length>0);o.queries.length=0;for(let i=0;i<20;i++)identity.assertReadable(f.db);assert.equal(scans(o.queries).length,0);o.restore();
 });

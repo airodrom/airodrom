@@ -94,3 +94,8 @@ results remain inbox-retrievable via `list_mission_notifications`.
 
 See [Milestone B Cursor readiness](MILESTONE-B-CURSOR-SPECIALIST-READINESS.md)
 and [CURRENT-STATE.md](CURRENT-STATE.md).
+
+Explicit requested file operations are host constraints throughout planning, dispatch,
+recovery, verification, and acceptance. Enrollment cannot substitute a different
+file. See [ADR 0063](adr/0063-requested-file-scope.md) for the versioned request
+constraint, literal syntax, evidence, and compatibility boundary.

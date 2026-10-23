@@ -15,8 +15,8 @@ const COORDINATOR = [
   'get_mission_evidence', 'request_mission_correction', 'cancel_mission', 'ask_airodrom', 'get_ask_status',
 ];
 
-test('MCP catalog registers 43 tools including Mission coordinator surface', async () => {
-  assert.equal(TOOLS.length, 43);
+test('MCP catalog registers 53 tools including Mission coordinator surface', async () => {
+  assert.equal(TOOLS.length, 53);
   const names = TOOLS.map(t => t.name);
   for (const name of COORDINATOR) assert.ok(names.includes(name), name);
   const d = diagnose({});
@@ -24,7 +24,7 @@ test('MCP catalog registers 43 tools including Mission coordinator surface', asy
   assert.equal(d.coordinator_tools_present, true);
   assert.equal(d.list_changed, true);
   const advertised = await advertisedCatalog();
-  assert.equal(advertised.length, 43);
+  assert.equal(advertised.length, 53);
   assert.ok(advertised.some(t => t.name === 'prepare_mission'));
   assert.ok(advertised.some(t => t.name === 'get_mission_evidence'));
 });

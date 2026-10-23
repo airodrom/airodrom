@@ -18,15 +18,17 @@ function gitRepo(t, name) {
 }
 function bridge(projects) {
   const db = new DatabaseSync(':memory:');
-  return {
+  const b = {
     controlStore: { db },
     projects: { listProjects: () => projects },
     developerAutonomy: { list: () => [] },
     workTemplates: { list: () => [] }
   };
+  b.projectDefaults = new (require('../src/project-defaults').ProjectDefaults)(b);
+  return b;
 }
 function project(name, repo) {
-  return { projectId: name, name, status: 'active', repositories: [repo], limitations: [] };
+  return { projectId: name.replace(/ /g, '-'), name, status: 'active', repositories: [repo], limitations: [] };
 }
 
 test('zero, one, and many projects do not prompt or borrow an unnamed repository', t => {

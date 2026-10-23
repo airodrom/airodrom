@@ -66,6 +66,37 @@ test('owner-only enrollment, durable inspection, and reject unconfirmed consent'
   assert.equal(f.bridge.developerAutonomy.list('operator')[0].policy_hash, policy.policy_hash);
 });
 
+test('registered workspace UUID is typed only after identity verification and never exempts parent secrets', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.enroll(f.enrollInput, 'operator'), request = randomUUID();
+  const ws = da.prepareWorkspace({ policy_id: policy.policy_id, request_id: request + ':workspace', prefer_disposable: true, branch_prefix: 'airodrom/da' }, 'operator');
+  const { containsSecret } = require('../src/personal-memory');
+  const id = Array.from({ length: 100 }, (_, n) => '41111111-1111-4' + String(n).padStart(3, '0') + '-8111-abcdefabcdef').find(containsSecret);
+  assert.ok(id);
+  // Seed a deterministic host UUID in this isolated fixture's registry. Keep
+  // the real directory inode and normal repository/identity checks intact.
+  const target = path.join(ws.container, id);
+  fs.renameSync(ws.path, target);
+  const record = JSON.parse(da.db.prepare('SELECT record FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').get(ws.workspace_id).record);
+  record.workspace_id = id; record.path = target;
+  record.identities = record.identities.map(x => x.path === ws.path ? { ...x, path: target } : x);
+  da.db.prepare('UPDATE cp_developer_autonomy_workspaces SET workspace_id=?,path=?,record=? WHERE workspace_id=?').run(id, target, JSON.stringify(record), ws.workspace_id);
+  assert.equal(containsSecret(target), true);
+  assert.equal(da.workspacePath(target), target);
+  assert.throws(() => da.workspacePath(path.join(f.root, id)), /sensitive workspace/);
+  assert.throws(() => da.workspacePath(path.join(f.root, 'sk-fixtureprivatecredential')), /sensitive workspace/);
+  const check = da.workspacePath;
+  const secretParent = path.join(f.root, 'sk-fixtureprivatecredential');
+  const fake = { ...record, container: secretParent, path: path.join(secretParent, id) };
+  assert.throws(() => check.call({ inspectWorkspace: () => fake, assertWorkspace: () => {} }, fake.path), /sensitive workspace/);
+  const auth = da.authorizeRoutine({ policy_id: policy.policy_id, request_id: request, objective: 'Typed workspace identity fixture', allowed_files: ['fixture.txt'], prefer_disposable: true }, 'operator');
+  const mission = f.bridge.missions.create(auth.mission_input, 'operator');
+  assert.equal(mission.envelope.workspace, target);
+  fs.renameSync(target, target + '-preserved'); fs.mkdirSync(target, { mode: 0o700 });
+  assert.throws(() => da.workspacePath(target), /identity changed/);
+  assert.equal(containsSecret(target), true);
+});
+
 test('revocation accepts an exact sealed digest with a card-like substring and rejects malformed or mismatched digests', async t => {
   const f = await setup(t), da = f.bridge.developerAutonomy;
   const policy = da.enroll(f.enrollInput, 'operator');
@@ -603,7 +634,7 @@ test('settled retained worktrees do not exhaust the concurrent worktree budget',
   b.missions.cancel(next.id, {request_id:randomUUID()});
 });
 
-test('ready and unsettled worktrees still occupy the concurrent worktree budget', async t => {
+test('ready workspaces with active leases occupy the concurrent budget until verified release', async t => {
   const f = await setup(t), da = f.bridge.developerAutonomy;
   const policy = da.enroll({
     ...f.enrollInput,
@@ -616,12 +647,18 @@ test('ready and unsettled worktrees still occupy the concurrent worktree budget'
     prefer_disposable: true
   }, 'operator');
   assert.equal(ready.state, 'ready');
+  const store = f.bridge.controlStore, runId = randomUUID();
+  store.startRun({ id: runId, taskId: randomUUID(), agentId: 'host', role: 'planner' });
+  store.acquireLease({ resource: ready.path, runId, mode: 'read' });
   assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
   assert.throws(() => da.prepareWorkspace({
     policy_id: policy.policy_id,
     request_id: randomUUID(),
     prefer_disposable: true
   }, 'operator'), /Worktree budget exhausted/);
+  store.updateRun(runId, { state: 'completed', processState: 'not_started', verified: true });
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
+  assert.equal(da.prepareWorkspace({ policy_id: policy.policy_id, request_id: randomUUID(), prefer_disposable: true }, 'operator').state, 'ready');
 });
 
 test('idle held unique evidence does not exhaust the concurrent worktree budget', async t => {
@@ -636,7 +673,8 @@ test('idle held unique evidence does not exhaust the concurrent worktree budget'
     request_id: randomUUID(),
     prefer_disposable: true
   }, 'operator');
-  assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
+  assert.equal(da.capacityInventory(policy.policy_id).non_occupying[0].classification, 'idle_unbound_ready');
   // Unique commit on the disposable clone forces HOLD on cleanup (evidence retain).
   require('child_process').execFileSync('git', ['-C', ready.path, 'commit', '--allow-empty', '-m', 'unique evidence'], {stdio: 'pipe'});
   const held = da.cleanupWorkspace({ workspace_id: ready.workspace_id, confirmed: true }, 'operator');
@@ -651,7 +689,8 @@ test('idle held unique evidence does not exhaust the concurrent worktree budget'
   }, 'operator');
   assert.equal(next.state, 'ready');
   assert.notEqual(next.workspace_id, ready.workspace_id);
-  assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
+  assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
+  assert.ok(da.capacityInventory(policy.policy_id).non_occupying.some(s => s.workspace_id === held.workspace_id && s.classification === 'retained_evidence'));
 });
 
 test('idle ready clones without grants do not block filesystem-capacity preparation', async t => {

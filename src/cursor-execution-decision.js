@@ -48,9 +48,9 @@ function baseDimensions() {
 /**
  * @param {object} bridge
  * @param {object} mission
- * @param {{ readiness?: object|null, observation?: object|null, now?: number }} [opts]
+ * Runtime availability is deliberately excluded from this synchronous check.
  */
-function decide(bridge, mission, opts = {}) {
+function decideAuthority(bridge, mission) {
   const dimensions = baseDimensions();
   if (!mission) return failClosed('mission_missing', dimensions);
   if (mission.envelope?.preferred_agent !== ID && !specialistRequiresCursor(bridge, mission)) {
@@ -62,31 +62,7 @@ function decide(bridge, mission, opts = {}) {
     return failClosed('CURSOR_EXECUTION_DISABLED', dimensions);
   }
 
-  const readiness = opts.readiness
-    || bridge.cursorWorker?.lastReadiness
-    || null;
-  if (!bridge.cursorWorker) {
-    return failClosed('worker_execution_unqualified', dimensions, 'cursor_worker_absent');
-  }
-
-  // 1–2 technical readiness (never conflated with Mission authority).
-  const installed = readiness?.installed === true;
-  const ready = readiness?.ready === true;
-  const reason = readiness?.reason || null;
-  dimensions.runtime_installed_operational = installed && ready;
-  dimensions.worker_technically_qualified = readiness?.tiers?.qualified === true
-    || (ready && readiness?.governed_worker === true);
-  if (!installed) return failClosed('cursor_agent_not_installed', dimensions, reason);
-  if (readiness?.availability === 'busy' || (bridge.cursorWorker.active?.size > 0 && !ready)) {
-    return failClosed('cursor_agent_busy', dimensions, reason);
-  }
-  if (!ready) {
-    const code = reason && /^cursor_/.test(reason) ? reason : 'cursor_runtime_not_ready';
-    return failClosed(code === 'cursor_execution_unqualified' ? 'cursor_runtime_not_ready' : code, dimensions, reason);
-  }
-  if (!dimensions.worker_technically_qualified) {
-    return failClosed('cursor_runtime_not_ready', dimensions, reason || 'cursor_tiers_unqualified');
-  }
+  if (!bridge.cursorWorker) return failClosed('worker_execution_unqualified', dimensions, 'cursor_worker_absent');
 
   // 3 Mission worker allowed by sealed scope / specialist graph.
   const contract = mission.envelope?.contract;
@@ -127,9 +103,40 @@ function decide(bridge, mission, opts = {}) {
     const code = String(error.code || error.message || 'BLOCKED_SPEND_AUTHORIZATION').slice(0, 120);
     return failClosed(code, dimensions);
   }
-  // qualifiedFor encodes contract/network/sandbox/approval/readiness alignment.
-  if (!bridge.cursorWorker.qualifiedFor(mission, { readiness })) {
+  // This predicate checks the sealed worker contract only. Runtime observations
+  // cannot revoke authority or prevent queueing a dependent assignment.
+  if (!bridge.cursorWorker.qualifiedFor?.(mission)) {
     return failClosed('worker_execution_unqualified', dimensions, 'cursor_mission_unqualified');
+  }
+
+  return { allow: true, worker: ID, code: null, detail: null, transient: false, dimensions, authority: false };
+}
+
+/** Full launch decision: current Mission authority plus a fresh runtime probe. */
+function decide(bridge, mission, opts = {}) {
+  const authorization = decideAuthority(bridge, mission);
+  if (!authorization.allow) return authorization;
+  const dimensions = { ...authorization.dimensions };
+  const readiness = opts.readiness
+    || bridge.cursorWorker?.lastReadiness
+    || null;
+  // 1–2 technical readiness (never conflated with Mission authority).
+  const installed = readiness?.installed === true;
+  const ready = readiness?.ready === true;
+  const reason = readiness?.reason || null;
+  dimensions.runtime_installed_operational = installed && ready;
+  dimensions.worker_technically_qualified = readiness?.tiers?.qualified === true
+    || (ready && readiness?.governed_worker === true);
+  if (!installed) return failClosed('cursor_agent_not_installed', dimensions, reason);
+  if (readiness?.availability === 'busy' || (bridge.cursorWorker.active?.size > 0 && !ready)) {
+    return failClosed('cursor_agent_busy', dimensions, reason);
+  }
+  if (!ready) {
+    const code = reason && /^cursor_/.test(reason) ? reason : 'cursor_runtime_not_ready';
+    return failClosed(code === 'cursor_execution_unqualified' ? 'cursor_runtime_not_ready' : code, dimensions, reason);
+  }
+  if (!dimensions.worker_technically_qualified) {
+    return failClosed('cursor_runtime_not_ready', dimensions, reason || 'cursor_tiers_unqualified');
   }
 
   // 7 Budget / deadline.
@@ -160,6 +167,13 @@ function decide(bridge, mission, opts = {}) {
   };
 }
 
+function assertAllowed(decision) {
+  if (decision.allow) return decision;
+  const error = Error(decision.code);
+  Object.assign(error, { code: decision.code, transient: decision.transient, dimensions: decision.dimensions, detail: decision.detail });
+  throw error;
+}
+
 function specialistRequiresCursor(bridge, mission) {
   try {
     if (!require('./specialist-gateway').enabled(mission)) return false;
@@ -185,6 +199,8 @@ async function refreshReadiness(bridge, { fresh = true } = {}) {
 
 module.exports = {
   decide,
+  decideAuthority,
+  assertAllowed,
   refreshReadiness,
   isTransient,
   ID,

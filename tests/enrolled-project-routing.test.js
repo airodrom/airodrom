@@ -19,6 +19,28 @@ function gitInit(dir) {
   return dir;
 }
 
+test('No source edits is a denial, not an enrollment target', () => {
+  const text = 'In chatgpt-handoff edit recovery-proof.txt. No source edits, merge, install or authority increase.';
+  assert.equal(instructionMentions(text, 'Airodrom Source', 'airodrom-source-cursor-dev'), null);
+  assert.equal(instructionMentions(text, 'chatgpt-handoff')?.kind, 'full_name');
+  assert.equal(instructionMentions('No source edits. Later inspect source.', 'Airodrom Source')?.value, 'source');
+  assert.equal(instructionMentions('No chatgpt-handoff work.', 'chatgpt-handoff'), null);
+});
+
+test('literal Cursor read and edit verbs and explicit is-role wording preserve specialist identity', () => {
+  for (const text of [
+    'Cursor reads recovery-proof.txt; OpenCode evaluates READY; dependent Cursor edits recovery-proof.txt.',
+    'Cursor READ recovery-proof.txt; OpenCode evaluates READY.',
+    'OpenCode is PLANNER and EVALUATOR only. Cursor is the sole IMPLEMENTATION SPECIALIST.',
+  ]) {
+    assert.equal(R.resolveWorkerRoles(text).specialist, 'cursor');
+    assert.throws(() => R.resolveWorkerRoles(text, { cursorDisabled: true }), /CURSOR_EXECUTION_DISABLED/);
+  }
+  const roles = R.resolveWorkerRoles('OpenCode is PLANNER and EVALUATOR only. Cursor is the sole IMPLEMENTATION SPECIALIST.');
+  assert.equal(roles.named_planner, true); assert.equal(roles.named_evaluator, true);
+  assert.throws(() => R.resolveWorkerRoles('Cursor reads fixture.txt and OpenCode edits fixture.txt.'), /ambiguous_worker/);
+});
+
 test('project resolution matches distinctive tokens and fails closed on ambiguity', () => {
   assert.equal(instructionMentions('Start the Arecibo release-readiness audit in Cursor', 'Arecibo Core')?.value, 'arecibo');
   assert.equal(instructionMentions('Start the Arecibo release-readiness audit in Cursor', 'Arecibo product research')?.value, 'arecibo');
@@ -97,12 +119,13 @@ test('enrolled Arecibo Cursor request never returns projectless two-file syntax'
     instruction: 'Start the Arecibo Core release-readiness audit using Cursor. Do not deploy production.',
     request_id: randomUUID(),
   }, 'mcp:' + randomUUID());
-  assert.equal(unique.state, 'CLARIFY');
+  // A registered project is not authoritative source enrollment.
+  assert.equal(unique.state, 'BLOCKED');
   assert.ok(!unique.blockers?.includes('projectless_exact_two_file_syntax_required'));
-  assert.equal(unique.code, 'ENROLLED_WORKSPACE_REQUIRED');
-  assert.equal(unique.next_action, 'enroll_developer_autonomy_for_repository');
-  assert.match(unique.message, /Developer Autonomy enrollment/i);
-  assert.equal(unique.presentation.project_name, 'Arecibo Core');
+  assert.deepEqual(unique.blockers, ['ARECIBO_REPOSITORY_NOT_ENROLLED']);
+  assert.equal(unique.mission_id, null);
+  assert.equal(unique.execution_authorized, false);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_runs').get().n, 0);
 });
 
 test('projectless Cursor prose still requires the exact two-file contract', async t => {

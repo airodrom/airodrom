@@ -1,6 +1,14 @@
 ## Unreleased
 
 ### Fixed
+- Treat the host verifier's typed repository Git revision as an opaque coordinate, preventing intermittent payment-card false positives while continuing to screen arbitrary evidence text and malformed coordinates.
+- Separate Cursor Mission authorization from cached runtime readiness at dependent dispatch; share authority checks with fresh launch decisions and bound transient retries to the current never-started assignment ([details](docs/CURSOR-EXECUTION-DECISION-V1.md), ADR 0062).
+- Continue bounded local evaluation recovery after malformed model JSON, without repeating the completed worker; retain the latest evaluation failure in Mission diagnostics. Binding and authority failures do not gain automatic syntax retries.
+- Queue approved Cursor intake before yielding to the READY watchdog, preventing duplicate-admission errors; active/completed Missions no longer display obsolete intake blockers as a new owner gate.
+- Final evaluator recovery persists the verified lifecycle transition and validates receipts atomically before acceptance. A saved READY receipt stranded by `gateway_parent_stopped` can resume without worker or evaluator replay; workspace drift, revocation, stale bindings and program expiry still block acceptance.
+- Include required runtime modules and the development-target catalog in the explicit package manifest; remove machine-specific development setup paths and reconcile the public source allowlist.
+
+### Fixed
 - Specialist Cursor launch no longer collapses runtime unreadiness into `cognitive_worker_unqualified:cursor` and terminal BLOCKED with zero runs: authoritative `cursor-execution-decision` separates readiness from Mission authority, select uses a fresh readiness probe, transient runtime codes requeue the same dispatch (bounded), and the Limits & Blockers registry registers `cognitive_worker_unqualified` (suffix-normalized) plus `cursor_runtime_not_ready` with `refresh_cursor_execution_decision` recovery ([docs/CURSOR-EXECUTION-DECISION-V1.md](docs/CURSOR-EXECUTION-DECISION-V1.md)).
 
 ### Fixed
