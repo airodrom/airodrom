@@ -479,6 +479,52 @@ class HostExecutionPolicy {
   }
 
   /**
+   * Raise-only finite runtime ceiling on an existing active standing Cursor grant.
+   * Never lowers bounds, never widens path/repo/data-class, never invents a grant.
+   * Used when Cursor multi-task assignments outlive an undersized 60s enrollment
+   * while staying within STANDING_MAX_RUNTIME_MS.
+   */
+  raiseStandingCursorRuntimeCeiling(input, owner = 'operator') {
+    if (owner !== 'operator') throw Error('Only authenticated local owner may raise standing Cursor runtime');
+    object(input, ['confirmed', 'request_id', 'grant_id', 'max_runtime_ms']);
+    if (input.confirmed !== true) throw Error('Explicit owner confirmation required');
+    identifier(input.request_id);
+    identifier(input.grant_id);
+    const maxRuntime = Number(input.max_runtime_ms);
+    if (!Number.isSafeInteger(maxRuntime) || maxRuntime < 1000 || maxRuntime > STANDING_MAX_RUNTIME_MS) {
+      throw Error('max_runtime_ms must be between 1000 and ' + STANDING_MAX_RUNTIME_MS);
+    }
+    const row = this.db.prepare("SELECT * FROM cp_standing_cursor_development WHERE id=? AND state='active'").get(input.grant_id);
+    if (!row) throw Error('Active standing Cursor development grant required');
+    if (maxRuntime < row.max_runtime_ms) {
+      throw Error('Standing Cursor runtime ceiling is raise-only; requested value is below the current grant');
+    }
+    if (maxRuntime === row.max_runtime_ms) {
+      return {
+        ...this.status(owner),
+        standing_cursor_development_active: this.standingView(row),
+        raised: false,
+        message: 'Standing Cursor runtime ceiling already at the requested value.',
+      };
+    }
+    this.db.prepare(
+      'UPDATE cp_standing_cursor_development SET max_runtime_ms=? WHERE id=? AND state=?'
+    ).run(maxRuntime, row.id, 'active');
+    this.bridge.controlStore.event('host_execution_policy.standing_cursor_runtime_raised', null, {
+      request_id: input.request_id, grant_id: row.id,
+      previous_max_runtime_ms: row.max_runtime_ms, max_runtime_ms: maxRuntime, authority: false,
+    });
+    this.bridge.emit?.('change');
+    const updated = this.db.prepare('SELECT * FROM cp_standing_cursor_development WHERE id=?').get(row.id);
+    return {
+      ...this.status(owner),
+      standing_cursor_development_active: this.standingView(updated),
+      raised: true,
+      message: 'Standing Cursor runtime ceiling raised. Path allowlist, repository binding, and spend acknowledgement are unchanged.',
+    };
+  }
+
+  /**
    * When a sealed cognitive Cursor Mission fits an active standing grant, return
    * the finite subscription_execution bounds to auto-issue MissionApprovals.
    * Does not invent monetary caps; UNKNOWN_SUBSCRIPTION remains observational.

@@ -1,10 +1,22 @@
 # Current state (2026-10-10)
 
+## Cursor DNS boundary & subscription deadline — SOURCE (2026-10-22)
+
+- **Cause (Mission `68206244-…` / run `a9ef0b83-…`):** Standing grant + cognitive `execution_ms` were 60s. Subscription `deadline_at` fired (~49.6s) after README read succeeded; in-flight CONNECT was mislabeled `dns_boundary` while the abort signal was active. Resolution was `cursor_cancelled`; dependent edit never ran. Successful multi-task `987ac2c5-…` used ~110s deadlines.
+- **Repair:** Proxy denies classify `aborted` / `dns_unavailable` / true `dns_boundary` separately with host metadata; Cursor maps deadline abort to `cursor_subscription_deadline`; `ensureCognitiveDiscovery` refreshes 120s timing; owner can raise standing runtime via `POST …/raise-standing-cursor-runtime` (raise-only ≤120s). Private DNS answers stay denied.
+- Notification `55738024-…` (`NEEDS_REWORK` → inbox) remains the durable terminal path.
+
 ## Limits & Blockers Registry V1 — SOURCE (2026-10-22)
 
 - **Canonical registry:** `config/limits-blockers-registry-v1.json` with live diagnostics in `src/limits-blockers-registry.js`.
 - **Entry points:** MCP `get_limits_blockers` / `inspect_blocker`; `GET /api/assistant/limits-blockers`; Control Center **System Health → Limits & Blockers**.
 - **Behavior:** Blocked asks/Missions attach `limits_blockers` (registry id, enforcement, next_safe_action). Unknown codes → `unknown_blocker`. Security-critical always fail closed. Automatic recovery only through existing host-authorized ops (e.g. idle ready reclaim). Docs: [operations/LIMITS-AND-BLOCKERS-REGISTRY.md](operations/LIMITS-AND-BLOCKERS-REGISTRY.md).
+
+## Mandatory Autonomous Blocker Resolution V1 — SOURCE (2026-10-22)
+
+- **Dispatcher:** `src/limits-blockers-recovery.js` — every registry entry has automatic diagnosis; executable recoveries are allowlisted (reclaim idle ready, ensure cognitive timing floor, match standing grant evidence, evaluate/writer-death reconcile) with ≤2 attempts per lineage.
+- **Wiring:** Blocked cognitive/zero-setup paths call `attemptAuthorizedRecovery` → `dispatch`; engineering report exposes `blocker_recovery`; MCP `get_blocker_recovery_coverage` / `GET …/recovery-coverage`.
+- **Not claimed:** Automatic grant creation, NEVER_AUTO expansion, Production changes, dirty worktree deletion, or recovery from unknown error text.
 
 ## Developer Autonomy worktree capacity lifecycle — SOURCE (2026-10-22)
 

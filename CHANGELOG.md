@@ -1,6 +1,12 @@
 ## Unreleased
 
 ### Added
+- Mandatory Autonomous Blocker Resolution V1: registry-driven recovery dispatcher (`src/limits-blockers-recovery.js`) diagnoses every registered blocker, executes only allowlisted idempotent host recoveries (bounded per Mission/request lineage), records receipts/events, and surfaces coverage via MCP `get_blocker_recovery_coverage` ([docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md](docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md)).
+
+### Fixed
+- Cursor host CONNECT proxy no longer mislabels subscription/abort cancellations as `dns_boundary`; denials carry host/category/fatal/next_safe_action, deadline aborts surface as `cursor_subscription_deadline`, and undersized 60s cognitive/standing ceilings can be raised to the 120s host max for multi-task Cursor work ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
+
+### Added
 - Limits & Blockers Registry V1 (`config/limits-blockers-registry-v1.json`, `src/limits-blockers-registry.js`): source-grounded catalog of operational/security blockers with live diagnostics via MCP `get_limits_blockers` / `inspect_blocker`, Control Center System Health, and blocked Mission/request annotations ([docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md](docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md)).
 
 ### Fixed

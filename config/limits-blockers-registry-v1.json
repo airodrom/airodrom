@@ -65,7 +65,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reclaim_idle_ready_workspaces",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "occupied_decreased_or_slots_free",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "da_filesystem_capacity_exhausted",
@@ -97,7 +117,27 @@
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md",
         "docs/GLOBAL-AUTOPILOT-V1.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "da_disk_budget_legacy",
@@ -128,7 +168,27 @@
       "historical_status": "fixed_defect",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "diagnose_only",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": "fixed_defect_use_filesystem_capacity",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "concurrent_mission_budget_exhausted",
@@ -158,7 +218,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "da_file_ceiling",
@@ -188,7 +268,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "da_repair_budget",
@@ -218,7 +318,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "source_repository_not_enrolled",
@@ -244,7 +364,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "arecibo_repository_not_enrolled",
@@ -270,7 +410,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "enrolled_repository_ambiguous",
@@ -296,7 +456,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "enrolled_workspace_required",
@@ -322,7 +502,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "cross_project_fixture_fallback_rejected",
@@ -348,7 +548,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reject_cross_project_fallback",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": "select_enrolled_repository",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "blocked_spend_authorization",
@@ -374,7 +594,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "scoped_external_disclosure_required",
@@ -400,7 +640,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "standing_cursor_grant_missing",
@@ -426,7 +686,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "standing_cursor_grant_policy_mismatch",
@@ -452,7 +732,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "standing_cursor_grant_path_mismatch",
@@ -478,7 +778,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "standing_cursor_grant_data_class_mismatch",
@@ -504,7 +824,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "standing_cursor_grant_expired",
@@ -530,7 +870,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "standing_cursor_grant_revoked",
@@ -556,7 +916,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "standing_cursor_grant_exhausted",
@@ -582,7 +962,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "standing_cursor_grant_invocation_limit",
@@ -610,7 +1010,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "standing_cursor_grant_runtime_limit",
@@ -638,7 +1058,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "ensure_cognitive_timing_floor",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "cognitive_execution_ms_floor",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "standing_cursor_grant_mismatch",
@@ -664,7 +1104,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "cursor_execution_disabled",
@@ -690,7 +1150,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "mcp_host_execution_delegation_required",
@@ -716,7 +1196,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "secret_detected_in_work_instruction",
@@ -742,7 +1242,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "cognitive_plan_files_mismatch",
@@ -771,7 +1291,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "normalize_plan_files_guidance",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": "planner_coerce_on_retry",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "cognitive_explicit_worker_syntax_required",
@@ -797,7 +1337,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "cognitive_ambiguous_worker",
@@ -823,7 +1383,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "cognitive_caller_delegation_required",
@@ -849,7 +1429,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "cognitive_delegation_expired_or_revoked",
@@ -875,7 +1475,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "cognitive_denied_path",
@@ -901,7 +1521,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "cognitive_subscription_bound_exceeded",
@@ -927,7 +1567,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "cognitive_assignment_limit",
@@ -956,7 +1616,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "cognitive_envelope_expired",
@@ -982,7 +1662,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "cognitive_request_replay_mismatch",
@@ -1008,7 +1708,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "worker_execution_unqualified",
@@ -1034,7 +1754,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "evaluation_unavailable",
@@ -1060,7 +1800,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_blocked_evaluation",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "evaluation_reconciled_or_terminal",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "gateway_evaluation_deadline",
@@ -1088,7 +1848,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_blocked_evaluation",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "evaluation_reconciled_or_terminal",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "gateway_assignment_budget_exhausted",
@@ -1114,7 +1894,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "quarantined_lease_not_reconciled",
@@ -1140,7 +1940,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_writer_death_lease",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "verification_failed",
@@ -1167,7 +1987,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "writer_still_alive",
@@ -1193,7 +2033,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_writer_death_lease",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "termination_unverified",
@@ -1221,7 +2081,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_writer_death_lease",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "bridge_restart_cooldown",
@@ -1247,7 +2127,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consume_bridge_restart_cooldown",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": "wait_cooldown",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "runtime_removed",
@@ -1273,7 +2173,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "idempotency_conflict",
@@ -1299,7 +2219,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
     },
     {
       "id": "repair_blocked",
@@ -1325,7 +2265,27 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
     },
     {
       "id": "owner_action_required",
@@ -1351,7 +2311,264 @@
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
-      ]
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
+    },
+    {
+      "id": "cursor_proxy_dns_boundary",
+      "codes": [
+        "dns_boundary"
+      ],
+      "description": "Host CONNECT proxy denied a DNS answer because it was empty of public addresses (private/rebinding). Distinct from abort and resolver errors.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/bounded-worker.js",
+        "symbol": "proxy"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": "dns.lookup answers include non-publicAddress rows",
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "keep_denied_private_dns_answers",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
+    },
+    {
+      "id": "cursor_proxy_aborted",
+      "codes": [
+        "aborted",
+        "stopped"
+      ],
+      "description": "Proxy CONNECT aborted because the subscription/grant signal fired. Historically mislabeled as dns_boundary.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/bounded-worker.js",
+        "symbol": "proxy"
+      },
+      "configured_limit": {
+        "field": "standing.max_runtime_ms / cognitive.execution_ms",
+        "max_ms": 120000
+      },
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "raise_standing_cursor_runtime_or_cognitive_execution_ms",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "ensure_cognitive_timing_floor",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "cognitive_execution_ms_floor",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
+    },
+    {
+      "id": "cursor_subscription_deadline",
+      "codes": [
+        "cursor_subscription_deadline"
+      ],
+      "description": "Cursor worker cancelled because the reserved subscription deadline elapsed before the assignment finished.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/cursor-worker.js",
+        "symbol": "execute"
+      },
+      "configured_limit": {
+        "field": "subscription.deadline_at",
+        "related": "max_runtime_ms"
+      },
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "raise_standing_cursor_runtime_and_ensure_cognitive_120s",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "ensure_cognitive_timing_floor",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "cognitive_execution_ms_floor",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      }
+    },
+    {
+      "id": "cursor_proxy_unauthorized_host",
+      "codes": [
+        "endpoint"
+      ],
+      "description": "CONNECT target hostname is not on the known Cursor provider allowlist.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/bounded-worker.js",
+        "symbol": "proxy"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "keep_denied_or_add_exact_known_provider_host",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      }
+    },
+    {
+      "id": "cursor_proxy_dns_unavailable",
+      "codes": [
+        "dns_unavailable"
+      ],
+      "description": "System resolver failed or returned no answers for an authorized provider host.",
+      "category": "operational_auto",
+      "severity": "warning",
+      "source": {
+        "file": "src/bounded-worker.js",
+        "symbol": "proxy"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "retry_when_resolver_healthy",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "classify_proxy_denial",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": "retry_when_resolver_healthy",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      }
     }
   ],
   "authority": false

@@ -789,9 +789,16 @@ async function executeReserved(zero, record, p, instruction) {
         security_critical: report.security_critical,
         enforcement: report.enforcement,
       };
-      // Existing host-authorized reclaim only; never expands security or deletes protected work.
-      if (report.automatic_recovery_allowed && !report.security_critical) {
-        record.recovery_attempt = L.attemptAuthorizedRecovery(b, report, 'operator');
+      // Registry-driven diagnosis for every blocker; executable recovery only when allowlisted.
+      record.recovery_attempt = L.attemptAuthorizedRecovery(b, report, 'operator');
+      if (record.recovery_attempt?.recovery_receipt) {
+        record.presentation = {
+          ...(record.presentation || {}),
+          recovery_receipt_id: record.recovery_attempt.recovery_receipt.id,
+          recovery_operation: record.recovery_attempt.operation,
+          recovery_performed: !!record.recovery_attempt.performed,
+          owner_gate: record.recovery_attempt.owner_gate || null,
+        };
       }
     } catch { /* registry annotation must not mask the original block */ }
     if (error.details) {

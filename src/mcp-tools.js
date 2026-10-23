@@ -66,6 +66,7 @@ const TOOLS = [
   tool('list_mission_notifications','Read durable terminal Mission and ask notifications (ACCEPTED/BLOCKED/WAIT/FAILED/CANCELLED/NEEDS_REWORK/OWNER_ACTION_REQUIRED) from the event-driven outbox inbox. Covers pre-Mission planning/authorization failures keyed by request_id when mission_id is absent. Grants no authority. Does not poll Mission state.',{after:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50},mission_id:id,request_id:requestId},[],true),
   tool('get_limits_blockers','Read the Limits & Blockers Registry with live authoritative host diagnostics (worktrees, disk, grants, Cursor standing coverage, Mission counts, observed blockers). Optional filters: category, severity, recoverability, policy_id, project_id. Grants no authority. Never fabricates counts. Does not perform recovery.',{category:{type:'string',enum:['operational_auto','operational_owner','security_critical']},severity:{type:'string',enum:['info','warning','error','critical']},recoverability:{type:'string',enum:['automatic','owner','security']},policy_id:id,project_id:id,limit:{type:'integer',minimum:1,maximum:50}},[],true),
   tool('inspect_blocker','Resolve one runtime blocker code or message to its registry entry, classification, enforcement location, and next_safe_action. Unknown codes return unknown_blocker. Grants no authority.',{code:text(300,'Blocker code or error message fragment')},['code'],true),
+  tool('get_blocker_recovery_coverage','Read the Limits & Blockers recovery coverage matrix: automatic diagnosis, executable safe recovery handlers, owner-only gates, and security fail-closed entries. Grants no authority. Does not perform recovery.',{},[],true),
   tool('list_development_targets','Read the authoritative multi-project development catalog (Airodrom, Arecibo, and any future entries) plus live enrollment readiness for each repository. Grants no authority. Does not enroll or expand grants.',{},[],true),
   tool('resolve_development_target','Resolve which authoritative development repository an instruction would select, without starting a Mission. Fail-closed codes surface when authorization is missing. Grants no authority.',{instruction:text(4000,'Natural-language development instruction to resolve.')},['instruction'],true),
   tool('get_mission_evidence','Read the machine-readable final evidence package built from host records only: scope, worker, sandbox, changed files, tests, security checks, verification, repair lineage, budget, approval/acceptance status and the next safe action. Worker prose is labelled untrusted. Retrievable after any disconnect; Airodrom never wakes an inactive conversation.',{mission_id:id},['mission_id'],true),
@@ -276,6 +277,9 @@ class McpTools {
     if(name==='inspect_blocker'){
       const entry=require('./limits-blockers-registry').resolve(args.code);
       return {...entry, authority:false};
+    }
+    if(name==='get_blocker_recovery_coverage'){
+      return require('./limits-blockers-recovery').coverage();
     }
     if(name==='list_development_targets'||name==='resolve_development_target'){
       const pr=require('./project-resolution');

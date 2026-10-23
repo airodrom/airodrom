@@ -3,7 +3,19 @@
 Canonical, source-grounded registry of Airodrom operational limits, execution blockers, authorization gates, and recovery procedures.
 
 **Config:** [`config/limits-blockers-registry-v1.json`](../../config/limits-blockers-registry-v1.json)  
-**Runtime:** [`src/limits-blockers-registry.js`](../../src/limits-blockers-registry.js)
+**Runtime:** [`src/limits-blockers-registry.js`](../../src/limits-blockers-registry.js)  
+**Recovery dispatcher:** [`src/limits-blockers-recovery.js`](../../src/limits-blockers-recovery.js)
+
+## Autonomous Blocker Resolution V1
+
+Every registered blocker triggers automatic diagnosis. Executable recovery runs only through the allowlisted host operations in `limits-blockers-recovery.js` (max 2 attempts per Mission/request lineage). Security-critical entries investigate and fail closed. Unknown codes are diagnosed and reported — never executed from their text.
+
+| Capability | Entry point |
+|---|---|
+| Coverage matrix | MCP `get_blocker_recovery_coverage` / `GET /api/assistant/limits-blockers/recovery-coverage` |
+| Dispatch on block | Cognitive router + zero-setup blocked paths via `attemptAuthorizedRecovery` |
+| Receipts | `cp_limits_blocker_recovery_attempts` + engineering-report `blocker_recovery` |
+| Events | `limits_blockers.recovery` (durable; terminal notifications reuse Mission notification path) |
 
 ## What it answers
 
@@ -91,3 +103,19 @@ When a request or Mission blocks:
 ## Security boundaries
 
 ChatGPT text never enrolls repositories, creates standing grants, expands NEVER_AUTO, or authorizes Production / secrets / financial disclosure. Registry diagnostics grant **no authority**.
+
+## Cursor proxy / DNS boundary (2026-10-22)
+
+`worker.proxy_denied` reasons are now distinct:
+
+| reason | Meaning |
+|---|---|
+| `dns_boundary` | Authorized host resolved to a non-public address (rebinding/private). Fail closed. |
+| `dns_unavailable` | Resolver error or empty answer for an allowlisted host. |
+| `aborted` | Subscription/grant abort signal — **not** a DNS failure. |
+| `endpoint` | Hostname not on `KNOWN_PROVIDER_HOSTS.cursor`. |
+| `upstream` | Transient TCP failure to a public provider address (often non-fatal). |
+
+Events include disclosure-safe `host` (allowlisted only), `authorized_provider`, `fatal`, and `next_safe_action`.
+
+`cursor_subscription_deadline` replaces generic `cursor_cancelled` when the reserved subscription deadline elapsed. Raise standing `max_runtime_ms` (≤120s) and ensure DA cognitive `execution_ms` is 120000 for multi-task Cursor work.

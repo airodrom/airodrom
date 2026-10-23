@@ -524,40 +524,32 @@ function reportForBlock(bridge, { codes, request_id = null, mission_id = null, l
 /**
  * Perform recovery only when an existing host-authorized operation already permits
  * it and required evidence is present. Never deletes protected work.
+ * Delegates to the registry-driven recovery dispatcher (all registered blockers).
  */
 function attemptAuthorizedRecovery(bridge, report, owner = 'operator') {
   if (!bridge || !report) {
     return { performed: false, reason: 'missing_context', authority: false };
   }
-  if (report.security_critical) {
-    return { performed: false, reason: 'security_critical_fail_closed', authority: false };
+  try {
+    const codes = (report.blockers || []).map(b => b.code || b.registry_id).filter(Boolean);
+    const dispatched = require('./limits-blockers-recovery').dispatch(bridge, {
+      codes: codes.length ? codes : [report.primary_registry_id || 'unknown'],
+      request_id: report.request_id || null,
+      mission_id: report.mission_id || null,
+      owner,
+    });
+    return {
+      performed: !!dispatched.recovery?.performed,
+      operation: dispatched.recovery?.operation || null,
+      recovery_receipt: dispatched.recovery_receipt || null,
+      owner_gate: dispatched.owner_gate || null,
+      verification: dispatched.verification || null,
+      next_safe_action: dispatched.next_safe_action || report.next_safe_action,
+      authority: false,
+    };
+  } catch (error) {
+    return { performed: false, reason: String(error.message || error).slice(0, 200), authority: false };
   }
-  if (!report.automatic_recovery_allowed) {
-    return { performed: false, reason: 'automatic_recovery_not_allowed', next_safe_action: report.next_safe_action, authority: false };
-  }
-  const ids = new Set((report.blockers || []).map(b => b.registry_id));
-  if (ids.has('worktree_budget_exhausted') && bridge.developerAutonomy?.reclaimIdleReadyWorkspaces) {
-    try {
-      const policies = bridge.developerAutonomy.list?.(owner) || [];
-      let reclaimed = 0;
-      for (const policy of policies.filter(p => p.state === 'active')) {
-        const before = bridge.developerAutonomy.occupiedWorktrees(policy.policy_id);
-        bridge.developerAutonomy.reclaimIdleReadyWorkspaces(policy, owner);
-        const after = bridge.developerAutonomy.occupiedWorktrees(policy.policy_id);
-        if (after < before) reclaimed += (before - after);
-      }
-      return {
-        performed: true,
-        operation: 'reclaimIdleReadyWorkspaces',
-        reclaimed_slots_estimate: reclaimed,
-        note: 'Only clean disposable idle ready clones are cleaned; dirty/unique/protected workspaces stay preserved.',
-        authority: false,
-      };
-    } catch (error) {
-      return { performed: false, reason: String(error.message || error).slice(0, 200), authority: false };
-    }
-  }
-  return { performed: false, reason: 'no_matching_host_authorized_recovery', next_safe_action: report.next_safe_action, authority: false };
 }
 
 function list(filters = {}) {
