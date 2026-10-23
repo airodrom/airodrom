@@ -18,8 +18,28 @@ const ALLOWLIST = Object.freeze([
   'classify_proxy_denial',
   'reject_cross_project_fallback',
   'normalize_plan_files_guidance',
+  'normalize_cognitive_worker',
+  'diagnose_filesystem_capacity',
+  'await_mission_capacity',
+  'resolve_enrolled_repository',
+  'prepare_enrollment_action',
+  'reuse_local_evaluation_authority',
+  'diagnose_repair_budget',
   'consolidate_owner_gate',
   'security_investigate_fail_closed',
+]);
+
+/** User-listed operational blockers that must always have an explicit recovery plan. */
+const OPERATIONAL_OWNER_CANONICAL = Object.freeze([
+  'da_filesystem_capacity_exhausted', 'concurrent_mission_budget_exhausted', 'da_repair_budget',
+  'source_repository_not_enrolled', 'arecibo_repository_not_enrolled', 'enrolled_repository_ambiguous',
+  'enrolled_workspace_required', 'blocked_spend_authorization', 'scoped_external_disclosure_required',
+  'standing_cursor_grant_missing', 'standing_cursor_grant_expired', 'standing_cursor_grant_revoked',
+  'standing_cursor_grant_exhausted', 'standing_cursor_grant_invocation_limit', 'standing_cursor_grant_runtime_limit',
+  'cursor_execution_disabled', 'cognitive_explicit_worker_syntax_required', 'cognitive_ambiguous_worker',
+  'cognitive_delegation_expired_or_revoked', 'cognitive_assignment_limit', 'cognitive_envelope_expired',
+  'worker_execution_unqualified', 'evaluation_unavailable', 'gateway_assignment_budget_exhausted',
+  'runtime_removed', 'repair_blocked', 'owner_action_required',
 ]);
 
 function ensureAttemptsSchema(db) {
@@ -181,23 +201,173 @@ function recoverEnsureCognitiveTiming(bridge, owner, evidence) {
   };
 }
 
+function missionStandingProbe(bridge, ctx) {
+  const mission = ctx.mission_id ? (() => {
+    try { return bridge.controlStore.requireMission(ctx.mission_id); } catch { return null; }
+  })() : null;
+  const env = mission?.envelope || {};
+  const cognitive = env.cognitive?.envelope || {};
+  const files = env.allowed_files || cognitive.permitted_paths || [];
+  const repository = env.workspace || env.repository_binding?.repository_root
+    || env.cognitive?.envelope?.repository_root || null;
+  const policy_id = env.developer_autonomy_policy_id || env.policy_id || null;
+  const limits = cognitive.limits || {};
+  return {
+    repository,
+    files: Array.isArray(files) ? files.slice(0, 16) : [],
+    max_invocations: Number.isSafeInteger(limits.max_invocations) ? limits.max_invocations : 2,
+    max_runtime_ms: Number.isSafeInteger(limits.execution_ms) ? limits.execution_ms : 120000,
+    data_class: 'public',
+    policy_id,
+  };
+}
+
 function recoverMatchStanding(bridge, ctx) {
   const hep = bridge.hostExecutionPolicy;
   if (!hep?.diagnoseStandingCursorDevelopment) {
     return { operation: 'match_standing_cursor_grant', performed: false, reason: 'host_execution_policy_unavailable' };
   }
-  // Diagnosis only unless an active matching grant already covers — never invents grants.
+  // Never invents grants. When an active matching grant already covers the Mission,
+  // mark performed so admission can reuse it without a second owner prompt.
   const status = hep.status('operator');
   const active = (status.standing_cursor_development || []).filter(g => g.state === 'active');
+  const probe = missionStandingProbe(bridge, ctx);
+  let diagnosis = null;
+  if (probe.repository && probe.files.length) {
+    try {
+      diagnosis = hep.diagnoseStandingCursorDevelopment(probe);
+    } catch (error) {
+      diagnosis = { matched: false, code: 'STANDING_CURSOR_GRANT_MISSING', reason: String(error.message || error).slice(0, 160) };
+    }
+  }
+  const matched = diagnosis?.matched === true;
   return {
     operation: 'match_standing_cursor_grant',
-    performed: false,
+    performed: matched,
+    matched,
+    diagnosis,
     active_grants: active.length,
     grants: active.map(g => ({
       id: g.id, max_runtime_ms: g.max_runtime_ms, missions_remaining: g.missions_remaining,
-      policy_id: g.policy_id, state: g.state,
+      policy_id: g.policy_id, state: g.state, expires_at: g.expires_at || null,
     })),
-    note: 'Standing grants are never created automatically; raise-only runtime uses owner API.',
+    reenrollment: matched ? null : {
+      api: 'POST /api/assistant/host-execution-policy/enroll-standing-cursor-development',
+      docs: 'docs/STANDING-CURSOR-DEVELOPMENT-V1.md',
+      next_action: diagnosis?.next_action || 'enroll_standing_cursor_development_via_authenticated_local_api',
+      code: diagnosis?.code || null,
+    },
+    note: 'Standing grants persist in durable host DB across restarts/upgrades; never auto-created or auto-raised beyond raise-only runtime API.',
+  };
+}
+
+function recoverFilesystemCapacity(bridge, evidence) {
+  const disks = (evidence.developer_autonomy || []).map(p => ({
+    policy_id: p.policy_id, alias: p.alias, disk: p.disk || null,
+  }));
+  const exhausted = disks.filter(d => d.disk && /exhaust|insufficient|full/i.test(String(d.disk.state || d.disk)));
+  return {
+    operation: 'diagnose_filesystem_capacity',
+    performed: false,
+    policies: disks,
+    exhausted_count: exhausted.length,
+    next_safe_action: 'free_volume_space_then_retry_workspace_prep',
+    note: 'Host never deletes dirty/unique workspaces for capacity.',
+  };
+}
+
+function recoverMissionCapacity(bridge, evidence) {
+  const missions = evidence.missions || {};
+  const active = Number(missions.active || missions.running || 0);
+  const limit = Number(missions.limit || missions.concurrent_limit || 0);
+  const free = limit > 0 && active < limit;
+  return {
+    operation: 'await_mission_capacity',
+    performed: free,
+    active, limit,
+    next_safe_action: free ? 'retry_mission_admission' : 'wait_for_mission_settlement_then_retry',
+    note: 'No duplicate Cursor dispatch while capacity is full.',
+  };
+}
+
+function recoverResolveRepository(bridge, ctx, entry) {
+  try {
+    let catalogCount = 0;
+    try {
+      const catalog = require('../config/development-targets-v1.json');
+      catalogCount = Array.isArray(catalog.targets) ? catalog.targets.length : 0;
+    } catch { /* catalog optional for diagnosis */ }
+    const enrolled = (bridge.developerAutonomy?.list?.('operator') || [])
+      .filter(p => p.state === 'active')
+      .map(p => ({ policy_id: p.policy_id, alias: p.alias, repository: p.repository || p.source_repository || null }));
+    if (entry.id === 'enrolled_repository_ambiguous' && enrolled.length === 1) {
+      return {
+        operation: 'resolve_enrolled_repository',
+        performed: true,
+        selected: { policy_id: enrolled[0].policy_id, alias: enrolled[0].alias },
+        note: 'Unambiguous single enrolled repository selected; never cross-project fixture fallback.',
+      };
+    }
+    return {
+      operation: entry.id.includes('not_enrolled') ? 'prepare_enrollment_action' : 'resolve_enrolled_repository',
+      performed: false,
+      enrolled_count: enrolled.length,
+      catalog_targets: catalogCount,
+      enrolled: enrolled.map(e => ({ policy_id: e.policy_id, alias: e.alias })),
+      next_safe_action: entry.next_safe_action,
+      enrollment_api: 'scripts/prepare-development-target-enrollment.cjs + DA enroll',
+    };
+  } catch (error) {
+    return { operation: 'resolve_enrolled_repository', performed: false, reason: String(error.message || error).slice(0, 160) };
+  }
+}
+
+function recoverNormalizeWorker(bridge, ctx, entry) {
+  // Host may clarify when exactly one eligible worker remains; never invent Cursor spend.
+  const preferred = ctx.codes?.find(c => /cursor|opencode/i.test(String(c)));
+  return {
+    operation: 'normalize_cognitive_worker',
+    performed: false,
+    guidance: entry.id === 'cognitive_ambiguous_worker'
+      ? 'Re-plan with a single sealed worker (cursor or opencode) from the Mission allowlist.'
+      : 'Omit ambiguous worker prose; sealed specialist assignment selects the worker.',
+    preferred_hint: preferred || null,
+    note: 'Normalization happens on the next planning pass; no authority expansion.',
+  };
+}
+
+function recoverLocalEvaluationAuthority(bridge, ctx) {
+  // Post-Cursor local evaluation must not re-require live Cursor dispatch qualification.
+  if (!ctx.mission_id) {
+    return { operation: 'reuse_local_evaluation_authority', performed: false, reason: 'no_mission' };
+  }
+  try {
+    const mission = bridge.controlStore.requireMission(ctx.mission_id);
+    if (mission.envelope?.approval_id && bridge.missionApprovals?.assertLocalEvaluation) {
+      bridge.missionApprovals.assertLocalEvaluation(mission);
+      return { operation: 'reuse_local_evaluation_authority', performed: true, mode: 'approval_bound_local_evaluation' };
+    }
+    return {
+      operation: 'reuse_local_evaluation_authority',
+      performed: false,
+      next_safe_action: 'qualify_cursor_or_complete_local_opencode_path',
+      note: 'Does not enable Cursor or invent spend.',
+    };
+  } catch (error) {
+    return { operation: 'reuse_local_evaluation_authority', performed: false, reason: String(error.message || error).slice(0, 160) };
+  }
+}
+
+function recoverRepairBudget(bridge, evidence) {
+  const policies = (evidence.developer_autonomy || []).map(p => ({
+    policy_id: p.policy_id, alias: p.alias, grants_active: p.grants_active,
+  }));
+  return {
+    operation: 'diagnose_repair_budget',
+    performed: false,
+    policies,
+    next_safe_action: 'wait_for_repair_slot_or_owner_raise_max_repairs',
+    note: 'Repair ceilings are never raised automatically.',
   };
 }
 
@@ -254,8 +424,32 @@ function planFor(entry) {
   if (id === 'da_disk_budget_legacy') {
     return { operation: 'diagnose_only', executable: false, note: 'fixed_defect_use_filesystem_capacity' };
   }
+  if (id === 'da_filesystem_capacity_exhausted') {
+    return { operation: 'diagnose_filesystem_capacity', executable: true, owner_gate_if_unmatched: true };
+  }
+  if (id === 'concurrent_mission_budget_exhausted') {
+    return { operation: 'await_mission_capacity', executable: true, verify: 'mission_capacity_free' };
+  }
+  if (id === 'da_repair_budget') {
+    return { operation: 'diagnose_repair_budget', executable: true, owner_gate_if_unmatched: true };
+  }
+  if (id === 'source_repository_not_enrolled' || id === 'arecibo_repository_not_enrolled' || id === 'enrolled_workspace_required') {
+    return { operation: 'prepare_enrollment_action', executable: true, owner_gate_if_unmatched: true };
+  }
+  if (id === 'enrolled_repository_ambiguous') {
+    return { operation: 'resolve_enrolled_repository', executable: true, owner_gate_if_unmatched: true };
+  }
   if (id === 'cognitive_plan_files_mismatch') {
     return { operation: 'normalize_plan_files_guidance', executable: false, note: 'planner_coerce_on_retry' };
+  }
+  if (id === 'cognitive_explicit_worker_syntax_required' || id === 'cognitive_ambiguous_worker') {
+    return { operation: 'normalize_cognitive_worker', executable: true, owner_gate_if_unmatched: true };
+  }
+  if (id === 'cognitive_delegation_expired_or_revoked' || id === 'cognitive_envelope_expired') {
+    return { operation: 'consolidate_owner_gate', executable: false, note: 'reauthorize_cognitive_delegation_or_envelope' };
+  }
+  if (id === 'cognitive_assignment_limit' || id === 'gateway_assignment_budget_exhausted') {
+    return { operation: 'consolidate_owner_gate', executable: false, note: 'wait_or_owner_raise_assignment_budget' };
   }
   if (id === 'cursor_subscription_deadline' || id === 'cursor_proxy_aborted' || id === 'standing_cursor_grant_runtime_limit') {
     return { operation: 'ensure_cognitive_timing_floor', executable: true, owner_if_still_short: true, verify: 'cognitive_execution_ms_floor' };
@@ -263,16 +457,26 @@ function planFor(entry) {
   if (id === 'blocked_spend_authorization' || id === 'scoped_external_disclosure_required'
     || id === 'standing_cursor_grant_missing' || id === 'standing_cursor_grant_expired'
     || id === 'standing_cursor_grant_revoked' || id === 'standing_cursor_grant_exhausted'
-    || id === 'standing_cursor_grant_invocation_limit' || id === 'standing_cursor_grant_mismatch') {
+    || id === 'standing_cursor_grant_invocation_limit' || id === 'standing_cursor_grant_mismatch'
+    || id === 'cursor_execution_disabled') {
     return { operation: 'match_standing_cursor_grant', executable: true, owner_gate_if_unmatched: true };
+  }
+  if (id === 'worker_execution_unqualified') {
+    return { operation: 'reuse_local_evaluation_authority', executable: true, owner_gate_if_unmatched: true };
   }
   if (id === 'evaluation_unavailable' || id === 'gateway_evaluation_deadline'
     || id === 'opencode_runtime_unavailable' || id === 'opencode_evaluation_timeout'
     || id === 'opencode_evaluation_cancelled' || id === 'opencode_evaluator_termination_unverified') {
     return { operation: 'reconcile_blocked_evaluation', executable: true, verify: 'evaluation_reconciled_or_terminal' };
   }
-  if (id === 'opencode_evaluation_authority_denied') {
-    return { operation: 'security_investigate_fail_closed', executable: false };
+  if (id === 'opencode_evaluation_authority_denied' || id === 'opencode_runtime_unsupported'
+    || id === 'opencode_evaluation_result_invalid') {
+    return id === 'opencode_evaluation_authority_denied'
+      ? { operation: 'security_investigate_fail_closed', executable: false }
+      : { operation: 'consolidate_owner_gate', executable: false };
+  }
+  if (id === 'runtime_removed' || id === 'repair_blocked' || id === 'owner_action_required') {
+    return { operation: 'consolidate_owner_gate', executable: false };
   }
   if (id === 'quarantined_lease_not_reconciled' || id === 'writer_still_alive' || id === 'termination_unverified') {
     return { operation: 'reconcile_writer_death_lease', executable: true, security_fail_closed: true };
@@ -295,7 +499,6 @@ function planFor(entry) {
   if (entry.category === 'operational_auto') {
     return { operation: 'diagnose_only', executable: false, note: entry.next_safe_action };
   }
-  // operational_owner default: diagnose + consolidate one owner gate
   return { operation: 'consolidate_owner_gate', executable: false };
 }
 
@@ -314,6 +517,19 @@ function executePlan(bridge, entry, plan, ctx, evidence, owner) {
       return recoverEvaluation(bridge, ctx);
     case 'reconcile_writer_death_lease':
       return recoverWriterDeath(bridge, ctx);
+    case 'diagnose_filesystem_capacity':
+      return recoverFilesystemCapacity(bridge, evidence);
+    case 'await_mission_capacity':
+      return recoverMissionCapacity(bridge, evidence);
+    case 'resolve_enrolled_repository':
+    case 'prepare_enrollment_action':
+      return recoverResolveRepository(bridge, ctx, entry);
+    case 'normalize_cognitive_worker':
+      return recoverNormalizeWorker(bridge, ctx, entry);
+    case 'reuse_local_evaluation_authority':
+      return recoverLocalEvaluationAuthority(bridge, ctx);
+    case 'diagnose_repair_budget':
+      return recoverRepairBudget(bridge, evidence);
     case 'normalize_plan_files_guidance':
       return { operation: plan.operation, performed: false, guidance: 'Retry planning; host normalizes files to task-path union.', note: plan.note };
     case 'reject_cross_project_fallback':
@@ -349,6 +565,9 @@ function verifyRecovery(bridge, entry, plan, recovery, evidenceAfter) {
   if (plan.verify === 'cognitive_execution_ms_floor') {
     const ok = (recovery.policies || []).some(p => p.after_execution_ms >= 120000);
     return { verified: ok || !!recovery.performed, mode: plan.verify, authority: false };
+  }
+  if (plan.verify === 'mission_capacity_free') {
+    return { verified: !!recovery.performed, mode: plan.verify, authority: false };
   }
   return { verified: !!recovery.performed, mode: plan.verify || 'performed', authority: false };
 }
@@ -394,8 +613,13 @@ function dispatch(bridge, {
     const evidenceAfter = live ? collectEvidence(bridge, ctx) : evidence;
     verification = verifyRecovery(bridge, entry, plan, recovery, evidenceAfter);
 
-    if (plan.owner_gate_if_unmatched && !recovery.active_grants) {
-      owner_gate = ownerGate(entry, 'No active standing Cursor grant covers this Mission.');
+    if (plan.owner_gate_if_unmatched && !recovery.performed && !recovery.matched) {
+      const detail = recovery.reenrollment?.next_action
+        || recovery.next_safe_action
+        || recovery.diagnosis?.reason
+        || 'Existing authorization does not cover this Mission; owner action required.';
+      owner_gate = ownerGate(entry, detail);
+      if (recovery.reenrollment) owner_gate.reenrollment = recovery.reenrollment;
     }
     if (plan.owner_if_still_short) {
       const stillShort = !(recovery.policies || []).some(p => p.after_execution_ms >= 120000);
@@ -475,8 +699,13 @@ function coverage() {
       operation: plan.operation,
       owner_gate_possible: entry.category === 'operational_owner' || !!plan.owner_gate_if_unmatched || !!plan.owner_if_still_short,
       security_fail_closed: entry.category === 'security_critical' || !!plan.security_fail_closed,
+      canonical_operational_owner: OPERATIONAL_OWNER_CANONICAL.includes(entry.id),
       authority: false,
     };
+  });
+  const canonical = OPERATIONAL_OWNER_CANONICAL.map(id => {
+    const item = items.find(i => i.id === id);
+    return item || { id, missing: true, auto_diagnosis: false };
   });
   return {
     entry_count: items.length,
@@ -484,6 +713,12 @@ function coverage() {
     executable_safe_recovery: items.filter(i => i.executable_recovery).length,
     owner_only_gates: items.filter(i => i.owner_gate_possible && !i.executable_recovery).length,
     security_fail_closed: items.filter(i => i.security_fail_closed).length,
+    canonical_operational_owner: {
+      required: OPERATIONAL_OWNER_CANONICAL.length,
+      covered: canonical.filter(c => c.auto_diagnosis).length,
+      with_executable_recovery: canonical.filter(c => c.executable_recovery).length,
+      items: canonical,
+    },
     items,
     allowlist: ALLOWLIST,
     authority: false,
@@ -497,4 +732,5 @@ module.exports = {
   collectEvidence,
   ALLOWLIST,
   MAX_ATTEMPTS_PER_BLOCKER,
+  OPERATIONAL_OWNER_CANONICAL,
 };

@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Operational Owner Auto-Recovery V1: all 27 canonical operational blockers get automatic diagnosis, allowlisted corrective action when authorized, bounded idempotent retry, Mission continuation, durable receipts, and consolidated owner-action fallback; permanent runbook at [docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md); standing Cursor grants remain durable across restart/upgrade without fabricating approval ([docs/STANDING-CURSOR-DEVELOPMENT-V1.md](docs/STANDING-CURSOR-DEVELOPMENT-V1.md), [docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
+
 ### Fixed
 - OpenCode evaluation after a host-verified Cursor assignment no longer strands on raced recovery aborts: evaluation retry locks before readiness awaits, uncertain evaluator PIDs reconcile from process evidence, classified runtime/timeout/cancel codes replace collapsed `opencode_unavailable_or_unsupported`, and a single local evaluation retry reuses the verified worker packet without Cursor redispatch ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
 

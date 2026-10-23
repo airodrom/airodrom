@@ -8,7 +8,8 @@
 
 ## Autonomous blocker recovery (2026-10-22)
 
-- Universal automatic **diagnosis** for all registry entries; executable recovery only for allowlisted host ops with evidence. Owner-only gates (enrollment, standing grant create/renew, disk free space, disclosure) still require one consolidated owner action.
+- Universal automatic **diagnosis** for all registry entries and all 27 canonical operational blockers; executable recovery only for allowlisted host ops with evidence (20 of 27). Seven blockers (`cognitive_delegation_expired_or_revoked`, `cognitive_assignment_limit`, `cognitive_envelope_expired`, `gateway_assignment_budget_exhausted`, `runtime_removed`, `repair_blocked`, `owner_action_required`) diagnose then consolidate to an exact owner gate — no silent authorization.
+- Owner-only gates (enrollment, standing grant create/renew, disk free space, disclosure, enable Cursor) still require authenticated owner confirm. See [operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md).
 - Security-critical blockers investigate and fail closed — never auto-grant access or fabricate verification.
 - Recovery attempt budget is 2 per Mission/request lineage; exhausted budget consolidates to owner inspect.
 
