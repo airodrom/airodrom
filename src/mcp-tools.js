@@ -64,6 +64,8 @@ const TOOLS = [
   tool('get_mission_events','Read the compact durable event timeline (flight recorder subset) for a Mission lineage. Grants no authority.',{mission_id:id,limit:{type:'integer',minimum:1,maximum:200}},['mission_id'],true),
   tool('get_mission_engineering_report','Read the chronological engineering progress report for a Mission: planning, Cursor activity, host-verified changes, OpenCode evaluation, independent verification, Acceptance, and terminal notifications. Worker claims are labelled untrusted. Grants no authority.',{mission_id:id,limit:{type:'integer',minimum:1,maximum:200}},['mission_id'],true),
   tool('list_mission_notifications','Read durable terminal Mission and ask notifications (ACCEPTED/BLOCKED/WAIT/FAILED/CANCELLED/NEEDS_REWORK/OWNER_ACTION_REQUIRED) from the event-driven outbox inbox. Covers pre-Mission planning/authorization failures keyed by request_id when mission_id is absent. Grants no authority. Does not poll Mission state.',{after:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50},mission_id:id,request_id:requestId},[],true),
+  tool('get_limits_blockers','Read the Limits & Blockers Registry with live authoritative host diagnostics (worktrees, disk, grants, Cursor standing coverage, Mission counts, observed blockers). Optional filters: category, severity, recoverability, policy_id, project_id. Grants no authority. Never fabricates counts. Does not perform recovery.',{category:{type:'string',enum:['operational_auto','operational_owner','security_critical']},severity:{type:'string',enum:['info','warning','error','critical']},recoverability:{type:'string',enum:['automatic','owner','security']},policy_id:id,project_id:id,limit:{type:'integer',minimum:1,maximum:50}},[],true),
+  tool('inspect_blocker','Resolve one runtime blocker code or message to its registry entry, classification, enforcement location, and next_safe_action. Unknown codes return unknown_blocker. Grants no authority.',{code:text(300,'Blocker code or error message fragment')},['code'],true),
   tool('list_development_targets','Read the authoritative multi-project development catalog (Airodrom, Arecibo, and any future entries) plus live enrollment readiness for each repository. Grants no authority. Does not enroll or expand grants.',{},[],true),
   tool('resolve_development_target','Resolve which authoritative development repository an instruction would select, without starting a Mission. Fail-closed codes surface when authorization is missing. Grants no authority.',{instruction:text(4000,'Natural-language development instruction to resolve.')},['instruction'],true),
   tool('get_mission_evidence','Read the machine-readable final evidence package built from host records only: scope, worker, sandbox, changed files, tests, security checks, verification, repair lineage, budget, approval/acceptance status and the next safe action. Worker prose is labelled untrusted. Retrievable after any disconnect; Airodrom never wakes an inactive conversation.',{mission_id:id},['mission_id'],true),
@@ -264,6 +266,16 @@ class McpTools {
       if(args.mission_id)return N.listForMission(this.bridge,args.mission_id,{limit:args.limit||20});
       if(args.request_id)return N.listForRequest(this.bridge,args.request_id,{limit:args.limit||20});
       return N.listRecent(this.bridge,{after:args.after||0,limit:args.limit||20});
+    }
+    if(name==='get_limits_blockers'){
+      return require('./limits-blockers-registry').diagnostics(this.bridge,{
+        category:args.category||null, severity:args.severity||null, recoverability:args.recoverability||null,
+        policy_id:args.policy_id||null, project_id:args.project_id||null, limit:args.limit||20,
+      });
+    }
+    if(name==='inspect_blocker'){
+      const entry=require('./limits-blockers-registry').resolve(args.code);
+      return {...entry, authority:false};
     }
     if(name==='list_development_targets'||name==='resolve_development_target'){
       const pr=require('./project-resolution');

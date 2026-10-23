@@ -775,6 +775,25 @@ async function executeReserved(zero, record, p, instruction) {
     const code = String(error.code || error.message).slice(0, 300);
     record.state = 'blocked';
     record.blockers = [code];
+    try {
+      const L = require('./limits-blockers-registry');
+      const report = L.reportForBlock(b, { codes: [code], request_id, mission_id: record.mission_id || null });
+      record.limits_blockers = report;
+      record.presentation = {
+        ...(record.presentation || {}),
+        status: code,
+        registry_id: report.primary_registry_id,
+        category: report.blockers[0]?.category || null,
+        next_safe_action: report.next_safe_action,
+        owner_approval_required: report.owner_approval_required,
+        security_critical: report.security_critical,
+        enforcement: report.enforcement,
+      };
+      // Existing host-authorized reclaim only; never expands security or deletes protected work.
+      if (report.automatic_recovery_allowed && !report.security_critical) {
+        record.recovery_attempt = L.attemptAuthorizedRecovery(b, report, 'operator');
+      }
+    } catch { /* registry annotation must not mask the original block */ }
     if (error.details) {
       if (error.code === 'WORKTREE_BUDGET_EXHAUSTED' || /Worktree budget exhausted/i.test(String(error.message || ''))) {
         record.capacity = error.details;

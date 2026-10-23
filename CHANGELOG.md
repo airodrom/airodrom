@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Limits & Blockers Registry V1 (`config/limits-blockers-registry-v1.json`, `src/limits-blockers-registry.js`): source-grounded catalog of operational/security blockers with live diagnostics via MCP `get_limits_blockers` / `inspect_blocker`, Control Center System Health, and blocked Mission/request annotations ([docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md](docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md)).
+
 ### Fixed
 - Developer Autonomy concurrent worktree capacity no longer counts idle grantless `ready` leftovers from interrupted planning; slots cover active writers, unsettled Missions, active grants, and invalid prep only, with classified `WORKTREE_BUDGET_EXHAUSTED` diagnostics ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
 
