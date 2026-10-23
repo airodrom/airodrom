@@ -1,5 +1,11 @@
 # Known limitations
 
+## Cursor execution decision (2026-10-23)
+
+- Historical Mission `63385742…` remains `blocked` / `cognitive_worker_unqualified:cursor` with zero runs; evidence preserved; deadline not extended.
+- Transient runtime requeue is bounded (2). Persistent pin/credential/sandbox failures still require owner requalification.
+- ChatGPT-origin multi-task acceptance after install remains an external gate when this session cannot submit as ChatGPT.
+
 ## READY specialist auto-dispatch (2026-10-23)
 
 - Historical Mission `3a6edd9e-e79f-47fd-b78e-2761a76bb367` expired while stuck READY+prepared with zero dispatches; it is preserved terminal and is not deadline-extended. Fresh acceptance requires a new authorized Mission after managed install of the READY-scheduler fix ([READY-SCHEDULER-DISPATCH-V1](READY-SCHEDULER-DISPATCH-V1.md)).

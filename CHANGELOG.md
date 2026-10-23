@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- Specialist Cursor launch no longer collapses runtime unreadiness into `cognitive_worker_unqualified:cursor` and terminal BLOCKED with zero runs: authoritative `cursor-execution-decision` separates readiness from Mission authority, select uses a fresh readiness probe, transient runtime codes requeue the same dispatch (bounded), and the Limits & Blockers registry registers `cognitive_worker_unqualified` (suffix-normalized) plus `cursor_runtime_not_ready` with `refresh_cursor_execution_decision` recovery ([docs/CURSOR-EXECUTION-DECISION-V1.md](docs/CURSOR-EXECUTION-DECISION-V1.md)).
+
+### Fixed
 - Sealed specialist Missions no longer stall forever at parent `READY` with a `prepared` graph and zero dispatches after a lost or failed first wake: `admitReady` / `admitPreparedReady` plus `mission-program.tick` coverage queue the first dependency-free assignment idempotently; orphan READY after dispatch failure fails closed; never-started `worker_execution_unqualified` recovery uses `admit_ready_specialist_dispatch` instead of evaluation reuse; `/api/product/native-status` stays bounded under deferred readiness ([docs/READY-SCHEDULER-DISPATCH-V1.md](docs/READY-SCHEDULER-DISPATCH-V1.md), [docs/adr/0061-ready-scheduler-dispatch.md](docs/adr/0061-ready-scheduler-dispatch.md)).
 
 ### Fixed

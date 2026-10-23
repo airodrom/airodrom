@@ -25,6 +25,7 @@ const ALLOWLIST = Object.freeze([
   'prepare_enrollment_action',
   'reuse_local_evaluation_authority',
   'admit_ready_specialist_dispatch',
+  'refresh_cursor_execution_decision',
   'diagnose_repair_budget',
   'consolidate_owner_gate',
   'security_investigate_fail_closed',
@@ -39,7 +40,8 @@ const OPERATIONAL_OWNER_CANONICAL = Object.freeze([
   'standing_cursor_grant_exhausted', 'standing_cursor_grant_invocation_limit', 'standing_cursor_grant_runtime_limit',
   'cursor_execution_disabled', 'cognitive_explicit_worker_syntax_required', 'cognitive_ambiguous_worker',
   'cognitive_delegation_expired_or_revoked', 'cognitive_assignment_limit', 'cognitive_envelope_expired',
-  'worker_execution_unqualified', 'evaluation_unavailable', 'gateway_assignment_budget_exhausted',
+  'worker_execution_unqualified', 'cognitive_worker_unqualified', 'cursor_runtime_not_ready',
+  'evaluation_unavailable', 'gateway_assignment_budget_exhausted',
   'runtime_removed', 'repair_blocked', 'owner_action_required',
 ]);
 
@@ -455,6 +457,63 @@ function recoverLocalEvaluationAuthority(bridge, ctx) {
   }
 }
 
+function recoverRefreshCursorDecision(bridge, ctx) {
+  if (!ctx.mission_id) {
+    return { operation: 'refresh_cursor_execution_decision', performed: false, reason: 'no_mission' };
+  }
+  let mission;
+  try { mission = bridge.controlStore.requireMission(ctx.mission_id); }
+  catch { return { operation: 'refresh_cursor_execution_decision', performed: false, reason: 'mission_missing' }; }
+
+  if (['cancelled', 'completed'].includes(mission.state)) {
+    return { operation: 'refresh_cursor_execution_decision', performed: false, reason: 'mission_terminal:' + mission.state };
+  }
+
+  const Decision = require('./cursor-execution-decision');
+  // Synchronous shell: kick fresh readiness; schedule Mission tick to consume it.
+  Promise.resolve()
+    .then(() => Decision.refreshReadiness(bridge, { fresh: true }))
+    .then((readiness) => {
+      bridge.cursorWorker.lastReadiness = readiness;
+      const decision = Decision.decide(bridge, bridge.controlStore.requireMission(ctx.mission_id), {
+        readiness,
+        now: bridge.controlStore.now(),
+      });
+      if (!decision.allow) return;
+      const db = bridge.controlStore.db;
+      // Requeue a blocked/queued dispatch that never started a worker run.
+      const row = db.prepare(
+        "SELECT id,state FROM cp_dispatches WHERE mission_id=? AND state IN ('blocked','queued','dispatching') ORDER BY created_at DESC LIMIT 1"
+      ).get(ctx.mission_id);
+      const runs = db.prepare('SELECT count(*) AS n FROM cp_runs WHERE mission_id=?').get(ctx.mission_id)?.n || 0;
+      if (runs > 0) return; // Never redispatch after an uncertain or completed worker.
+      if (row && row.state === 'blocked') {
+        db.prepare("UPDATE cp_dispatches SET state='queued',updated_at=? WHERE id=?").run(Date.now(), row.id);
+      }
+      const live = bridge.controlStore.requireMission(ctx.mission_id);
+      if (live.state === 'blocked' && /cognitive_worker_unqualified|cursor_runtime_not_ready|cursor_version_|cursor_agent_|cursor_sandbox_/i.test(String(live.reason || ''))) {
+        const limit = require('./specialist-gateway').enabled(live)
+          ? require('./specialist-gateway').deadline(live)
+          : Infinity;
+        if (bridge.controlStore.now() < limit) {
+          // Lifecycle: blocked → ready only; launch claims queued → dispatching.
+          bridge.controlStore.state(live.id, 'ready', 'Cursor execution decision refreshed');
+          if (['blocked', 'prepared'].includes(db.prepare('SELECT state FROM cp_mission_programs WHERE id=?').get(live.id)?.state)) {
+            db.prepare("UPDATE cp_mission_programs SET state='running' WHERE id=?").run(live.id);
+          }
+        }
+      }
+      bridge.missions?.schedule?.();
+    })
+    .catch(() => {});
+
+  return {
+    operation: 'refresh_cursor_execution_decision',
+    performed: true,
+    note: 'Fresh Cursor readiness requested; Mission tick will re-evaluate without inventing grants.',
+  };
+}
+
 function recoverAdmitReadySpecialist(bridge, ctx) {
   if (!ctx.mission_id) {
     return { operation: 'admit_ready_specialist_dispatch', performed: false, reason: 'no_mission' };
@@ -704,6 +763,14 @@ function planFor(entry) {
       verify: 'specialist_dispatch_queued_or_owner_gate',
     };
   }
+  if (id === 'cognitive_worker_unqualified' || id === 'cursor_runtime_not_ready') {
+    return {
+      operation: 'refresh_cursor_execution_decision',
+      executable: true,
+      owner_gate_if_unmatched: true,
+      verify: 'cursor_decision_allow_or_owner_gate',
+    };
+  }
   if (id === 'evaluation_unavailable' || id === 'gateway_evaluation_deadline'
     || id === 'opencode_runtime_unavailable' || id === 'opencode_evaluation_timeout'
     || id === 'opencode_evaluation_cancelled') {
@@ -789,6 +856,8 @@ function executePlan(bridge, entry, plan, ctx, evidence, owner) {
       return recoverLocalEvaluationAuthority(bridge, ctx);
     case 'admit_ready_specialist_dispatch':
       return recoverAdmitReadySpecialist(bridge, ctx);
+    case 'refresh_cursor_execution_decision':
+      return recoverRefreshCursorDecision(bridge, ctx);
     case 'diagnose_repair_budget':
       return recoverRepairBudget(bridge, evidence);
     case 'normalize_plan_files_guidance':

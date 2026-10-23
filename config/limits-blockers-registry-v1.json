@@ -1799,6 +1799,104 @@
       "canonical_operational_recovery_v1": true
     },
     {
+      "id": "cognitive_worker_unqualified",
+      "codes": [
+        "cognitive_worker_unqualified"
+      ],
+      "description": "A sealed specialist or cognitive plan named a worker that is not eligible under the Mission envelope, or a worker id that Airodrom does not qualify. Safe suffixes such as :cursor are normalized to this registry id. Distinct from transient Cursor runtime unreadiness and from Mission spend/disclosure authority.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/specialist-gateway.js",
+        "symbol": "select"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": "refresh_cursor_execution_decision",
+      "next_safe_action": "refresh_cursor_readiness_or_owner_qualify",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md",
+        "docs/CURSOR-EXECUTION-DECISION-V1.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "refresh_cursor_execution_decision",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "cursor_decision_allow_or_owner_gate",
+        "note": "Re-evaluate authoritative Cursor dimensions with a fresh readiness probe. If only runtime unreadiness remains and Mission authority is intact, requeue the existing dispatch. Never enroll, approve, or invent spend. Planning-only ineligible workers stay owner-gated.",
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      },
+      "canonical_operational_recovery_v1": true
+    },
+    {
+      "id": "cursor_runtime_not_ready",
+      "codes": [
+        "cursor_runtime_not_ready",
+        "cursor_version_unavailable",
+        "cursor_agent_busy",
+        "cursor_sandbox_unavailable",
+        "cursor_agent_not_installed",
+        "cursor_version_unqualified",
+        "cursor_platform_unqualified"
+      ],
+      "description": "Cursor is Mission-authorized but the governed runtime probe is not currently ready. Distinct from missing grants or cognitive worker ineligibility.",
+      "category": "operational_auto",
+      "severity": "warning",
+      "source": {
+        "file": "src/cursor-execution-decision.js",
+        "symbol": "decide"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": "refresh_cursor_execution_decision",
+      "next_safe_action": "await_cursor_runtime_ready_or_owner_requalify",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/CURSOR-EXECUTION-DECISION-V1.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "cursor",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "refresh_cursor_execution_decision",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "dispatch_requeued_or_owner_gate",
+        "note": "Fresh readiness + requeue existing dispatch when Mission grant/disclosure remain valid. Never launch a duplicate Cursor run.",
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      },
+      "canonical_operational_recovery_v1": true
+    },
+    {
       "id": "evaluation_unavailable",
       "codes": [
         "EVALUATION_UNAVAILABLE",

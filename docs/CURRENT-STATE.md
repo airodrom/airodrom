@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## Cursor execution decision authority — SOURCE (2026-10-23)
+
+- **Cause (Mission `63385742-6877-4320-9dc4-956b3af05c87` / ChatGPT `chatgpt_post224_scheduler_e2e_20261023_a` / dispatch `0f6964ab…`):** READY admit succeeded; first Cursor assignment queued; `specialist-gateway.select` failed `cognitive_worker_unqualified:cursor` with empty route and zero runs while the agent registry could still show Cursor available. Root cause: select equated `!observation.available` with cognitive ineligibility, lost the readiness reason, permanently blocked, and the code was an unregistered `unknown_blocker`.
+- **Repair:** `src/cursor-execution-decision.js` (seven dimensions); fresh readiness on select; transient runtime requeue; registry + `refresh_cursor_execution_decision` recovery. Docs: [CURSOR-EXECUTION-DECISION-V1.md](CURSOR-EXECUTION-DECISION-V1.md).
+- Historical Mission preserved blocked; fresh acceptance is the post-install gate.
+
 ## READY specialist auto-dispatch — SOURCE (2026-10-23)
 
 - **Cause (Mission `3a6edd9e-e79f-47fd-b78e-2761a76bb367` / ChatGPT `chatgpt_post223_read_edit_acceptance_20261023_a`):** Authorized READY specialist with `prepared` graph, two assignments, zero dispatches/runs; OpenCode+Cursor qualified; stalled until authority expiry. Root cause was scheduler invisibility of `prepared` programs after a lost/failed first wake, plus wrong recovery (`reuse_local_evaluation_authority`) for never-started work — not missing grants or evaluation.

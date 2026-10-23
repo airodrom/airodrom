@@ -231,11 +231,12 @@ class CursorWorker {
     return { kind: 'none', available: false, reason: 'cursor_credential_file_unavailable', owner_step: 'Run `AGENT_CLI_CREDENTIAL_STORE=file agent login` once (writes ~/.cursor/auth.json, mode 0600) or provide an API key file; the macOS Keychain credential is intentionally unreachable from the sandbox.' };
   }
 
-  async readiness() {
+  async readiness({ fresh = false } = {}) {
     const install = this.install();
     const now = Date.now();
     // Short TTL cache keeps agent_status MCP polls off the spawn hot path.
-    if (this._readinessCache && (now - this._readinessCache.at) < 3000) return this._readinessCache.value;
+    // Dispatch/select must pass fresh:true so menu races cannot poison eligibility.
+    if (!fresh && this._readinessCache && (now - this._readinessCache.at) < 3000) return this._readinessCache.value;
     const observed = install ? await (async () => {
       if (this.options.fixtureExecutable) return this.options.fixtureVersion || '2026.09.28-64d2043';
       return await new Promise(resolve => {
