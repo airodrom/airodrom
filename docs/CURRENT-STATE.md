@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## READY specialist auto-dispatch — SOURCE (2026-10-23)
+
+- **Cause (Mission `3a6edd9e-e79f-47fd-b78e-2761a76bb367` / ChatGPT `chatgpt_post223_read_edit_acceptance_20261023_a`):** Authorized READY specialist with `prepared` graph, two assignments, zero dispatches/runs; OpenCode+Cursor qualified; stalled until authority expiry. Root cause was scheduler invisibility of `prepared` programs after a lost/failed first wake, plus wrong recovery (`reuse_local_evaluation_authority`) for never-started work — not missing grants or evaluation.
+- **Repair:** `admitReady` / `admitPreparedReady` watchdog on `MissionService.tick`; `mission-program.tick` includes `prepared` specialist graphs; orphan READY after dispatch failure fails closed; registry recovery `admit_ready_specialist_dispatch`; bounded `nativeStatus` readiness. Docs: [READY-SCHEDULER-DISPATCH-V1.md](READY-SCHEDULER-DISPATCH-V1.md), [ADR 0061](adr/0061-ready-scheduler-dispatch.md).
+- Historical Mission preserved terminal (no deadline extension). Fresh ChatGPT-origin acceptance is the post-managed-install gate.
+
 ## Operational Owner Auto-Recovery V1 — SOURCE (2026-10-22)
 
 - **Goal:** Eliminate repeated owner intervention for routine authorized development across the 27 canonical operational blockers while keeping all security-critical categories fail-closed.

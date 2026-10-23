@@ -1,5 +1,6 @@
 # Architecture Decision Records
 
+- [0061 READY scheduler dispatch](0061-ready-scheduler-dispatch.md): Proposed; sealed READY + prepared specialist graphs auto-admit first assignment via MissionService tick watchdog; single control-service scheduler owner; bounded native-status; orphan READY fails closed.
 - [0052 Autonomous Supervisor V1](0052-autonomous-supervisor.md): Proposed; Live Activity / CLI projection over Mission V2 + CAE without a second scheduler; AUTO admission honesty; obsolete rework presentation archive; standing WORK templates.
 
 - [0053 Developer Autonomy V1](0053-developer-autonomy.md): Proposed; standing per-repository enrollment, short-lived Mission grants, disposable worktrees, draft-PR prep; never merge/deploy.

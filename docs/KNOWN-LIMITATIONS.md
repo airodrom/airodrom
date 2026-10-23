@@ -1,5 +1,15 @@
 # Known limitations
 
+## READY specialist auto-dispatch (2026-10-23)
+
+- Historical Mission `3a6edd9e-e79f-47fd-b78e-2761a76bb367` expired while stuck READY+prepared with zero dispatches; it is preserved terminal and is not deadline-extended. Fresh acceptance requires a new authorized Mission after managed install of the READY-scheduler fix ([READY-SCHEDULER-DISPATCH-V1](READY-SCHEDULER-DISPATCH-V1.md)).
+- Automatic admit does not invent standing Cursor grants, widen disclosure, or redispatch uncertain worker PIDs.
+- ChatGPT-origin end-to-end acceptance after install remains an external gate when this session cannot submit via connected MCP as ChatGPT.
+
+## Fixture baseline specialist / OpenCode packet gaps (local)
+
+- Local fixture suite may still report unrelated failures such as planner unauthorized-scope expectations (`DISPATCHED` vs `BLOCKED` when a plan mutation is not rejected) and `opencode_runtime_unavailable` on unavailable-runtime packet cases. These are not the READY stall defect; do not treat local green of admit tests as hosted CI (hosted CI is currently disabled).
+
 ## OpenCode evaluation after Cursor (2026-10-23)
 
 - Intermediate **read** evaluation must use stage-scoped `assignment_contract`; Mission-level edit/exact-byte text is context only. Stage-confused `blocked` fails closed as `opencode_evaluation_stage_mismatch` and may locally retry; it never fabricates `ready` or unlocks dependents.

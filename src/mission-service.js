@@ -256,7 +256,11 @@ class MissionService {
     // microtask that races finishRecovery would otherwise block auto-open forever.
     if(this.busy||this.stopped||this.bridge.closed||this.bridge.lifecycle&&this.bridge.lifecycle.state()!=='open')return;this.busy=true;
     try{
-      this.store.expireDecisions();this.acceptanceEngine.reconcile();this.riskAcceptance.reconcile();try{this.bridge.expandedAutonomy?.reconcileDeveloperAutonomyAccept?.();}catch{}this.program.tick();
+      this.store.expireDecisions();this.acceptanceEngine.reconcile();this.riskAcceptance.reconcile();try{this.bridge.expandedAutonomy?.reconcileDeveloperAutonomyAccept?.();}catch{}
+      // Watchdog: sealed READY specialists with prepared graphs must enter the queue
+      // without waiting for a lost cognitive-dispatch wake (Mission 3a6edd9e…).
+      try{require('./specialist-gateway').admitPreparedReady(this);}catch{/* Never crash Mission tick. */}
+      this.program.tick();
       for(const c of this.db.prepare("SELECT * FROM cp_continuations WHERE state='queued'").all()){
         const m=this.store.getMission(c.mission_id);if(require('./removed-runtime').removed(m)){this.retireRemovedRuntime(m);continue;}if(m?.envelope.control_version!==2)continue;
         const chains=this.db.prepare('SELECT c.* FROM cp_autonomy_claims a JOIN cp_autonomy_chains c ON c.id=a.chain_id WHERE a.mission_id=?').all(m.id);

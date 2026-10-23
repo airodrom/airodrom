@@ -32,6 +32,8 @@
 
 **Standing Cursor development:** [STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md) — owner-enrolled finite grants that stop recurring spend/disclosure WAIT for routine authorized Cursor work; project-scoped; fail-closed recovery.
 
+**READY scheduler dispatch V1:** [READY-SCHEDULER-DISPATCH-V1.md](READY-SCHEDULER-DISPATCH-V1.md) — sealed READY + prepared specialist graphs auto-admit first assignment; single control-service scheduler; watchdog; bounded native-status ([ADR 0061](adr/0061-ready-scheduler-dispatch.md)).
+
 **macOS Desktop Activation V1** (Menu V3 + login startup — SHIPPED + INSTALLED): [MACOS-DESKTOP-ACTIVATION-V1.md](MACOS-DESKTOP-ACTIVATION-V1.md).
 
 **Final Product Consolidation V1** (local usable release stop line): [FINAL-PRODUCT-CONSOLIDATION-V1.md](FINAL-PRODUCT-CONSOLIDATION-V1.md).

@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- Sealed specialist Missions no longer stall forever at parent `READY` with a `prepared` graph and zero dispatches after a lost or failed first wake: `admitReady` / `admitPreparedReady` plus `mission-program.tick` coverage queue the first dependency-free assignment idempotently; orphan READY after dispatch failure fails closed; never-started `worker_execution_unqualified` recovery uses `admit_ready_specialist_dispatch` instead of evaluation reuse; `/api/product/native-status` stays bounded under deferred readiness ([docs/READY-SCHEDULER-DISPATCH-V1.md](docs/READY-SCHEDULER-DISPATCH-V1.md), [docs/adr/0061-ready-scheduler-dispatch.md](docs/adr/0061-ready-scheduler-dispatch.md)).
+
+### Fixed
 - OpenCode evaluation of a host-verified specialist **read** no longer applies Mission-level edit/exact-byte criteria to the intermediate assignment: stage-scoped `assignment_contract` leads the evaluator objective, read stages forbid requiring mutations, stage-confused `blocked` fails closed as `opencode_evaluation_stage_mismatch` with bounded local evaluation retry (no Cursor redispatch, never blocked→ready), so an authorized dependent edit can unlock after both host verification and a valid ready receipt ([docs/SPECIALIST-GATEWAY-V1.md](docs/SPECIALIST-GATEWAY-V1.md), [docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md](docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md)).
 
 ### Fixed

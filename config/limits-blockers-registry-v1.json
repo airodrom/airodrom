@@ -1788,11 +1788,11 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "reuse_local_evaluation_authority",
+        "operation": "admit_ready_specialist_dispatch",
         "executable": true,
         "allowlisted": true,
-        "verification": "diagnostic_complete",
-        "note": null,
+        "verification": "specialist_dispatch_queued_or_owner_gate",
+        "note": "Never-started READY specialists: refresh Cursor readiness and queue first assignment. Post-Cursor evaluation still reuses local evaluation authority when a completed worker run exists.",
         "owner_gate_if_needed": true,
         "security_fail_closed": false
       },

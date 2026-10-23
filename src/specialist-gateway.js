@@ -315,6 +315,71 @@ async function retryPreStartEvaluation(service, m) {
     localEvalRetries.delete(m.id);
   }
 }
+/**
+ * Admit a sealed READY specialist Mission that never received its first dispatch.
+ * Program stays `prepared` until queue() succeeds; mission-program.tick only visits
+ * running/waiting_acceptance graphs, so without this path READY can sit forever.
+ * Idempotent: active/queued dispatches or non-pending roots are no-ops.
+ */
+function admitReady(service, m) {
+  if (!enabled(m) || m.state !== 'ready') return { admitted: false, reason: 'not_ready_specialist' };
+  const db = service.db;
+  const p = db.prepare('SELECT state,expires_at FROM cp_mission_programs WHERE id=?').get(m.id);
+  if (!p || p.state !== 'prepared') return { admitted: false, reason: 'program_not_prepared' };
+  if (service.store.now() >= Math.min(p.expires_at, deadline(m))) {
+    if (m.state === 'ready') service.store.state(m.id, 'blocked', 'Mission authority expired before first specialist dispatch');
+    db.prepare("UPDATE cp_mission_programs SET state='blocked' WHERE id=?").run(m.id);
+    return { admitted: false, reason: 'deadline_elapsed' };
+  }
+  if (db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','dispatching','running','unknown')").get(m.id)) {
+    return { admitted: false, reason: 'dispatch_already_active' };
+  }
+  if (db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(m.id)) {
+    return { admitted: false, reason: 'dispatch_history_present' };
+  }
+  const ns = nodes(service.bridge, m);
+  if (!ns.some(n => n.state === 'pending' && n.assignment.depends_on.length === 0)) {
+    return { admitted: false, reason: 'no_root_pending' };
+  }
+  try {
+    const result = queue(service, m);
+    // Observational only — never fail a durable queue on ledger metadata shape.
+    try {
+      const queued = nodes(service.bridge, m).find((n) => n.state === 'queued');
+      service.store.event('gateway.assignment.auto_admitted', m.id, {
+        assignment_id: queued?.node_id || null,
+        dispatch_id: result.dispatch_id || null,
+        authority: false,
+      });
+    } catch { /* Dispatch is already durable. */ }
+    return { admitted: true, ...result };
+  } catch (error) {
+    const code = String(error.code || error.message).slice(0, 200);
+    // Durable actionable blocker — never leave READY without schedule or diagnosis.
+    // Only block when queue itself failed (no dispatch was created).
+    db.prepare("UPDATE cp_mission_programs SET state='blocked' WHERE id=?").run(m.id);
+    if (service.store.getMission(m.id)?.state === 'ready') service.store.state(m.id, 'blocked', code);
+    try { service.store.event('gateway.assignment.admit_failed', m.id, { code, authority: false }); } catch { /* Blocker already durable. */ }
+    return { admitted: false, reason: code };
+  }
+}
+
+/** Scan prepared READY specialist parents (watchdog + tick rehydration). */
+function admitPreparedReady(service, { limit = 8 } = {}) {
+  if (service.bridge.lifecycle && service.bridge.lifecycle.state() !== 'open') return { scanned: 0, admitted: 0 };
+  const rows = service.db.prepare(
+    "SELECT p.id FROM cp_mission_programs p JOIN cp_missions m ON m.id=p.id WHERE p.state='prepared' AND m.state='ready' AND json_extract(p.graph,'$.kind')=? ORDER BY m.created_at ASC LIMIT ?"
+  ).all(KIND, limit);
+  let admitted = 0;
+  for (const row of rows) {
+    const m = service.store.getMission(row.id);
+    if (!m || !enabled(m)) continue;
+    const result = admitReady(service, m);
+    if (result.admitted) admitted += 1;
+  }
+  return { scanned: rows.length, admitted };
+}
+
 function tick(service,p) {
   const m=service.store.getMission(p.id); if (!enabled(m)) fail('gateway_graph_parent_missing');
   if (['cancelled','completed','blocked','needs_rework'].includes(m.state)) {
@@ -324,6 +389,11 @@ function tick(service,p) {
       if (current.state === 'blocked') retryPreStartEvaluation(service, current).catch(() => {});
     }
     service.db.prepare('UPDATE cp_mission_programs SET state=? WHERE id=?').run(service.store.getMission(p.id).state==='completed'?'settled':service.store.getMission(p.id).state,p.id); return;
+  }
+  // prepared + parent ready: first-assignment admission (lost wake / failed initial dispatch).
+  if (p.state === 'prepared' && m.state === 'ready') {
+    admitReady(service, m);
+    return;
   }
   const ns=nodes(service.bridge,m);
   if (ns.some(n=>['queued','running','evaluating'].includes(n.state))) return;
@@ -491,6 +561,14 @@ function recover(service,m) {
     if(current.state==='blocked')retryPreStartEvaluation(service,current).catch(()=>{});
     return true;
   }
+  // Restart / lost-wake: sealed READY with prepared graph must re-enter the queue.
+  if (m.state === 'ready') {
+    const p = service.db.prepare('SELECT state FROM cp_mission_programs WHERE id=?').get(m.id);
+    if (p?.state === 'prepared') {
+      admitReady(service, m);
+      return true;
+    }
+  }
   if(!['dispatching','running','verifying'].includes(m.state))return true;
   // Result inbox replay and queued launches are handled by the existing loop.
   if(service.db.prepare('SELECT 1 FROM cp_run_results WHERE mission_id=? AND processed_at=0').get(m.id)||
@@ -526,4 +604,4 @@ function autoAccept(bridge,id) {
   db.prepare("UPDATE cp_mission_programs SET state='settled' WHERE id=?").run(id);
   return{accepted:true,verification_id:v.id};
 }
-module.exports={KIND,enabled,assignments,register,queue,select,started,active,adapterScope,baseline,assertFresh,assertRoot,isEvaluating,digest,returnPayload,inspect,tick,processResult,assertReceipts,autoAccept,repairCount,recover,deadline,workerInput};
+module.exports={KIND,enabled,assignments,register,queue,select,started,active,adapterScope,baseline,assertFresh,assertRoot,isEvaluating,digest,returnPayload,inspect,tick,processResult,assertReceipts,autoAccept,repairCount,recover,deadline,workerInput,admitReady,admitPreparedReady};

@@ -131,9 +131,14 @@ class MissionProgram {
  const hash=fingerprint(input);return transaction(this.db,()=>{const prior=this.db.prepare('SELECT * FROM cp_mission_programs WHERE owner=? AND request_id=?').get(owner,input.request_id);if(prior){if(prior.fingerprint!==hash)throw Error('Mission Program idempotency conflict');return this.inspect(prior.id);}const id=randomUUID(),now=this.now();this.db.prepare('INSERT INTO cp_mission_programs(id,owner,graph,fingerprint,state,started_at,expires_at,request_id) VALUES(?,?,?,?,?,?,?,?)').run(id,owner,JSON.stringify(input.stages),hash,'running',now,now+input.max_runtime_hours*3600000,input.request_id);for(const s of input.stages)this.db.prepare('INSERT INTO cp_mission_program_nodes(program_id,node_id,mission_id,input,state,record_id) VALUES(?,?,?,?,?,?)').run(id,s.id,s.mission_id||null,JSON.stringify(s),'pending',randomUUID());return this.inspect(id);});
  }
  inspect(id){require('./memory-content-erasure').assertReadable(this.db);identifier(id);const p=this.db.prepare('SELECT * FROM cp_mission_programs WHERE id=?').get(id);if(!p)throw Error('Mission Program not found');if(erasedProgram(this.db,id))throw Error('Mission Program context erased');if(JSON.parse(p.graph).kind===require('./specialist-gateway').KIND)return{...p,graph:JSON.parse(p.graph),...require('./specialist-gateway').inspect(this.bridge,this.store.requireMission(id)),stages:[],edges:[]};return{...p,graph:JSON.parse(p.graph),edges:JSON.parse(p.graph).flatMap(s=>s.depends_on.map(d=>({from:d,to:s.id,type:'requires_validation'}))),stages:this.db.prepare('SELECT node_id,mission_id,state FROM cp_mission_program_nodes WHERE program_id=?').all(id)};}
- tick(){for(const p of this.db.prepare("SELECT * FROM cp_mission_programs WHERE state IN ('running','waiting_acceptance')").all())transaction(this.db,()=>{
+ tick(){
+ // Specialist graphs stay `prepared` until first queue(). Include them so READY
+ // parents are not invisible to the Mission Program scheduler.
+ for(const p of this.db.prepare("SELECT * FROM cp_mission_programs WHERE state IN ('prepared','running','waiting_acceptance')").all())transaction(this.db,()=>{
  if(erasedProgram(this.db,p.id))return;
  if(JSON.parse(p.graph).kind===require('./specialist-gateway').KIND){require('./specialist-gateway').tick(this.service,p);return;}
+ // Non-specialist programs never use prepared; ignore if somehow present.
+ if(p.state==='prepared')return;
  if(this.now()>=p.expires_at){this.db.prepare("UPDATE cp_mission_programs SET state='budget_exhausted' WHERE id=?").run(p.id);return;}
  const stages=JSON.parse(p.graph),states=new Map();let blocked=false,waiting=false;
  for(const s of stages){const node=this.db.prepare('SELECT state,mission_id FROM cp_mission_program_nodes WHERE program_id=? AND node_id=?').get(p.id,s.id);if(!node.mission_id){states.set(s.id,'pending');continue;}const m=this.store.requireMission(node.mission_id);const r=this.db.prepare('SELECT * FROM cp_mission_reviews WHERE mission_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(m.id);let state=node.state;
