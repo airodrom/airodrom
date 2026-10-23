@@ -79,8 +79,14 @@ function parse(kind, data) {
       visiting.add(id); tasks.get(id).depends_on.forEach(visit); visiting.delete(id); visited.add(id);
     };
     data.tasks.forEach(t => visit(t.id));
-    const used = new Set(data.tasks.flatMap(t => t.paths));
-    if (used.size !== data.files.length || data.files.some(f => !used.has(f))) fail('cognitive_plan_files_mismatch');
+    // Proposal.files is the work set: the unique union of task.paths.
+    // Planners often echo every discovery/context path into files while tasks
+    // only touch a legitimate subset (e.g. README.md read→edit). Drop unused
+    // context listings and fill any task paths omitted from files. Paths outside
+    // permitted_paths still fail later in validateProposal — never broaden auth.
+    const used = [...new Set(data.tasks.flatMap(t => t.paths))].sort();
+    if (!used.length) fail('cognitive_plan_files_mismatch');
+    data.files = used;
   } else if (kind === 'SealedMissionContract') {
     for (const k of ['request_id', 'repository_id', 'workspace_id']) string(data[k]);
     for (const k of ['envelope_hash', 'proposal_hash', 'integrity_hash', 'mission_scope_hash']) digest(data[k]);

@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## Cognitive plan files mismatch & pre-Mission notifications — SOURCE (2026-10-22)
+
+- **Cause:** OpenCode planning echoed every cognitive discovery path into `PlanningProposal.files` while tasks only referenced a legitimate subset (e.g. `README.md` read→edit). Host parse required exact equality between `files` and the union of `task.paths`, yielding durable `cognitive_plan_files_mismatch` (requests `chatgpt_airodrom_multitask_trigger_20261022_v2`, `chatgpt_post215_standing_grant_probe_20261022_v1`). Terminal ask `BLOCKED` had no Mission id, so mission-only notifications never fired.
+- **Repair:** normalize `files` to the unique union of task paths (drop unread context; allow subsets/ordering); recover `cognitive_plan_files_mismatch` via existing coerce path; genuine out-of-scope paths fail with authorized/proposed/mismatched detail; ask-row terminal states (`BLOCKED`/`WAIT`/`CANCELLED`/…) enqueue duplicate-safe durable notifications keyed by `request_id` when `mission_id` is absent (`list_mission_notifications`).
+- Historical blocked asks remain immutable; issue a fresh ChatGPT-origin request after install.
+
 ## Permanent Cursor authorization automation — SOURCE (2026-10-22)
 
 - **Cause:** Active Developer Autonomy policies with Cursor on the worker allowlist do **not** satisfy cognitive spend/disclosure admission. Only an owner-enrolled `cp_standing_cursor_development` grant auto-covers routine Cursor Missions. Live host had a standing grant for chatgpt-handoff only; Airodrom Source (`a99c2399-…` / `airodrom-da-main`) and Arecibo Core (`d07c3c39-…` / `arecibo-core-autopilot-main`) therefore returned recurring `scoped_external_disclosure_required` + `BLOCKED_SPEND_AUTHORIZATION`.

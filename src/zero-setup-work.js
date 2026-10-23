@@ -77,10 +77,20 @@ class ZeroSetupWork {
   }
 
   write(requestId, principal, record, state) {
+    const previous = (() => {
+      try { return this.read(requestId)?.state || null; } catch { return null; }
+    })();
     const now = Date.now();
     this.db.prepare(`INSERT INTO cp_zero_setup_requests VALUES(?,?,?,?,?,?)
       ON CONFLICT(request_id) DO UPDATE SET record=excluded.record, state=excluded.state, updated_at=excluded.updated_at`)
       .run(requestId, principal, JSON.stringify(record), state, now, now);
+    // Event-driven ask notifications for terminal / actionable WAIT states before
+    // a Mission id exists. Duplicate-safe; never throws into intake.
+    try {
+      require('./mission-terminal-notifications').onRequestState(this.bridge, {
+        ...record, request_id: requestId, principal, state,
+      }, { previous, state });
+    } catch { /* notification must not block durable ask write */ }
   }
 
   activeProjects() {

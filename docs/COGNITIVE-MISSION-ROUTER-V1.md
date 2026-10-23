@@ -266,6 +266,13 @@ and zero automatic repairs. Each planning/execution attempt is bounded to 120 se
 only schema-invalid plans can use the second planning attempt. Uncertain termination
 does not retry. External discovery and web continuation are not part of this scope.
 
+`PlanningProposal.files` is the unique union of `task.paths`. Discovery/context
+paths may appear in the sealed `permitted_paths` for planner grounding without
+being required edit targets. Legitimate subsets (for example README.md read then
+edit) pass; unused context listings are normalized away. Paths outside
+`permitted_paths` fail closed with authorized, proposed, and mismatched path
+detail — permissions are never broadened.
+
 When an owner-enrolled standing Cursor development grant covers the Mission
 repository, DA `policy_id`, proposed public paths, and finite invocation/runtime
 bounds, cognitive admission auto-issues the existing MissionApproval spend shape
