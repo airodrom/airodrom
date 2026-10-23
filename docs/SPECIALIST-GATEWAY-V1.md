@@ -106,3 +106,46 @@ source must understand tagged graphs or reject their execution and display them
 read-only. The former array-only graph implementation cannot serve as an unguarded
 rollback after version 3 records have been written. Keep admission closed if safe
 compatibility cannot be established.
+## Failure-injected qualification and recovery observations
+
+On 2026-10-23 a governed run against installed revision `faa204d` passed this
+procedure: exactly two Cursor assignments, one injected evaluator interruption,
+one automatic local evaluation retry, two READY evaluations, 17/17 final host
+checks, canonical automatic Acceptance and Settlement, and four released leases.
+Only the explicitly bound proof file changed. The installed source fingerprint
+was unchanged throughout. Private host receipts and independent database/file
+verification remain in the operator evidence bundle; this observation alone does
+not qualify the later release candidate or claim its CI gates passed.
+
+A live recovery qualification must distinguish an interrupted evaluator from a
+repeated implementation assignment. Bind the test to one enrolled request and
+the exact read-only evaluator process after the first worker's host verification.
+Keep the dependent edit pending. Inject at most one process interruption; do not
+change grants, budgets, file contents, evaluator results, or canonical database
+rows. The host must independently establish termination before retrying.
+
+Verify the complete durable sequence: one completed read, one failed and
+reconciled evaluation, one READY retry bound to the same read receipt, one
+dependent edit, and one final READY evaluation. Independently check requested,
+planned and changed paths; exact final bytes; all registered and security checks;
+current acceptance and settlement records; and zero held or quarantined leases.
+Two Cursor tasks plus three evaluator attempts (two READY and one failed) prove
+evaluation recovery without spending an implementation repair. They do not prove
+an edit-repair cycle, every failure class, or filesystem-level read tracing.
+
+During a bounded evaluator retry the canonical parent remains BLOCKED until the
+receipt passes validation. The evidence API derives RECOVERING / EVALUATION_RETRY
+only when a durable starting or running evaluator belongs to the exact verified
+assignment. A stale unavailable node or an exhausted/terminated attempt does not
+justify that projection. This changes reporting only, not admission or authority.
+
+Candidate qualification also exercises standalone identity read validation.
+Connection-local validation probes are registered without creating migration
+tables or granting migration authority. Read-only stores keep rejecting legacy
+references, malformed opaque origins and unsafe correlations.
+
+Bound each explicitly authorized hosted qualification run with a 45-minute
+monitor that cancels unfinished work at its deadline. Restore the prior CI
+disabled state after the bounded attempt. A timeout or failed gate keeps release
+on HOLD; it is not an authorized skip. Workflow edits may require additional
+repository credential scope and are not necessary for this bounded procedure.

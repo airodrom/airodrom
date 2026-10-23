@@ -189,6 +189,26 @@ test('local evaluator recovers from unavailable then malformed JSON without repl
   assert.equal(m.acceptance.length, 1);
 });
 
+test('evidence reports an active bounded evaluator retry while the parent remains blocked', async t => {
+  const f = await specialistCursorFixture(t);
+  let retryEvidence;
+  f.onEvaluation = async () => {
+    if (f.evaluations.length === 1) return invalidEvaluation('No evaluation JSON.');
+    if (f.evaluations.length === 2) {
+      const mission=f.bridge.controlStore.db.prepare("SELECT id FROM cp_missions WHERE state='blocked'").get();
+      retryEvidence=require('../src/mission-evidence').evidencePackage(f.bridge,mission.id);
+    }
+  };
+  const v=await startCursorGraph(f);
+  const m=await awaitGraph(f,v.mission_id,m=>m.state==='completed');
+  assert.equal(retryEvidence.status,'RECOVERING');
+  assert.equal(retryEvidence.phase.observing,true);
+  assert.match(retryEvidence.next_safe_action,/retrying the read-only evaluation/);
+  assert.deepEqual(retryEvidence.answers.requires_owner,[]);
+  assert.equal(m.runs.filter(r=>r.agent_id==='cursor').length,2);
+  assert.equal(m.acceptance.length,1);
+});
+
 test('malformed evaluator responses stop at the existing three-run ceiling and show the latest failure', async t => {
   const f = await specialistCursorFixture(t);
   f.onEvaluation = async () => {
@@ -260,6 +280,10 @@ test('a mismatched evaluator binding does not trigger an automatic syntax retry'
   assert.equal(f.evaluations.length, 1);
   assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 1);
   assert.equal(m.acceptance.length, 0);
+  const evidence=require('../src/mission-evidence').evidencePackage(f.bridge,m.id);
+  assert.equal(evidence.status,'BLOCKED');
+  assert.deepEqual(evidence.answers.requires_owner,['Inspect diagnostics']);
+  assert.match(evidence.next_safe_action,/no automatic retry is pending/);
 });
 
 test('dependent Cursor edit completes despite a stale negative readiness observation after the read', async (t) => {
