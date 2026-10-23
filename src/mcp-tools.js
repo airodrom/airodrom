@@ -64,6 +64,8 @@ const TOOLS = [
   tool('get_mission_events','Read the compact durable event timeline (flight recorder subset) for a Mission lineage. Grants no authority.',{mission_id:id,limit:{type:'integer',minimum:1,maximum:200}},['mission_id'],true),
   tool('get_mission_engineering_report','Read the chronological engineering progress report for a Mission: planning, Cursor activity, host-verified changes, OpenCode evaluation, independent verification, Acceptance, and terminal notifications. Worker claims are labelled untrusted. Grants no authority.',{mission_id:id,limit:{type:'integer',minimum:1,maximum:200}},['mission_id'],true),
   tool('list_mission_notifications','Read durable terminal Mission notifications (ACCEPTED/BLOCKED/FAILED/CANCELLED/NEEDS_REWORK/OWNER_ACTION_REQUIRED) from the event-driven outbox inbox. Grants no authority. Does not poll Mission state.',{after:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50},mission_id:id},[],true),
+  tool('list_development_targets','Read the authoritative multi-project development catalog (Airodrom, Arecibo, and any future entries) plus live enrollment readiness for each repository. Grants no authority. Does not enroll or expand grants.',{},[],true),
+  tool('resolve_development_target','Resolve which authoritative development repository an instruction would select, without starting a Mission. Fail-closed codes surface when authorization is missing. Grants no authority.',{instruction:text(4000,'Natural-language development instruction to resolve.')},['instruction'],true),
   tool('get_mission_evidence','Read the machine-readable final evidence package built from host records only: scope, worker, sandbox, changed files, tests, security checks, verification, repair lineage, budget, approval/acceptance status and the next safe action. Worker prose is labelled untrusted. Retrievable after any disconnect; Airodrom never wakes an inactive conversation.',{mission_id:id},['mission_id'],true),
   tool('request_mission_correction','Record a correction request for a verified-but-unaccepted Mission. Returns WAIT: the owner decides rework or Acceptance in Control Center or Terminal; ChatGPT text never grants or revokes authority.',{mission_id:id,request_id:requestId,note:text(2000,'What should be corrected (untrusted request data).')},['mission_id','request_id','note']),
   tool('cancel_mission','Request cancellation of a Mission prepared through this authenticated handoff session. Termination, leases and quarantine remain host-owned.',{mission_id:id,request_id:requestId},['mission_id','request_id']),
@@ -261,6 +263,53 @@ class McpTools {
       const N=require('./mission-terminal-notifications');
       if(args.mission_id)return N.listForMission(this.bridge,args.mission_id,{limit:args.limit||20});
       return N.listRecent(this.bridge,{after:args.after||0,limit:args.limit||20});
+    }
+    if(name==='list_development_targets'||name==='resolve_development_target'){
+      const pr=require('./project-resolution');
+      const {liveRepositories}=require('./project-defaults');
+      const projects=(this.bridge.projects.listProjects({status:'active'})||[]).map(p=>({...p,repositories:liveRepositories(p)}));
+      const active=new Set();
+      const policies=[];
+      for(const policy of this.bridge.developerAutonomy?.list?.('operator')||[]){
+        if(policy.state==='active'&&policy.repository){
+          active.add(policy.repository);
+          policies.push({
+            alias:policy.alias, repository:policy.repository, workers:policy.workers||[],
+            has_cognitive:!!policy.cognitive, project_id:policy.project_id||null, cursor_enrolled:(policy.workers||[]).includes('cursor'),
+          });
+        }
+      }
+      if(name==='list_development_targets'){
+        const items=pr.developmentTargets().map(t=>{
+          const found=pr.findEnrolledTarget(pr.loadDevelopmentTargets().find(x=>x.id===t.id),projects,{activeRepositories:active});
+          const matching=policies.filter(p=>pr.pathMatchesTarget(p.repository,pr.loadDevelopmentTargets().find(x=>x.id===t.id)||{path_suffixes:[]}));
+          return {
+            ...t,
+            enrolled:!!found.ok,
+            workspace:found.ok?found.workspace:null,
+            project_name:found.ok?(found.project.name||null):null,
+            code:found.ok?null:found.code,
+            cursor_ready:matching.some(p=>p.cursor_enrolled&&p.has_cognitive),
+            standing_policies:matching.map(p=>({alias:p.alias,workers:p.workers,has_cognitive:p.has_cognitive,cursor_enrolled:p.cursor_enrolled})),
+            authority:false,
+          };
+        });
+        return {items,engineering_report:'get_mission_engineering_report',notifications:'list_mission_notifications',authority:false};
+      }
+      const resolved=pr.resolveAuthoritativeDevelopment(args.instruction,projects,{activeRepositories:active});
+      return {
+        matched:!!resolved.matched,
+        ok:!!resolved.ok,
+        target_id:resolved.target_id||null,
+        repository_id:resolved.repository_id||null,
+        workspace:resolved.workspace||null,
+        project_name:resolved.project?.name||null,
+        code:resolved.code||null,
+        message:resolved.message||null,
+        choices:resolved.choices||[],
+        repository_binding:resolved.repository_binding||null,
+        authority:false,
+      };
     }
     if(name==='get_mission_evidence')return require('./mission-evidence').evidencePackage(this.bridge,args.mission_id);
     if(name==='request_mission_correction'){

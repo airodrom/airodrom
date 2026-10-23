@@ -1,5 +1,12 @@
 # Known limitations
 
+## Automatic multi-project development (2026-10-22)
+
+- Product routing is catalog-driven (`config/development-targets-v1.json`). Ambiguous dual-product asks return `DEVELOPMENT_TARGET_AMBIGUOUS` rather than picking an unrelated active project.
+- Arecibo’s active standing policy may be OpenCode-only; Cursor implementation then fails with `standing_cursor_worker_not_enrolled` until the owner re-enrolls with Cursor on the allowlist. Chat text cannot expand workers.
+- Airodrom source DA enrollment still requires an owner-confirmed policy on an authorized checkout (prefer a clean `airodrom-da-main` worktree; do not overwrite the dirty operator checkout).
+- Cross-project standing grants are never transferred. chatgpt-handoff / recovery-proof never authorize Airodrom or Arecibo source work.
+
 ## Source repository routing and notifications (2026-10-22)
 
 - `airodrom/airodrom` source development requires an enrolled Developer Autonomy policy on that repository. Fixture / chatgpt-handoff standing grants never authorize source edits; requests fail with `SOURCE_REPOSITORY_NOT_ENROLLED` instead of falling back.

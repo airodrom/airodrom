@@ -92,8 +92,8 @@ class ZeroSetupWork {
   resolveEnrolledProject(instruction) {
     const projects = this.activeProjects();
     const {
-      matchNamedProjects, preferUniqueProject, requestsAirodromSource,
-      findEnrolledAirodromSource, isFixtureOrHandoffPath,
+      matchNamedProjects, preferUniqueProject, isFixtureOrHandoffPath,
+      resolveAuthoritativeDevelopment,
     } = require('./project-resolution');
     const { liveRepositories } = require('./project-defaults');
     const activeRepositories = new Set();
@@ -106,16 +106,24 @@ class ZeroSetupWork {
         if (item?.project_id && item?.repository) defaultProjectIds.add(item.project_id);
       }
     } catch { /* enrollment store unavailable */ }
-    // Explicit airodrom/airodrom source prose binds before any fixture name match.
-    // Negated "not chatgpt-handoff" must never select the handoff enrollment.
-    if (requestsAirodromSource(instruction)) {
-      const source = findEnrolledAirodromSource(projects.map(p => ({
-        ...p, repositories: liveRepositories(p),
-      })), { activeRepositories });
-      if (source.ok) {
-        return { ok: true, project: source.project, workspace: source.workspace, projectless: false, source_bound: true };
+    // Authoritative product targets (Airodrom / Arecibo / future catalog entries)
+    // bind before opportunistic named matches. Negation and missing DA fail closed.
+    const mapped = projects.map(p => ({ ...p, repositories: liveRepositories(p) }));
+    const authoritative = resolveAuthoritativeDevelopment(instruction, mapped, { activeRepositories });
+    if (authoritative.matched) {
+      if (authoritative.ok) {
+        return {
+          ok: true,
+          project: authoritative.project,
+          workspace: authoritative.workspace,
+          projectless: false,
+          source_bound: true,
+          target_id: authoritative.target_id,
+          repository_id: authoritative.repository_id,
+          repository_binding: authoritative.repository_binding,
+        };
       }
-      return { ...source, projectless: false };
+      return { ...authoritative, projectless: false };
     }
     const namedHits = matchNamedProjects(instruction, projects).map(hit => ({
       ...hit,

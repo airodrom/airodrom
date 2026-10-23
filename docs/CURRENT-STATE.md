@@ -1,5 +1,14 @@
 # Current state (2026-10-10)
 
+## Automatic multi-project development (Airodrom + Arecibo) — SOURCE (2026-10-22)
+
+- **Catalog:** `config/development-targets-v1.json` defines authoritative targets `airodrom/airodrom` and `arecibo-inc/arecibo-core`. Add a third repository by appending an entry; do not redesign the ChatGPT → Airodrom → OpenCode → Cursor path.
+- **Routing:** `resolveAuthoritativeDevelopment` binds product prose before named/fixture matches; negation (`not Arecibo`) fails closed; missing DA returns `SOURCE_REPOSITORY_NOT_ENROLLED` / `ARECIBO_REPOSITORY_NOT_ENROLLED` with no cross-project grant transfer.
+- **MCP:** `list_development_targets` / `resolve_development_target` expose enrollment readiness and dry-run resolution. Engineering report + terminal notification tools from PR #211 remain the progress/result path.
+- **Live DA (pre-owner confirm):** Arecibo Core has an active OpenCode-only cognitive policy on `/Users/andrew/code/arecibo-core-autopilot-main` (Cursor worker missing). Airodrom source has **no** enrolled DA for `~/code/airodrom` / `airodrom-da-main`.
+- **Owner actions required (not self-approved):** (1) create/register clean `airodrom-da-main` worktree + project/goal, enroll DA with Cursor + cognitive; (2) re-enroll Arecibo with Cursor on the worker allowlist (revoke or supersede OpenCode-only policy). Use `scripts/prepare-development-target-enrollment.cjs` for proposal JSON under `~/.airodrom/activation/development-target-enrollment/`.
+- **Boundaries:** Arecibo routine development never implies Production deploy, Plaid LIVE, financial-data disclosure, or privileged infrastructure. Operator checkout `~/code/airodrom` stays protected/dirty.
+
 ## Source routing, engineering visibility, terminal notifications — SOURCE (2026-10-22)
 
 - **Misroute cause:** ChatGPT source-development instructions that said “not chatgpt-handoff / not recovery proof” still matched those project names as positive mentions, then preferred the enrolled handoff DA + standing Cursor grant (`recovery-proof.txt`). There is no enrolled DA policy for `~/code/airodrom` / `airodrom/airodrom`.

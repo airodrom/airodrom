@@ -1,8 +1,12 @@
 'use strict';
 // Shared enrolled-project matching for Zero Setup and the Cognitive Mission Router.
 // Names and aliases discover candidates; authorization still comes from enrollment.
-// Negated mentions ("not chatgpt-handoff") never select a project. Explicit
-// airodrom/airodrom source requests never fall through to fixture enrollments.
+// Negated mentions ("not chatgpt-handoff", "not Arecibo") never select a project.
+// Authoritative development targets (config/development-targets-v1.json) resolve
+// before opportunistic named matches and never fall through to fixture enrollments.
+const fs = require('node:fs');
+const path = require('node:path');
+
 const STOP = new Set([
   'project', 'product', 'research', 'core', 'test', 'tests', 'fixture', 'acceptance',
   'proof', 'live', 'exact', 'file', 'files', 'human', 'self', 'repair', 'work', 'repo',
@@ -13,6 +17,36 @@ const STOP = new Set([
 ]);
 
 const FIXTURE_REPO = /chatgpt-handoff|recovery-proof|milestone-b1|self-repair|event-qualify|event-remediate|v13-|fixture|disposable-mission|human-acceptance|coding-reliability|dev-pilot|observatory-live/i;
+
+let _targetsCache = null;
+
+function loadDevelopmentTargets() {
+  if (_targetsCache) return _targetsCache;
+  const file = path.join(__dirname, '..', 'config', 'development-targets-v1.json');
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!raw || raw.version !== 1 || !Array.isArray(raw.targets)) {
+    throw Error('development-targets-v1 catalog is invalid');
+  }
+  _targetsCache = raw.targets.map(t => ({
+    ...t,
+    instruction_res: (t.instruction_patterns || []).map(p => new RegExp(p, 'i')),
+    project_name_res: (t.project_name_patterns || []).map(p => new RegExp(p, 'i')),
+    exclude_name_res: (t.exclude_name_patterns || []).map(p => new RegExp(p, 'i')),
+    remote_res: (t.remote_patterns || []).map(p => new RegExp(escapeRegExp(p).replace(/\\\//g, '\\/'), 'i')),
+  }));
+  return _targetsCache;
+}
+
+function developmentTargets() {
+  return loadDevelopmentTargets().map(t => ({
+    id: t.id,
+    repository_id: t.repository_id,
+    display_name: t.display_name,
+    not_enrolled_code: t.not_enrolled_code,
+    default_worker: t.default_worker || 'cursor',
+    notes: t.notes || null,
+  }));
+}
 
 function significantTokens(name) {
   return String(name || '')
@@ -83,8 +117,6 @@ function preferUniqueProject(hits, { activeRepositories = new Set(), defaultProj
   if (hits.length === 1) return { ok: true, project: hits[0].project, matches: hits };
   // Exact full-name or alias beats shared tokens ("Arecibo Core" over "Arecibo …").
   const exact = hits.filter(hit => hit.mention?.kind === 'full_name' || hit.mention?.kind === 'alias');
-  // Prefer the longest exact name so "Self-Repair Scope Fixture" wins over a
-  // shorter "Fixture project" that only matched as a trailing phrase.
   let ranked = exact.length ? exact : hits;
   if (exact.length > 1) {
     const maxLen = Math.max(...exact.map(hit => String(hit.project.name || '').length));
@@ -102,58 +134,181 @@ function preferUniqueProject(hits, { activeRepositories = new Set(), defaultProj
   return { ok: false, clarify: true, matches: candidates.length ? candidates : hits };
 }
 
-/** ChatGPT / operator prose that names the real airodrom/airodrom source tree. */
-function requestsAirodromSource(instruction) {
-  const text = String(instruction || '');
-  return /\bairodrom\s*\/\s*airodrom\b/i.test(text)
-    || /\bgithub\.com\/airodrom\/airodrom\b/i.test(text)
-    || /(?:^|[\s`"'(])(?:~\/code\/airodrom|\/Users\/[^/\s]+\/code\/airodrom)(?:\/|\b)/i.test(text)
-    || /\bairodrom\s+source\s+(?:repository|repo|project|checkout|tree)\b/i.test(text)
-    || /\b(?:existing\s+)?airodrom\s+SOURCE\s+repository\b/i.test(text)
-    || /\bsource\s+repository\s+development\s+project\b/i.test(text)
-    || /\b(?:real|canonical|operator)\s+airodrom\s+(?:source|repository|checkout)\b/i.test(text);
-}
-
 function isFixtureOrHandoffPath(value) {
   return FIXTURE_REPO.test(String(value || ''));
 }
 
+function pathMatchesTarget(root, target) {
+  const base = String(root || '').replace(/\/+$/, '');
+  if (!base) return false;
+  if (isFixtureOrHandoffPath(base)) return false;
+  for (const suffix of target.path_suffixes || []) {
+    if (base.endsWith(suffix) || base === suffix) return true;
+  }
+  return false;
+}
+
+function projectExcludedByTarget(project, target) {
+  const name = String(project?.name || '');
+  return (target.exclude_name_res || []).some(re => re.test(name));
+}
+
+function targetInstructionHit(instruction, target) {
+  const text = String(instruction || '');
+  if (!text) return false;
+  // Negating the display name or repository id must not select the target.
+  if (mentionIsNegated(instruction, target.display_name)) return false;
+  if (mentionIsNegated(instruction, target.repository_id)) return false;
+  if (mentionIsNegated(instruction, target.id)) return false;
+  for (const re of target.instruction_res || []) {
+    if (!re.test(text)) continue;
+    // If the only matches sit under negation of a related product token, skip.
+    const product = target.display_name.toLowerCase();
+    if (mentionIsNegated(instruction, product)) continue;
+    return true;
+  }
+  return false;
+}
+
 /**
- * Locate an enrolled live root that is the airodrom/airodrom source tree.
- * Fixture / handoff / disposable roots never qualify.
+ * Detect which authoritative development target(s) an instruction names.
+ * Returns zero, one, or many ids. Callers fail closed when more than one.
  */
-function findEnrolledAirodromSource(projects, { activeRepositories = new Set() } = {}) {
+function detectAuthoritativeTargets(instruction) {
+  const hits = [];
+  for (const target of loadDevelopmentTargets()) {
+    if (targetInstructionHit(instruction, target)) hits.push(target);
+  }
+  return hits;
+}
+
+/**
+ * Locate an enrolled live root for one authoritative target.
+ * Fixture / handoff / disposable roots never qualify.
+ * Prefer preferred_basename, then active DA repositories, then any live match.
+ */
+function findEnrolledTarget(target, projects, { activeRepositories = new Set() } = {}) {
   const hits = [];
   for (const project of projects || []) {
+    if (projectExcludedByTarget(project, target)) continue;
     for (const root of project.repositories || []) {
       if (typeof root !== 'string' || !root) continue;
       if (isFixtureOrHandoffPath(root) || isFixtureOrHandoffPath(project.name)) continue;
-      const base = root.replace(/\/+$/, '');
-      const isSourcePath = /\/code\/airodrom$/.test(base)
-        || /\/airodrom\/airodrom$/.test(base)
-        || /\/airodrom-install-[0-9a-f]+$/i.test(base);
-      if (!isSourcePath && !activeRepositories.has(root)) continue;
-      if (!isSourcePath) continue;
-      hits.push({ project, workspace: root });
+      if (!pathMatchesTarget(root, target)) continue;
+      hits.push({ project, workspace: root.replace(/\/+$/, ''), target });
     }
   }
-  if (hits.length === 1) return { ok: true, ...hits[0] };
-  if (hits.length > 1) {
+  if (!hits.length) {
     return {
       ok: false,
       clarify: true,
-      code: 'AIRODROM_SOURCE_AMBIGUOUS',
-      message: 'Multiple enrolled Airodrom source checkouts match. Name the exact authorized repository path.',
-      choices: hits.map(h => ({ project_name: h.project.name, workspace_label: h.workspace })),
+      code: target.not_enrolled_code || 'SOURCE_REPOSITORY_NOT_ENROLLED',
+      target_id: target.id,
+      repository_id: target.repository_id,
+      message: `${target.display_name} development requires an enrolled Developer Autonomy policy for ${target.repository_id}. Fixture/handoff grants from other projects never authorize this repository. Enroll from Control Center → Developer Autonomy (include Cursor on the worker allowlist), then retry.`,
+      choices: [],
     };
   }
+  // Prefer active DA repositories when present.
+  const enrolled = hits.filter(h => activeRepositories.has(h.workspace));
+  let pool = enrolled.length ? enrolled : hits;
+  if (target.preferred_basename) {
+    const preferred = pool.filter(h => path.basename(h.workspace) === target.preferred_basename);
+    if (preferred.length) pool = preferred;
+  }
+  // Prefer project name patterns when multiple remain.
+  const named = pool.filter(h => (target.project_name_res || []).some(re => re.test(String(h.project.name || ''))));
+  if (named.length === 1) return { ok: true, ...named[0] };
+  if (pool.length === 1) return { ok: true, ...pool[0] };
+  if (named.length > 1) pool = named;
   return {
     ok: false,
     clarify: true,
-    code: 'SOURCE_REPOSITORY_NOT_ENROLLED',
-    message: 'Airodrom source development requires an enrolled Developer Autonomy policy for the airodrom/airodrom repository (for example ~/code/airodrom). chatgpt-handoff and recovery-proof fixture grants never authorize source edits. Enroll the source repository from Control Center → Developer Autonomy, then retry.',
-    choices: [],
+    code: target.ambiguous_code || 'ENROLLED_REPOSITORY_AMBIGUOUS',
+    target_id: target.id,
+    repository_id: target.repository_id,
+    message: `Multiple enrolled ${target.display_name} checkouts match. Name the exact authorized repository path.`,
+    choices: pool.map(h => ({ project_name: h.project.name, workspace_label: h.workspace })),
   };
+}
+
+/**
+ * Resolve instruction → authoritative target → enrolled project/workspace.
+ * Precedence: explicit target detection → fail closed if missing/ambiguous.
+ * Does not fall back to unrelated active projects.
+ */
+function resolveAuthoritativeDevelopment(instruction, projects, options = {}) {
+  const detected = detectAuthoritativeTargets(instruction);
+  if (!detected.length) return { ok: false, matched: false };
+  if (detected.length > 1) {
+    return {
+      ok: false,
+      matched: true,
+      clarify: true,
+      code: 'DEVELOPMENT_TARGET_AMBIGUOUS',
+      message: 'That request names more than one development product. Say which repository to use: '
+        + detected.map(t => t.repository_id).join(' or ') + '.',
+      choices: detected.map(t => ({ target_id: t.id, repository_id: t.repository_id, display_name: t.display_name })),
+    };
+  }
+  const target = detected[0];
+  const found = findEnrolledTarget(target, projects, options);
+  if (!found.ok) return { ...found, matched: true };
+  return {
+    ok: true,
+    matched: true,
+    project: found.project,
+    workspace: found.workspace,
+    target_id: target.id,
+    repository_id: target.repository_id,
+    display_name: target.display_name,
+    default_worker: target.default_worker || 'cursor',
+    repository_binding: {
+      target_id: target.id,
+      repository_id: target.repository_id,
+      workspace: found.workspace,
+      project_id: found.project.projectId || found.project.project_id || null,
+      authority: false,
+    },
+  };
+}
+
+/** ChatGPT / operator prose that names the real airodrom/airodrom source tree. */
+function requestsAirodromSource(instruction) {
+  const targets = detectAuthoritativeTargets(instruction);
+  return targets.some(t => t.id === 'airodrom');
+}
+
+/** ChatGPT / operator prose that names arecibo-inc/arecibo-core. */
+function requestsAreciboCore(instruction) {
+  const targets = detectAuthoritativeTargets(instruction);
+  return targets.some(t => t.id === 'arecibo');
+}
+
+/**
+ * Locate an enrolled live root that is the airodrom/airodrom source tree.
+ * Fixture / handoff / disposable roots never qualify. Install trees are not source.
+ */
+function findEnrolledAirodromSource(projects, options = {}) {
+  const target = loadDevelopmentTargets().find(t => t.id === 'airodrom');
+  if (!target) {
+    return {
+      ok: false, clarify: true, code: 'SOURCE_REPOSITORY_NOT_ENROLLED',
+      message: 'Airodrom source target catalog is missing.', choices: [],
+    };
+  }
+  return findEnrolledTarget(target, projects, options);
+}
+
+function findEnrolledAreciboCore(projects, options = {}) {
+  const target = loadDevelopmentTargets().find(t => t.id === 'arecibo');
+  if (!target) {
+    return {
+      ok: false, clarify: true, code: 'ARECIBO_REPOSITORY_NOT_ENROLLED',
+      message: 'Arecibo target catalog is missing.', choices: [],
+    };
+  }
+  return findEnrolledTarget(target, projects, options);
 }
 
 module.exports = {
@@ -164,6 +319,14 @@ module.exports = {
   preferUniqueProject,
   mentionIsNegated,
   requestsAirodromSource,
+  requestsAreciboCore,
   isFixtureOrHandoffPath,
   findEnrolledAirodromSource,
+  findEnrolledAreciboCore,
+  loadDevelopmentTargets,
+  developmentTargets,
+  detectAuthoritativeTargets,
+  resolveAuthoritativeDevelopment,
+  findEnrolledTarget,
+  pathMatchesTarget,
 };

@@ -237,10 +237,13 @@ function engineeringReport(bridge, missionId, { limit = 200 } = {}) {
     lineage: base.lineage,
     repository_binding: {
       project_id: mission.project_id || null,
-      repository_id: mission.envelope?.cognitive?.envelope?.repository_id || null,
+      repository_id: mission.envelope?.cognitive?.envelope?.repository_id
+        || mission.envelope?.repository_binding?.repository_id || null,
+      target_id: mission.envelope?.repository_binding?.target_id || null,
       workspace: mission.envelope?.workspace || null,
       preferred_agent: mission.envelope?.preferred_agent || null,
       allowed_files: mission.envelope?.allowed_files || [],
+      cross_project_grant: false,
     },
     stages,
     cursor: base.cursor,

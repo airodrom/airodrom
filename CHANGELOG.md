@@ -1,6 +1,10 @@
 ## Unreleased
 
+### Added
+- Automatic multi-project development targets (`config/development-targets-v1.json`) for `airodrom/airodrom` and `arecibo-inc/arecibo-core` with fail-closed enrollment codes, MCP `list_development_targets` / `resolve_development_target`, and owner-only enrollment preparation via `scripts/prepare-development-target-enrollment.cjs`.
+
 ### Fixed
+- ChatGPT development asks for Airodrom vs Arecibo resolve through authoritative catalog matching (with negation) instead of opportunistic named/fixture fallback; missing or OpenCode-only grants no longer silently select another project.
 - Source-development ChatGPT asks no longer resolve into chatgpt-handoff / recovery-proof via negated name matches; explicit `airodrom/airodrom` targets bind before planning or fail closed with `SOURCE_REPOSITORY_NOT_ENROLLED` instead of fixture fallback.
 - Terminal Mission states enqueue durable, duplicate-safe outbox notifications (no polling); ChatGPT push only when a trigger is configured, otherwise inbox retrieval via MCP.
 - Mission engineering progress is exposed chronologically through `get_mission_engineering_report` with worker-reported vs host-verified provenance.
