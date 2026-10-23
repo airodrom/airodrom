@@ -1,5 +1,6 @@
 # Architecture Decision Records
 
+- [0062 Cursor execution decision](0062-cursor-execution-decision.md): Proposed; authoritative readiness vs Mission authority; fresh select probe; transient runtime requeue; registry `cognitive_worker_unqualified` / `cursor_runtime_not_ready`.
 - [0061 READY scheduler dispatch](0061-ready-scheduler-dispatch.md): Proposed; sealed READY + prepared specialist graphs auto-admit first assignment via MissionService tick watchdog; single control-service scheduler owner; bounded native-status; orphan READY fails closed.
 - [0052 Autonomous Supervisor V1](0052-autonomous-supervisor.md): Proposed; Live Activity / CLI projection over Mission V2 + CAE without a second scheduler; AUTO admission honesty; obsolete rework presentation archive; standing WORK templates.
 

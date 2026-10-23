@@ -128,9 +128,28 @@ function queue(service, m) {
 }
 async function select(service,m,dispatch) {
   const scope=adapterScope(service.bridge,service.bridge.tasks.get(dispatch.task_id),active(service.bridge,m,dispatch.task_id).assignment.worker);
-  const observations=await service.agents.refresh({boundedOnly:true}),worker=scope.assignment.worker,o=observations[worker];
-  if (worker==='cursor') service.bridge.hostExecutionPolicy?.assertCursorAllowed?.('specialist_select');
-  if (!o?.available || worker==='cursor'&&!o.governed_worker) fail('cognitive_worker_unqualified:'+worker);
+  const worker=scope.assignment.worker;
+  // Always refresh observations; Cursor dispatch uses an authoritative decision so
+  // menu/status "available" flags cannot disagree with Mission authority.
+  const observations=await service.agents.refresh({boundedOnly:true});
+  if (worker==='cursor') {
+    service.bridge.hostExecutionPolicy?.assertCursorAllowed?.('specialist_select');
+    const Decision=require('./cursor-execution-decision');
+    const readiness=await Decision.refreshReadiness(service.bridge,{fresh:true});
+    observations.cursor={...(observations.cursor||{}),...readiness,governed_worker:true,available:readiness?.ready===true};
+    const decision=Decision.decide(service.bridge,m,{readiness,now:service.store.now()});
+    if (!decision.allow) {
+      const err=Error(decision.code);
+      err.code=decision.code;
+      err.transient=decision.transient===true;
+      err.dimensions=decision.dimensions;
+      err.detail=decision.detail;
+      throw err;
+    }
+  } else {
+    const o=observations[worker];
+    if (!o?.available) fail(o?.reason || ('cognitive_worker_unqualified:'+worker));
+  }
   if(service.bridge.authorityRuntime?.routing){const route=await service.bridge.authorityRuntime.route(m,observations);if(route.selected!==worker)fail('gateway_assignment_governed_route_unavailable');return{...route,assignment_id:scope.assignment.id,assignment_hash:hash(scope.assignment)};}
   return {selected:worker,selected_agent:worker,transport:worker==='cursor'?'sandboxed_headless_cli':'confined_local_cli',reason:'sealed_specialist_assignment',assignment_id:scope.assignment.id,assignment_hash:hash(scope.assignment),authority:false};
 }

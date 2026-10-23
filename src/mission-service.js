@@ -346,7 +346,23 @@ class MissionService {
       else throw Error(`Claude dispatch ${response.status}; review policy/approval or workspace ownership`);
     }catch(error){
       const current=this.store.getMission(m.id);if(current.state==='cancelled')return;
-      transaction(this.db,()=>{const invocation=this.store.invocation(`mission:${dispatch.id}:${dispatch.decision_id||'initial'}`);this.db.prepare('UPDATE cp_dispatches SET state=?,updated_at=? WHERE id=?').run(invocation&&invocation.state!=='settled'?'unknown':'blocked',Date.now(),dispatch.id);if(this.store.getMission(m.id).state!=='blocked')this.store.state(m.id,'blocked',String(error.message).slice(0,900));});
+      const code=String(error.code||error.message||'').slice(0,200);
+      // Transient Cursor runtime unreadiness: requeue the same dispatch once the
+      // next tick can refresh readiness. Never invent a second Cursor launch.
+      const transient=error.transient===true||require('./cursor-execution-decision').isTransient(code);
+      if(transient&&!this.db.prepare("SELECT 1 FROM cp_run_results WHERE mission_id=?").get(m.id)){
+        const attempts=Number(JSON.parse(dispatch.route||'null')?.transient_retries||0);
+        if(attempts<2){
+          transaction(this.db,()=>{
+            this.db.prepare("UPDATE cp_dispatches SET state='queued',route=?,updated_at=? WHERE id=? AND state='dispatching'")
+              .run(JSON.stringify({transient_retries:attempts+1,last_code:code,authority:false}),Date.now(),dispatch.id);
+            this.store.event('agent.route.deferred',m.id,{dispatch_id:dispatch.id,code,attempt:attempts+1,authority:false});
+          });
+          this.schedule();
+          return;
+        }
+      }
+      transaction(this.db,()=>{const invocation=this.store.invocation(`mission:${dispatch.id}:${dispatch.decision_id||'initial'}`);this.db.prepare('UPDATE cp_dispatches SET state=?,updated_at=? WHERE id=?').run(invocation&&invocation.state!=='settled'?'unknown':'blocked',Date.now(),dispatch.id);if(this.store.getMission(m.id).state!=='blocked')this.store.state(m.id,'blocked',code.slice(0,900));});
     }
   }
   async launchOpenCode(dispatch,m,route){
