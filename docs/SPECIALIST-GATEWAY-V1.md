@@ -53,10 +53,19 @@ There is no repeated approval for an already-authorized assignment.
 
 The existing scheduler dispatches one assignment at a time. Each returned result is
 bound to its task, dispatch, worker run, preimage, parent seal and evaluation receipt.
-Only a ready evaluation plus passed host checks releases successors. The evaluator
-may request repair of an existing editor by `repair_assignment`; the host repeats
-that editor and already-executed later assignments only when all repeats fit the
-remaining shared repair budget. No new tasks or scope are admitted during repair.
+Only a ready evaluation plus passed host checks releases successors. Evaluation is
+**stage-scoped**: OpenCode receives an `assignment_contract` for the active
+assignment. Read assignments must not require file mutations and must not be judged
+against later dependent edit objectives; edit assignments require host-verified
+mutations (exact bytes when specified). Host verification remains independent
+evidence—never unconditional evaluator approval. A stage-confused `blocked` on a
+host-verified read fails closed as `opencode_evaluation_stage_mismatch` and may
+retry local evaluation of the same verified worker packet without Cursor redispatch;
+genuine scope/evidence `blocked` never unlocks dependents and is never rewritten to
+`ready`. The evaluator may request repair of an existing editor by
+`repair_assignment`; the host repeats that editor and already-executed later
+assignments only when all repeats fit the remaining shared repair budget. No new
+tasks or scope are admitted during repair.
 
 Final host verification uses the original Mission baseline. Automatic completion
 checks all assignment receipts, current authority and workspace, pending decisions

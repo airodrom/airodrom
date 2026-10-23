@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- OpenCode evaluation of a host-verified specialist **read** no longer applies Mission-level edit/exact-byte criteria to the intermediate assignment: stage-scoped `assignment_contract` leads the evaluator objective, read stages forbid requiring mutations, stage-confused `blocked` fails closed as `opencode_evaluation_stage_mismatch` with bounded local evaluation retry (no Cursor redispatch, never blocked→ready), so an authorized dependent edit can unlock after both host verification and a valid ready receipt ([docs/SPECIALIST-GATEWAY-V1.md](docs/SPECIALIST-GATEWAY-V1.md), [docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md](docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md)).
+
+### Fixed
 - Operational auto-recovery no longer invents `data_class: public` for standing Cursor matching, never selects a repository solely because it is the only enrolled DA, and no longer reports diagnostic/enrollment-prep as completed repair; security-critical standing mismatch and alive-writer paths stay fail-closed; recovery attempt receipts classify `cp_limits_blocker_recovery_attempts` for identity migration ([docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md)).
 
 ### Added

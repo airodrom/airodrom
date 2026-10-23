@@ -118,9 +118,21 @@ Prefer stable codes over collapsed `EVALUATION_UNAVAILABLE` / `opencode_unavaila
 | `opencode_runtime_unsupported` | Owner requalify pins/version |
 | `opencode_evaluation_timeout` | Reconcile + retry within planning allowance |
 | `opencode_evaluation_cancelled` | Reconcile; retry lock prevents duplicate aborts |
+| `opencode_evaluation_stage_mismatch` | Evaluator judged Mission-level edit criteria on a host-verified **read** stage; fail closed (never blocked→ready). Bounded local evaluation retry of the same verified worker packet with stage-scoped `assignment_contract`; no Cursor redispatch |
 | `opencode_evaluator_termination_unverified` | Fail closed until ESRCH+lsof reconcile |
 | `opencode_evaluation_authority_denied` | Fail closed |
 | `opencode_evaluation_result_invalid` | Owner inspect receipt |
+
+### Read vs edit evaluation semantics (2026-10-23)
+
+Root cause for Mission `c8a62931-2329-4378-9b45-699d7c5bb50f`: OpenCode evaluator returned `recommendation: blocked` after a host-verified Cursor **read** of `recovery-proof.txt` because it applied the Mission objective’s later exact-byte **edit** criteria to the intermediate assignment. Dependent `change-1` never started; Mission settled `NEEDS_REWORK`.
+
+| Assignment | Host verification | OpenCode evaluation |
+|---|---|---|
+| `operation: read` | Allowed reads, termination, sandbox; **must not** require file mutations | `assignment_contract.require_file_modifications=false`; ready when host passed and fail_when absent; must not block solely for unfinished dependents |
+| `operation: edit` | Exact expected bytes / permitted paths; unauthorized changes fail | Require host-observed mutations inside assignment paths |
+
+Host verification and OpenCode evaluation are independent: passed host checks are evidence, never unconditional evaluator approval. Dependency advancement requires **both** host verification passed and a valid `ready` evaluation receipt. Never fabricate evaluation results or override a genuine `blocked` for scope/evidence failures. Stage-confused blocked on a host-verified read is classified `opencode_evaluation_stage_mismatch` / `gateway_evaluation_stage_mismatch` for bounded retry only.
 
 ## Cursor proxy / DNS boundary (2026-10-22)
 
