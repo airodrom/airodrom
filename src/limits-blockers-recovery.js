@@ -201,37 +201,77 @@ function recoverEnsureCognitiveTiming(bridge, owner, evidence) {
   };
 }
 
-function missionStandingProbe(bridge, ctx) {
+function sealedMissionIdentity(bridge, ctx) {
   const mission = ctx.mission_id ? (() => {
     try { return bridge.controlStore.requireMission(ctx.mission_id); } catch { return null; }
   })() : null;
   const env = mission?.envelope || {};
-  const cognitive = env.cognitive?.envelope || {};
-  const files = env.allowed_files || cognitive.permitted_paths || [];
-  const repository = env.workspace || env.repository_binding?.repository_root
-    || env.cognitive?.envelope?.repository_root || null;
-  const policy_id = env.developer_autonomy_policy_id || env.policy_id || null;
-  const limits = cognitive.limits || {};
+  const cognitive = env.cognitive?.envelope || env.cognitive?.sealed || {};
+  const sealed = env.cognitive?.sealed || {};
+  const files = sealed.files || env.allowed_files || cognitive.permitted_paths || cognitive.files || [];
+  const repository = env.repository_binding?.repository_root
+    || sealed.repository_root
+    || cognitive.repository_root
+    || env.developer_autonomy?.repository
+    || null;
+  // Disposable workspaces are not the enrolled repository root — never use env.workspace alone.
+  const policy_id = env.developer_autonomy_policy_id || sealed.policy_id || env.policy_id || null;
+  const limits = cognitive.limits || sealed.limits || {};
+  const data_class = env.data_class
+    || sealed.data_class
+    || cognitive.data_class
+    || env.worker_contract?.data_class
+    || env.dispatch_policy?.data_class
+    || null;
   return {
     repository,
+    workspace: typeof env.workspace === 'string' ? env.workspace : null,
     files: Array.isArray(files) ? files.slice(0, 16) : [],
     max_invocations: Number.isSafeInteger(limits.max_invocations) ? limits.max_invocations : 2,
     max_runtime_ms: Number.isSafeInteger(limits.execution_ms) ? limits.execution_ms : 120000,
-    data_class: 'public',
+    data_class: typeof data_class === 'string' && data_class ? data_class : null,
     policy_id,
+    mission_id: mission?.id || null,
   };
+}
+
+/** @deprecated use sealedMissionIdentity — kept as alias for callers/tests */
+function missionStandingProbe(bridge, ctx) {
+  return sealedMissionIdentity(bridge, ctx);
 }
 
 function recoverMatchStanding(bridge, ctx) {
   const hep = bridge.hostExecutionPolicy;
   if (!hep?.diagnoseStandingCursorDevelopment) {
-    return { operation: 'match_standing_cursor_grant', performed: false, reason: 'host_execution_policy_unavailable' };
+    return { operation: 'match_standing_cursor_grant', performed: false, matched: false, reason: 'host_execution_policy_unavailable' };
   }
   // Never invents grants. When an active matching grant already covers the Mission,
   // mark performed so admission can reuse it without a second owner prompt.
   const status = hep.status('operator');
   const active = (status.standing_cursor_development || []).filter(g => g.state === 'active');
-  const probe = missionStandingProbe(bridge, ctx);
+  const probe = sealedMissionIdentity(bridge, ctx);
+  if (!probe.data_class) {
+    return {
+      operation: 'match_standing_cursor_grant',
+      performed: false,
+      matched: false,
+      diagnosis: {
+        matched: false,
+        code: 'STANDING_CURSOR_GRANT_DATA_CLASS_MISMATCH',
+        reason: 'Authoritative Mission data_class is unavailable or ambiguous; standing grant match refuses to assume public.',
+        next_action: 'seal_mission_data_class_or_enroll_standing_cursor_for_verified_public_paths',
+        authority: false,
+      },
+      active_grants: active.length,
+      reenrollment: {
+        api: 'POST /api/assistant/host-execution-policy/enroll-standing-cursor-development',
+        docs: 'docs/STANDING-CURSOR-DEVELOPMENT-V1.md',
+        next_action: 'seal_mission_data_class_or_enroll_standing_cursor_for_verified_public_paths',
+        code: 'STANDING_CURSOR_GRANT_DATA_CLASS_MISMATCH',
+      },
+      note: 'Never invent data_class=public for standing grant matching.',
+    };
+  }
   let diagnosis = null;
   if (probe.repository && probe.files.length) {
     try {
@@ -239,6 +279,16 @@ function recoverMatchStanding(bridge, ctx) {
     } catch (error) {
       diagnosis = { matched: false, code: 'STANDING_CURSOR_GRANT_MISSING', reason: String(error.message || error).slice(0, 160) };
     }
+  } else {
+    diagnosis = {
+      matched: false,
+      code: 'STANDING_CURSOR_GRANT_MISSING',
+      reason: !probe.repository
+        ? 'No sealed repository root bound for standing Cursor grant matching.'
+        : 'No sealed permitted files bound for standing Cursor grant matching.',
+      next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+      authority: false,
+    };
   }
   const matched = diagnosis?.matched === true;
   return {
@@ -290,6 +340,11 @@ function recoverMissionCapacity(bridge, evidence) {
   };
 }
 
+function realpathOrNull(value) {
+  if (typeof value !== 'string' || !value) return null;
+  try { return require('node:fs').realpathSync(value); } catch { return null; }
+}
+
 function recoverResolveRepository(bridge, ctx, entry) {
   try {
     let catalogCount = 0;
@@ -299,23 +354,64 @@ function recoverResolveRepository(bridge, ctx, entry) {
     } catch { /* catalog optional for diagnosis */ }
     const enrolled = (bridge.developerAutonomy?.list?.('operator') || [])
       .filter(p => p.state === 'active')
-      .map(p => ({ policy_id: p.policy_id, alias: p.alias, repository: p.repository || p.source_repository || null }));
-    if (entry.id === 'enrolled_repository_ambiguous' && enrolled.length === 1) {
+      .map(p => ({
+        policy_id: p.policy_id,
+        alias: p.alias,
+        repository: p.repository || p.source_repository || null,
+        repository_root: realpathOrNull(p.repository || p.source_repository || null),
+      }));
+    const identity = sealedMissionIdentity(bridge, ctx);
+    const requestedRoot = realpathOrNull(identity.repository);
+    const operation = entry.id.includes('not_enrolled') || entry.id === 'enrolled_workspace_required'
+      ? 'prepare_enrollment_action'
+      : 'resolve_enrolled_repository';
+
+    // Never infer authority solely because only one repository happens to be enrolled.
+    if (entry.id === 'enrolled_repository_ambiguous') {
+      if (!requestedRoot) {
+        return {
+          operation,
+          performed: false,
+          reason: 'requested_repository_identity_unbound',
+          enrolled_count: enrolled.length,
+          catalog_targets: catalogCount,
+          next_safe_action: 'bind_explicit_project_or_repository_then_retry',
+          note: 'Ambiguous enrollment cannot be resolved without sealed project/repository identity.',
+        };
+      }
+      const matches = enrolled.filter(e => e.repository_root && e.repository_root === requestedRoot);
+      if (matches.length === 1) {
+        return {
+          operation,
+          performed: true,
+          selected: { policy_id: matches[0].policy_id, alias: matches[0].alias, repository: matches[0].repository_root },
+          note: 'Matched sealed request repository root to exactly one enrolled DA policy.',
+        };
+      }
       return {
-        operation: 'resolve_enrolled_repository',
-        performed: true,
-        selected: { policy_id: enrolled[0].policy_id, alias: enrolled[0].alias },
-        note: 'Unambiguous single enrolled repository selected; never cross-project fixture fallback.',
+        operation,
+        performed: false,
+        reason: matches.length === 0 ? 'no_enrolled_match_for_requested_repository' : 'multiple_enrolled_match_for_requested_repository',
+        requested_repository: requestedRoot,
+        enrolled_count: enrolled.length,
+        match_count: matches.length,
+        next_safe_action: entry.next_safe_action,
+        note: 'Single-enrolled convenience selection is forbidden without identity proof.',
       };
     }
+
     return {
-      operation: entry.id.includes('not_enrolled') ? 'prepare_enrollment_action' : 'resolve_enrolled_repository',
+      operation,
       performed: false,
       enrolled_count: enrolled.length,
       catalog_targets: catalogCount,
+      requested_repository: requestedRoot,
       enrolled: enrolled.map(e => ({ policy_id: e.policy_id, alias: e.alias })),
       next_safe_action: entry.next_safe_action,
       enrollment_api: 'scripts/prepare-development-target-enrollment.cjs + DA enroll',
+      note: operation === 'prepare_enrollment_action'
+        ? 'Enrollment preparation is diagnostic guidance only; not a completed repair.'
+        : 'Resolution requires verified project/repository identity.',
     };
   } catch (error) {
     return { operation: 'resolve_enrolled_repository', performed: false, reason: String(error.message || error).slice(0, 160) };
@@ -400,16 +496,50 @@ function recoverEvaluation(bridge, ctx) {
 }
 
 function recoverWriterDeath(bridge, ctx) {
-  try {
-    const mod = require('./writer-death-recovery');
-    if (typeof mod.reconcile === 'function' && ctx.mission_id) {
-      const result = mod.reconcile(bridge, ctx.mission_id);
-      return { operation: 'reconcile_writer_death_lease', performed: !!result?.reconciled || !!result, result: result && typeof result === 'object' ? { keys: Object.keys(result) } : !!result };
-    }
-  } catch (error) {
-    return { operation: 'reconcile_writer_death_lease', performed: false, reason: String(error.message || error).slice(0, 160) };
+  // Security-critical path: independent process proof only. Never invent
+  // writer_process_death attestation and never release leases without ESRCH+lsof.
+  if (!ctx.mission_id || !bridge?.controlStore) {
+    return {
+      operation: 'reconcile_writer_death_lease',
+      performed: false,
+      fail_closed: true,
+      reason: 'mission_required_for_termination_proof',
+    };
   }
-  return { operation: 'reconcile_writer_death_lease', performed: false, reason: 'reconcile_unavailable' };
+  try {
+    const mission = bridge.controlStore.getMission(ctx.mission_id);
+    if (!mission) {
+      return { operation: 'reconcile_writer_death_lease', performed: false, fail_closed: true, reason: 'mission_not_found' };
+    }
+    const observe = require('./writer-death-recovery').observeWriter;
+    // Prefer the proof-gated OpenCode evaluation reconciler when applicable.
+    if (typeof require('./opencode-gateway').reconcileBlockedEvaluation === 'function') {
+      const reconciled = require('./opencode-gateway').reconcileBlockedEvaluation(bridge, mission, observe);
+      if (reconciled) {
+        return {
+          operation: 'reconcile_writer_death_lease',
+          performed: true,
+          path: 'evaluation_reconcile_with_process_evidence',
+          recovery_not_execution: true,
+          accepted: false,
+        };
+      }
+    }
+    return {
+      operation: 'reconcile_writer_death_lease',
+      performed: false,
+      fail_closed: true,
+      reason: 'independent_termination_proof_unavailable',
+      note: 'Quarantined leases and unverified terminations stay fail-closed until ESRCH+lsof evidence reconciles; never treat absence of proof as safe.',
+    };
+  } catch (error) {
+    return {
+      operation: 'reconcile_writer_death_lease',
+      performed: false,
+      fail_closed: true,
+      reason: String(error.message || error).slice(0, 160),
+    };
+  }
 }
 
 /**
@@ -425,25 +555,28 @@ function planFor(entry) {
     return { operation: 'diagnose_only', executable: false, note: 'fixed_defect_use_filesystem_capacity' };
   }
   if (id === 'da_filesystem_capacity_exhausted') {
-    return { operation: 'diagnose_filesystem_capacity', executable: true, owner_gate_if_unmatched: true };
+    // Diagnosis + owner gate only — freeing volume space is never automatic.
+    return { operation: 'diagnose_filesystem_capacity', executable: false, owner_gate_if_unmatched: true };
   }
   if (id === 'concurrent_mission_budget_exhausted') {
     return { operation: 'await_mission_capacity', executable: true, verify: 'mission_capacity_free' };
   }
   if (id === 'da_repair_budget') {
-    return { operation: 'diagnose_repair_budget', executable: true, owner_gate_if_unmatched: true };
+    return { operation: 'diagnose_repair_budget', executable: false, owner_gate_if_unmatched: true };
   }
   if (id === 'source_repository_not_enrolled' || id === 'arecibo_repository_not_enrolled' || id === 'enrolled_workspace_required') {
-    return { operation: 'prepare_enrollment_action', executable: true, owner_gate_if_unmatched: true };
+    // Enrollment prep packages guidance; authenticated owner enroll remains required.
+    return { operation: 'prepare_enrollment_action', executable: false, owner_gate_if_unmatched: true };
   }
   if (id === 'enrolled_repository_ambiguous') {
-    return { operation: 'resolve_enrolled_repository', executable: true, owner_gate_if_unmatched: true };
+    return { operation: 'resolve_enrolled_repository', executable: true, owner_gate_if_unmatched: true, verify: 'repository_identity_matched' };
   }
   if (id === 'cognitive_plan_files_mismatch') {
     return { operation: 'normalize_plan_files_guidance', executable: false, note: 'planner_coerce_on_retry' };
   }
   if (id === 'cognitive_explicit_worker_syntax_required' || id === 'cognitive_ambiguous_worker') {
-    return { operation: 'normalize_cognitive_worker', executable: true, owner_gate_if_unmatched: true };
+    // Router performs deterministic role resolution; recovery only consolidates guidance.
+    return { operation: 'normalize_cognitive_worker', executable: false, owner_gate_if_unmatched: true };
   }
   if (id === 'cognitive_delegation_expired_or_revoked' || id === 'cognitive_envelope_expired') {
     return { operation: 'consolidate_owner_gate', executable: false, note: 'reauthorize_cognitive_delegation_or_envelope' };
@@ -457,17 +590,30 @@ function planFor(entry) {
   if (id === 'blocked_spend_authorization' || id === 'scoped_external_disclosure_required'
     || id === 'standing_cursor_grant_missing' || id === 'standing_cursor_grant_expired'
     || id === 'standing_cursor_grant_revoked' || id === 'standing_cursor_grant_exhausted'
-    || id === 'standing_cursor_grant_invocation_limit' || id === 'standing_cursor_grant_mismatch'
+    || id === 'standing_cursor_grant_invocation_limit'
     || id === 'cursor_execution_disabled') {
-    return { operation: 'match_standing_cursor_grant', executable: true, owner_gate_if_unmatched: true };
+    return { operation: 'match_standing_cursor_grant', executable: true, owner_gate_if_unmatched: true, verify: 'standing_grant_matched' };
+  }
+  // Generic standing mismatch is security-critical: diagnose only, never auto-match into authority.
+  if (id === 'standing_cursor_grant_mismatch') {
+    return { operation: 'security_investigate_fail_closed', executable: false };
   }
   if (id === 'worker_execution_unqualified') {
-    return { operation: 'reuse_local_evaluation_authority', executable: true, owner_gate_if_unmatched: true };
+    return { operation: 'reuse_local_evaluation_authority', executable: true, owner_gate_if_unmatched: true, verify: 'local_evaluation_authority_reused' };
   }
   if (id === 'evaluation_unavailable' || id === 'gateway_evaluation_deadline'
     || id === 'opencode_runtime_unavailable' || id === 'opencode_evaluation_timeout'
-    || id === 'opencode_evaluation_cancelled' || id === 'opencode_evaluator_termination_unverified') {
+    || id === 'opencode_evaluation_cancelled') {
     return { operation: 'reconcile_blocked_evaluation', executable: true, verify: 'evaluation_reconciled_or_terminal' };
+  }
+  // Proof-gated reconcile only; never treats unverified termination as Mission success.
+  if (id === 'opencode_evaluator_termination_unverified') {
+    return {
+      operation: 'reconcile_blocked_evaluation',
+      executable: true,
+      security_fail_closed: true,
+      verify: 'evaluation_reconciled_or_terminal',
+    };
   }
   if (id === 'opencode_evaluation_authority_denied' || id === 'opencode_runtime_unsupported'
     || id === 'opencode_evaluation_result_invalid') {
@@ -478,8 +624,18 @@ function planFor(entry) {
   if (id === 'runtime_removed' || id === 'repair_blocked' || id === 'owner_action_required') {
     return { operation: 'consolidate_owner_gate', executable: false };
   }
-  if (id === 'quarantined_lease_not_reconciled' || id === 'writer_still_alive' || id === 'termination_unverified') {
-    return { operation: 'reconcile_writer_death_lease', executable: true, security_fail_closed: true };
+  // Writer still alive: cannot release — fail closed.
+  if (id === 'writer_still_alive') {
+    return { operation: 'security_investigate_fail_closed', executable: false };
+  }
+  // Quarantined/unverified: proof-gated reconcile only (ESRCH+lsof); no invented attestation.
+  if (id === 'quarantined_lease_not_reconciled' || id === 'termination_unverified') {
+    return {
+      operation: 'reconcile_writer_death_lease',
+      executable: true,
+      security_fail_closed: true,
+      verify: 'termination_proven_or_fail_closed',
+    };
   }
   if (id === 'bridge_restart_cooldown') {
     return { operation: 'consume_bridge_restart_cooldown', executable: false, note: 'wait_cooldown' };
@@ -555,21 +711,54 @@ function executePlan(bridge, entry, plan, ctx, evidence, owner) {
 }
 
 function verifyRecovery(bridge, entry, plan, recovery, evidenceAfter) {
-  if (!plan.verify) {
-    return { verified: recovery.performed === true || recovery.fail_closed === true || recovery.performed === false, mode: 'diagnostic_complete', authority: false };
+  // Distinguish diagnosis / executable attempt / verified successful recovery.
+  // Diagnostic-only and owner-prep must never report verified=true as a completed repair.
+  if (recovery.fail_closed === true) {
+    return { verified: true, mode: 'fail_closed', authority: false, completed_repair: false };
+  }
+  if (!plan.executable) {
+    return { verified: false, mode: 'diagnosis_only', authority: false, completed_repair: false };
+  }
+  if (recovery.performed !== true) {
+    return { verified: false, mode: 'not_performed', authority: false, completed_repair: false };
   }
   if (plan.verify === 'occupied_decreased_or_slots_free') {
     const free = (evidenceAfter.developer_autonomy || []).some(p => Number.isInteger(p.worktrees_occupied) && Number.isInteger(p.worktrees_limit) && p.worktrees_occupied < p.worktrees_limit);
-    return { verified: !!recovery.performed || free, mode: plan.verify, authority: false };
+    const ok = !!recovery.performed && (recovery.before_occupied == null || recovery.after_occupied < recovery.before_occupied || free);
+    return { verified: ok, mode: plan.verify, authority: false, completed_repair: ok };
   }
   if (plan.verify === 'cognitive_execution_ms_floor') {
     const ok = (recovery.policies || []).some(p => p.after_execution_ms >= 120000);
-    return { verified: ok || !!recovery.performed, mode: plan.verify, authority: false };
+    return { verified: ok, mode: plan.verify, authority: false, completed_repair: ok };
   }
   if (plan.verify === 'mission_capacity_free') {
-    return { verified: !!recovery.performed, mode: plan.verify, authority: false };
+    return { verified: !!recovery.performed, mode: plan.verify, authority: false, completed_repair: !!recovery.performed };
   }
-  return { verified: !!recovery.performed, mode: plan.verify || 'performed', authority: false };
+  if (plan.verify === 'standing_grant_matched') {
+    const ok = recovery.matched === true && recovery.performed === true;
+    return { verified: ok, mode: plan.verify, authority: false, completed_repair: ok };
+  }
+  if (plan.verify === 'repository_identity_matched') {
+    const ok = recovery.performed === true && !!recovery.selected?.repository;
+    return { verified: ok, mode: plan.verify, authority: false, completed_repair: ok };
+  }
+  if (plan.verify === 'local_evaluation_authority_reused') {
+    return { verified: recovery.performed === true, mode: plan.verify, authority: false, completed_repair: recovery.performed === true };
+  }
+  if (plan.verify === 'evaluation_reconciled_or_terminal') {
+    const ok = !!(recovery.reconciled || recovery.recovery_scheduled || recovery.performed);
+    return { verified: ok, mode: plan.verify, authority: false, completed_repair: ok, recovery_not_execution: true };
+  }
+  if (plan.verify === 'termination_proven_or_fail_closed') {
+    const ok = recovery.performed === true && recovery.recovery_not_execution === true;
+    return { verified: ok, mode: plan.verify, authority: false, completed_repair: ok, recovery_not_execution: true };
+  }
+  return {
+    verified: recovery.performed === true,
+    mode: plan.verify || 'performed',
+    authority: false,
+    completed_repair: recovery.performed === true,
+  };
 }
 
 /**
@@ -669,7 +858,9 @@ function dispatch(bridge, {
     lineage_key: key,
     attempt,
     operation: plan.operation,
-    outcome: recovery.performed ? 'recovered' : (recovery.fail_closed ? 'fail_closed' : (owner_gate ? 'owner_gate' : 'diagnosed')),
+    outcome: (recovery.performed && verification.completed_repair) ? 'recovered'
+      : (recovery.fail_closed ? 'fail_closed'
+        : (owner_gate ? 'owner_gate' : 'diagnosed')),
     receipt,
     created_at: Date.now(),
   });
@@ -730,6 +921,9 @@ module.exports = {
   coverage,
   planFor,
   collectEvidence,
+  missionStandingProbe,
+  sealedMissionIdentity,
+  verifyRecovery,
   ALLOWLIST,
   MAX_ATTEMPTS_PER_BLOCKER,
   OPERATIONAL_OWNER_CANONICAL,

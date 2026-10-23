@@ -4,9 +4,9 @@
   "title": "Airodrom Limits & Blockers Registry",
   "description": "Source-grounded registry of operational limits, execution blockers, authorization gates, and recovery procedures. Live diagnostics combine these definitions with authoritative host state. Error messages never authorize recovery.",
   "categories": {
-    "operational_auto": "Operational — automatically recoverable when an existing host-authorized operation and required evidence are present.",
-    "operational_owner": "Operational — owner action required; Airodrom must not invent grants, enrollments, or spend.",
-    "security_critical": "Security-critical — always fail closed; never auto-recover from the message alone."
+    "operational_auto": "Operational \u2014 automatically recoverable when an existing host-authorized operation and required evidence are present.",
+    "operational_owner": "Operational \u2014 owner action required; Airodrom must not invent grants, enrollments, or spend.",
+    "security_critical": "Security-critical \u2014 always fail closed; never auto-recover from the message alone."
   },
   "discovery": {
     "method": "manual_audit_plus_code_literal_validation",
@@ -1132,12 +1132,12 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "match_standing_cursor_grant",
-        "executable": true,
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
         "allowlisted": true,
-        "verification": "diagnostic_complete",
-        "note": null,
-        "owner_gate_if_needed": true,
+        "verification": "fail_closed",
+        "note": "Generic standing grant mismatch never auto-matches into authority.",
+        "owner_gate_if_needed": false,
         "security_fail_closed": true
       }
     },
@@ -2417,11 +2417,11 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "reconcile_writer_death_lease",
-        "executable": true,
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
         "allowlisted": true,
-        "verification": "diagnostic_complete",
-        "note": null,
+        "verification": "fail_closed",
+        "note": "Alive writers never auto-release quarantined leases.",
         "owner_gate_if_needed": false,
         "security_fail_closed": true
       }

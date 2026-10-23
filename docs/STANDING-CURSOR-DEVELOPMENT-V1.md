@@ -102,7 +102,9 @@ Automatic diagnosis and standing-grant **match** run through
 [`src/limits-blockers-recovery.js`](../src/limits-blockers-recovery.js) for
 `blocked_spend_authorization`, `scoped_external_disclosure_required`, and
 `standing_cursor_grant_*` codes. Matching never fabricates approval, raises
-spend, restores a revoked grant, or extends expiry. Permanent runbook:
+spend, restores a revoked grant, or extends expiry. Probes require an
+authoritative sealed Mission `data_class` (never invent `public`) and a sealed
+repository root (never “only enrolled” inference). Permanent runbook:
 [operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md).
 
 | Condition | Action |

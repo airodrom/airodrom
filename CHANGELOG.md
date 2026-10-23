@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Operational auto-recovery no longer invents `data_class: public` for standing Cursor matching, never selects a repository solely because it is the only enrolled DA, and no longer reports diagnostic/enrollment-prep as completed repair; security-critical standing mismatch and alive-writer paths stay fail-closed; recovery attempt receipts classify `cp_limits_blocker_recovery_attempts` for identity migration ([docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md)).
+
 ### Added
 - Operational Owner Auto-Recovery V1: all 27 canonical operational blockers get automatic diagnosis, allowlisted corrective action when authorized, bounded idempotent retry, Mission continuation, durable receipts, and consolidated owner-action fallback; permanent runbook at [docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](docs/operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md); standing Cursor grants remain durable across restart/upgrade without fabricating approval ([docs/STANDING-CURSOR-DEVELOPMENT-V1.md](docs/STANDING-CURSOR-DEVELOPMENT-V1.md), [docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
 

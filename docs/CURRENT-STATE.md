@@ -3,11 +3,12 @@
 ## Operational Owner Auto-Recovery V1 — SOURCE (2026-10-22)
 
 - **Goal:** Eliminate repeated owner intervention for routine authorized development across the 27 canonical operational blockers while keeping all security-critical categories fail-closed.
-- **Dispatcher:** `src/limits-blockers-recovery.js` covers `canonical_operational_owner` (27/27 auto-diagnosis; 20 with executable host recovery; 7 consolidate to an exact owner gate when authority is required). Registry categories may mark capacity items `operational_auto` when reclaim/await is safe.
-- **Standing Cursor:** Active `cp_standing_cursor_development` rows in `~/.airodrom/data/` persist across restart and managed install upgrades; recovery **matches** covering grants and surfaces re-enrollment paths for missing/expired/revoked/exhausted — never fabricates approval, raises spend, or restores revoked grants.
+- **Dispatcher:** `src/limits-blockers-recovery.js` covers `canonical_operational_owner` (27/27 auto-diagnosis). Executable recovery is truthfully fewer than diagnosis (identity-matched repo resolve, standing grant match, capacity await, timing floor, local eval reuse, proof-gated eval/lease reconcile). Diagnosis/enrollment-prep never set `verification.completed_repair`.
+- **Mandatory hardening:** sealed repository identity required (no “only enrolled” guess); standing probes require authoritative Mission `data_class` (never invent `public`); security-critical mismatch/alive-writer fail closed; proof-gated reconcile for unverified termination/quarantine only with ESRCH+lsof.
+- **Standing Cursor:** Active `cp_standing_cursor_development` rows in `~/.airodrom/data/` persist across restart and managed install upgrades; recovery **matches** covering grants and surfaces re-enrollment paths for missing/expired/revoked/exhausted — never fabricates approval, raises spend, or restores revoked grants. Live host currently has active grants for `airodrom-da-main` and `arecibo-core-autopilot-main` (fixture handoff grant separate).
 - **Chain:** ChatGPT → Airodrom → OpenCode planner → Cursor → host verification → OpenCode evaluator → dependents. Evaluation locks before readiness awaits; no duplicate Cursor dispatch for eval recovery.
 - **Runbook:** [operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md).
-- **Not claimed:** live acceptance, Production mutation, automatic DA/standing enrollment without authenticated owner confirm, or security-critical bypass.
+- **Not claimed:** live acceptance until post-merge managed install; Production mutation; automatic DA/standing enrollment without authenticated owner confirm; security-critical bypass.
 
 ## OpenCode evaluation recovery after verified Cursor work — SOURCE (2026-10-22)
 

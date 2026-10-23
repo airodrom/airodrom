@@ -8,9 +8,9 @@
 
 ## Autonomous blocker recovery (2026-10-22)
 
-- Universal automatic **diagnosis** for all registry entries and all 27 canonical operational blockers; executable recovery only for allowlisted host ops with evidence (20 of 27). Seven blockers (`cognitive_delegation_expired_or_revoked`, `cognitive_assignment_limit`, `cognitive_envelope_expired`, `gateway_assignment_budget_exhausted`, `runtime_removed`, `repair_blocked`, `owner_action_required`) diagnose then consolidate to an exact owner gate — no silent authorization.
+- Universal automatic **diagnosis** for all registry entries and all 27 canonical operational blockers. Executable recovery is a smaller truthful set (capacity await, identity-matched repo resolve, standing grant match, timing floor, local eval reuse, proof-gated eval/lease reconcile). Diagnosis and enrollment prep never set `verification.completed_repair`.
 - Owner-only gates (enrollment, standing grant create/renew, disk free space, disclosure, enable Cursor) still require authenticated owner confirm. See [operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md).
-- Security-critical blockers investigate and fail closed — never auto-grant access or fabricate verification.
+- Security-critical blockers investigate and fail closed — never auto-grant access, invent `data_class=public`, select “only enrolled” repositories without sealed identity, or release leases without ESRCH+lsof proof.
 - Recovery attempt budget is 2 per Mission/request lineage; exhausted budget consolidates to owner inspect.
 
 ## Cursor proxy DNS / subscription deadline (2026-10-22)
