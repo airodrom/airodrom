@@ -1,10 +1,13 @@
 # Known limitations
 
-## OpenCode evaluation after Cursor (2026-10-22)
+## OpenCode evaluation after Cursor (2026-10-23)
 
+- Intermediate **read** evaluation must use stage-scoped `assignment_contract`; Mission-level edit/exact-byte text is context only. Stage-confused `blocked` fails closed as `opencode_evaluation_stage_mismatch` and may locally retry; it never fabricates `ready` or unlocks dependents.
+- Host verification passed is evidence for the evaluator, not unconditional approval. Genuine scope/authorization/evidence `blocked` stays terminal for that assignment.
 - Uncertain evaluator termination stays fail-closed until host process evidence reconciles; missing heartbeat is never treated as termination.
 - Evaluation recovery never starts a second paid Cursor invocation; it only re-evaluates an already host-verified worker packet within the local retry budget.
 - Persistent OpenCode pin/version unsupported states still require owner requalification.
+- Live ChatGPT-origin multi-task acceptance (read → evaluate → dependent edit → final verify/evaluate/settle) remains a post-install external gate when Cursor cannot initiate ChatGPT submission from this session.
 
 ## Autonomous blocker recovery (2026-10-22)
 

@@ -10,6 +10,12 @@
 - **Runbook:** [operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md).
 - **Not claimed:** live acceptance until post-merge managed install; Production mutation; automatic DA/standing enrollment without authenticated owner confirm; security-critical bypass.
 
+## OpenCode read-stage evaluation semantics — SOURCE (2026-10-23)
+
+- **Cause (Mission `c8a62931-2329-4378-9b45-699d7c5bb50f` / Cursor `ff3b8583-…` / evaluator `bac0fc8f-…`):** OpenCode planning succeeded; standing Cursor grant matched; Cursor read `recovery-proof.txt` (`PENDING`) and terminated; host verification passed; OpenCode evaluator returned `recommendation: blocked` because it judged Mission-level exact-byte **edit** criteria against the intermediate **read**. Dependent `change-1` never started; Mission settled `NEEDS_REWORK`; repair attempts 0; no duplicate Cursor dispatch; leases released.
+- **Repair:** Stage-scoped `assignment_contract` leads the evaluator objective (`src/opencode-gateway.js`); read assignments forbid requiring mutations; stage-confused blocked → `gateway_evaluation_stage_mismatch` / `opencode_evaluation_stage_mismatch` (never blocked→ready); bounded local evaluation retry of the same verified worker packet; deferred retry timers tolerate store shutdown. Dependency unlock still requires host verification **and** a valid ready receipt.
+- Historical Mission remains immutable; fresh ChatGPT-origin multi-task acceptance is the post-install gate.
+
 ## OpenCode evaluation recovery after verified Cursor work — SOURCE (2026-10-22)
 
 - **Cause (Mission `935215c3-…` / Cursor run `29d0e0b9-…`):** Host-verified README read completed; first OpenCode evaluator never started (`opencode_unavailable_or_unsupported`). Concurrent `recover`/`tick`/`defer` retries raced after the readiness await (lock taken too late), aborted the in-flight evaluator (`854b3dc2…`, pid observed then `termination_unverified`), and blocked the dependent edit. Notification `c2089189-…` delivered via inbox.

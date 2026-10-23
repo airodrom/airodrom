@@ -46,7 +46,7 @@ prep never count as completed repair.
 | `cognitive_assignment_limit` | yes | no | — | Wait / raise budget |
 | `cognitive_envelope_expired` | yes | no | — | Fresh envelope |
 | `worker_execution_unqualified` | yes | yes | local eval authority reused | Qualify Cursor |
-| `evaluation_unavailable` | yes | yes | reconcile / scheduled retry | Inspect OpenCode |
+| `evaluation_unavailable` | yes | yes | reconcile / scheduled retry (incl. `opencode_evaluation_stage_mismatch` for host-verified read judged against later edit criteria; never blocked→ready; no Cursor redispatch) | Inspect OpenCode / assignment_contract |
 | `gateway_assignment_budget_exhausted` | yes | no | — | Wait / owner budget |
 | `runtime_removed` | yes | no | — | Restore runtime |
 | `repair_blocked` | yes | no | — | Inspect repair blockers |

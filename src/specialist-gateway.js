@@ -226,8 +226,15 @@ function deferEvaluationRetry(service, m) {
   const waits = readinessWaits.get(m.id) || 0;
   if (waits >= 15) return false;
   readinessWaits.set(m.id, waits + 1);
+  const missionId = m.id;
   setTimeout(() => {
-    retryPreStartEvaluation(service, service.store.getMission(m.id)).catch(() => {});
+    // Shutdown / fixture teardown may close the store before this timer fires.
+    // Keep the miss synchronous-safe; never throw out of the timer.
+    try {
+      const current = service.store.getMission(missionId);
+      if (!current) return;
+      retryPreStartEvaluation(service, current).catch(() => {});
+    } catch { /* closed store or missing mission */ }
   }, 2000);
   return false;
 }
@@ -465,7 +472,7 @@ async function processResult(service,row) {
       if(['running','verifying','awaiting_acceptance'].includes(current.state))store.state(m.id,'blocked','EVALUATION_UNAVAILABLE: '+detail);
       // Local OpenCode (and Cursor→OpenCode) evaluator never-started misses are
       // retryable once host verification already passed. Do not wait for reboot.
-      if (verification?.status === 'passed' && /opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout/.test(detail)) {
+      if (verification?.status === 'passed' && /opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout|opencode_evaluation_stage_mismatch|gateway_evaluation_stage_mismatch/.test(detail)) {
         deferEvaluationRetry(service, store.requireMission(m.id));
       }
     }
