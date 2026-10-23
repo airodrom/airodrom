@@ -467,14 +467,28 @@ test('authorization replay reuses one workspace and grant; unrelated Mission reu
   assert.ok(routine(da, policy).grant.grant_id);
 });
 
-test('disk budget rejects clone preparation before allocating a new workspace', async t => {
+test('legacy max_disk_mb is not an aggregate admission ceiling; retained files are preserved', async t => {
   const f = await setup(t), da = f.bridge.developerAutonomy;
+  // Signed policies may still carry a small max_disk_mb for compatibility.
   const policy = da.enroll({...f.enrollInput, budgets:{...f.enrollInput.budgets,max_disk_mb:64}}, 'operator');
   const trees = path.join(da.dataRoot(f.repo), 'worktrees'), canary = path.join(trees, 'retained-large-file');
+  fs.mkdirSync(trees, { recursive: true, mode: 0o700 });
   const fd = fs.openSync(canary, 'wx'); fs.ftruncateSync(fd, 65*1024*1024); fs.closeSync(fd);
-  assert.throws(() => routine(da, policy), /disk budget/);
+  // Untracked retained content must never be deleted to create capacity, and must
+  // not fail preparation merely because it exceeds the legacy max_disk_mb field.
+  const prepared = routine(da, policy);
+  assert.ok(prepared.grant?.grant_id);
   assert.ok(fs.existsSync(canary));
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_developer_autonomy_workspaces').get().n,0);
+  assert.ok(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_developer_autonomy_workspaces').get().n >= 1);
+  // Genuine capacity failures remain distinguishable from the legacy budget error.
+  assert.throws(
+    () => da.assertPreparationCapacity(policy, Number.MAX_SAFE_INTEGER),
+    /Insufficient filesystem free space|Filesystem capacity is unavailable/
+  );
+  assert.doesNotMatch(
+    (() => { try { da.assertPreparationCapacity(policy, Number.MAX_SAFE_INTEGER); return ''; } catch (e) { return String(e.message); } })(),
+    /disk budget exhausted/i
+  );
 });
 
 test('ordinary owner request uses enrollment; MCP remains a proposal', async t => {
@@ -640,7 +654,7 @@ test('idle held unique evidence does not exhaust the concurrent worktree budget'
   assert.equal(da.occupiedWorktrees(policy.policy_id), 1);
 });
 
-test('idle ready clones without grants do not exhaust disposable disk budget', async t => {
+test('idle ready clones without grants do not block filesystem-capacity preparation', async t => {
   const f = await setup(t), da = f.bridge.developerAutonomy;
   const policy = da.enroll({
     ...f.enrollInput,
@@ -656,18 +670,10 @@ test('idle ready clones without grants do not exhaust disposable disk budget', a
   assert.equal(da.workspaceOccupiesDiskBudget(
     f.bridge.controlStore.db.prepare('SELECT * FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').get(ready.workspace_id)
   ), false);
-  // Untracked bulk under the worktree root still charges disposable capacity.
+  // Untracked retained files are preserved and are not a legacy max_disk_mb gate.
   const trees = path.join(da.dataRoot(f.repo), 'worktrees');
   const canary = path.join(trees, 'retained-large-file');
   const fd = fs.openSync(canary, 'wx'); fs.ftruncateSync(fd, 65 * 1024 * 1024); fs.closeSync(fd);
-  assert.throws(() => da.prepareWorkspace({
-    policy_id: policy.policy_id,
-    request_id: randomUUID(),
-    prefer_disposable: true
-  }, 'operator'), /disk budget/);
-  fs.unlinkSync(canary);
-  // After removing the untracked charge, a second prepare may proceed on disk
-  // even while the prior ready clone remains (worktree slots still apply).
   const next = da.prepareWorkspace({
     policy_id: policy.policy_id,
     request_id: randomUUID(),
@@ -675,6 +681,7 @@ test('idle ready clones without grants do not exhaust disposable disk budget', a
   }, 'operator');
   assert.equal(next.state, 'ready');
   assert.notEqual(next.workspace_id, ready.workspace_id);
+  assert.ok(fs.existsSync(canary));
 });
 
 test('explicitly named enrolled requests retain the full instruction beyond the plan display limit', async t => {

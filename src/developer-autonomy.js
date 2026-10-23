@@ -27,8 +27,13 @@ const DEFAULT_BUDGETS = Object.freeze({
   max_files: 8,
   max_worktrees: 4,
   max_runtime_hours: 4,
+  // Retained for signed-policy shape compatibility only. Not an admission ceiling.
   max_disk_mb: 2048
 });
+// Protect a floor of free space on the volume used for disposable clones.
+// Not an aggregate DA policy budget; never substitute another fixed GB ceiling.
+const FREE_SPACE_RESERVE_BYTES = 5 * 1024 * 1024 * 1024;
+const FREE_SPACE_RESERVE_RATIO = 0.05;
 const ALIAS = v => {
   if (typeof v !== 'string' || !/^[a-z][a-z0-9_-]{0,79}$/.test(v)) throw Error('Exact policy alias required');
   return v;
@@ -155,7 +160,7 @@ function diskBytes(root, ceiling = Infinity) {
     const st = fs.lstatSync(name);
     if (++entries > 200000) throw Error('Workspace disk inventory exceeds bounded inspection');
     bytes += st.size;
-    if (bytes > ceiling) throw Error('Developer Autonomy disk budget exhausted');
+    if (bytes > ceiling) throw Error('Workspace disk inventory exceeds bounded inspection');
     if (st.isDirectory() && !st.isSymbolicLink()) {
       for (const child of fs.readdirSync(name)) {
         walk(path.join(name, child));
@@ -164,6 +169,35 @@ function diskBytes(root, ceiling = Infinity) {
   }
   walk(root);
   return bytes;
+}
+
+function filesystemCapacity(root) {
+  const target = fs.existsSync(root) ? root : path.dirname(root);
+  const st = typeof fs.statfsSync === 'function'
+    ? fs.statfsSync(target)
+    : null;
+  if (!st || !Number.isFinite(st.bavail) || !Number.isFinite(st.blocks) || !Number.isFinite(st.bsize)) {
+    throw Error('Filesystem capacity is unavailable for Developer Autonomy workspace preparation');
+  }
+  const block = Number(st.bsize);
+  const free = Number(st.bavail) * block;
+  const total = Number(st.blocks) * block;
+  const reserve = Math.max(FREE_SPACE_RESERVE_BYTES, Math.floor(total * FREE_SPACE_RESERVE_RATIO));
+  return {
+    free_bytes: free,
+    total_bytes: total,
+    reserve_bytes: reserve,
+    available_bytes: Math.max(0, free - reserve),
+  };
+}
+
+function estimateTreeBytes(root, limit = 512 * 1024 * 1024) {
+  if (!fs.existsSync(root)) return 0;
+  try { return diskBytes(root, limit + 1); }
+  catch (error) {
+    if (/exceeds bounded inspection/i.test(String(error.message || error))) return limit + 1;
+    throw error;
+  }
 }
 
 class DeveloperAutonomy {
@@ -343,38 +377,46 @@ class DeveloperAutonomy {
     }
   }
 
-  assertDiskBudget(policy, additional = 0) {
-    const ceiling = policy.budgets.max_disk_mb * 1024 * 1024;
-    // Charge active/uncertain registered worktrees and untracked leftovers under
-    // the policy worktree root. Idle ready clones without a grant and settled
-    // evidence clones may remain on disk without consuming disposable capacity.
-    // External package stores are never copied in. Worktree *slot* limits use
-    // workspaceOccupiesBudget separately and still count unbound ready clones.
+  /**
+   * Admission uses real filesystem free space minus a protected reserve.
+   * policy.budgets.max_disk_mb remains on signed records for compatibility and
+   * is never treated as an aggregate clone/history/node_modules ceiling.
+   * Existing worktrees are never deleted here to create capacity.
+   */
+  assertPreparationCapacity(policy, neededBytes = 0, { label = 'workspace preparation' } = {}) {
+    const need = Math.max(0, Number(neededBytes) || 0);
     const root = path.join(this.dataRoot(policy.repository), 'worktrees');
-    const byPath = new Map(this.db.prepare("SELECT * FROM cp_developer_autonomy_workspaces WHERE policy_id=?")
-      .all(policy.policy_id).map(row => [row.path, row]));
-    let used = 0;
-    const charge = (target) => {
-      try {
-        if (fs.existsSync(target)) used += diskBytes(target, Math.max(1, ceiling - used + 1));
-      } catch (error) {
-        if (/disk budget exhausted/i.test(error.message)) throw error;
-        throw error;
-      }
-    };
-    if (fs.existsSync(root)) {
-      for (const name of fs.readdirSync(root)) {
-        const target = path.join(root, name);
-        const row = byPath.get(target);
-        if (row) {
-          if (this.workspaceOccupiesDiskBudget(row)) charge(target);
-          continue;
-        }
-        charge(target);
-      }
+    privateDirectory(path.dirname(root));
+    privateDirectory(root);
+    const cap = filesystemCapacity(root);
+    if (need > cap.available_bytes) {
+      const needMb = Math.ceil(need / (1024 * 1024));
+      const availMb = Math.floor(cap.available_bytes / (1024 * 1024));
+      const freeMb = Math.floor(cap.free_bytes / (1024 * 1024));
+      const reserveMb = Math.ceil(cap.reserve_bytes / (1024 * 1024));
+      throw Error(
+        `Insufficient filesystem free space for Developer Autonomy ${label} `
+        + `(need ${needMb} MB, available ${availMb} MB after ${reserveMb} MB reserve; `
+        + `volume free ${freeMb} MB). This is not a legacy max_disk_mb policy budget. `
+        + 'Existing worktrees were preserved.'
+      );
     }
-    if (used + additional > ceiling) throw Error('Developer Autonomy disk budget exhausted');
-    return used;
+    return cap.available_bytes;
+  }
+
+  // Compatibility alias used by older call sites and tests documentation.
+  // Does not enforce policy max_disk_mb.
+  assertDiskBudget(policy, additional = 0) {
+    return this.assertPreparationCapacity(policy, additional);
+  }
+
+  preparationEstimate(policy) {
+    // Hardlinked local clones share Git objects; charge only a small metadata
+    // cushion plus the enrolled node_modules tree if it must be materialized.
+    const modules = path.join(policy.repository, 'node_modules');
+    const moduleBytes = estimateTreeBytes(modules, 8 * 1024 * 1024 * 1024);
+    const metadata = 64 * 1024 * 1024;
+    return metadata + Math.max(0, moduleBytes);
   }
 
   grantMissions(grantId) {
@@ -550,7 +592,7 @@ class DeveloperAutonomy {
       if (AUXILIARY_TEST.test(change.path)) this.assertAuxiliaryText(policy, change.path, String(change.content ?? ''));
       growth += Math.max(0, Buffer.byteLength(change.content || '') - fs.statSync(name).size);
     }
-    this.assertDiskBudget(policy, growth);
+    this.assertPreparationCapacity(policy, growth, { label: 'worker output application' });
   }
 
   // --- Standing policy -------------------------------------------------------
@@ -635,6 +677,9 @@ class DeveloperAutonomy {
       || budgets.grant_ttl_minutes > 1440 || budgets.max_files < 1 || budgets.max_files > 16
       || budgets.max_worktrees < 1 || budgets.max_worktrees > 8 || budgets.max_runtime_hours < 1
       || budgets.max_runtime_hours > 24 || budgets.max_disk_mb < 64 || budgets.max_disk_mb > 8192) {
+      // max_disk_mb remains a signed-record field (64–8192) for compatibility with
+      // existing policies. It is not an aggregate admission ceiling for clones,
+      // Git history, or node_modules; preparation uses filesystem free space.
       throw Error('Budget outside Developer Autonomy V1 ceilings');
     }
 
@@ -880,10 +925,9 @@ class DeveloperAutonomy {
       return { prior: ws };
     }
     this.reclaimIdleReadyWorkspaces(policy, owner);
-    this.assertDiskBudget(policy);
-    const objectRoot = fs.realpathSync(path.resolve(policy.repository, git(policy.repository, ['rev-parse', '--git-path', 'objects'])));
-    const tracked = git(policy.repository, ['ls-tree', '-rl', 'HEAD']).split('\n').reduce((sum, line) => sum + (Number(line.split(/\s+/)[3]) || 0), 0);
-    this.assertDiskBudget(policy, tracked + diskBytes(objectRoot) + 1024 * 1024);
+    // Do not charge Git history or retained clones against a fixed max_disk_mb.
+    // Admission is filesystem free space after reserve; existing trees stay put.
+    this.assertPreparationCapacity(policy, this.preparationEstimate(policy), { label: 'workspace preparation' });
     if (this.occupiedWorktrees(policy.policy_id) >= policy.budgets.max_worktrees) throw Error('Worktree budget exhausted');
 
     const dirty = workspaceDirty(policy.repository);
@@ -935,7 +979,7 @@ class DeveloperAutonomy {
     this.bridge.controlStore.event('developer_autonomy.workspace_prepared', null, {
       workspace_id: workspaceId, policy_id: policy.policy_id, path: workPath, disposable, reason, authority: false
     });
-    this.assertDiskBudget(policy);
+    this.assertPreparationCapacity(policy, 0, { label: 'workspace finalization' });
     return { ...record, state: 'ready', authority: false };
   }
 
@@ -946,8 +990,9 @@ class DeveloperAutonomy {
     // Use a local clone (not `git worktree add`). Linked worktrees point `.git` into
     // the source object's worktrees metadata, which capability sandboxing rejects.
     // A local clone stays a self-contained repository root and never mutates dirty
-    // files in the enrolled checkout.
-    const clone = safeGit(policy.repository, ['clone', '--local', '--no-hardlinks', policy.repository, workPath]);
+    // files in the enrolled checkout. Hardlinks share immutable Git objects on the
+    // same volume so large histories are not duplicated into the DA disk budget.
+    const clone = safeGit(policy.repository, ['clone', '--local', policy.repository, workPath]);
     if (!clone.ok) {
       throw Error((forceDisposable || dirty.length
         ? 'Unable to prepare disposable workspace while preserving dirty work: '
@@ -955,16 +1000,13 @@ class DeveloperAutonomy {
     }
     directoryIdentity(workPath, true);
     // Materialize enrolled JS/TS dependencies into the disposable clone. Symlinks
-    // do not grant Seatbelt read access to an external tree; clone/copy keeps
+    // do not grant Seatbelt read access to an external tree; clonefile/copy keeps
     // modules inside the mission filesystem read root without network install.
-    // Materialized dependencies consume the same workspace disk budget.
-    // Refuse oversized/escaping dependency trees before they are copied.
+    // Capacity is filesystem free space after reserve — not policy max_disk_mb.
     try {
-      const availableBytes = policy.budgets.max_disk_mb * 1024 * 1024
-        - this.assertDiskBudget(policy) - 1024 * 1024;
-      if (availableBytes <= 0) throw Error('Developer Autonomy disk budget exhausted');
+      const availableBytes = this.assertPreparationCapacity(policy, 0, { label: 'dependency materialization' });
       require('./js-verification-runtime').materializeNodeModules(policy.repository, workPath, { maxBytes: availableBytes });
-      this.assertDiskBudget(policy);
+      this.assertPreparationCapacity(policy, 0, { label: 'dependency materialization' });
     } catch (error) {
       // Only this freshly created, unregistered disposable clone is removed.
       fs.rmSync(workPath, { recursive: true, force: true });
@@ -988,7 +1030,7 @@ class DeveloperAutonomy {
     const prelude = this.#workspacePreparePrelude(input, owner);
     if (prelude.prior) return prelude.prior;
     const { policy, dirty, forceDisposable, branch, workPath } = prelude;
-    const clone = await safeGitAsync(policy.repository, ['clone', '--local', '--no-hardlinks', policy.repository, workPath], { timeout: 300000 });
+    const clone = await safeGitAsync(policy.repository, ['clone', '--local', policy.repository, workPath], { timeout: 300000 });
     if (!clone.ok) {
       throw Error((forceDisposable || dirty.length
         ? 'Unable to prepare disposable workspace while preserving dirty work: '
@@ -996,11 +1038,9 @@ class DeveloperAutonomy {
     }
     directoryIdentity(workPath, true);
     try {
-      const availableBytes = policy.budgets.max_disk_mb * 1024 * 1024
-        - this.assertDiskBudget(policy) - 1024 * 1024;
-      if (availableBytes <= 0) throw Error('Developer Autonomy disk budget exhausted');
+      const availableBytes = this.assertPreparationCapacity(policy, 0, { label: 'dependency materialization' });
       await require('./js-verification-runtime').materializeNodeModulesAsync(policy.repository, workPath, { maxBytes: availableBytes });
-      this.assertDiskBudget(policy);
+      this.assertPreparationCapacity(policy, 0, { label: 'dependency materialization' });
     } catch (error) {
       fs.rmSync(workPath, { recursive: true, force: true });
       throw error;
@@ -1196,7 +1236,7 @@ class DeveloperAutonomy {
     }
     for (const f of input.allowed_files) writableFile(workspace, f);
     this.assertVerifiers(policy, workspace, input.allowed_files);
-    this.assertDiskBudget(policy);
+    this.assertPreparationCapacity(policy, 0, { label: 'grant issuance' });
 
     const diffCheck = input.diff_check || policy.verification_defaults.diff_check;
     const tests = input.tests || policy.verification_defaults.tests;
@@ -1363,7 +1403,7 @@ class DeveloperAutonomy {
     const workspace = g.scope.workspace;
     if (g.workspace_id) this.assertWorkspace(this.inspectWorkspace(g.workspace_id));
     this.assertVerifiers(policy, workspace, g.scope.allowed_files);
-    this.assertDiskBudget(policy);
+    this.assertPreparationCapacity(policy, 0, { label: 'grant scope' });
     for (const f of g.scope.allowed_files) writableFile(workspace, f);
     return {
       project_id: g.project_id,

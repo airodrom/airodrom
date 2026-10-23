@@ -145,7 +145,7 @@ test('workspace links to private repository paths are not copied into the dispos
 
 test('dependency disk budget rejects oversized trees before copying', t => {
   const f = fixture(t);
-  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 64 }), /disk budget exhausted/);
+  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 64 }), /Insufficient filesystem free space|disk budget exhausted/);
   assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
 });
 
@@ -165,7 +165,7 @@ test('repository-local symlink targets count toward the dependency disk budget',
   fs.mkdirSync(path.join(f.source, 'packages'));
   fs.writeFileSync(path.join(f.source, 'packages', 'blob.js'), 'x'.repeat(180));
   fs.symlinkSync('../packages/blob.js', path.join(f.source, 'node_modules', 'blob.js'));
-  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 80 }), /disk budget exhausted/);
+  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 80 }), /Insufficient filesystem free space|disk budget exhausted/);
   assert.equal(fs.existsSync(path.join(f.work, 'node_modules')), false);
 });
 
@@ -174,7 +174,7 @@ test('a directory link outside node_modules cannot hide its reachable bytes', t 
   fs.mkdirSync(path.join(f.source, 'packages', 'pkg'), { recursive: true });
   fs.writeFileSync(path.join(f.source, 'packages', 'pkg', 'index.js'), 'y'.repeat(300));
   fs.symlinkSync('../packages/pkg', path.join(f.source, 'node_modules', 'pkg'));
-  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 120 }), /disk budget exhausted/);
+  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 120 }), /Insufficient filesystem free space|disk budget exhausted/);
 });
 
 test('duplicate links to one inode are counted once and hard-link bytes are counted', t => {
@@ -191,7 +191,7 @@ test('duplicate links to one inode are counted once and hard-link bytes are coun
   fs.rmSync(path.join(f.source, 'node_modules', 'a.js'));
   fs.rmSync(path.join(f.source, 'node_modules', 'b.js'));
   fs.linkSync(path.join(body, 'once.js'), path.join(f.source, 'node_modules', 'hard.js'));
-  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 40 }), /disk budget exhausted/);
+  assert.throws(() => materializeNodeModules(f.source, f.work, { maxBytes: 40 }), /Insufficient filesystem free space|disk budget exhausted/);
 });
 
 test('cyclic, dangling, and outside-return symlink chains fail closed', t => {

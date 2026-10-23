@@ -47,7 +47,11 @@ Grants bind one initial Mission and its bounded corrective lineage. Repairs reta
 - Pin canonical container/workspace directory identities; reject symlinks and replacement directories
 - Cleanup requires settled Mission lineage, verified run termination, no active/uncertain dispatches or leases, and no dirty, ignored or unique committed content; otherwise HOLD
 - Revoked or expired unused grants do not prevent cleanup of a proven clean, idle clone
-- Disk limits are checked before cloning, grant/dispatch/Acceptance boundaries, and before applying worker output. The bound includes retained clones and ignored files. This is a host admission/application bound, not an operating-system filesystem quota; external filesystem growth is detected at the next boundary.
+- **Disk admission** uses real filesystem free space on the disposable-worktree volume minus a protected reserve (minimum 5 GiB or 5% of the volume, whichever is larger). It is checked before cloning, during dependency materialization, at grant/dispatch/Acceptance boundaries, and before applying worker output.
+- `budgets.max_disk_mb` remains on signed policy records for compatibility with existing enrollments. It is **not** an aggregate admission ceiling for Git history, retained clones, or `node_modules`. Do not reintroduce a fixed multi-GB DA “disk budget” that blocks large legitimate repositories when the volume still has free space.
+- Local clones prefer hardlinked Git objects (`git clone --local`) so object stores are not duplicated. Dependency materialization uses clonefile/copy into the disposable tree (Seatbelt cannot follow external symlinks).
+- Existing worktrees and unique/uncommitted content are never deleted solely to create capacity. Failures from genuine insufficient free space use an explicit filesystem-capacity error — never the legacy “disk budget exhausted” aggregate message.
+- Concurrent `max_worktrees` slot limits remain separate from filesystem capacity.
 
 Mission history and evidence remain in the control plane.
 
