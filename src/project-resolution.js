@@ -209,9 +209,21 @@ function findEnrolledTarget(target, projects, { activeRepositories = new Set() }
       choices: [],
     };
   }
-  // Prefer active DA repositories when present.
+  // Authoritative product work requires an active DA policy on the matched root.
+  // A registered project alone never authorizes Cursor/OpenCode execution.
   const enrolled = hits.filter(h => activeRepositories.has(h.workspace));
-  let pool = enrolled.length ? enrolled : hits;
+  if (!enrolled.length) {
+    return {
+      ok: false,
+      clarify: true,
+      code: target.not_enrolled_code || 'SOURCE_REPOSITORY_NOT_ENROLLED',
+      target_id: target.id,
+      repository_id: target.repository_id,
+      message: `${target.display_name} project is registered, but there is no active Developer Autonomy policy for ${target.repository_id}. Fixture/handoff grants from other projects never authorize this repository. Enroll from Control Center → Developer Autonomy (include Cursor on the worker allowlist), then retry.`,
+      choices: hits.map(h => ({ project_name: h.project.name, workspace_label: h.workspace })),
+    };
+  }
+  let pool = enrolled;
   if (target.preferred_basename) {
     const preferred = pool.filter(h => path.basename(h.workspace) === target.preferred_basename);
     if (preferred.length) pool = preferred;
