@@ -45,7 +45,7 @@ function loadSource(file, mocks, globals = {}) {
   new vm.Script(fs.readFileSync(filename, 'utf8'), { filename }).runInContext(context);
   return module.exports;
 }
-function fixture(t) {
+function fixture(t, { specialistInput = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ad-spend-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const db = new DatabaseSync(':memory:');
@@ -101,6 +101,7 @@ function fixture(t) {
         return child;
       }
       io.spawns++;
+      io.deliveredObjective = JSON.parse(fs.readFileSync(path.join(path.dirname(options.cwd), 'brief/mission.json'), 'utf8')).objective;
       io.stagingRoots.push(path.dirname(options.cwd));
       const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.pid = 991122;
       child.kill = () => {};
@@ -128,7 +129,8 @@ function fixture(t) {
   const decision = loadSource('cursor-execution-decision.js', shared);
   const { CursorWorker } = loadSource('cursor-worker.js', { ...shared, './cursor-execution-decision': decision, 'node:fs': fsProbe, 'node:child_process': childProcess,
     './agent-adapter': { AgentAdapterError: class extends Error { constructor(code, message) { super(message); this.code = code; } } },
-    './memory-content-erasure': { assertContext() {} }, './personal-memory': { containsSecret: () => false },
+    './memory-content-erasure': { assertContext() {} }, './personal-memory': require('../src/personal-memory'),
+    './specialist-gateway': { adapterScope: () => specialistInput ? { files: ['first.txt', 'second.txt'], writable: ['first.txt', 'second.txt'], deadline: now + 10000 } : null, workerInput: () => structuredClone(specialistInput) },
     './sandbox-policy': { makeProfile: () => '(deny network*)' }, './live-observatory': { record() {} },
     './bounded-worker': { async proxy() { return { port: 41000, stats: () => ({ synthetic: true }), async close() { io.closes++; } }; } },
   }, { process: proc, setInterval: fn => { io.interval = fn; return { unref() {} }; }, clearInterval() {} });
@@ -292,4 +294,34 @@ test('successful worker output is not published when subscription settlement fai
   assert.equal(f.db.prepare('SELECT state FROM cp_subscription_invocations').get().state, 'reserved');
   assert.equal(fs.readFileSync(path.join(f.args.repo, 'first.txt'), 'utf8'), 'pending\n');
   assert.equal(f.worker.active.size, 0);
+});
+
+// Real secret scanning and admission; only host-store plumbing/provider I/O are synthetic.
+test('Cursor host-bound specialist coordinates survive scanning without changing delivered bytes', async t => {
+  const digest=createHash('sha256').update('synthetic-policy-digest-fixture-508').digest('hex');
+  assert.equal(require('../src/personal-memory').containsSecret(digest),true);
+  const parent='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const input={version:1,objective:'Set the declared files.',assignment:{id:'edit',parent_mission_id:parent,sealed_contract_hash:digest,workspace_id:parent,repository_id:'repo:'+parent,idempotency_key:'assignment:'+parent+':edit',operation:'edit',paths:['first.txt','second.txt']},original_tasks:[],prior_evaluation:{worker_run_id:parent,evaluation_run_id:parent,binding_hash:digest,summary:'Verified prior read.'},repair_context:null,instruction:'Perform only the assigned edit.'};
+  const f=fixture(t,{specialistInput:input});f.authorize();
+  const prompt=JSON.stringify(input);await f.worker.dispatch({...f.args,prompt});
+  assert.equal(f.io.spawns,1);assert.equal(f.io.deliveredObjective,prompt);
+  assert.equal(f.db.prepare('SELECT state FROM cp_subscription_invocations').get().state,'settled');
+
+  for(const mutate of [x=>x.objective=digest,x=>x.assignment.extra_hash=digest,x=>x.assignment.paths=[digest],x=>x.assignment.sealed_contract_hash='not-a-digest-'+digest,x=>x.prior_evaluation.summary=digest,x=>x.assignment.idempotency_key='unbound:'+digest]){
+    const dirty=structuredClone(input);mutate(dirty);const denied=fixture(t,{specialistInput:dirty});denied.authorize();
+    await assert.rejects(denied.worker.dispatch({...denied.args,prompt:JSON.stringify(dirty)}),/cursor_sensitive_prompt/);assert.equal(denied.io.spawns,0);
+  }
+  const mismatch=fixture(t,{specialistInput:input});mismatch.authorize();
+  await assert.rejects(mismatch.worker.dispatch({...mismatch.args,prompt:JSON.stringify({...input,instruction:'Changed after host assembly.'})}),/cursor_objective_binding/);
+  assert.equal(mismatch.io.spawns,0);assert.equal(mismatch.db.prepare('SELECT count(*) n FROM cp_subscription_invocations').get().n,0);
+  const raw=fixture(t);raw.authorize();await assert.rejects(raw.worker.dispatch({...raw.args,prompt}),/cursor_sensitive_prompt/);assert.equal(raw.io.spawns,0);
+  const once=fixture(t,{specialistInput:input});once.authorize({subscription_execution:{...once.grant,max_invocations:2}});
+  const execute=once.worker.execute.bind(once.worker);let priorProof;
+  once.worker.execute=o=>{if(!priorProof){priorProof=o.objectiveProof;return execute(o);}return execute({...o,objectiveProof:priorProof});};
+  await once.worker.dispatch({...once.args,prompt});
+  await assert.rejects(once.worker.dispatch({...once.args,requestId:randomUUID(),prompt}),/cursor_objective_binding/);
+  assert.equal(once.io.spawns,1,'a consumed scan proof cannot be reused under a fresh grant reservation');
+  const forged=fixture(t,{specialistInput:input});forged.authorize();const realExecute=forged.worker.execute.bind(forged.worker);
+  forged.worker.execute=o=>realExecute({...o,objectiveProof:{}});
+  await assert.rejects(forged.worker.dispatch({...forged.args,prompt}),/cursor_objective_binding/);assert.equal(forged.io.spawns,0);
 });

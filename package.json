@@ -537,6 +537,7 @@
     "src/slack-runtime.js",
     "src/slack-schema.js",
     "src/specialist-gateway.js",
+    "src/specialist-scan-view.js",
     "src/supervisor-acceptance.js",
     "src/task-health-slack.js",
     "src/task-health.js",

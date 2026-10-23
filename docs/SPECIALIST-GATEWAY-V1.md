@@ -155,3 +155,21 @@ monitor that cancels unfinished work at its deadline. Restore the prior CI
 disabled state after the bounded attempt. A timeout or failed gate keeps release
 on HOLD; it is not an authorized skip. Workflow edits may require additional
 repository credential scope and are not necessary for this bounded procedure.
+
+Cursor and OpenCode use the same typed scan projection for host-assembled
+specialist packets. A valid digest can incidentally contain a Luhn-valid number;
+that does not make its sealed coordinate a payment identifier. Dispatch must
+rebuild and match the exact host packet before minting a one-use, worker-bound
+scan proof. Only known valid coordinate fields are projected for screening;
+user prose, paths, feedback summaries, unknown fields and malformed values stay
+subject to secret checks. The worker receives the original packet bytes. Neither
+a serialized packet nor a fabricated proof can obtain this exception directly.
+
+The portable authority verification record also recognizes the exact host verifier
+`verifier_inputs_unchanged.evidence.trusted_source.base_commit_sha` coordinate
+when the trusted source is available. A Git revision can otherwise coincidentally
+match the payment-card detector after both READY evaluations. SHA-1/SHA-256
+syntax, host verifier identity and the nested record shape are required; prose,
+worker claims, unavailable sources and malformed or spoofed paths stay screened.
+This is a scan-only correction: evidence bytes, seals, authority and acceptance
+requirements are unchanged, with no database migration or disposition rollback.

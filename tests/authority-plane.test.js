@@ -145,3 +145,37 @@ test('generated grant manifest UUID is opaque only at its exact typed coordinate
  ]) assert.throws(() => safe(value), /Sensitive authority data rejected/);
  assert.equal(s.integrity().ok, true);
 });
+
+test('host verifier baseline revisions persist without exempting untrusted evidence or prose', t => {
+ const { s, mission, result } = accepted(t), { safe } = require('../src/authority-store');
+ const head = 'a4111111111111111' + 'b'.repeat(23);
+ const make = revision => ({ mission_id: mission.id, mission_revision: 1, result_id: result.id,
+  status: 'passed', verifier_type: 'host', verifier_id: 'airodrom:host-verifier', evidence: [
+   { id: 'verifier_inputs_unchanged', status: 'passed', evidence: {
+    trusted_source: { available: true, base_commit_sha: revision, reproducible: 2, missing: [], reason: null },
+   } },
+  ] });
+ for (const revision of [head, head + 'c'.repeat(24)]) {
+  const verification = s.verifyResult(make(revision));
+  assert.equal(verification.status, 'passed');
+ }
+ for (const mutate of [
+  x => { x.verifier_type = 'agent'; },
+  x => { x.verifier_id = 'other'; },
+  x => { x.evidence[0].id = 'worker_claim'; },
+  x => { x.evidence[0].evidence.trusted_source.available = false; },
+  x => { x.evidence[0].evidence.trusted_source.base_commit_sha = '4111111111111111'; },
+  x => { x.evidence[0].evidence.trusted_source.base_commit_sha = [head]; },
+  x => { x.evidence[0].evidence.trusted_source.description = head; },
+  x => { x.evidence[0].evidence.trusted_source = [x.evidence[0].evidence.trusted_source]; },
+  x => { x.evidence[0].evidence = { 'trusted_source.base_commit_sha': head }; },
+  x => { x.evidence = { 0: x.evidence[0] }; },
+  x => { x.summary = 'sk-fixtureprivatecredential'; },
+ ]) {
+  const input = make(head); mutate(input);
+  assert.throws(() => safe(input), /Sensitive authority data rejected/);
+  assert.throws(() => s.verifyResult(input), /Sensitive authority data rejected/);
+ }
+ assert.equal(s.listVerificationsForMission(mission.id).length, 3);
+ assert.equal(s.integrity().ok, true);
+});

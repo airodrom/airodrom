@@ -51,7 +51,12 @@ function safe(value) {
         && segments.slice(2).join('.') === 'evidence.manifest.repository.head'
         && verificationRecord?.id === 'repository_v2' && verificationRecord.evidence?.version === 2
         && verificationRecord.evidence.manifest?.version === 2;
-      const gitHead = (typedGitField || typedVerificationHead) && typeof v === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
+      const typedVerifierBaseline = value.verifier_type === 'host' && value.verifier_id === 'airodrom:host-verifier'
+        && segments.length === 5 && /^\d+$/.test(segments[1])
+        && segments.slice(2).join('.') === 'evidence.trusted_source.base_commit_sha'
+        && verificationRecord?.id === 'verifier_inputs_unchanged'
+        && verificationRecord.evidence?.trusted_source?.available === true;
+      const gitHead = (typedGitField || typedVerificationHead || typedVerifierBaseline) && typeof v === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(v);
       const grantManifestId = coordinatePath.length === 2 && coordinatePath[0] === 'manifest' && coordinatePath[1] === 'id' &&
         typeof v === 'string' && /^da-grant-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v);
       const coordinate = typeof v === 'string' && (

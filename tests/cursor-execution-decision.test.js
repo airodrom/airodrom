@@ -167,7 +167,7 @@ async function awaitGraph(f, id, predicate, timeout = 60000) {
   }
   const m = f.bridge.missions.detail(id);
   if (predicate(m)) return m;
-  assert.fail(JSON.stringify({ state: m.state, reason: m.reason, evaluations: f.evaluations.length }));
+  assert.fail(JSON.stringify({ state: m.state, reason: m.reason, evaluations: f.evaluations.length, runs: m.runs.map(r => ({ agent: r.agent_id, state: r.state, error_class: r.result?.error_class || null })) }));
 }
 
 test('local evaluator recovers from unavailable then malformed JSON without replaying Cursor', async t => {
