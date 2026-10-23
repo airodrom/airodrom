@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Authoritative Airodrom/Arecibo routing now requires an active Developer Autonomy policy on the matched repository root; a registered project alone no longer counts as enrollment.
+
 ### Added
 - Automatic multi-project development targets (`config/development-targets-v1.json`) for `airodrom/airodrom` and `arecibo-inc/arecibo-core` with fail-closed enrollment codes, MCP `list_development_targets` / `resolve_development_target`, and owner-only enrollment preparation via `scripts/prepare-development-target-enrollment.cjs`.
 
