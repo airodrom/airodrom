@@ -39,7 +39,7 @@ class MissionService {
     if(projectless&&owner!=='operator')throw Error('Projectless execution requires the authenticated operator');
     const goal=projectless?{goalId:null,projectId:null}:this.bridge.projects.getGoal(input.goal_id);
     if(!projectless&&goal.projectId!==input.project_id)throw Error('Goal and Project do not match');
-    const workspace=repositoryRoot(text(input.workspace,'workspace',1000));if(workspace!==fs.realpathSync(input.workspace))throw Error('Mission workspace must be repository root');
+    const workspace=repositoryRoot(this.bridge.developerAutonomy?this.bridge.developerAutonomy.workspacePath(input.workspace):text(input.workspace,'workspace',1000));if(workspace!==fs.realpathSync(input.workspace))throw Error('Mission workspace must be repository root');
     if(projectless&&!workspace.includes(`${path.sep}airodrom-task-sandboxes${path.sep}`))throw Error('Projectless execution requires a private task sandbox');
     let developmentSessionId=null;
     if(input.development_session_id!==undefined){

@@ -431,7 +431,7 @@ function route(envelope, proposal, qualified = [], options = {}) {
 }
 
 function policyFor(bridge, instruction) {
-  const candidates = (bridge.developerAutonomy?.list?.('operator') || []).filter(p => p.state === 'active' && p.cognitive);
+  const candidates = (bridge.developerAutonomy?.list?.('operator') || []).filter(p => p.state === 'active' && p.cognitive && p.expires_at > Date.now());
   if (!candidates.length) return [];
   const projects = bridge.projects.listProjects({ status: 'active' });
   const {
@@ -447,7 +447,7 @@ function policyFor(bridge, instruction) {
       && p.project_id === (authoritative.project.projectId || authoritative.project.project_id));
   }
   const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
-  return candidates.filter(p => {
+  const matches = candidates.filter(p => {
     if (excludeFixtures && isFixtureOrHandoffPath(p.repository)) return false;
     const project = projects.find(project => project.projectId === p.project_id && project.repositories?.includes(p.repository));
     if (!project) return false;
@@ -455,6 +455,10 @@ function policyFor(bridge, instruction) {
     if (instruction.includes(p.repository)) return true;
     return !!instructionMentions(instruction, project.name, p.alias);
   });
+  // An explicit enrolled alias outranks shared project/alias words. Ambiguous
+  // exact aliases still fail closed; ranking never changes enrollment authority.
+  const exact = matches.filter(p => instructionMentions(instruction, '', p.alias)?.kind === 'alias');
+  return exact.length ? exact : matches;
 }
 
 function assertDelegation(bridge, record) {

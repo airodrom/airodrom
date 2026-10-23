@@ -69,6 +69,20 @@ test('delegated ordinary text plans read-only, seals, verifies independently, an
   assert.throws(() => f.bridge.missions.queue(m.id), /execution_attempts|current state/);
 });
 
+test('exact enrolled alias outranks shared words and expired enrollments while exact ambiguity fails closed', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.inspect(f.policy.policy_id);
+  const other = { ...policy, policy_id: randomUUID(), alias: 'cognitive-second' };
+  da.list = () => [policy, other, { ...policy, policy_id: randomUUID(), expires_at: Date.now() - 1 }];
+  const v = await f.ask(randomUUID(), caller, 'Use cognitive-fixture to edit fixture.txt from alpha to beta.');
+  assert.ok(v.mission_id, JSON.stringify(v));
+  assert.equal(f.bridge.missions.require(v.mission_id).envelope.cognitive.envelope.delegation.policy_id, policy.policy_id);
+  await f.settle(v.mission_id);
+  const calls = f.plannerCalls;
+  await assert.rejects(f.ask(randomUUID(), caller, 'Use cognitive-fixture and cognitive-second to edit fixture.txt.'), /cognitive_repository_ambiguous/);
+  assert.equal(f.plannerCalls, calls);
+});
+
 test('a slow planner acknowledges PLANNING before OpenCode returns and the same request does not plan twice', async t => {
   const f = await setup(t);
   const planner = f.bridge.opencodeAdapter.execute;

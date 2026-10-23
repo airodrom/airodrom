@@ -53,6 +53,16 @@ all reads. Exact final bytes still require the enrolled exact-file verifier.
 
 Repository matching now negates each matched target phrase independently. A marker
 containing a product name cannot make another negated source phrase positive.
+Expired enrollments are excluded from cognitive selection. An exact enrolled alias
+outranks shared words in other aliases or project names; multiple exact aliases
+remain ambiguous and cannot authorize execution.
+
+Generated disposable workspace UUIDs are typed host identities. Before screening
+a workspace path, the host may neutralize only its canonical UUID basename, and
+only when the workspace registry, exact path, directory inode chain, containment,
+ownership, and repository identity all agree. Parent paths and unregistered paths
+retain secret screening. This avoids random card-checksum false positives without
+changing general secret detection, filesystem paths, or execution authority.
 
 ## Compatibility, recovery, and rollback
 
