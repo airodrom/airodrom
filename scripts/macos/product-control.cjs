@@ -19,7 +19,8 @@ async function mcpStatus(home){
  }catch{return {ready:false,lastCallAt:null};}
 }
 async function status(home){const stopped=local.isStopped(home);let product=null;let mcp={ready:false,lastCallAt:null};
- if(!stopped){try{product=await local.request(home,'/api/product/native-status');}catch{}mcp=await mcpStatus(home);}
+ // native-status is bounded (~3s probes); keep headroom under the prior silent 10s default.
+ if(!stopped){try{product=await local.request(home,'/api/product/native-status',undefined,{timeoutMs:20000});}catch{}mcp=await mcpStatus(home);}
  const diagnostic=product?.diagnostic||summary(await doctor(home));
  return {state:stopped?'Stopped':product?'Connected':'Error',message:product?null:stopped?'Local service is stopped.':'Local status unavailable. Existing service and data preserved.',pid:null,managed:true,now:Date.now(),mcp,tasks:{active:product?.active_missions||0,connected:0,total:0,counts:{}},lastActivityAt:null,lastHeartbeatAt:null,
  product:product||{control:'Unavailable',status:'Unavailable',runtime:'Unavailable',runtimeReason:null,memory:'Unavailable',provider:'Unavailable',approvals:null,mission:null,diagnostic}};

@@ -576,9 +576,79 @@ async function overview(bridge,{includeMissions=true,currentOffset=0}={}) {
   installation_compatibility:(()=>{try{return require('./installation-compatibility').evaluate(bridge);}catch{return null;}})(),
   limitations:['Model reasoning and prompts are private.','Memory delivery does not prove model use.','Worker completion requires independent verification, Acceptance and Settlement.','Runtime security VERIFIED states require host evidence; worker self-reports are insufficient.']};
 }
+async function cachedReadiness(probe, ttlMs = 15000, waitMs = 2500) {
+ // Menu/native-status must stay bounded. Prefer a recent cache; never block the
+ // event loop on a full OpenCode/Cursor probe for tens of seconds.
+ if (!probe) return null;
+ const cache = probe._readinessCache || (probe.lastReadiness ? { value: probe.lastReadiness, at: Date.now() } : null);
+ if (cache?.value && Date.now() - (cache.at || 0) < ttlMs) return cache.value;
+ try {
+  const pending = probe.readiness({ fresh: false });
+  const raced = await Promise.race([
+   Promise.resolve(pending).then((v) => ({ ok: true, v })),
+   new Promise((resolve) => setTimeout(() => resolve({ ok: false }), waitMs)),
+  ]);
+  if (raced.ok) {
+   if (probe._readinessCache !== undefined) probe._readinessCache = { value: raced.v, at: Date.now() };
+   if ('lastReadiness' in probe) probe.lastReadiness = raced.v;
+   return raced.v;
+  }
+  // Keep probing in the background for the next poll; return last known value.
+  Promise.resolve(pending).then((v) => {
+   if (probe._readinessCache !== undefined) probe._readinessCache = { value: v, at: Date.now() };
+   if ('lastReadiness' in probe) probe.lastReadiness = v;
+  }).catch(() => {});
+  return cache?.value || probe.lastReadiness || null;
+ } catch {
+  return cache?.value || probe.lastReadiness || null;
+ }
+}
 async function nativeStatus(bridge) {
- const s=await overview(bridge,{includeMissions:false}),db=bridge.controlStore.db;
+ // Bounded hot path: do not call full overview() (assistant inspect, installation
+ // compatibility, and uncapped readiness awaits were ~10–11s vs a 10s client timeout).
+ const db=bridge.controlStore.db;
  require('./mission-visibility').ensure(db);
+ const ready=await cachedReadiness(bridge.opencodeAdapter);
+ const runtime=runtimeView(ready||{ready:false,reason:'readiness_deferred'});
+ const memory=memoryStatus(bridge);
+ const leases=db.prepare("SELECT state,count(*) count FROM cp_leases WHERE state IN ('held','quarantined') GROUP BY state").all();
+ const ledger=bridge.ledger.health();
+ let cursor={agent_availability:'unqualified',agent_execution:false,agent_reason:'cursor_execution_unqualified',editor_available:false,last_ide_task:null};
+ try{
+  const governed=await cachedReadiness(bridge.cursorWorker);
+  if(governed&&bridge.cursorWorker)bridge.cursorWorker.lastReadiness=governed;
+  cursor={
+   agent_availability:governed?.ready?'available':enumValue(governed?.availability||'unqualified',['unqualified','unavailable','auth_required','quota_limited','available'],'unqualified'),
+   agent_execution:governed?.ready===true,
+   agent_reason:typeof governed?.reason==='string'?governed.reason.slice(0,120):(governed?.ready?'governed_sandboxed_headless':'cursor_execution_unqualified'),
+   editor_available:governed?.installed===true,
+   last_ide_task:null
+  };
+ }catch{/* Cursor projection is best-effort. */}
+ const pending=bridge.policy.list().filter(a=>a.status==='pending'&&(!a.expiresAt||a.expiresAt>Date.now())).length;
+ const overviewStatus=bridge.closed?'Unavailable':runtime.ready&&memory.state==='Ready'&&ledger?.healthy===true&&!leases.some(l=>l.state==='quarantined')?'Ready':'Degraded';
+ const s={
+  status:overviewStatus,
+  control:{state:bridge.closed?'Unavailable':'Ready'},
+  runtime,
+  memory,
+  provider:{state:runtime.ready?'Ready':'Unavailable'},
+  approvals:{waiting:pending},
+  leases:{held:leases.find(l=>l.state==='held')?.count||0,quarantined:leases.find(l=>l.state==='quarantined')?.count||0},
+  cursor,
+  connectors:{items:(()=>{try{return require('./assistant-service').connectors(bridge).status().items||[];}catch{return[];}})()},
+  acceptance_config:(()=>{try{return bridge.missions.riskAcceptance.status();}catch{return{preference:{enabled:false},waits:require('./wait-presentation').status(bridge)};}})(),
+  installation_compatibility:(()=>{
+   // Avoid full evaluate() on the menu hot path; report last known or compatible stub.
+   try{
+    if(bridge._installationCompatibilityCache&&Date.now()-bridge._installationCompatibilityCache.at<60000)return bridge._installationCompatibilityCache.value;
+    const value=require('./installation-compatibility').evaluate(bridge);
+    bridge._installationCompatibilityCache={value,at:Date.now()};
+    return value;
+   }catch{return{overall:'Unavailable',mutations_allowed:false,components:[]};}
+  })(),
+ };
+ // Retain featured live Mission projection below.
  // Featured menu Mission is live execution only — awaiting_acceptance / waiting_for_operator are review, not active work.
  const live=db.prepare("SELECT id FROM cp_missions WHERE state IN ('dispatching','running','verifying') AND id NOT IN (SELECT mission_id FROM cp_mission_visibility WHERE archived=1) ORDER BY created_at DESC,id LIMIT 1").get();
  const m=live?missionView(bridge,bridge.controlStore.requireMission(live.id)):null;

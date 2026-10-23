@@ -795,7 +795,19 @@ async function executeReserved(zero, record, p, instruction) {
     delete narrowed.workers;
     const mission = b.missions.create({ ...narrowed, constraints: planConstraints(proposal), cognitive_request_id: request_id }, 'operator');
     record.mission_id = mission.id; record.state = 'approved'; zero.write(request_id, record.principal, record, 'approved');
-    b.missions.dispatch(mission.id, { request_id: 'cognitive-dispatch:' + request_id });
+    try {
+      b.missions.dispatch(mission.id, { request_id: 'cognitive-dispatch:' + request_id });
+    } catch (dispatchError) {
+      const code = String(dispatchError.code || dispatchError.message).slice(0, 300);
+      try {
+        const live = b.controlStore.getMission(mission.id);
+        if (live?.state === 'ready') {
+          b.controlStore.state(mission.id, 'blocked', code);
+          b.controlStore.db.prepare("UPDATE cp_mission_programs SET state='blocked' WHERE id=? AND state='prepared'").run(mission.id);
+        }
+      } catch { /* keep original dispatch error */ }
+      throw dispatchError;
+    }
     return view(zero.read(request_id), b);
   } catch (error) {
     if (zero.read(request_id)?.state === 'rejected') return view(zero.read(request_id), b);
@@ -900,15 +912,29 @@ async function approve(zero, record, confirmation, owner) {
     channel: confirmation.channel, confirmed: true, subscription_execution: confirmation.subscription_execution }, 'operator');
   c.grant_id = approval.approval_id; c.approval_id = approval.approval_id;
   record.state = 'sealed'; record.blockers = []; zero.write(record.request_id, record.principal, record, 'sealed');
+  let mission = null;
   try {
-  const mission = b.missions.create({ ...input, contract: preview, approval_id: approval.approval_id, cognitive_request_id: record.request_id }, 'operator');
+  mission = b.missions.create({ ...input, contract: preview, approval_id: approval.approval_id, cognitive_request_id: record.request_id }, 'operator');
   record.mission_id = mission.id; record.state = 'approved'; zero.write(record.request_id, record.principal, record, 'approved');
   b.missionApprovals.bind(approval.approval_id, mission.id, 'operator');
   b.cursorWorker.lastReadiness = await b.cursorWorker.readiness();
   b.missions.dispatch(mission.id, { request_id: 'cognitive-dispatch:' + record.request_id });
   return view(record, b);
   } catch (error) {
-    record.state = 'blocked'; record.blockers = [String(error.code || error.message).slice(0, 300)];
+    const code = String(error.code || error.message).slice(0, 300);
+    // Never leave a sealed READY Mission without a dispatch, schedule, or blocker.
+    if (mission?.id) {
+      try {
+        const live = b.controlStore.getMission(mission.id);
+        if (live && live.state === 'ready') {
+          b.controlStore.state(mission.id, 'blocked', code);
+          try {
+            b.controlStore.db.prepare("UPDATE cp_mission_programs SET state='blocked' WHERE id=? AND state='prepared'").run(mission.id);
+          } catch { /* program row may be absent for non-specialist */ }
+        }
+      } catch { /* blocker write must not mask the original error */ }
+    }
+    record.state = 'blocked'; record.blockers = [code];
     zero.write(record.request_id, record.principal, record, 'blocked');
     return view(record, b);
   }

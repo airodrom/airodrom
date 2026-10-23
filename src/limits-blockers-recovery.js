@@ -24,6 +24,7 @@ const ALLOWLIST = Object.freeze([
   'resolve_enrolled_repository',
   'prepare_enrollment_action',
   'reuse_local_evaluation_authority',
+  'admit_ready_specialist_dispatch',
   'diagnose_repair_budget',
   'consolidate_owner_gate',
   'security_investigate_fail_closed',
@@ -454,6 +455,101 @@ function recoverLocalEvaluationAuthority(bridge, ctx) {
   }
 }
 
+function recoverAdmitReadySpecialist(bridge, ctx) {
+  if (!ctx.mission_id) {
+    return { operation: 'admit_ready_specialist_dispatch', performed: false, reason: 'no_mission' };
+  }
+  let mission;
+  try { mission = bridge.controlStore.requireMission(ctx.mission_id); }
+  catch { return { operation: 'admit_ready_specialist_dispatch', performed: false, reason: 'mission_missing' }; }
+
+  // After a verified worker run, this code means local evaluation authority — not first dispatch.
+  const completedWorker = bridge.controlStore.db.prepare(
+    "SELECT 1 AS ok FROM cp_runs WHERE mission_id=? AND state='completed' AND termination_verified=1 AND agent_id IN ('cursor','opencode') LIMIT 1"
+  ).get(mission.id);
+  if (completedWorker && mission.state === 'blocked') {
+    return recoverLocalEvaluationAuthority(bridge, ctx);
+  }
+
+  if (!require('./specialist-gateway').enabled(mission)) {
+    return {
+      operation: 'admit_ready_specialist_dispatch',
+      performed: false,
+      owner_gate: 'owner_qualify_worker_or_select_qualified_route',
+      note: 'Not a specialist graph; Cursor qualification remains owner-gated.',
+    };
+  }
+
+  // Expired / cancelled: preserve terminal; do not extend deadlines.
+  if (['cancelled', 'completed', 'needs_rework'].includes(mission.state)) {
+    return { operation: 'admit_ready_specialist_dispatch', performed: false, reason: 'mission_terminal:' + mission.state };
+  }
+
+  // Kick a non-blocking readiness refresh for the next Mission tick; do not invent spend.
+  if (bridge.cursorWorker?.readiness) {
+    Promise.resolve()
+      .then(() => bridge.cursorWorker.readiness())
+      .then((r) => { bridge.cursorWorker.lastReadiness = r; bridge.missions?.schedule?.(); })
+      .catch(() => {});
+  }
+
+  // Blocked for worker qualification with remaining wall-clock: restore READY once for admit.
+  if (mission.state === 'blocked' && /worker_execution_unqualified/i.test(String(mission.reason || ''))) {
+    try {
+      const now = bridge.controlStore.now();
+      const limit = require('./specialist-gateway').deadline(mission);
+      if (now >= limit) {
+        return { operation: 'admit_ready_specialist_dispatch', performed: false, reason: 'deadline_elapsed' };
+      }
+      if (bridge.cursorWorker && bridge.cursorWorker.lastReadiness && bridge.cursorWorker.lastReadiness.ready !== true) {
+        return {
+          operation: 'admit_ready_specialist_dispatch',
+          performed: false,
+          owner_gate: 'owner_qualify_worker_or_select_qualified_route',
+          reason: 'cursor_not_ready',
+        };
+      }
+      bridge.controlStore.state(mission.id, 'ready', 'Scheduler re-admit after Cursor readiness refresh');
+      bridge.controlStore.db.prepare("UPDATE cp_mission_programs SET state='prepared' WHERE id=? AND state='blocked'").run(mission.id);
+      mission = bridge.controlStore.requireMission(mission.id);
+    } catch (error) {
+      return {
+        operation: 'admit_ready_specialist_dispatch',
+        performed: false,
+        reason: String(error.message || error).slice(0, 160),
+      };
+    }
+  }
+
+  if (mission.state !== 'ready') {
+    return {
+      operation: 'admit_ready_specialist_dispatch',
+      performed: false,
+      reason: 'mission_not_ready:' + mission.state,
+      owner_gate: 'owner_qualify_worker_or_select_qualified_route',
+    };
+  }
+
+  const result = require('./specialist-gateway').admitReady(bridge.missions, mission);
+  if (result.admitted) {
+    bridge.missions.schedule();
+    return {
+      operation: 'admit_ready_specialist_dispatch',
+      performed: true,
+      dispatch_id: result.dispatch_id || null,
+      note: 'First specialist assignment queued; no duplicate Cursor spend invented.',
+    };
+  }
+  return {
+    operation: 'admit_ready_specialist_dispatch',
+    performed: false,
+    reason: result.reason || 'admit_declined',
+    owner_gate: /unqualified|authority|grant|deadline/i.test(String(result.reason || ''))
+      ? 'owner_qualify_worker_or_select_qualified_route'
+      : null,
+  };
+}
+
 function recoverRepairBudget(bridge, evidence) {
   const policies = (evidence.developer_autonomy || []).map(p => ({
     policy_id: p.policy_id, alias: p.alias, grants_active: p.grants_active,
@@ -599,7 +695,14 @@ function planFor(entry) {
     return { operation: 'security_investigate_fail_closed', executable: false };
   }
   if (id === 'worker_execution_unqualified') {
-    return { operation: 'reuse_local_evaluation_authority', executable: true, owner_gate_if_unmatched: true, verify: 'local_evaluation_authority_reused' };
+    // Never-started READY Missions need Cursor (re)qualification + admit, not
+    // post-Cursor local-evaluation authority reuse (that left Mission 3a6edd9e READY).
+    return {
+      operation: 'admit_ready_specialist_dispatch',
+      executable: true,
+      owner_gate_if_unmatched: true,
+      verify: 'specialist_dispatch_queued_or_owner_gate',
+    };
   }
   if (id === 'evaluation_unavailable' || id === 'gateway_evaluation_deadline'
     || id === 'opencode_runtime_unavailable' || id === 'opencode_evaluation_timeout'
@@ -684,6 +787,8 @@ function executePlan(bridge, entry, plan, ctx, evidence, owner) {
       return recoverNormalizeWorker(bridge, ctx, entry);
     case 'reuse_local_evaluation_authority':
       return recoverLocalEvaluationAuthority(bridge, ctx);
+    case 'admit_ready_specialist_dispatch':
+      return recoverAdmitReadySpecialist(bridge, ctx);
     case 'diagnose_repair_budget':
       return recoverRepairBudget(bridge, evidence);
     case 'normalize_plan_files_guidance':

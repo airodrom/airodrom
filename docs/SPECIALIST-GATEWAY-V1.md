@@ -49,6 +49,18 @@ One grant covers the parent graph's authorized Cursor attempts; OpenCode stages 
 not consume Cursor reservations. Repeated attempts consume their original limits.
 There is no repeated approval for an already-authorized assignment.
 
+## READY → first assignment
+
+After OpenCode planning seals the parent Mission `ready`, the specialist program
+remains `prepared` until the first `queue()` succeeds. The primary control-service
+`MissionService` tick owns scheduling: it runs `admitPreparedReady` then
+`mission-program.tick` (which includes `prepared` specialist graphs). Lost
+`cognitive-dispatch` wakes are recovered without a second scheduler and without
+duplicate Cursor spend. A Mission must not remain indefinitely READY without a
+queued/active dispatch, a bounded retry with deadline, an actionable blocker, or
+a verified terminal state. See [READY-SCHEDULER-DISPATCH-V1](READY-SCHEDULER-DISPATCH-V1.md)
+and [ADR 0061](adr/0061-ready-scheduler-dispatch.md).
+
 ## Execution and automatic completion
 
 The existing scheduler dispatches one assignment at a time. Each returned result is
