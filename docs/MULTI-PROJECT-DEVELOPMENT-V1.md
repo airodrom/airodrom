@@ -36,10 +36,20 @@ Negation (`not Arecibo`, `not chatgpt-handoff`) never selects the negated produc
 
 1. Protect dirty operator checkouts; use clean isolated worktrees for DA roots.
 2. Run `node --experimental-sqlite scripts/prepare-development-target-enrollment.cjs`.
-3. Confirm each proposal in Control Center → Developer Autonomy.
-4. Verify with MCP `list_development_targets` / `resolve_development_target`.
-5. Issue ordinary ChatGPT development asks; retrieve progress via `get_mission_engineering_report` and terminal notifications via `list_mission_notifications`.
+3. Confirm each proposal in Control Center → Developer Autonomy (Cursor + cognitive).
+4. Enroll one standing Cursor development grant per repository via
+   `POST /api/assistant/host-execution-policy/enroll-standing-cursor-development`
+   (bind `policy_id`, cognitive path allowlist, `acknowledge_unknown_cost`). See
+   [STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md).
+5. Verify with MCP `list_development_targets` / `resolve_development_target` and
+   host-execution-policy standing grant status.
+6. Issue ordinary ChatGPT development asks; retrieve progress via
+   `get_mission_engineering_report` and terminal notifications via
+   `list_mission_notifications`.
 
 ## Isolation
 
-Each target independently owns repository identity, workspace policy, DA enrollment, Cursor budget, templates, verification, and Mission evidence. Planner paths outside the sealed binding are rejected before Cursor dispatch.
+Each target independently owns repository identity, workspace policy, DA enrollment,
+standing Cursor grant, templates, verification, and Mission evidence. Planner paths
+outside the sealed binding are rejected before Cursor dispatch. Airodrom grants never
+authorize Arecibo work and vice versa.

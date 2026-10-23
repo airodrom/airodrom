@@ -1,5 +1,12 @@
 # Known limitations
 
+## Standing Cursor development grants (2026-10-22)
+
+- DA Cursor on the worker allowlist alone never skips spend/disclosure WAIT. A covering owner-enrolled standing Cursor grant is required per repository ([STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md)).
+- Grants are finite (missions, invocations, runtime, TTL, path allowlist). Exhausted, expired, revoked, or path/policy-mismatched grants fail closed with `STANDING_CURSOR_GRANT_*` codes; ChatGPT text cannot renew them.
+- Cursor cost remains `UNKNOWN_SUBSCRIPTION` / `acknowledge_unknown_cost` — no invented dollar ceiling and no claim that Cursor usage is free.
+- Production deploy, Plaid LIVE, secrets, merchant financial data, privileged infra, cross-repo access, destructive ops, and protected-branch merge bypasses remain separately governed.
+
 ## Developer Autonomy disk admission (2026-10-22)
 
 - Workspace preparation no longer fails solely because signed `max_disk_mb` (often 4 GB) was exceeded by Git history + clones + `node_modules`. Admission is filesystem free space after reserve. Genuine full disks still fail closed with an explicit capacity error.
@@ -8,8 +15,7 @@
 ## Automatic multi-project development (2026-10-22)
 
 - Product routing is catalog-driven (`config/development-targets-v1.json`). Ambiguous dual-product asks return `DEVELOPMENT_TARGET_AMBIGUOUS` rather than picking an unrelated active project.
-- Arecibo’s active standing policy may be OpenCode-only; Cursor implementation then fails with `standing_cursor_worker_not_enrolled` until the owner re-enrolls with Cursor on the allowlist. Chat text cannot expand workers.
-- Airodrom source DA enrollment still requires an owner-confirmed policy on an authorized checkout (prefer a clean `airodrom-da-main` worktree; do not overwrite the dirty operator checkout).
+- Arecibo Core and Airodrom Source DA policies are enrolled with Cursor + cognitive on their authorized roots; each still needs its own standing Cursor spend/disclosure grant. Chat text cannot enroll either.
 - Cross-project standing grants are never transferred. chatgpt-handoff / recovery-proof never authorize Airodrom or Arecibo source work.
 
 ## Source repository routing and notifications (2026-10-22)
@@ -25,7 +31,7 @@
 - MCP host-execution delegation authorizes only `enable_cursor` / `disable_cursor`. It does **not** grant scoped disclosure or subscription spend.
 - Active standing DA enrollments missing cognitive discovery are auto-prepared from prior same-repo files or Autopilot-admissible paths when Autopilot MCP / operator Cursor intake runs; bare MCP without Autopilot still requires cognitive enrollment or Autopilot ON. Cursor spend/disclosure remain separately gated.
 - Idle `needs_rework` / `blocked` Missions with remaining repair budget no longer occupy concurrent admission once writers and leases are gone; genuine active writers still count. Retained evidence worktrees do not consume concurrent Mission slots unless policy says otherwise.
-- Full ChatGPT → OpenCode → Cursor → OpenCode → Airodrom live Acceptance remains **PENDING** until the owner enrolls Cursor on the standing DA policy and issues a bounded spend/disclosure grant. Do not fabricate grants from chat text.
+- Full ChatGPT → OpenCode → Cursor → OpenCode → Airodrom live Acceptance for a repository requires host Cursor enabled, DA with Cursor + cognitive, and a covering standing Cursor development grant. Do not fabricate grants from chat text.
 
 ## Cursor round-trip Gate B (2026-10-22)
 

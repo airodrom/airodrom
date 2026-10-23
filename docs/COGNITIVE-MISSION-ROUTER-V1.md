@@ -266,15 +266,22 @@ and zero automatic repairs. Each planning/execution attempt is bounded to 120 se
 only schema-invalid plans can use the second planning attempt. Uncertain termination
 does not retry. External discovery and web continuation are not part of this scope.
 
-Cursor reaches WAIT with `scoped_external_disclosure_required` and
-`BLOCKED_SPEND_AUTHORIZATION`. Use the existing authenticated local ZeroSetupWork
-approval endpoint with the request ID, explicit confirmation, `terminal` or
-`control_center` channel, and `subscription_execution` containing provider `cursor`,
-`acknowledge_unknown_cost: true`, `max_invocations: 1`, and `max_runtime_ms` no greater
-than the envelope execution limit. This binds existing MissionApprovals to the exact
-contract. Ordinary MCP text cannot issue it. The existing subscription admission
-reserves the invocation immediately before real launch. No enforceable dollar limit
-or exact cost is invented; accounting remains `UNKNOWN_SUBSCRIPTION`.
+When an owner-enrolled standing Cursor development grant covers the Mission
+repository, DA `policy_id`, proposed public paths, and finite invocation/runtime
+bounds, cognitive admission auto-issues the existing MissionApproval spend shape
+and consumes one grant Mission — no per-Mission spend prompt. See
+[STANDING-CURSOR-DEVELOPMENT-V1.md](STANDING-CURSOR-DEVELOPMENT-V1.md).
+
+Otherwise Cursor reaches WAIT with `scoped_external_disclosure_required`,
+`BLOCKED_SPEND_AUTHORIZATION`, and an exact `STANDING_CURSOR_GRANT_*` diagnosis when
+available. Use the authenticated local ZeroSetupWork approval endpoint with the
+request ID, explicit confirmation, `terminal` or `control_center` channel, and
+`subscription_execution` containing provider `cursor`, `acknowledge_unknown_cost: true`,
+`max_invocations`, and `max_runtime_ms` no greater than the envelope execution limit —
+or enroll/renew a standing grant once. Ordinary MCP text cannot issue either.
+Subscription admission reserves the invocation immediately before real launch. No
+enforceable dollar limit or exact cost is invented; accounting remains
+`UNKNOWN_SUBSCRIPTION`.
 
 ## States, cancellation and recovery
 

@@ -891,7 +891,10 @@ class ZeroSetupWork {
         ? unboundedProjectless
           ? 'Prepared a task-scoped sandbox. No registered Project was selected. This request has no executable file scope or measurable success criteria; approval alone cannot start it. Provide bounded exact-result files, or name an authorized repository and its exact files. Autopilot and automatic Acceptance do not supply missing scope.'
           : cursorApproval
-          ? 'Cursor requires scoped disclosure and subscription authorization through the authenticated local operator API. The current Terminal and Control Center approval buttons cannot issue this grant.'
+          ? ((live.blockers || live.intake_blockers || []).some(code => String(code).startsWith('STANDING_CURSOR_GRANT_'))
+            ? (live.presentation?.standing_cursor_diagnosis?.reason
+              || 'Standing Cursor development grant does not cover this Mission. Enroll or renew via the authenticated local owner API.')
+            : 'Cursor requires scoped disclosure and subscription authorization through the authenticated local operator API. Enroll a standing Cursor development grant once, or approve this Mission with a finite subscription_execution grant.')
           : ownerIntake
             ? 'This repository has a standing policy, but MCP intake remains a proposal. Existing standing consent is activated through authenticated owner intake or explicit owner approval; ChatGPT text does not activate it.'
           : 'Airodrom prepared a bounded task. Confirm in the authenticated Terminal with y/N, or Approve this task in Control Center. No file writes or autonomous scheduling occur before that confirmation.'
@@ -902,7 +905,12 @@ class ZeroSetupWork {
       planner: live.planner || 'opencode',
       evaluator: live.evaluator || 'opencode',
       admission: { standard_approval_supported: waiting && !unboundedProjectless && !cursorApproval, authority: false },
-      next_action: live.intake_blockers || unboundedProjectless ? 'define_bounded_projectless_work' : cursorApproval ? 'authorize_cursor_via_authenticated_local_api' : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center' : 'inspect_result',
+      next_action: live.intake_blockers || unboundedProjectless ? 'define_bounded_projectless_work'
+        : cursorApproval && (live.blockers || live.intake_blockers || []).some(code => String(code).startsWith('STANDING_CURSOR_GRANT_'))
+          ? (live.presentation?.standing_cursor_diagnosis?.next_action || 'enroll_standing_cursor_development_via_authenticated_local_api')
+        : cursorApproval ? 'authorize_cursor_via_authenticated_local_api'
+        : state === 'awaiting_approval' ? 'approve_in_terminal_or_control_center'
+        : 'inspect_result',
       outcome,
       technical: {
         request_id: live.request_id || record.request_id,

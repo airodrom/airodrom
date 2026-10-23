@@ -172,6 +172,15 @@ class HostExecutionPolicy {
     return rows.filter(row => row.expires_at > now && row.missions_used < row.max_missions);
   }
 
+  /** All standing rows for a repository (any state), newest first — diagnosis only. */
+  standingRowsHistory(repository) {
+    let root;
+    try { root = fs.realpathSync(repository); } catch { return []; }
+    return this.db.prepare(
+      'SELECT * FROM cp_standing_cursor_development WHERE repository=? ORDER BY enrolled_at DESC'
+    ).all(root);
+  }
+
   standingView(row) {
     if (!row) return null;
     let path_allowlist = [], disclosure_providers = [], data_classes = [];
@@ -409,8 +418,14 @@ class HostExecutionPolicy {
       manifest_hash: canonicalHash(body),
     }) || null;
     if (this.bridge.missionAuthority && !seal) throw Error('Existing operator signing authority required');
-    const note = 'Owner-enrolled standing Cursor development for routine public fixture work in this repository. '
-      + 'UNKNOWN_SUBSCRIPTION cost remains acknowledged and unobservable. Paid overages, private data, and production stay outside.';
+    const note = input.policy_id
+      ? ('Owner-enrolled standing Cursor development bound to Developer Autonomy policy '
+        + input.policy_id + ' for routine public paths in this repository. '
+        + 'Eligible cognitive Cursor Missions reuse this grant without per-Mission spend confirmation. '
+        + 'UNKNOWN_SUBSCRIPTION cost remains acknowledged and unobservable. '
+        + 'Paid overages, private data, production, credentials, and cross-repository work stay outside.')
+      : ('Owner-enrolled standing Cursor development for routine public paths in this repository. '
+        + 'UNKNOWN_SUBSCRIPTION cost remains acknowledged and unobservable. Paid overages, private data, and production stay outside.');
     this.db.prepare(
       `INSERT INTO cp_standing_cursor_development(
         id, repository, policy_id, state, enrolled_at, enrolled_by, enroll_request_id,
@@ -467,8 +482,13 @@ class HostExecutionPolicy {
    * When a sealed cognitive Cursor Mission fits an active standing grant, return
    * the finite subscription_execution bounds to auto-issue MissionApprovals.
    * Does not invent monetary caps; UNKNOWN_SUBSCRIPTION remains observational.
+   * Grants bound to a Developer Autonomy policy_id only cover that policy;
+   * unbound grants may cover any active DA on the same repository root.
+   * Never transfers grants across repositories.
    */
-  matchStandingCursorDevelopment({ repository, files, max_invocations, max_runtime_ms, data_class = 'public' } = {}) {
+  matchStandingCursorDevelopment({
+    repository, files, max_invocations, max_runtime_ms, data_class = 'public', policy_id = null,
+  } = {}) {
     if (this.cursorDisabled()) return null;
     if (!repository || !Array.isArray(files) || !files.length) return null;
     let root;
@@ -478,7 +498,20 @@ class HostExecutionPolicy {
     const neededRuntime = Number(max_runtime_ms);
     if (!Number.isSafeInteger(neededInv) || neededInv < 1) return null;
     if (!Number.isSafeInteger(neededRuntime) || neededRuntime < 1000) return null;
-    for (const row of this.standingRows(root)) {
+    if (policy_id != null) {
+      try { identifier(policy_id); } catch { return null; }
+    }
+    const rows = this.standingRows(root);
+    // Prefer an exact DA policy binding, then unbound same-repo grants.
+    const ordered = policy_id
+      ? [
+        ...rows.filter(row => row.policy_id === policy_id),
+        ...rows.filter(row => !row.policy_id),
+      ]
+      : rows;
+    for (const row of ordered) {
+      if (row.policy_id && policy_id && row.policy_id !== policy_id) continue;
+      if (row.policy_id && !policy_id) continue;
       const view = this.standingView(row);
       if (!view || view.state !== 'active') continue;
       if (!view.acknowledge_unknown_cost) continue;
@@ -489,6 +522,8 @@ class HostExecutionPolicy {
       if (!files.every(file => view.path_allowlist.includes(file))) continue;
       return {
         id: view.id,
+        policy_id: view.policy_id,
+        repository: view.repository,
         subscription_execution: {
           provider: 'cursor',
           acknowledge_unknown_cost: true,
@@ -500,6 +535,178 @@ class HostExecutionPolicy {
       };
     }
     return null;
+  }
+
+  /**
+   * Fail-closed diagnosis when matchStandingCursorDevelopment returns null.
+   * Exact actionable codes for expired, revoked, exhausted, mismatched, or missing grants.
+   */
+  diagnoseStandingCursorDevelopment({
+    repository, files, max_invocations, max_runtime_ms, data_class = 'public', policy_id = null,
+  } = {}) {
+    if (this.cursorDisabled()) {
+      return {
+        matched: false,
+        code: 'CURSOR_EXECUTION_DISABLED',
+        reason: 'Cursor execution is disabled in Airodrom. Re-enable from the authenticated Terminal or Control Center, or use local OpenCode only.',
+        next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+        authority: false,
+      };
+    }
+    const hit = this.matchStandingCursorDevelopment({
+      repository, files, max_invocations, max_runtime_ms, data_class, policy_id,
+    });
+    if (hit) {
+      return {
+        matched: true,
+        code: null,
+        grant_id: hit.id,
+        policy_id: hit.policy_id || null,
+        reason: 'Standing Cursor development grant covers disclosure and subscription bounds',
+        authority: false,
+      };
+    }
+    if (!repository) {
+      return {
+        matched: false,
+        code: 'STANDING_CURSOR_GRANT_MISSING',
+        reason: 'No repository was bound for standing Cursor grant matching.',
+        next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+        authority: false,
+      };
+    }
+    let root;
+    try { root = fs.realpathSync(repository); } catch {
+      return {
+        matched: false,
+        code: 'STANDING_CURSOR_GRANT_MISSING',
+        reason: 'Repository path is not resolvable for standing Cursor grant matching.',
+        next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+        authority: false,
+      };
+    }
+    if (data_class && data_class !== 'public') {
+      return {
+        matched: false,
+        code: 'STANDING_CURSOR_GRANT_DATA_CLASS_MISMATCH',
+        reason: 'Standing Cursor development covers public paths only. Private or sensitive data classes require a separate owner authorization.',
+        next_action: 'authorize_cursor_via_authenticated_local_api',
+        authority: false,
+      };
+    }
+    const history = this.standingRowsHistory(root);
+    if (!history.length) {
+      return {
+        matched: false,
+        code: 'STANDING_CURSOR_GRANT_MISSING',
+        reason: 'No owner-enrolled standing Cursor development grant exists for this repository. '
+          + 'Developer Autonomy Cursor on the worker allowlist is not a spend/disclosure grant. '
+          + 'Enroll once via POST /api/assistant/host-execution-policy/enroll-standing-cursor-development with confirmed=true.',
+        next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+        authority: false,
+      };
+    }
+    const neededInv = Number(max_invocations);
+    const neededRuntime = Number(max_runtime_ms);
+    const fileList = Array.isArray(files) ? files : [];
+    const active = this.standingRows(root);
+    const candidates = policy_id
+      ? [
+        ...active.filter(row => row.policy_id === policy_id),
+        ...active.filter(row => !row.policy_id),
+        ...active.filter(row => row.policy_id && row.policy_id !== policy_id),
+      ]
+      : active;
+    for (const row of candidates) {
+      const view = this.standingView(row);
+      if (!view || view.state !== 'active') continue;
+      if (view.policy_id && policy_id && view.policy_id !== policy_id) {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_POLICY_MISMATCH', grant_id: view.id,
+          reason: 'Standing Cursor grant is bound to a different Developer Autonomy policy. '
+            + 'Enroll a grant for policy ' + policy_id + ' on this repository; grants never transfer across projects.',
+          next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+          authority: false,
+        };
+      }
+      if (view.policy_id && !policy_id) {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_POLICY_MISMATCH', grant_id: view.id,
+          reason: 'Standing Cursor grant requires the matching Developer Autonomy policy_id on the Mission.',
+          next_action: 'inspect_enrollment_and_prepare_new_request',
+          authority: false,
+        };
+      }
+      if (Number.isSafeInteger(neededInv) && neededInv > view.max_invocations_per_mission) {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_INVOCATION_LIMIT', grant_id: view.id,
+          reason: 'Requested Cursor invocations (' + neededInv + ') exceed standing grant max_invocations_per_mission ('
+            + view.max_invocations_per_mission + '). Narrow the Mission or re-enroll with a higher finite limit (max '
+            + STANDING_MAX_INVOCATIONS + ').',
+          next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+          authority: false,
+        };
+      }
+      if (Number.isSafeInteger(neededRuntime) && neededRuntime > view.max_runtime_ms) {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_RUNTIME_LIMIT', grant_id: view.id,
+          reason: 'Requested Cursor runtime (' + neededRuntime + ' ms) exceeds standing grant max_runtime_ms ('
+            + view.max_runtime_ms + '). Lower cognitive execution_ms or re-enroll with a higher finite ceiling (max '
+            + STANDING_MAX_RUNTIME_MS + ' ms).',
+          next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+          authority: false,
+        };
+      }
+      const missing = fileList.filter(file => !view.path_allowlist.includes(file));
+      if (missing.length) {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_PATH_MISMATCH', grant_id: view.id,
+          reason: 'Proposed files are outside the standing Cursor path allowlist: '
+            + missing.slice(0, 8).join(', ')
+            + '. Re-enroll with those relative paths (typically the DA cognitive discovery set) or narrow the plan.',
+          next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+          authority: false,
+        };
+      }
+    }
+    for (const row of history) {
+      const view = this.standingView(row);
+      if (!view) continue;
+      if (view.state === 'revoked') {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_REVOKED', grant_id: view.id,
+          reason: 'Standing Cursor development grant was revoked. Re-enroll from the authenticated Terminal or Control Center for this repository.',
+          next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+          authority: false,
+        };
+      }
+      if (view.state === 'expired') {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_EXPIRED', grant_id: view.id,
+          reason: 'Standing Cursor development grant expired. Re-enroll with a fresh TTL for this repository and DA policy.',
+          next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+          authority: false,
+        };
+      }
+      if (view.state === 'exhausted') {
+        return {
+          matched: false, code: 'STANDING_CURSOR_GRANT_EXHAUSTED', grant_id: view.id,
+          reason: 'Standing Cursor development grant mission budget is exhausted ('
+            + view.missions_used + '/' + view.max_missions
+            + '). Re-enroll with a new finite max_missions for this repository.',
+          next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+          authority: false,
+        };
+      }
+    }
+    return {
+      matched: false,
+      code: 'STANDING_CURSOR_GRANT_MISMATCH',
+      reason: 'An active standing Cursor grant exists for this repository but does not cover this Mission. '
+        + 'Inspect path allowlist, policy_id, invocation/runtime ceilings, and remaining mission budget.',
+      next_action: 'enroll_standing_cursor_development_via_authenticated_local_api',
+      authority: false,
+    };
   }
 
   consumeStandingCursorDevelopment(grantId, requestId) {

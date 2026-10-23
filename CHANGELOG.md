@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- Standing Cursor development matching binds optional DA `policy_id`, prefers the Mission’s policy, and returns exact `STANDING_CURSOR_GRANT_*` mismatch reasons (missing, expired, revoked, exhausted, path/policy/invocation/runtime) so routine Cursor work reuses an owner-enrolled grant without inventing a second approval loop ([docs/STANDING-CURSOR-DEVELOPMENT-V1.md](docs/STANDING-CURSOR-DEVELOPMENT-V1.md)).
+
+### Fixed
 - Developer Autonomy workspace preparation admits on filesystem free space after a protected reserve instead of aggregating Git history, retained clones, and `node_modules` against signed `max_disk_mb`; legacy policies stay valid and capacity errors are distinct from the old budget string.
 - Authoritative Airodrom/Arecibo routing now requires an active Developer Autonomy policy on the matched repository root; a registered project alone no longer counts as enrollment.
 

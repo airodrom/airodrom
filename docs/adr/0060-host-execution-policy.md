@@ -39,5 +39,10 @@ this host preference.
 - Ordinary Arecibo local-only Autopilot work proceeds without Cursor spend.
 - Reactivation restores prior Cursor gates (qualification, spend, disclosure);
   it does not bypass them.
+- After reactivation, owner-enrolled standing Cursor development grants
+  (`cp_standing_cursor_development`) may auto-cover routine cognitive Cursor
+  spend/disclosure for a bound repository + DA policy; they are separate from
+  the enable/disable preference and from DA worker allowlists. See
+  [STANDING-CURSOR-DEVELOPMENT-V1.md](../STANDING-CURSOR-DEVELOPMENT-V1.md).
 - Compact schema-first OpenCode planning (bounded stream + recovery) remains
   independent of Cursor availability.
