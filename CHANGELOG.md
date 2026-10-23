@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- OpenCode evaluation after a host-verified Cursor assignment no longer strands on raced recovery aborts: evaluation retry locks before readiness awaits, uncertain evaluator PIDs reconcile from process evidence, classified runtime/timeout/cancel codes replace collapsed `opencode_unavailable_or_unsupported`, and a single local evaluation retry reuses the verified worker packet without Cursor redispatch ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
+
 ### Added
 - Mandatory Autonomous Blocker Resolution V1: registry-driven recovery dispatcher (`src/limits-blockers-recovery.js`) diagnoses every registered blocker, executes only allowlisted idempotent host recoveries (bounded per Mission/request lineage), records receipts/events, and surfaces coverage via MCP `get_blocker_recovery_coverage` ([docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md](docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md)).
 

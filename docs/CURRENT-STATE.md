@@ -1,5 +1,11 @@
 # Current state (2026-10-10)
 
+## OpenCode evaluation recovery after verified Cursor work — SOURCE (2026-10-22)
+
+- **Cause (Mission `935215c3-…` / Cursor run `29d0e0b9-…`):** Host-verified README read completed; first OpenCode evaluator never started (`opencode_unavailable_or_unsupported`). Concurrent `recover`/`tick`/`defer` retries raced after the readiness await (lock taken too late), aborted the in-flight evaluator (`854b3dc2…`, pid observed then `termination_unverified`), and blocked the dependent edit. Notification `c2089189-…` delivered via inbox.
+- **Repair:** Claim evaluation-retry lock before awaits; reconcile uncertain evaluator PIDs with ESRCH+lsof evidence; classify `opencode_runtime_*` / `opencode_evaluation_*` failures; retry local evaluation of the same verified worker result only when prior evaluators are termination-verified and within budget. No Cursor redispatch for evaluation recovery.
+- Historical Mission evidence preserved; a fresh ChatGPT-origin multi-task Mission is the post-install acceptance path.
+
 ## Cursor DNS boundary & subscription deadline — SOURCE (2026-10-22)
 
 - **Cause (Mission `68206244-…` / run `a9ef0b83-…`):** Standing grant + cognitive `execution_ms` were 60s. Subscription `deadline_at` fired (~49.6s) after README read succeeded; in-flight CONNECT was mislabeled `dns_boundary` while the abort signal was active. Resolution was `cursor_cancelled`; dependent edit never ran. Successful multi-task `987ac2c5-…` used ~110s deadlines.

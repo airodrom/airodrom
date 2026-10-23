@@ -1779,10 +1779,11 @@
     {
       "id": "evaluation_unavailable",
       "codes": [
-        "EVALUATION_UNAVAILABLE"
+        "EVALUATION_UNAVAILABLE",
+        "opencode_unavailable_or_unsupported"
       ],
-      "description": "OpenCode evaluation could not complete; Mission blocked with durable reason.",
-      "category": "operational_owner",
+      "description": "OpenCode evaluation could not complete; host reconciles then retries the verified worker packet without Cursor redispatch.",
+      "category": "operational_auto",
       "severity": "error",
       "source": {
         "file": "src/specialist-gateway.js",
@@ -1793,10 +1794,10 @@
       "failure_condition": null,
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": false,
+      "automatic_recovery_allowed": true,
       "automatic_recovery": null,
-      "next_safe_action": "inspect_gateway_diagnostics_then_owner_retry_or_cancel",
-      "owner_approval_required": true,
+      "next_safe_action": "reconcile_evaluator_then_retry_local_evaluation",
+      "owner_approval_required": false,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
@@ -1818,9 +1819,355 @@
         "allowlisted": true,
         "verification": "evaluation_reconciled_or_terminal",
         "note": null,
-        "owner_gate_if_needed": true,
+        "owner_gate_if_needed": false,
         "security_fail_closed": false
       }
+    },
+    {
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": {
+        "host_operation": "reconcileBlockedEvaluation + retryPreStartEvaluation",
+        "requires": [
+          "host_verified_worker_result",
+          "termination_verified_prior_evaluator"
+        ]
+      },
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_blocked_evaluation",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "evaluation_reconciled_or_terminal",
+        "note": "retry_verified_cursor_packet",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      },
+      "id": "opencode_runtime_unavailable",
+      "codes": [
+        "opencode_runtime_unavailable",
+        "opencode_unavailable",
+        "opencode_local_provider_unavailable",
+        "opencode_local_provider_timeout"
+      ],
+      "description": "OpenCode or local provider readiness failed at evaluation admission (transient or not ready).",
+      "category": "operational_auto",
+      "severity": "error",
+      "source": {
+        "file": "src/apps/opencode-adapter.js",
+        "symbol": "execute"
+      },
+      "next_safe_action": "reconcile_evaluator_then_retry_local_evaluation"
+    },
+    {
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      },
+      "id": "opencode_runtime_unsupported",
+      "codes": [
+        "opencode_runtime_unsupported",
+        "opencode_version_unqualified",
+        "opencode_runtime_pins_changed"
+      ],
+      "description": "OpenCode executable/version/pins are unsupported for evaluation.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/apps/opencode-adapter.js",
+        "symbol": "readiness"
+      },
+      "next_safe_action": "requalify_opencode_runtime_pins"
+    },
+    {
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": null,
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_blocked_evaluation",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "evaluation_reconciled_or_terminal",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      },
+      "id": "opencode_evaluation_timeout",
+      "codes": [
+        "opencode_evaluation_timeout",
+        "opencode_timeout",
+        "gateway_evaluation_deadline"
+      ],
+      "description": "OpenCode evaluator exceeded its host timeout or Mission evaluation deadline.",
+      "category": "operational_auto",
+      "severity": "error",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "evaluate"
+      },
+      "next_safe_action": "reconcile_evaluator_then_retry_within_planning_allowance"
+    },
+    {
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": null,
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_blocked_evaluation",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "evaluation_reconciled_or_terminal",
+        "note": "fix_retry_lock_prevents_duplicate",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": false
+      },
+      "id": "opencode_evaluation_cancelled",
+      "codes": [
+        "opencode_evaluation_cancelled",
+        "opencode_cancelled"
+      ],
+      "description": "OpenCode evaluator was cancelled (often by a raced recovery abort).",
+      "category": "operational_auto",
+      "severity": "error",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "evaluate"
+      },
+      "next_safe_action": "reconcile_then_single_local_evaluation_retry"
+    },
+    {
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": {
+        "host_operation": "reconcileBlockedEvaluation",
+        "requires": [
+          "pid_esrch",
+          "no_workspace_holders"
+        ]
+      },
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "reconcile_blocked_evaluation",
+        "executable": true,
+        "allowlisted": true,
+        "verification": "evaluation_reconciled_or_terminal",
+        "note": "never_assume_termination",
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      },
+      "id": "opencode_evaluator_termination_unverified",
+      "codes": [
+        "opencode_evaluator_termination_unverified",
+        "opencode_termination_unverified",
+        "gateway_evaluation_reconciliation_required"
+      ],
+      "description": "Evaluator process started but termination was not verified; fail closed until host process evidence reconciles.",
+      "category": "security_critical",
+      "severity": "critical",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "reconcileBlockedEvaluation"
+      },
+      "next_safe_action": "reconcile_with_process_evidence_then_retry_or_keep_blocked"
+    },
+    {
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      },
+      "id": "opencode_evaluation_authority_denied",
+      "codes": [
+        "opencode_evaluation_authority_denied"
+      ],
+      "description": "Mission authority no longer permits local OpenCode evaluation.",
+      "category": "security_critical",
+      "severity": "critical",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "evaluate"
+      },
+      "next_safe_action": "fail_closed_reauthorize_mission"
+    },
+    {
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "missions",
+          "cursor",
+          "developer_autonomy",
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "consolidate_owner_gate",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": true,
+        "security_fail_closed": false
+      },
+      "id": "opencode_evaluation_result_invalid",
+      "codes": [
+        "opencode_evaluation_result_invalid",
+        "gateway_json_required",
+        "gateway_recommendation_invalid"
+      ],
+      "description": "Evaluator returned invalid or unbound structured evaluation JSON.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "parseEvaluation"
+      },
+      "next_safe_action": "inspect_evaluation_receipt_then_owner_decide"
     },
     {
       "id": "gateway_evaluation_deadline",

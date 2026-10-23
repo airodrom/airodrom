@@ -232,33 +232,38 @@ function deferEvaluationRetry(service, m) {
   return false;
 }
 async function retryPreStartEvaluation(service, m) {
+  // Claim the Mission lock before any await. Concurrent recover()/tick()/defer
+  // retries previously raced after readiness, aborted the in-flight evaluator,
+  // and left termination_unverified (Mission 935215c3).
   if (!m || localEvalRetries.has(m.id)) return false;
-  const runs = service.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(m.id);
-  const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length === 1);
-  const attempt = node?.attempts[0];
-  // Completed specialist may be Cursor (Milestone B) or local OpenCode (Local-First).
-  // Do not require a Cursor run — that blocked local-only evaluation recovery.
-  const worker = attempt?.run_id ? service.store.run(attempt.run_id) : null;
-  if (!worker || worker.state !== 'completed' || !worker.termination_verified) return false;
-  if (!['cursor', 'opencode'].includes(worker.agent_id)) return false;
-  // Historical Autopilot acceptance Mission stays immutable: never auto-replay it.
-  if (m.id === '98a67bd6-b6db-44be-ba3e-390ec3ce8478') return false;
-  if (!require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
-  // A negative cache is not launch authority. A positive cache is enough to
-  // enter evaluation; execute() probes again before the process starts.
-  // A startup probe can throw before pins are observable. That is not a
-  // consumed evaluation attempt.
-  let ready = { ready: false };
-  try {
-    ready = await service.bridge.opencodeAdapter.readiness();
-    if (!ready.ready) ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
-  } catch { ready = { ready: false }; }
-  if (!ready.ready) return deferEvaluationRetry(service, m);
-  // recover() runs while admission is still closed. Starting the evaluator
-  // then rolls back. Wait until the service is open; this is not a new Cursor run.
-  if (service.bridge.lifecycle && service.bridge.lifecycle.state() !== 'open') return deferEvaluationRetry(service, m);
   localEvalRetries.add(m.id);
   try {
+    // Reconcile uncertain evaluator PIDs before admitting another local retry.
+    try { require('./opencode-gateway').reconcileBlockedEvaluation(service.bridge, m); } catch { /* keep blocked */ }
+    m = service.store.getMission(m.id);
+    if (!m || m.state !== 'blocked') return false;
+    const runs = service.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(m.id);
+    const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length === 1);
+    const attempt = node?.attempts[0];
+    // Completed specialist may be Cursor (Milestone B) or local OpenCode (Local-First).
+    // Do not require a Cursor run — that blocked local-only evaluation recovery.
+    const worker = attempt?.run_id ? service.store.run(attempt.run_id) : null;
+    if (!worker || worker.state !== 'completed' || !worker.termination_verified) return false;
+    if (!['cursor', 'opencode'].includes(worker.agent_id)) return false;
+    // Historical Autopilot acceptance Mission stays immutable: never auto-replay it.
+    if (m.id === '98a67bd6-b6db-44be-ba3e-390ec3ce8478') return false;
+    if (!require('./opencode-gateway').preStartEvaluationRetryable(m, runs, attempt)) return false;
+    // A negative cache is not launch authority. A positive cache is enough to
+    // enter evaluation; execute() probes again before the process starts.
+    let ready = { ready: false };
+    try {
+      ready = await service.bridge.opencodeAdapter.readiness();
+      if (!ready.ready) ready = await service.bridge.opencodeAdapter.readiness({ fresh: true });
+    } catch { ready = { ready: false }; }
+    if (!ready.ready) return deferEvaluationRetry(service, m);
+    // recover() runs while admission is still closed. Starting the evaluator
+    // then rolls back. Wait until the service is open; this is not a new Cursor run.
+    if (service.bridge.lifecycle && service.bridge.lifecycle.state() !== 'open') return deferEvaluationRetry(service, m);
     save(service.bridge, m, node, 'evaluating');
     const evaluation = await require('./opencode-gateway').evaluate(service.bridge, service.store.requireMission(m.id), worker, attempt.verification);
     const current = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
@@ -289,10 +294,12 @@ async function retryPreStartEvaluation(service, m) {
     }
     return true;
   } catch (error) {
-    const latest = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
-    if (latest) save(service.bridge, m, latest, 'unavailable');
+    // Lock holder only: restore unavailable so a later deferred retry can run.
+    const node = nodes(service.bridge, m).find(n => n.attempts?.length === 1 && ['evaluating', 'unavailable'].includes(n.state));
+    if (node) save(service.bridge, m, node, 'unavailable');
     const code = String(error.code || error.message);
-    if (code.includes('Service admission is closed') || /opencode_unavailable_or_unsupported|opencode_local_provider/.test(code)) {
+    if (code.includes('Service admission is closed')
+      || /opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout/.test(code)) {
       return deferEvaluationRetry(service, m);
     }
     try { service.store.event('gateway.evaluation_retry_failed', m.id, { code: code.slice(0, 120), authority: false }); } catch { /* The Mission stays blocked either way. */ }
@@ -458,7 +465,7 @@ async function processResult(service,row) {
       if(['running','verifying','awaiting_acceptance'].includes(current.state))store.state(m.id,'blocked','EVALUATION_UNAVAILABLE: '+detail);
       // Local OpenCode (and Cursor→OpenCode) evaluator never-started misses are
       // retryable once host verification already passed. Do not wait for reboot.
-      if (verification?.status === 'passed' && /opencode_unavailable_or_unsupported|opencode_local_provider/.test(detail)) {
+      if (verification?.status === 'passed' && /opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout/.test(detail)) {
         deferEvaluationRetry(service, store.requireMission(m.id));
       }
     }
