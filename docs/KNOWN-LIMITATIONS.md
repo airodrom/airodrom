@@ -1,5 +1,11 @@
 # Known limitations
 
+## Developer Autonomy concurrent worktrees (2026-10-22)
+
+- `max_worktrees` remains a concurrent execution ceiling (default 4), not an on-disk retention quota. Idle grantless ready clones and settled evidence do not occupy slots; active writers, unsettled Missions, active grants, and invalid prep still do.
+- Automatic cleanup still removes only clean disposable unbound workspaces. Dirty/unique content is held on disk and never force-deleted to free capacity.
+- Genuine exhaustion returns `WORKTREE_BUDGET_EXHAUSTED` with slot classifications; owner intervention is required only when active/uncertain executions fill the ceiling.
+
 ## Cognitive planning file sets (2026-10-22)
 
 - `PlanningProposal.files` is normalized to the union of `task.paths`. Unread discovery/context files must not be treated as required edit targets; out-of-scope paths still fail closed with explicit mismatched path detail.

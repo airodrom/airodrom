@@ -458,19 +458,25 @@ class DeveloperAutonomy {
     });
   }
 
-  // Concurrent worktree budget covers active preparation and unsettled execution.
-  // Settled, idle clones may remain on disk as evidence; they must not block a
-  // later Mission when max_worktrees is a concurrent ceiling.
   // Concurrent max_worktrees is an active-prep / unsettled-execution ceiling.
-  // Idle held evidence (unique commits retained after owner cleanup) and idle
-  // grantless bound clones must not block a later Mission. Ready and invalid
-  // clones still occupy slots until cleaned or settled.
+  // Idle grantless ready clones (including interrupted planning leftovers) and
+  // settled evidence may remain on disk but must not consume execution slots.
+  // Active writers, unsettled Mission lineages, active grants, and invalid prep
+  // continue to occupy capacity until safely reconciled.
   workspaceOccupiesBudget(row) {
     if (!row || !['ready', 'bound', 'held', 'invalid'].includes(row.state)) return false;
-    if (row.state === 'ready' || row.state === 'invalid') return true;
+    if (row.state === 'invalid') return true;
+    const idle = this.workspaceIdle(row.path);
+    if (row.state === 'ready') {
+      // Unbound ready: occupy only while writers/leases remain; idle leftovers
+      // are reclaimable evidence and must not strand the concurrent ceiling.
+      if (!row.grant_id) return !idle;
+      const grant = this.db.prepare('SELECT state FROM cp_developer_autonomy_grants WHERE grant_id=?').get(row.grant_id);
+      return !grant || grant.state === 'active';
+    }
     const missions = this.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.workspace')=?")
       .all(row.path).map(item => this.bridge.controlStore.requireMission(item.id));
-    if (!this.workspaceIdle(row.path)) return true;
+    if (!idle) return true;
     if (missions.length) return !this.lineageSettled(missions);
     if (row.grant_id) {
       const grant = this.db.prepare('SELECT state FROM cp_developer_autonomy_grants WHERE grant_id=?').get(row.grant_id);
@@ -488,9 +494,102 @@ class DeveloperAutonomy {
     return this.workspaceOccupiesBudget(row);
   }
 
-  // Remove only clean, idle ready clones so worktree slots and physical disk
-  // can recover. Never promote unique/dirty clones to held here — held would
-  // re-charge disk and worsen capacity. Leave those as ready (non-disk-occupying).
+  /** Classify one workspace for capacity diagnostics (no secrets / absolute home expansion). */
+  classifyWorkspaceCapacity(row) {
+    if (!row) return null;
+    const basename = (() => { try { return path.basename(row.path); } catch { return row.workspace_id; } })();
+    const idle = (() => { try { return this.workspaceIdle(row.path); } catch { return false; } })();
+    const missions = this.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.workspace')=?")
+      .all(row.path).map(item => {
+        try { return this.bridge.controlStore.requireMission(item.id); }
+        catch { return { id: item.id, state: 'unknown' }; }
+      });
+    let grantState = null;
+    if (row.grant_id) {
+      try { grantState = this.db.prepare('SELECT state FROM cp_developer_autonomy_grants WHERE grant_id=?').get(row.grant_id)?.state || null; }
+      catch { grantState = 'unknown'; }
+    }
+    const occupies = this.workspaceOccupiesBudget(row);
+    let classification = 'unknown';
+    if (row.state === 'invalid') classification = 'invalid_or_orphaned_prep';
+    else if (!idle) classification = 'active_or_uncertain_writer';
+    else if (missions.length && !this.lineageSettled(missions)) classification = 'unsettled_mission';
+    else if (row.grant_id && (!grantState || grantState === 'active') && !missions.length) classification = 'active_grant_reservation';
+    else if (row.state === 'held') classification = 'retained_evidence';
+    else if (row.state === 'ready' && !row.grant_id) classification = 'idle_unbound_ready';
+    else if (row.state === 'bound' && idle && (!missions.length || this.lineageSettled(missions))) classification = 'idle_bound_settled';
+    else if (occupies) classification = 'active_execution';
+    else classification = 'non_occupying';
+    return {
+      workspace_id: row.workspace_id,
+      workspace_label: basename,
+      state: row.state,
+      classification,
+      occupies_capacity: occupies,
+      grant_id: row.grant_id || null,
+      grant_state: grantState,
+      mission_ids: missions.map(m => m.id),
+      mission_states: missions.map(m => m.state),
+      idle,
+      disposable: row.disposable === 1,
+      authority: false,
+    };
+  }
+
+  capacityInventory(policyId) {
+    const rows = this.db.prepare(
+      "SELECT * FROM cp_developer_autonomy_workspaces WHERE policy_id=? AND state IN ('ready','bound','held','invalid')"
+    ).all(policyId);
+    const slots = rows.map(row => this.classifyWorkspaceCapacity(row));
+    const occupied = slots.filter(s => s.occupies_capacity);
+    return {
+      policy_id: policyId,
+      total_tracked: slots.length,
+      occupied_count: occupied.length,
+      occupied: occupied,
+      non_occupying: slots.filter(s => !s.occupies_capacity),
+      authority: false,
+    };
+  }
+
+  worktreeBudgetError(policy) {
+    const inventory = this.capacityInventory(policy.policy_id);
+    const limit = policy.budgets.max_worktrees;
+    const blocking = inventory.occupied.map(s => ({
+      workspace_id: s.workspace_id,
+      classification: s.classification,
+      mission_ids: s.mission_ids,
+      grant_id: s.grant_id,
+    }));
+    const needsOwner = inventory.occupied.some(s =>
+      ['active_or_uncertain_writer', 'unsettled_mission', 'active_grant_reservation', 'active_execution'].includes(s.classification));
+    const error = Error(
+      'Worktree budget exhausted: ' + inventory.occupied_count + '/' + limit
+      + ' concurrent slots in use for policy ' + policy.policy_id.slice(0, 8)
+      + '. Occupied: ' + (blocking.map(b => b.classification + '(' + b.workspace_id.slice(0, 8) + ')').join(', ') || 'none')
+      + (needsOwner
+        ? '. Owner intervention required for active or uncertain executions.'
+        : '. Reclaim idle unbound ready clones or wait for settlement; protected workspaces stay preserved.')
+    );
+    error.code = 'WORKTREE_BUDGET_EXHAUSTED';
+    error.details = {
+      policy_id: policy.policy_id,
+      max_worktrees: limit,
+      occupied_count: inventory.occupied_count,
+      occupied: blocking,
+      non_occupying_count: inventory.non_occupying.length,
+      recovery: needsOwner
+        ? 'inspect_active_missions_grants_and_leases'
+        : 'reclaim_idle_ready_or_retry_after_settlement',
+      owner_intervention_required: needsOwner,
+      authority: false,
+    };
+    return error;
+  }
+
+  // Remove only clean, idle ready clones so physical disk can recover. Idle
+  // grantless ready no longer occupy concurrent slots even when cleanup holds
+  // unique/dirty evidence. Never promote unique/dirty clones to held here.
   reclaimIdleReadyWorkspaces(policy, owner) {
     const idleBefore = Date.now() - 60_000;
     const rows = this.db.prepare(
@@ -502,7 +601,7 @@ class DeveloperAutonomy {
         const record = JSON.parse(row.record);
         if (this.cleanupDecision(row, record).action !== 'clean') continue;
         this.cleanupOwnedWorkspace({ workspace_id: row.workspace_id, confirmed: true }, owner);
-      } catch { /* best-effort reclaim; prepare still fail-closed on budget */ }
+      } catch { /* best-effort reclaim; prepare still fail-closed on genuine budget */ }
     }
   }
 
@@ -928,7 +1027,9 @@ class DeveloperAutonomy {
     // Do not charge Git history or retained clones against a fixed max_disk_mb.
     // Admission is filesystem free space after reserve; existing trees stay put.
     this.assertPreparationCapacity(policy, this.preparationEstimate(policy), { label: 'workspace preparation' });
-    if (this.occupiedWorktrees(policy.policy_id) >= policy.budgets.max_worktrees) throw Error('Worktree budget exhausted');
+    if (this.occupiedWorktrees(policy.policy_id) >= policy.budgets.max_worktrees) {
+      throw this.worktreeBudgetError(policy);
+    }
 
     const dirty = workspaceDirty(policy.repository);
     const forceDisposable = input.prefer_disposable === true || dirty.length > 0;

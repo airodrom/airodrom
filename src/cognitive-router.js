@@ -776,15 +776,29 @@ async function executeReserved(zero, record, p, instruction) {
     record.state = 'blocked';
     record.blockers = [code];
     if (error.details) {
-      record.plan_scope = error.details;
-      record.presentation = {
-        ...(record.presentation || {}),
-        status: code,
-        authorized_files: error.details.authorized_files,
-        proposed_files: error.details.proposed_files,
-        mismatched_paths: error.details.mismatched_paths,
-        correction: error.details.correction,
-      };
+      if (error.code === 'WORKTREE_BUDGET_EXHAUSTED' || /Worktree budget exhausted/i.test(String(error.message || ''))) {
+        record.capacity = error.details;
+        record.presentation = {
+          ...(record.presentation || {}),
+          status: code,
+          policy_id: error.details.policy_id,
+          max_worktrees: error.details.max_worktrees,
+          occupied_count: error.details.occupied_count,
+          occupied: error.details.occupied,
+          recovery: error.details.recovery,
+          owner_intervention_required: error.details.owner_intervention_required,
+        };
+      } else {
+        record.plan_scope = error.details;
+        record.presentation = {
+          ...(record.presentation || {}),
+          status: code,
+          authorized_files: error.details.authorized_files,
+          proposed_files: error.details.proposed_files,
+          mismatched_paths: error.details.mismatched_paths,
+          correction: error.details.correction,
+        };
+      }
     }
     zero.write(request_id, record.principal, record, 'blocked');
     return view(record, b);

@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- Developer Autonomy concurrent worktree capacity no longer counts idle grantless `ready` leftovers from interrupted planning; slots cover active writers, unsettled Missions, active grants, and invalid prep only, with classified `WORKTREE_BUDGET_EXHAUSTED` diagnostics ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
+
+### Fixed
 - Cognitive planning no longer fails `cognitive_plan_files_mismatch` when the planner lists discovery context files unused by tasks; `files` normalizes to the task-path union, legitimate README read→edit subsets pass, and genuine out-of-scope paths report authorized/proposed/mismatched detail ([docs/CURRENT-STATE.md](docs/CURRENT-STATE.md)).
 - Terminal ask states without a Mission id (`BLOCKED`, `WAIT`, cancellation, and related) enqueue duplicate-safe durable notifications keyed by `request_id` for `list_mission_notifications` (no polling; inbox fallback unchanged).
 - Classify `cp_mission_notifications.request_id` in memory retention fields so host boot is not blocked after pre-Mission notification identity is introduced.
