@@ -70,8 +70,8 @@ function mentionIsNegated(instruction, needle) {
     const idx = lower.indexOf(value, from);
     if (idx < 0) break;
     saw = true;
-    const before = lower.slice(Math.max(0, idx - 64), idx);
-    const negated = /\b(?:not|neither|except|excluding|without|instead\s+of|rather\s+than|other\s+than|outside)\b[\s\w,/.'"-]*$/i.test(before)
+    const before = lower.slice(Math.max(0, idx - 64), idx).split(/[.;\n]/).at(-1);
+    const negated = /\b(?:no|not|neither|except|excluding|without|instead\s+of|rather\s+than|other\s+than|outside)\b[\s\w,/'"-]*$/i.test(before)
       || /\(\s*not\b[\s\w,/.'"-]*$/i.test(before);
     if (!negated) return false;
     from = idx + value.length;

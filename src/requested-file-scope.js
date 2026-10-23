@@ -28,18 +28,18 @@ function extract(instruction) {
   // Explicit operation followed by a quoted literal or an unquoted POSIX path
   // token. Bare tokens must contain a dot or slash; extensionless paths must be
   // quoted. Unsupported requests need clarification, never a guessed filename.
-  const pattern = /\b(read|inspect|review|edit|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create)\s+(?:(?:the\s+)?file\s+)?(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s,;:!?()]+)(?:[,:;!?]|(?=\s|$))/gi;
+  const pattern = /\b(reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create)\s+(?:(?:the\s+)?file\s+)?(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s,;:!?()]+)(?:[,:;!?]|(?=\s|$))/gi;
   const bindings = []; let unresolvedOperation = false;
   for (const m of text.matchAll(pattern)) {
     const before = text.slice(0, m.index).split(/[.;\n]/).at(-1);
     if (/\b(?:not|never|without|don't)\b[^,;]*$/i.test(before)) continue;
     const quoted = /^[`"']/.test(m[2]);
     const token = quoted ? m[2].slice(1, -1) : m[2].replace(/\.$/, '');
-    if (!quoted && !/[./\\]/.test(token) && !/^(?:read|inspect|review|edit|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create)\s+(?:the\s+)?file\s/i.test(m[0])) {
+    if (!quoted && !/[./\\]/.test(token) && !/^(?:reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create)\s+(?:the\s+)?file\s/i.test(m[0])) {
       unresolvedOperation = true;
       continue;
     }
-    const verb = m[1].toLowerCase();
+    const verb = m[1].toLowerCase().replace(/^(read|edit)s$/, '$1');
     const operation = /^(read|inspect|review)$/.test(verb) ? 'read' : verb === 'create' ? 'create' : 'edit';
     const tokens = [token];
     // A literal list belongs to the same operation. Stop before prose or a new
@@ -62,6 +62,12 @@ function extract(instruction) {
   // check does not resolve aliases or infer a file from repository contents.
   for (const m of text.matchAll(/(?:^|[\s`"'(])((?:\.\/)?[\w.-]+(?:\/[\w.-]+)*\.[a-z][a-z0-9_-]*)(?=\.(?:\s|$)|[\s`"'),;:!?]|$)/gi)) {
     const file = normalize(m[1].replace(/\.$/, ''));
+    // A literal explicitly forbidden as a substitute is not an operation target.
+    // Contradictory positive scope remains a clarification, never an extra grant.
+    if (/^[`"']?\s+substitution\s+must\s+be\s+rejected\b/i.test(text.slice(m.index + m[0].length))) {
+      if (bindings.some(b => b.path === file)) C.fail('requested_file_operation_required');
+      continue;
+    }
     const before = text.slice(0, m.index).split(/[.;\n]/).at(-1);
     if (/\b(?:not|never|without|don't)\b[^,;]*$/i.test(before)) continue;
     if (!bindings.some(b => b.path === file)) C.fail('requested_file_operation_required');

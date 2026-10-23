@@ -14,6 +14,7 @@ async function setup(t, { cursor = true, repairs = 1 } = {}) {
   qualifyCanonical(b);
   b.expandedAutonomy.setMode({ mode: 'routine_auto', confirmed: true, request_id: randomUUID(), sync_risk_acceptance: false }, 'operator');
   if (cursor) {
+    b.hostExecutionPolicy.enableCursor({ confirmed: true, request_id: randomUUID() }, 'operator');
     b.cursorWorker = new (require('../src/cursor-worker').CursorWorker)(b, {
       fixtureExecutable: path.join(__dirname, 'fixtures/cursor-agent-fixture.cjs'),
     });
@@ -100,7 +101,8 @@ async function setup(t, { cursor = true, repairs = 1 } = {}) {
   f.bindAdapter();
   f.ask = async () => {
     const request_id = randomUUID();
-    const instruction = 'In Fixture project change fixture.txt from alpha to beta and independently review it.';
+    const instruction = 'In Fixture project change fixture.txt from alpha to beta.'
+      + (f.plan.some(task => task.operation === 'read') ? ' Then review fixture.txt.' : '');
     let view = await b.zeroSetupWork.ask({ request_id, instruction }, 'operator');
     for (let i = 0; i < 200 && view.state === 'PLANNING'; i++) {
       await new Promise((r) => setTimeout(r, 20));

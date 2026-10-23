@@ -95,7 +95,7 @@ test('zero-setup Autopilot path uses default repo and does not ask for cleaned w
     fs.rmSync(leftover, { recursive: true, force: true });
   });
   const project = f.bridge.projects.createProject({
-    name: 'Arecibo Core',
+    name: 'Routing Sample',
     repositories: [primary, leftover],
     privacyPolicy: 'local_only',
   });
@@ -106,13 +106,13 @@ test('zero-setup Autopilot path uses default repo and does not ask for cleaned w
     request_id: randomUUID(),
   }, 'operator');
 
-  const resolved = f.bridge.zeroSetupWork.resolveEnrolledProject('Start the Arecibo Core release-readiness audit in Cursor. Do not deploy production.');
+  const resolved = f.bridge.zeroSetupWork.resolveEnrolledProject('Start the Routing Sample release-readiness audit in Cursor. Do not deploy production.');
   assert.equal(resolved.ok, true);
   assert.equal(resolved.workspace, fs.realpathSync(primary));
   assert.ok(!resolved.clarify);
 
   const result = await f.bridge.zeroSetupWork.ask({
-    instruction: 'Start the Arecibo Core release-readiness audit in Cursor. Do not deploy production.',
+    instruction: 'Start the Routing Sample release-readiness audit in Cursor. Do not deploy production.',
     request_id: randomUUID(),
   }, 'operator');
   assert.ok(!JSON.stringify(result.blockers || []).includes('ENROLLED_REPOSITORY_AMBIGUOUS'));

@@ -28,6 +28,12 @@ absolute paths, backslashes, noncanonical Unicode, and ambiguous path components
 are rejected. Case and directory components are preserved. No basename matching,
 file aliases, enrollment-default substitution, or report coercion is permitted.
 
+Literal `reads` and `edits` clauses normalize to the same read/edit operations.
+An explicit `AGENTS.md substitution must be rejected` clause excludes that
+literal from requested scope; it never enrolls it. A conflicting positive operation
+on that same path requires clarification. Other unsupported filename prose still
+fails closed.
+
 An explicit path must be enrolled and available as a regular admissible file before
 planning. Cognitive enrollment currently supports existing files; a creation request
 is rejected and requires an independently authorized creation workflow. There is no
@@ -56,6 +62,11 @@ containing a product name cannot make another negated source phrase positive.
 Expired enrollments are excluded from cognitive selection. An exact enrolled alias
 outranks shared words in other aliases or project names; multiple exact aliases
 remain ambiguous and cannot authorize execution.
+
+Without an exact alias, exact enrolled project names and repository paths outrank
+incidental shared words. Multiple exact matches or multiple policies for the named
+project remain ambiguous. `No source edits` is a negation, not a request for a
+project containing the word `source`; negation stops at a sentence boundary.
 
 Generated disposable workspace UUIDs are typed host identities. Before screening
 a workspace path, the host may neutralize only its canonical UUID basename, and

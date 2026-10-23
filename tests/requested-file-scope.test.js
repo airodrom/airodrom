@@ -106,3 +106,27 @@ test('deletion cannot satisfy an existing-file edit request', () => {
   const v = S.verification(mission(), { files: { 'AGENTS.md': 'original' } });
   assert.equal(v.status, 'failed'); assert.deepEqual(v.evidence.missing_changes, [requested]);
 });
+
+test('read and edit inflections retain the same literal scope and dependency', () => {
+  const s = S.extract('Cursor reads recovery-proof.txt; then Cursor edits recovery-proof.txt.');
+  assert.deepEqual(s, scope()); S.assertProposal(s, proposal());
+  assert.throws(() => S.extract('Cursor reads recovery-proof.txt then edits something.'), /operation_required/);
+});
+
+test('explicit substitution rejection does not enroll the rejected file', () => {
+  const text = 'Cursor READ recovery-proof.txt; then Cursor EDIT recovery-proof.txt. Target file is recovery-proof.txt; AGENTS.md substitution must be rejected.';
+  const s = S.extract(text); assert.deepEqual(s, scope());
+  S.assertEnrollment(s, [requested]);
+  assert.throws(() => S.assertProposal(s, proposal(['AGENTS.md'])), /plan_mismatch/);
+  assert.throws(() => S.extract(text + ' Edit AGENTS.md.'), /operation_required/);
+  assert.throws(() => S.extract('Edit recovery-proof.txt. AGENTS.md substitution may be accepted.'), /operation_required/);
+  assert.throws(() => S.extract('Edit recovery-proof.txt. AGENTS.md substitution must not be rejected.'), /operation_required/);
+});
+
+test('reported multi-task request keeps roles and exact scope without granting a rejected substitute', () => {
+  const text = 'Explicit roles: OpenCode is PLANNER and EVALUATOR only. Cursor is the sole IMPLEMENTATION SPECIALIST for both dependent tasks. In the existing authorized enrolled disposable chatgpt-handoff repository, execute Task A: Cursor READ recovery-proof.txt, host verifies, OpenCode evaluates READY; then Task B: Cursor EDIT recovery-proof.txt to exact bytes AIRODROM-CHATGPT-HANDOFF-PASS plus final newline, host verifies, OpenCode evaluates READY. Target and only authorized modified file is recovery-proof.txt; AGENTS.md substitution must be rejected. Then run registered host checks including requested_file_scope, automatic acceptance, settlement, verified termination and all leases released. Bounded automatic recovery on retryable evaluation errors. No source edits, merge, install or authority increase.';
+  const s = S.extract(text); assert.deepEqual(s, scope());
+  assert.equal(R.resolveWorkerRoles(text).specialist, 'cursor');
+  S.assertEnrollment(s, [requested]); S.assertProposal(s, proposal());
+  assert.throws(() => S.assertProposal(s, proposal(['AGENTS.md'])), /plan_mismatch/);
+});

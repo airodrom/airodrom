@@ -105,6 +105,25 @@ test('a slow planner acknowledges PLANNING before OpenCode returns and the same 
   assert.equal(f.plannerCalls, 1);
 });
 
+test('exact project names outrank incidental tokens while multiple exact enrollments stay ambiguous', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy;
+  const policy = da.inspect(f.policy.policy_id);
+  const project = f.bridge.projects.getProject(policy.project_id);
+  const otherProject = { ...project, projectId: randomUUID(), name: 'Source Tools' };
+  const other = { ...policy, policy_id: randomUUID(), project_id: otherProject.projectId, alias: 'source-tools' };
+  f.bridge.projects.listProjects = () => [project, otherProject];
+  da.list = () => [policy, other];
+  const v = await f.ask(randomUUID(), caller, `In ${project.name} change fixture.txt from alpha to beta. Preserve source formatting.`);
+  assert.ok(v.mission_id, JSON.stringify(v));
+  assert.equal(f.bridge.missions.require(v.mission_id).envelope.cognitive.envelope.delegation.policy_id, policy.policy_id);
+  await f.settle(v.mission_id);
+  const calls = f.plannerCalls;
+  await assert.rejects(f.ask(randomUUID(), caller, `Use ${project.name} and Source Tools to edit fixture.txt.`), /cognitive_repository_ambiguous/);
+  da.list = () => [policy, { ...policy, policy_id: randomUUID(), alias: 'another-policy' }];
+  await assert.rejects(f.ask(randomUUID(), caller, `In ${project.name} edit fixture.txt.`), /cognitive_repository_ambiguous/);
+  assert.equal(f.plannerCalls, calls);
+});
+
 test('status reads stay responsive while disposable workspace preparation awaits', async t => {
   const f = await setup(t);
   const da = f.bridge.developerAutonomy;

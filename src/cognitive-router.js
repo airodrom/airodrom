@@ -37,6 +37,7 @@ function enrollment(input, repository) {
 // competing specialist next to an explicit Cursor assignment.
 const PLAN_EVAL_ROLE = '(?:plan(?:ning)?|evaluat(?:e|ion|or)|planner|evaluator)';
 const OPENCODE_ROLE_PHRASES = [
+  /\bopencode\s+is\s+(?:the\s+)?(?:planner|evaluator)(?:\s+and\s+(?:planner|evaluator))?(?:\s+only)?\b/ig,
   // "Use OpenCode to plan", "Use OpenCode to plan and evaluate"
   new RegExp(String.raw`\b(?:use|using|via|with)\s+opencode\s+to\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
   new RegExp(String.raw`\bopencode\s+to\s+${PLAN_EVAL_ROLE}(?:\s+and\s+${PLAN_EVAL_ROLE})?\b`, 'ig'),
@@ -67,6 +68,8 @@ const SPECIALIST_MATCH = new RegExp(
   String.raw`|\b(cursor|opencode|host)\s+as\s+(?:the\s+)?(?:explicitly\s+requested\s+)?(?:implementation\s+)?(?:specialist|worker)\b` +
   String.raw`|\b(cursor|opencode|host)\s+to\s+(?:implement(?:ation|s)?|execute|edit|run|change|modify|write|update)\b` +
   String.raw`|\b(cursor|opencode|host)\s+(?:change|edit|modify|write|update|implement|execute|run)\b` +
+  String.raw`|\b(cursor|opencode|host)\s+(?:reads?|edits)\b` +
+  String.raw`|\b(cursor|opencode|host)\s+is\s+(?:the\s+)?(?:sole\s+)?(?:implementation\s+)?specialist\b` +
   String.raw`|\b(cursor|opencode|host)\s+(?:for\s+)?(?:implementation|implements?|specialist)\b` +
   String.raw`|\bspecialist\s*[:=]\s*(cursor|opencode|host)\b`,
   'ig'
@@ -108,7 +111,7 @@ function resolveWorkerRoles(instruction, options = {}) {
     text = text.replace(/\bin\s+cursor\b|\busing\s+cursor\b|\bvia\s+cursor\b|\bhave\s+cursor\b/ig, ' ');
   }
   const specialists = [...text.matchAll(SPECIALIST_MATCH)]
-    .map(m => (m[1] || m[2] || m[3] || m[4] || m[5] || m[6] || m[7] || m[8] || m[9]).toLowerCase());
+    .map(m => m.slice(1).find(Boolean).toLowerCase());
   let unique = [...new Set(specialists)];
   // Role residue: when OpenCode was explicitly named as planner/evaluator, a leftover
   // OpenCode specialist hit must not compete with a Cursor implementation specialist.
@@ -458,7 +461,12 @@ function policyFor(bridge, instruction) {
   // An explicit enrolled alias outranks shared project/alias words. Ambiguous
   // exact aliases still fail closed; ranking never changes enrollment authority.
   const exact = matches.filter(p => instructionMentions(instruction, '', p.alias)?.kind === 'alias');
-  return exact.length ? exact : matches;
+  if (exact.length) return exact;
+  // A named enrolled project or repository must not compete with incidental
+  // words in another project's name. Do not break ties among exact matches.
+  const named = matches.filter(p => instruction.includes(p.repository)
+    || instructionMentions(instruction, projects.find(project => project.projectId === p.project_id)?.name)?.kind === 'full_name');
+  return named.length ? named : matches;
 }
 
 function assertDelegation(bridge, record) {
