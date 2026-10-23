@@ -22,6 +22,7 @@
 **Live Execution Monitor V1** (source candidate): [LIVE-EXECUTION-MONITOR-V1.md](LIVE-EXECUTION-MONITOR-V1.md) — active-Mission three-column Observatory UI; see also [Live Agent Observatory](LIVE-AGENT-OBSERVATORY-V1.md).
 
 **Limits & Blockers Registry V1:** [operations/LIMITS-AND-BLOCKERS-REGISTRY.md](operations/LIMITS-AND-BLOCKERS-REGISTRY.md) — canonical limits/blockers catalog, live diagnostics, safe recovery classes.
+**Operational blocker recovery runbook:** [operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md) — all 27 operational blockers: diagnosis, authorized recovery, owner fallback.
 
 **Operational recovery V1:** [OPERATIONAL-RECOVERY-LIFECYCLE-V1.md](OPERATIONAL-RECOVERY-LIFECYCLE-V1.md) — bounded identity reads, writer-death reconciliation, checkpoint copy modes.
 

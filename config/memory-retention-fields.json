@@ -4222,6 +4222,33 @@
       "note": "A"
     }
   },
+  "cp_limits_blocker_recovery_attempts": {
+    "fields": [
+      "id",
+      "registry_id",
+      "request_id",
+      "mission_id",
+      "lineage_key",
+      "attempt",
+      "operation",
+      "outcome",
+      "receipt_json",
+      "created_at"
+    ],
+    "source": "src/limits-blockers-recovery.js",
+    "classification": {
+      "id": "A",
+      "registry_id": "A",
+      "request_id": "A",
+      "mission_id": "A",
+      "lineage_key": "A",
+      "attempt": "A",
+      "operation": "A",
+      "outcome": "A",
+      "receipt_json": "B",
+      "created_at": "A"
+    }
+  },
   "cp_project_defaults": {
     "fields": [
       "project_id",

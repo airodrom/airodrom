@@ -10,6 +10,10 @@ Canonical, source-grounded registry of Airodrom operational limits, execution bl
 
 Every registered blocker triggers automatic diagnosis. Executable recovery runs only through the allowlisted host operations in `limits-blockers-recovery.js` (max 2 attempts per Mission/request lineage). Security-critical entries investigate and fail closed. Unknown codes are diagnosed and reported — never executed from their text.
 
+**Canonical 27 operational blockers:** see the permanent runbook
+[OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md)
+(`coverage().canonical_operational_owner`).
+
 | Capability | Entry point |
 |---|---|
 | Coverage matrix | MCP `get_blocker_recovery_coverage` / `GET /api/assistant/limits-blockers/recovery-coverage` |

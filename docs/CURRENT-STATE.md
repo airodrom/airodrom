@@ -1,5 +1,15 @@
 # Current state (2026-10-10)
 
+## Operational Owner Auto-Recovery V1 — SOURCE (2026-10-22)
+
+- **Goal:** Eliminate repeated owner intervention for routine authorized development across the 27 canonical operational blockers while keeping all security-critical categories fail-closed.
+- **Dispatcher:** `src/limits-blockers-recovery.js` covers `canonical_operational_owner` (27/27 auto-diagnosis). Executable recovery is truthfully fewer than diagnosis (identity-matched repo resolve, standing grant match, capacity await, timing floor, local eval reuse, proof-gated eval/lease reconcile). Diagnosis/enrollment-prep never set `verification.completed_repair`.
+- **Mandatory hardening:** sealed repository identity required (no “only enrolled” guess); standing probes require authoritative Mission `data_class` (never invent `public`); security-critical mismatch/alive-writer fail closed; proof-gated reconcile for unverified termination/quarantine only with ESRCH+lsof.
+- **Standing Cursor:** Active `cp_standing_cursor_development` rows in `~/.airodrom/data/` persist across restart and managed install upgrades; recovery **matches** covering grants and surfaces re-enrollment paths for missing/expired/revoked/exhausted — never fabricates approval, raises spend, or restores revoked grants. Live host currently has active grants for `airodrom-da-main` and `arecibo-core-autopilot-main` (fixture handoff grant separate).
+- **Chain:** ChatGPT → Airodrom → OpenCode planner → Cursor → host verification → OpenCode evaluator → dependents. Evaluation locks before readiness awaits; no duplicate Cursor dispatch for eval recovery.
+- **Runbook:** [operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md).
+- **Not claimed:** live acceptance until post-merge managed install; Production mutation; automatic DA/standing enrollment without authenticated owner confirm; security-critical bypass.
+
 ## OpenCode evaluation recovery after verified Cursor work — SOURCE (2026-10-22)
 
 - **Cause (Mission `935215c3-…` / Cursor run `29d0e0b9-…`):** Host-verified README read completed; first OpenCode evaluator never started (`opencode_unavailable_or_unsupported`). Concurrent `recover`/`tick`/`defer` retries raced after the readiness await (lock taken too late), aborted the in-flight evaluator (`854b3dc2…`, pid observed then `termination_unverified`), and blocked the dependent edit. Notification `c2089189-…` delivered via inbox.

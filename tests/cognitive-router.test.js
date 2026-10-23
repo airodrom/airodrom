@@ -187,7 +187,8 @@ test('oversized or wrapped OpenCode proposals coerce into the sealed assignment 
   const wrapped = {
     proposal: {
       version: 3, request_id: 'wrong', envelope_hash: 'e'.repeat(64),
-      files: ['CHANGELOG.md', 'docs/README.md', 'secret.env'],
+      // Out-of-scope paths (e.g. secret.env) must fail closed — they are not coerced away.
+      files: ['CHANGELOG.md', 'docs/README.md'],
       tasks: [
         { id: 'scan', operation: 'read', paths: ['CHANGELOG.md'], description: 'scan', depends_on: [], worker: 'opencode', role: 'analysis', verification: [] },
         { id: 'audit', operation: 'edit', paths: ['docs/README.md'], description: 'audit', depends_on: ['scan'], worker: 'cursor', role: 'implementation', verification: [] },
@@ -197,6 +198,12 @@ test('oversized or wrapped OpenCode proposals coerce into the sealed assignment 
       verification: [], complexity: 'complex'
     }
   };
+  assert.throws(
+    () => R.validateProposal({
+      proposal: { ...wrapped.proposal, files: ['CHANGELOG.md', 'docs/README.md', 'secret.env'] },
+    }, envelope),
+    /outside_scope|cognitive_plan_outside_scope/
+  );
   const proposal = R.validateProposal(wrapped, envelope);
   assert.equal(proposal.tasks.length, 2);
   assert.ok(proposal.tasks.every(task => task.worker === 'cursor'));

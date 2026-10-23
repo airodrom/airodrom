@@ -85,14 +85,34 @@ Standing grants reuse `acknowledge_unknown_cost`. They do **not** claim Cursor
 is free and do **not** invent a monetary spending ceiling. Accounting remains
 `UNKNOWN_SUBSCRIPTION`. Exhausted, expired, or oversized Missions fail closed.
 
+## Persistence across restart and upgrades
+
+Grants are rows in durable host SQLite table `cp_standing_cursor_development`
+under `~/.airodrom/data/` (same memory store as Missions and DA policies).
+Managed source upgrades swap install code under
+`~/.airodrom/activation/airodrom-install-*`; they do **not** wipe the data
+directory. After service restart, cognitive admission reloads active grants and
+reuses them for eligible ChatGPT → Airodrom → OpenCode → Cursor Missions on the
+matching repository. Fixture grants never authorize Airodrom Source or Arecibo
+Core work.
+
 ## Recovery
+
+Automatic diagnosis and standing-grant **match** run through
+[`src/limits-blockers-recovery.js`](../src/limits-blockers-recovery.js) for
+`blocked_spend_authorization`, `scoped_external_disclosure_required`, and
+`standing_cursor_grant_*` codes. Matching never fabricates approval, raises
+spend, restores a revoked grant, or extends expiry. Probes require an
+authoritative sealed Mission `data_class` (never invent `public`) and a sealed
+repository root (never “only enrolled” inference). Permanent runbook:
+[operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md).
 
 | Condition | Action |
 |---|---|
 | Missing grant | Owner enroll once for that repository + DA policy |
-| Expired / revoked / exhausted | Owner re-enroll with fresh finite limits |
+| Expired / revoked / exhausted | Owner re-enroll with fresh finite limits (never silent renew) |
 | Path mismatch | Re-enroll with the cognitive discovery paths, or narrow the plan |
-| Invocation / runtime too high | Narrow the Mission or re-enroll within host maxima |
+| Invocation / runtime too high | Narrow the Mission or re-enroll within host maxima; raise-only `max_runtime_ms` API ≤120s |
 | Wrong project | Fix routing / instruction; do not reuse the other project’s grant |
 
 ## Why repeated per-Mission approval should stop
@@ -122,5 +142,6 @@ Standing routine development never automatically permits:
 - [ADR 0060 — Host Execution Policy](adr/0060-host-execution-policy.md)
 - [Cognitive Mission Router](COGNITIVE-MISSION-ROUTER-V1.md)
 - [Multi-project development](MULTI-PROJECT-DEVELOPMENT-V1.md)
+- [Operational blocker recovery runbook](operations/OPERATIONAL-BLOCKER-RECOVERY-RUNBOOK.md)
 - [Current state](CURRENT-STATE.md)
 - [Known limitations](KNOWN-LIMITATIONS.md)

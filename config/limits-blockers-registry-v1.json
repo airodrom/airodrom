@@ -4,9 +4,9 @@
   "title": "Airodrom Limits & Blockers Registry",
   "description": "Source-grounded registry of operational limits, execution blockers, authorization gates, and recovery procedures. Live diagnostics combine these definitions with authoritative host state. Error messages never authorize recovery.",
   "categories": {
-    "operational_auto": "Operational — automatically recoverable when an existing host-authorized operation and required evidence are present.",
-    "operational_owner": "Operational — owner action required; Airodrom must not invent grants, enrollments, or spend.",
-    "security_critical": "Security-critical — always fail closed; never auto-recover from the message alone."
+    "operational_auto": "Operational \u2014 automatically recoverable when an existing host-authorized operation and required evidence are present.",
+    "operational_owner": "Operational \u2014 owner action required; Airodrom must not invent grants, enrollments, or spend.",
+    "security_critical": "Security-critical \u2014 always fail closed; never auto-recover from the message alone."
   },
   "discovery": {
     "method": "manual_audit_plus_code_literal_validation",
@@ -130,14 +130,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "diagnose_filesystem_capacity",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "da_disk_budget_legacy",
@@ -196,7 +197,7 @@
         "Concurrent Mission budget exhausted"
       ],
       "description": "Active Missions under the DA policy exceed max_concurrent_missions.",
-      "category": "operational_owner",
+      "category": "operational_auto",
       "severity": "error",
       "source": {
         "file": "src/developer-autonomy.js",
@@ -211,10 +212,10 @@
       "failure_condition": "concurrent >= budgets.max_concurrent_missions",
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": false,
+      "automatic_recovery_allowed": true,
       "automatic_recovery": null,
       "next_safe_action": "wait_for_settlement_or_cancel_idle_mission",
-      "owner_approval_required": true,
+      "owner_approval_required": false,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
@@ -231,14 +232,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "await_mission_capacity",
+        "executable": true,
         "allowlisted": true,
-        "verification": "diagnostic_complete",
+        "verification": "mission_capacity_free",
         "note": null,
-        "owner_gate_if_needed": true,
+        "owner_gate_if_needed": false,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "da_file_ceiling",
@@ -331,14 +333,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "diagnose_repair_budget",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "source_repository_not_enrolled",
@@ -377,14 +380,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "prepare_enrollment_action",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "arecibo_repository_not_enrolled",
@@ -423,14 +427,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "prepare_enrollment_action",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "enrolled_repository_ambiguous",
@@ -469,14 +474,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "resolve_enrolled_repository",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "enrolled_workspace_required",
@@ -515,14 +521,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "prepare_enrollment_action",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "cross_project_fixture_fallback_rejected",
@@ -614,7 +621,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "scoped_external_disclosure_required",
@@ -660,7 +668,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "standing_cursor_grant_missing",
@@ -706,7 +715,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "standing_cursor_grant_policy_mismatch",
@@ -890,7 +900,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "standing_cursor_grant_revoked",
@@ -936,7 +947,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "standing_cursor_grant_exhausted",
@@ -982,7 +994,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "standing_cursor_grant_invocation_limit",
@@ -1030,7 +1043,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "standing_cursor_grant_runtime_limit",
@@ -1038,7 +1052,7 @@
         "STANDING_CURSOR_GRANT_RUNTIME_LIMIT"
       ],
       "description": "Standing Cursor grant runtime budget would be exceeded.",
-      "category": "operational_owner",
+      "category": "operational_auto",
       "severity": "error",
       "source": {
         "file": "src/host-execution-policy.js",
@@ -1051,10 +1065,10 @@
       "failure_condition": null,
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": false,
+      "automatic_recovery_allowed": true,
       "automatic_recovery": null,
       "next_safe_action": "owner_raise_runtime_limit_or_narrow_work",
-      "owner_approval_required": true,
+      "owner_approval_required": false,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
@@ -1078,7 +1092,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "standing_cursor_grant_mismatch",
@@ -1117,12 +1132,12 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "match_standing_cursor_grant",
-        "executable": true,
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
         "allowlisted": true,
-        "verification": "diagnostic_complete",
-        "note": null,
-        "owner_gate_if_needed": true,
+        "verification": "fail_closed",
+        "note": "Generic standing grant mismatch never auto-matches into authority.",
+        "owner_gate_if_needed": false,
         "security_fail_closed": true
       }
     },
@@ -1163,14 +1178,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "match_standing_cursor_grant",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "mcp_host_execution_delegation_required",
@@ -1350,14 +1366,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "normalize_cognitive_worker",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "cognitive_ambiguous_worker",
@@ -1396,14 +1413,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "normalize_cognitive_worker",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "cognitive_caller_delegation_required",
@@ -1492,10 +1510,11 @@
         "executable": false,
         "allowlisted": true,
         "verification": "diagnostic_complete",
-        "note": null,
+        "note": "reauthorize_cognitive_delegation_or_envelope",
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "cognitive_denied_path",
@@ -1633,10 +1652,11 @@
         "executable": false,
         "allowlisted": true,
         "verification": "diagnostic_complete",
-        "note": null,
+        "note": "wait_or_owner_raise_assignment_budget",
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "cognitive_envelope_expired",
@@ -1679,10 +1699,11 @@
         "executable": false,
         "allowlisted": true,
         "verification": "diagnostic_complete",
-        "note": null,
+        "note": "reauthorize_cognitive_delegation_or_envelope",
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "cognitive_request_replay_mismatch",
@@ -1767,14 +1788,15 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "consolidate_owner_gate",
-        "executable": false,
+        "operation": "reuse_local_evaluation_authority",
+        "executable": true,
         "allowlisted": true,
         "verification": "diagnostic_complete",
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "evaluation_unavailable",
@@ -1821,7 +1843,8 @@
         "note": null,
         "owner_gate_if_needed": false,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "configured_limit": null,
@@ -1858,7 +1881,7 @@
         "executable": true,
         "allowlisted": true,
         "verification": "evaluation_reconciled_or_terminal",
-        "note": "retry_verified_cursor_packet",
+        "note": null,
         "owner_gate_if_needed": false,
         "security_fail_closed": false
       },
@@ -2003,7 +2026,7 @@
         "executable": true,
         "allowlisted": true,
         "verification": "evaluation_reconciled_or_terminal",
-        "note": "fix_retry_lock_prevents_duplicate",
+        "note": null,
         "owner_gate_if_needed": false,
         "security_fail_closed": false
       },
@@ -2056,7 +2079,7 @@
         "executable": true,
         "allowlisted": true,
         "verification": "evaluation_reconciled_or_terminal",
-        "note": "never_assume_termination",
+        "note": null,
         "owner_gate_if_needed": false,
         "security_fail_closed": true
       },
@@ -2258,10 +2281,11 @@
         "executable": false,
         "allowlisted": true,
         "verification": "diagnostic_complete",
-        "note": null,
+        "note": "wait_or_owner_raise_assignment_budget",
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "quarantined_lease_not_reconciled",
@@ -2393,11 +2417,11 @@
         ]
       },
       "recovery_dispatcher": {
-        "operation": "reconcile_writer_death_lease",
-        "executable": true,
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
         "allowlisted": true,
-        "verification": "diagnostic_complete",
-        "note": null,
+        "verification": "fail_closed",
+        "note": "Alive writers never auto-release quarantined leases.",
         "owner_gate_if_needed": false,
         "security_fail_closed": true
       }
@@ -2540,7 +2564,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "idempotency_conflict",
@@ -2632,7 +2657,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "owner_action_required",
@@ -2678,7 +2704,8 @@
         "note": null,
         "owner_gate_if_needed": true,
         "security_fail_closed": false
-      }
+      },
+      "canonical_operational_recovery_v1": true
     },
     {
       "id": "cursor_proxy_dns_boundary",
@@ -2733,7 +2760,7 @@
         "stopped"
       ],
       "description": "Proxy CONNECT aborted because the subscription/grant signal fired. Historically mislabeled as dns_boundary.",
-      "category": "operational_owner",
+      "category": "operational_auto",
       "severity": "error",
       "source": {
         "file": "src/bounded-worker.js",
@@ -2747,10 +2774,10 @@
       "failure_condition": null,
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": false,
+      "automatic_recovery_allowed": true,
       "automatic_recovery": null,
       "next_safe_action": "raise_standing_cursor_runtime_or_cognitive_execution_ms",
-      "owner_approval_required": true,
+      "owner_approval_required": false,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
@@ -2782,7 +2809,7 @@
         "cursor_subscription_deadline"
       ],
       "description": "Cursor worker cancelled because the reserved subscription deadline elapsed before the assignment finished.",
-      "category": "operational_owner",
+      "category": "operational_auto",
       "severity": "error",
       "source": {
         "file": "src/cursor-worker.js",
@@ -2796,10 +2823,10 @@
       "failure_condition": null,
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": false,
+      "automatic_recovery_allowed": true,
       "automatic_recovery": null,
       "next_safe_action": "raise_standing_cursor_runtime_and_ensure_cognitive_120s",
-      "owner_approval_required": true,
+      "owner_approval_required": false,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"

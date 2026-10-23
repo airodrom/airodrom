@@ -48,7 +48,10 @@ const OPENCODE_ROLE_PHRASES = [
   /\bopencode\s+as\s+(?:the\s+)?(?:planner|evaluator|planning|evaluation)(?:\s+and\s+(?:planner|evaluator|planning|evaluation))?\b/ig,
   // "use OpenCode as planner and evaluator"
   /\b(?:use|using|via|with)\s+opencode\s+as\s+(?:the\s+)?(?:planner|evaluator|planning|evaluation)(?:\s+and\s+(?:planner|evaluator|planning|evaluation))?\b/ig,
-  /\b(?:planner|evaluator)\s*[:=]\s*opencode\b/ig
+  /\b(?:planner|evaluator)\s*[:=]\s*opencode\b/ig,
+  // Bare role nouns after architecture narration: "OpenCode planner" / "OpenCode evaluator"
+  /\bopencode\s+(?:planner|evaluator|planning|evaluation)\b/ig,
+  /\b(?:planner|evaluator)\s+opencode\b/ig,
 ];
 const AIRODROM_VERIFY_PHRASES = [
   /\b(?:and\s+)?airodrom\s+to\s+(?:independently\s+)?verif(?:y|ies|ication)\b/ig,
@@ -105,7 +108,13 @@ function resolveWorkerRoles(instruction, options = {}) {
   }
   const specialists = [...text.matchAll(SPECIALIST_MATCH)]
     .map(m => (m[1] || m[2] || m[3] || m[4] || m[5] || m[6] || m[7] || m[8] || m[9]).toLowerCase());
-  const unique = [...new Set(specialists)];
+  let unique = [...new Set(specialists)];
+  // Role residue: when OpenCode was explicitly named as planner/evaluator, a leftover
+  // OpenCode specialist hit must not compete with a Cursor implementation specialist.
+  // Genuine dual-specialist asks ("Use Cursor and Use OpenCode to edit") stay ambiguous.
+  if (unique.length > 1 && (namedPlanner || namedEvaluator) && unique.includes('opencode') && unique.includes('cursor')) {
+    unique = unique.filter(worker => worker !== 'opencode');
+  }
   if (unique.length > 1) C.fail('cognitive_ambiguous_worker');
   // A named worker in unrecognized prose must never silently become an auto route.
   if (!unique.length && /\b(?:cursor|opencode)\b/i.test(text)) C.fail('cognitive_explicit_worker_syntax_required');
@@ -200,6 +209,20 @@ function coerceAutopilotDeliverable(proposal, envelope, instruction) {
 function coercePlanningProposal(raw, envelope) {
   const e = C.parse('RequestEnvelope', envelope);
   const data = extractProposalObject(raw);
+  // Normalization may drop unread permitted context files from `files`, but must
+  // never silently discard out-of-scope or traversal paths as a successful coerce.
+  const proposedFiles = Array.isArray(data.files)
+    ? data.files.filter(file => typeof file === 'string' && file)
+    : [];
+  const outOfScopeFiles = proposedFiles.filter(
+    file => !e.permitted_paths.includes(file) || denied(file, e.denied_paths)
+  );
+  if (outOfScopeFiles.length) {
+    failPlanScope('cognitive_plan_outside_scope', {
+      files: proposedFiles,
+      tasks: Array.isArray(data.tasks) ? data.tasks : [],
+    }, e, data);
+  }
   const maxTasks = e.version === 3 ? Math.min(3, e.limits.execution_attempts) : 12;
   let tasks = Array.isArray(data.tasks) ? data.tasks.filter(t => t && typeof t === 'object') : [];
   if (e.version === 3 && e.requested_worker !== 'auto') {
@@ -333,9 +356,13 @@ function validateProposal(raw, envelope) {
   }
   if (p.version !== e.version) C.fail('cognitive_version_binding_mismatch');
   if (p.request_id !== e.request_id || p.envelope_hash !== e.hash) C.fail('cognitive_request_binding_mismatch');
-  // Clamp task operations / verification labels into the sealed envelope before
+  // Unknown verification labels never coerce into success (e.g. shell commands).
+  if (p.verification.some(v => !e.verification.includes(v))) {
+    failPlanScope('cognitive_plan_outside_scope', p, e, candidate);
+  }
+  // Clamp task operations / worker assignment into the sealed envelope before
   // fail-closed. Paths outside permitted_paths stay hard failures — never broaden.
-  if (p.tasks.some(t => !e.operations.includes(t.operation)) || p.verification.some(v => !e.verification.includes(v))
+  if (p.tasks.some(t => !e.operations.includes(t.operation))
       || (e.version === 3 && (p.tasks.length > e.limits.execution_attempts
         || p.tasks.some(t => !e.eligible_workers.includes(t.worker))
         || (e.requested_worker !== 'auto' && p.tasks.some(t => t.worker !== e.requested_worker))))) {
