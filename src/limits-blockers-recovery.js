@@ -203,15 +203,30 @@ function recoverMatchStanding(bridge, ctx) {
 
 function recoverEvaluation(bridge, ctx) {
   try {
-    const gw = require('./specialist-gateway');
-    if (ctx.mission_id && typeof gw.recover === 'function') {
-      const result = gw.recover(bridge, ctx.mission_id);
-      return { operation: 'reconcile_blocked_evaluation', performed: !!result, result: result && typeof result === 'object' ? { keys: Object.keys(result) } : !!result };
+    if (!ctx.mission_id || !bridge?.controlStore) {
+      return { operation: 'reconcile_blocked_evaluation', performed: false, reason: 'no_mission_or_recover_api' };
     }
+    const mission = bridge.controlStore.getMission(ctx.mission_id);
+    if (!mission) return { operation: 'reconcile_blocked_evaluation', performed: false, reason: 'mission_not_found' };
+    const reconciled = require('./opencode-gateway').reconcileBlockedEvaluation(bridge, mission);
+    // Specialist recover schedules a locked local evaluation retry of the
+    // already host-verified worker packet — never a Cursor redispatch.
+    let retried = false;
+    try {
+      const service = bridge.missions;
+      if (service?.bridge && service?.store && typeof require('./specialist-gateway').recover === 'function') {
+        retried = !!require('./specialist-gateway').recover(service, bridge.controlStore.getMission(ctx.mission_id));
+      }
+    } catch { /* reconcile alone is still progress */ }
+    return {
+      operation: 'reconcile_blocked_evaluation',
+      performed: !!reconciled || !!retried,
+      reconciled: !!reconciled,
+      recovery_scheduled: !!retried,
+    };
   } catch (error) {
     return { operation: 'reconcile_blocked_evaluation', performed: false, reason: String(error.message || error).slice(0, 160) };
   }
-  return { operation: 'reconcile_blocked_evaluation', performed: false, reason: 'no_mission_or_recover_api' };
 }
 
 function recoverWriterDeath(bridge, ctx) {
@@ -251,8 +266,13 @@ function planFor(entry) {
     || id === 'standing_cursor_grant_invocation_limit' || id === 'standing_cursor_grant_mismatch') {
     return { operation: 'match_standing_cursor_grant', executable: true, owner_gate_if_unmatched: true };
   }
-  if (id === 'evaluation_unavailable' || id === 'gateway_evaluation_deadline') {
+  if (id === 'evaluation_unavailable' || id === 'gateway_evaluation_deadline'
+    || id === 'opencode_runtime_unavailable' || id === 'opencode_evaluation_timeout'
+    || id === 'opencode_evaluation_cancelled' || id === 'opencode_evaluator_termination_unverified') {
     return { operation: 'reconcile_blocked_evaluation', executable: true, verify: 'evaluation_reconciled_or_terminal' };
+  }
+  if (id === 'opencode_evaluation_authority_denied') {
+    return { operation: 'security_investigate_fail_closed', executable: false };
   }
   if (id === 'quarantined_lease_not_reconciled' || id === 'writer_still_alive' || id === 'termination_unverified') {
     return { operation: 'reconcile_writer_death_lease', executable: true, security_fail_closed: true };

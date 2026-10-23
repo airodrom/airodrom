@@ -485,7 +485,14 @@ class OpenCodeAdapter extends AgentAdapter {
     const expiresAt = Math.min(Date.now() + timeoutMs, deadline ?? Infinity);
     let observed = await this.readiness();
     if (!observed.ready) observed = await this.readiness({ fresh: true });
-    if (!observed.ready) fail('opencode_unavailable_or_unsupported');
+    if (!observed.ready) {
+      // Preserve specific readiness reasons for evaluation recovery classification.
+      // Legacy callers still match opencode_unavailable_or_unsupported via aliases.
+      const reason = String(observed.reason || 'opencode_unavailable');
+      if (/unsupported|version_unqualified|pins_changed|platform_unqualified/i.test(reason)) fail('opencode_runtime_unsupported');
+      if (/unavailable|provider|not_configured|timeout/i.test(reason)) fail('opencode_runtime_unavailable');
+      fail(reason.startsWith('opencode_') ? reason : 'opencode_unavailable_or_unsupported');
+    }
     if (typeof workspace !== 'string' || !path.isAbsolute(workspace) || fs.realpathSync(workspace) !== workspace || !Array.isArray(files) || files.length > 8 || new Set(files).size !== files.length || !Array.isArray(writable) || new Set(writable).size !== writable.length || writable.some(f => !files.includes(f))) fail('opencode_workspace_binding');
     files.forEach(relative); writable.forEach(relative);
     if (planning && (writable.length || conversation || context !== null)) fail('opencode_planning_read_only_required');

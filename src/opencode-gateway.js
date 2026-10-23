@@ -27,29 +27,46 @@ function extractEvaluationJSON(raw) {
   if (start < 0 || end <= start) return null;
   try { return require('./authority-json').parseAuthorityJSON(raw.slice(start, end + 1)); } catch { return null; }
 }
+function gatewayResult(run) {
+  if (!run) return null;
+  const result = run.result && typeof run.result === 'object' ? run.result
+    : (() => { try { return JSON.parse(run.result || 'null'); } catch { return null; } })();
+  return result?.gateway || null;
+}
 function isNeverStartedEvaluator(run) {
   // Failed before process start: no pid, gateway stub present, termination verified.
   // Implementation OpenCode runs complete without a gateway receipt on the same row.
   if (!run || run.agent_id !== 'opencode' || run.state !== 'failed' || run.termination_verified !== 1) return false;
-  if (run.pid != null || run.resolution !== 'gateway_evaluation_unavailable') return false;
-  const result = run.result && typeof run.result === 'object' ? run.result
-    : (() => { try { return JSON.parse(run.result || 'null'); } catch { return null; } })();
-  return !!result?.gateway;
+  if (run.pid != null) return false;
+  const resolution = String(run.resolution || '');
+  if (!(resolution === 'gateway_evaluation_unavailable' || resolution.startsWith('opencode_'))) return false;
+  return !!gatewayResult(run);
+}
+function isSettledFailedEvaluator(run) {
+  // Host-reconciled or classified failed evaluator that is safe to leave behind for retry.
+  if (!run || run.agent_id !== 'opencode' || run.termination_verified !== 1) return false;
+  if (!['failed', 'interrupted'].includes(run.state)) return false;
+  const g = gatewayResult(run);
+  return !!g && !g.evaluation;
+}
+function evaluationReasonRetryable(reason) {
+  const text = String(reason || '');
+  return /EVALUATION_UNAVAILABLE|opencode_unavailable_or_unsupported|opencode_runtime_unavailable|opencode_runtime_unsupported|opencode_local_provider|opencode_evaluation_timeout|opencode_evaluation_cancelled|gateway_evaluation/.test(text);
 }
 function preStartEvaluationRetryable(mission, opencodeRuns, attempt) {
-  // One local retry when the evaluator never started. Not a Cursor redispatch.
-  // Cursor specialists leave exactly one failed OpenCode evaluator run.
-  // Local OpenCode specialists leave one completed implementation run plus that
-  // failed evaluator — both shapes are retryable when host verification passed.
-  if (mission?.state !== 'blocked' || !String(mission.reason || '').includes('opencode_unavailable_or_unsupported')) return false;
+  // Local OpenCode evaluation retry of an already host-verified worker result.
+  // Never redispatches Cursor. Uncertain (termination_verified=0) evaluators block
+  // until reconcileBlockedEvaluation settles them with process evidence.
+  if (mission?.state !== 'blocked' || !evaluationReasonRetryable(mission.reason)) return false;
   if (!attempt || attempt.evaluation_run_id || attempt.verification?.status !== 'passed') return false;
   const rows = Array.isArray(opencodeRuns) ? opencodeRuns : [];
-  const failed = rows.filter(isNeverStartedEvaluator);
-  if (failed.length !== 1) return false;
-  const others = rows.filter(r => r.id !== failed[0].id);
-  if (others.length > 1) return false;
-  if (others.length === 1 && !(others[0].state === 'completed' && others[0].termination_verified === 1)) return false;
-  return true;
+  const forWorker = rows.filter(r => gatewayResult(r)?.worker_run_id === attempt.run_id);
+  if (!forWorker.length) return false;
+  if (forWorker.some(r => r.termination_verified !== 1)) return false;
+  if (forWorker.some(r => r.state === 'completed' && r.termination_verified === 1 && gatewayResult(r)?.evaluation)) return false;
+  // Budget: ≤2 prior settled failures (never-started + raced abort), then one clean retry.
+  if (forWorker.length >= 3) return false;
+  return forWorker.every(r => isNeverStartedEvaluator(r) || isSettledFailedEvaluator(r));
 }
 function evaluationAllowanceMs(mission, now) {
   const planning = mission.envelope.cognitive.envelope.limits.planning_ms;
@@ -63,8 +80,19 @@ function evaluationContinuation(mission, attempt) {
   // True while the one never-started local evaluation is in progress. The new
   // evaluator run already exists by then, so this does not recount OpenCode runs.
   return mission?.state === 'blocked'
-    && String(mission.reason || '').includes('opencode_unavailable_or_unsupported')
+    && evaluationReasonRetryable(mission.reason)
     && !!attempt && !attempt.evaluation_run_id && attempt.verification?.status === 'passed';
+}
+function classifyEvaluationFailure(error, { started, returned } = {}) {
+  const code = String(error?.code || error?.message || 'opencode_runtime_unavailable');
+  if (!returned && (started || /termination/.test(code))) return 'opencode_evaluator_termination_unverified';
+  if (/timeout|gateway_evaluation_deadline/i.test(code)) return 'opencode_evaluation_timeout';
+  if (/cancel/i.test(code)) return 'opencode_evaluation_cancelled';
+  if (/authority|approval|assertLocalEvaluation|assertAuthority/i.test(code)) return 'opencode_evaluation_authority_denied';
+  if (/gateway_json|gateway_result|gateway_recommendation|malformed|binding/i.test(code)) return 'opencode_evaluation_result_invalid';
+  if (/unsupported|version_unqualified|pins_changed|platform_unqualified/i.test(code)) return 'opencode_runtime_unsupported';
+  if (/unavailable|provider|not_configured|opencode_unavailable/i.test(code)) return 'opencode_runtime_unavailable';
+  return code.startsWith('opencode_') ? code : 'opencode_runtime_unavailable';
 }
 function localEvaluationTimeoutMs(mission, now, continuation) {
   // A never-started local evaluation keeps the enrolled planning allowance.
@@ -167,12 +195,20 @@ async function evaluate(bridge, mission, worker, verification) {
     store.event('gateway.evaluated', mission.id, { worker_run_id: worker.id, recommendation: evaluation.recommendation, binding_hash: gateway.binding_hash, authority: false }, { runId });
     return complete;
   } catch (error) {
-    const uncertain = !returned && (started || /termination/.test(error.code || error.message));
+    const classified = classifyEvaluationFailure(error, { started, returned });
+    const uncertain = classified === 'opencode_evaluator_termination_unverified';
     store.updateRun(runId, { state: uncertain ? 'termination_unverified' : 'failed', processState: uncertain ? 'unknown' : 'exited', verified: !uncertain,
-      resolution: uncertain ? 'gateway_evaluation_reconciliation_required' : 'gateway_evaluation_unavailable', result: { gateway } });
+      resolution: uncertain ? 'gateway_evaluation_reconciliation_required' : classified,
+      result: { gateway: { ...gateway, failure_class: classified, failure_code: String(error.code || error.message).slice(0, 160) } } });
     if (uncertain) db.prepare("UPDATE cp_leases SET state='quarantined' WHERE mission_id=? AND state='held'").run(mission.id);
-    store.event('gateway.unavailable', mission.id, { worker_run_id: worker.id, termination_verified: !uncertain, authority: false }, { runId });
-    throw error;
+    store.event('gateway.unavailable', mission.id, {
+      worker_run_id: worker.id, termination_verified: !uncertain,
+      failure_class: classified, authority: false,
+    }, { runId });
+    const err = Error(classified);
+    err.code = classified;
+    err.cause = error;
+    throw err;
   } finally { clearInterval(watch); bridge.opencodeAdapter.active.delete(worker.task_id); }
 }
 function validateReceipt(bridge, mission, verification, recommendation) {
@@ -229,16 +265,16 @@ function evidence(bridge, mission) {
     ...(require('./specialist-gateway').enabled(mission)?{specialists:require('./specialist-gateway').inspect(bridge,mission)}:{}) };
 }
 function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer-death-recovery').observeWriter) {
-  // A local evaluator timeout is not Cursor success and is not retried here.
-  // Once the owned process and workspace holders are gone, release the quarantine
-  // so admission can return. The Mission stays blocked.
+  // A local evaluator timeout/cancel is not Cursor success and is not replayed here.
+  // Once the owned process and workspace holders are gone, settle the run so a
+  // single authorized local evaluation retry of the verified worker packet may run.
   if (mission?.state !== 'blocked') return false;
   const store = bridge.controlStore, db = store.db;
-  const runs = db.prepare("SELECT id,pid,state FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND termination_verified=0 AND ((state='termination_unverified' AND resolution='gateway_evaluation_reconciliation_required') OR (state='interrupted' AND resolution='reconcile_process'))").all(mission.id);
+  const runs = db.prepare("SELECT id,pid,state,result FROM cp_runs WHERE mission_id=? AND agent_id='opencode' AND termination_verified=0 AND ((state='termination_unverified' AND resolution='gateway_evaluation_reconciliation_required') OR (state='interrupted' AND resolution='reconcile_process'))").all(mission.id);
   if (runs.length !== 1 || !Number.isInteger(runs[0].pid) || runs[0].pid <= 1) return false;
   const leases = db.prepare("SELECT id,run_id,resource FROM cp_leases WHERE mission_id=? AND state='quarantined'").all(mission.id);
-  // Evaluator may die after write leases were already released (never-started
-  // retry kill). Still settle the run so admission can idle; Mission stays blocked.
+  // Evaluator may die after write leases were already released (raced retry abort).
+  // Still settle the run so admission can idle; Mission stays blocked until retry.
   const workspace = mission.envelope?.workspace;
   if (leases.length) {
     if (leases.some(lease => lease.resource !== leases[0].resource)) return false;
@@ -251,10 +287,20 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   try { observation = observe({ pid: runs[0].pid, resource: leases[0]?.resource || workspace }); }
   catch { return false; }
   const runId = runs[0].id;
+  const priorGateway = gatewayResult(runs[0]) || null;
   // interrupted is already terminal, so the store rejects a state change.
   // Verifying that same state settles admission. It does not accept the Mission.
   const nextState = runs[0].state === 'interrupted' ? 'interrupted' : 'failed';
-  store.updateRun(runId, { state: nextState, processState: 'exited', verified: true, resolution: 'gateway_evaluation_timed_out', result: { recovery_not_execution: true, accepted: false, observation: observation.method } });
+  store.updateRun(runId, {
+    state: nextState, processState: 'exited', verified: true,
+    resolution: 'gateway_evaluation_timed_out',
+    result: {
+      gateway: priorGateway,
+      recovery_not_execution: true, accepted: false,
+      failure_class: 'opencode_evaluator_termination_unverified',
+      observation: observation.method,
+    },
+  });
   for (const lease of leases) {
     const changed = db.prepare("UPDATE cp_leases SET state='released' WHERE id=? AND run_id=? AND state='quarantined'").run(lease.id, lease.run_id);
     if (changed.changes !== 1) C.fail('quarantined_lease_not_reconciled');
@@ -265,4 +311,10 @@ function reconcileBlockedEvaluation(bridge, mission, observe = require('./writer
   }
   return true;
 }
-module.exports = { enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt, parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs, localEvaluationTimeoutMs, evaluationContinuation, preStartEvaluationRetryable, isNeverStartedEvaluator, reconcileBlockedEvaluation };
+module.exports = {
+  enabled, evaluate, assertAcceptance, assertRepair, assertChild, evidence, receipt,
+  parseEvaluation, extractEvaluationJSON, verificationDigest, evaluationAllowanceMs,
+  localEvaluationTimeoutMs, evaluationContinuation, preStartEvaluationRetryable,
+  isNeverStartedEvaluator, isSettledFailedEvaluator, classifyEvaluationFailure,
+  reconcileBlockedEvaluation,
+};

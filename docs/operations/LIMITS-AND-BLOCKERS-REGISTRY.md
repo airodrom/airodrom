@@ -104,6 +104,20 @@ When a request or Mission blocks:
 
 ChatGPT text never enrolls repositories, creates standing grants, expands NEVER_AUTO, or authorizes Production / secrets / financial disclosure. Registry diagnostics grant **no authority**.
 
+## OpenCode evaluation failure classes (2026-10-22)
+
+Prefer stable codes over collapsed `EVALUATION_UNAVAILABLE` / `opencode_unavailable_or_unsupported`:
+
+| Code | Handling |
+|---|---|
+| `opencode_runtime_unavailable` | Reconcile + deferred local evaluation retry of verified worker packet |
+| `opencode_runtime_unsupported` | Owner requalify pins/version |
+| `opencode_evaluation_timeout` | Reconcile + retry within planning allowance |
+| `opencode_evaluation_cancelled` | Reconcile; retry lock prevents duplicate aborts |
+| `opencode_evaluator_termination_unverified` | Fail closed until ESRCH+lsof reconcile |
+| `opencode_evaluation_authority_denied` | Fail closed |
+| `opencode_evaluation_result_invalid` | Owner inspect receipt |
+
 ## Cursor proxy / DNS boundary (2026-10-22)
 
 `worker.proxy_denied` reasons are now distinct:

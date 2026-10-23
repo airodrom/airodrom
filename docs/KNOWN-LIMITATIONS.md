@@ -1,5 +1,11 @@
 # Known limitations
 
+## OpenCode evaluation after Cursor (2026-10-22)
+
+- Uncertain evaluator termination stays fail-closed until host process evidence reconciles; missing heartbeat is never treated as termination.
+- Evaluation recovery never starts a second paid Cursor invocation; it only re-evaluates an already host-verified worker packet within the local retry budget.
+- Persistent OpenCode pin/version unsupported states still require owner requalification.
+
 ## Autonomous blocker recovery (2026-10-22)
 
 - Universal automatic **diagnosis** for all registry entries; executable recovery only for allowlisted host ops with evidence. Owner-only gates (enrollment, standing grant create/renew, disk free space, disclosure) still require one consolidated owner action.
