@@ -12,7 +12,7 @@ test('OpenCode version/auth observation reports categories and fails closed on u
 });
 test('unavailable, unsupported and unconfigured runtimes cannot dispatch',async()=>{
  for(const options of [{executable:'/missing'},{enabled:true,executable:'/missing',model:'anthropic/unapproved'},{}]){
-  const a=new OpenCodeAdapter(null,options);assert.equal((await a.readiness()).ready,false);await assert.rejects(a.execute({}),/opencode_unavailable/);
+  const a=new OpenCodeAdapter(null,options);assert.equal((await a.readiness()).ready,false);await assert.rejects(a.execute({}),error=>/^opencode_runtime_(unavailable|unsupported)$/.test(error.code));
  }
  assert.throws(()=>new OpenCodeAdapter(null,{fixtureExecutable:'/tmp/untrusted'}),/fixture_denied/);
 });

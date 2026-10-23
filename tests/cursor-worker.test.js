@@ -179,6 +179,8 @@ test('cursor worker: cancellation aborts the run and verifies termination', asyn
 
 test('governed Cursor Mission: contract + disclosure + approval → sandboxed worker → independent host verification; ungoverned Cursor never routes', async t => {
   const f = await fixture(t, { defaultRuntime: 'opencode' });
+  assert.equal(f.bridge.hostExecutionPolicy.cursorDisabled(), true);
+  f.bridge.hostExecutionPolicy.enableCursor({ confirmed: true, request_id: randomUUID() }, 'operator');
   f.bridge.cursorWorker = new CursorWorker(f.bridge, { fixtureExecutable: FIXTURE });
   const ws = f.repo;
   const authority = { level: 'development', permissions: { repository: ['read', 'write'], runtime: ['diagnostic', 'test'], network: ['internet', 'localhost'], secrets: [], data: ['read', 'workspace_write'] }, filesystem: { read: [ws], write: [path.join(ws, 'fixture.txt')] }, expiresAt: Date.now() + 60 * 60 * 1000 };
@@ -192,9 +194,9 @@ test('governed Cursor Mission: contract + disclosure + approval → sandboxed wo
     const m = f.create({ preferred_agent: 'cursor', fallback_agents: [], objective: 'Change fixture.txt from alpha to beta via governed Cursor ' + randomUUID().slice(0, 8), authority, contract: disclosure, dispatch_policy: { privacy: 'cloud_allowed', providers: ['cursor_runtime'], billing_classes: ['subscription'], max_attempts: 1 } });
     assert.equal(m.envelope.contract.permissions.external_disclosure.authorized, true);
     assert.equal(m.envelope.contract.execution.sandbox, 'sandbox-exec');
-    // No approval yet: dispatch is refused as unqualified.
-    assert.throws(() => f.bridge.missions.dispatch(m.id, { request_id: randomUUID() }), /worker_execution_unqualified/);
-    const approval = f.bridge.missionApprovals.issue({ request_id: 'cursor-approve-' + m.id, channel: 'fixture', contract: m.envelope.contract, confirmed: true }, 'operator');
+    // No approval yet: dispatch is refused before subscription use.
+    assert.throws(() => f.bridge.missions.dispatch(m.id, { request_id: randomUUID() }), /BLOCKED_SPEND_AUTHORIZATION/);
+    const approval = f.bridge.missionApprovals.issue({ request_id: 'cursor-approve-' + m.id, channel: 'control_center', contract: m.envelope.contract, confirmed: true, subscription_execution: { provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 1, max_runtime_ms: 60000 } }, 'operator');
     assert.equal(approval.external_disclosure, true);
     assert.deepEqual(approval.disclosure_providers, ['cursor']);
     f.bridge.missionApprovals.bind(approval.approval_id, m.id, 'operator');

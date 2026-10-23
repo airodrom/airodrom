@@ -126,20 +126,22 @@ test('structured evaluation binds to the host hash and fails closed otherwise', 
   assert.equal(classifyProcessFailure({ cancelled: true }), 'opencode_cancelled');
 });
 
-test('a local evaluator that never started can be retried once', () => {
+test('local evaluator retry counts only the same worker and stops at three runs', () => {
   const mission = { state: 'blocked', reason: 'EVALUATION_UNAVAILABLE: opencode_unavailable_or_unsupported' };
   const failedEval = {
     id: 'eval-1', agent_id: 'opencode', state: 'failed', termination_verified: 1, pid: null,
-    resolution: 'gateway_evaluation_unavailable', result: { gateway: { version: 1 } }
+    resolution: 'gateway_evaluation_unavailable', result: { gateway: { version: 1, worker_run_id: 'worker-1' } }
   };
-  const attempt = { verification: { status: 'passed' } };
+  const attempt = { run_id: 'worker-1', verification: { status: 'passed' } };
   // Cursor path: only the never-started OpenCode evaluator exists.
   assert.equal(preStartEvaluationRetryable(mission, [failedEval], attempt), true);
   // Local OpenCode specialist: completed implementation + never-started evaluator.
   const impl = { id: 'impl-1', agent_id: 'opencode', state: 'completed', termination_verified: 1, pid: 42, resolution: null, result: { opencode_provenance: {} } };
   assert.equal(preStartEvaluationRetryable(mission, [impl, failedEval], attempt), true);
-  assert.equal(preStartEvaluationRetryable(mission, [failedEval, failedEval], attempt), false);
-  assert.equal(preStartEvaluationRetryable(mission, [{ ...failedEval, pid: 10 }], attempt), false);
+  assert.equal(preStartEvaluationRetryable(mission, [failedEval, { ...failedEval, id: 'eval-2' }], attempt), true);
+  assert.equal(preStartEvaluationRetryable(mission, [failedEval, { ...failedEval, id: 'eval-2' }, { ...failedEval, id: 'eval-3' }], attempt), false);
+  assert.equal(preStartEvaluationRetryable(mission, [{ ...failedEval, pid: 10, termination_verified: 0 }], attempt), false);
+  assert.equal(preStartEvaluationRetryable(mission, [{ ...failedEval, result: { gateway: { worker_run_id: 'another-worker' } } }], attempt), false);
   assert.equal(preStartEvaluationRetryable({ ...mission, reason: 'EVALUATION_UNAVAILABLE: opencode_sensitive_context' }, [failedEval], attempt), false);
   assert.equal(preStartEvaluationRetryable(mission, [failedEval], { ...attempt, evaluation_run_id: 'already' }), false);
   assert.equal(preStartEvaluationRetryable(mission, [failedEval], { verification: { status: 'failed' } }), false);

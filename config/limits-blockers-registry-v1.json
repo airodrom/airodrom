@@ -2624,7 +2624,7 @@
       "codes": [
         "RUNTIME_REMOVED"
       ],
-      "description": "Requested runtime (for example Pi) has been removed from the product.",
+      "description": "Requested runtime has been removed from the product.",
       "category": "operational_owner",
       "severity": "error",
       "source": {

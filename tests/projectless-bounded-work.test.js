@@ -259,7 +259,7 @@ test('Cursor remains a populated proposal until explicit owner disclosure/spend 
   assert.deepEqual(plain(resumed.blockers), plain(result.blockers));
   assert.deepEqual(plain(resumed.blockers), ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']);
   assert.equal(resumed.admission.standard_approval_supported, false);
-  assert.match(resumed.message, /approval buttons cannot issue this grant/);
+  assert.match(resumed.message, /authenticated local operator API/);
   assert.equal(f.dispatched.length, 0); assert.equal(f.created.length, 0);
   await assert.rejects(f.work.approve({ request_id, confirmed: true }), /BLOCKED_SPEND_AUTHORIZATION/);
   await assert.rejects(f.work.approve({ request_id, confirmed: true }, 'mcp:' + randomUUID()), /Authenticated local operator/);

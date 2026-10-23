@@ -78,7 +78,7 @@ async function setup(t) {
   f.ask = async ({ hold = false } = {}) => {
     if (hold) f.holdAtPreparedReady();
     const request_id = randomUUID();
-    const instruction = 'In Fixture project read fixture.txt then change alpha to beta, preserving one final newline.';
+    const instruction = 'In Fixture project read fixture.txt then change fixture.txt from alpha to beta, preserving one final newline.';
     let view = await b.zeroSetupWork.ask({ request_id, instruction }, 'operator');
     for (let i = 0; i < 400 && (view.state === 'PLANNING' || (!view.mission_id && !['BLOCKED', 'WAIT', 'REJECTED'].includes(view.state))); i++) {
       await new Promise((r) => setTimeout(r, 25));

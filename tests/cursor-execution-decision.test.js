@@ -231,7 +231,7 @@ test('a malformed final evaluation recovers through acceptance without replaying
   const f = await specialistCursorFixture(t);
   f.onEvaluation = () => f.evaluations.length === 2 ? invalidEvaluation('Missing final JSON.') : undefined;
   const v = await startCursorGraph(f);
-  const m = await awaitGraph(f, v.mission_id, m => m.state === 'completed', 20000);
+  const m = await awaitGraph(f, v.mission_id, m => m.state === 'completed');
   assert.equal(f.evaluations.length, 3);
   assert.equal(f.evaluations[2].assignment_contract.stage, 'final');
   assert.equal(m.runs.filter(r => r.agent_id === 'cursor').length, 2);
