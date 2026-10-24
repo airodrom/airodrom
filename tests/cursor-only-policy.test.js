@@ -13,6 +13,7 @@ test('all coding dispatch routes require Cursor and a sealed planning contract; 
  assert.throws(()=>P.assertImplementation({...base,cognitive:null}),/CURSOR_PLANNING_REQUIRED/);
  P.assertImplementation({kind:'coding',preferred_agent:'host',dispatch_policy:{native_actions:[{name:'file_read'}]}});
  assert.throws(()=>P.assertImplementation({kind:'coding',preferred_agent:'host',dispatch_policy:{native_actions:[{name:'file_write'}]}}),/CURSOR_IMPLEMENTATION_REQUIRED/);
+ for(const preferred_agent of ['host','opencode','cursor','codex'])assert.throws(()=>P.assertImplementation({kind:'coding',preferred_agent,dispatch_policy:{native_actions:[{name:'file_read'}]}},{worker:'codex'}),/CURSOR_IMPLEMENTATION_REQUIRED/);
  P.assertImplementation({kind:'conversation'});
 });
 test('legacy routing cannot fall back when Cursor is unavailable or disabled',()=>{
@@ -33,13 +34,16 @@ test('only passed evidence or ordinary registered failures permit another correc
 
 
 test('direct and continuation Codex handoffs cannot bypass Cursor policy or allocate ownership',async t=>{
- const f=await require('./fixtures/mission-fixture.cjs').fixture(t),b=f.bridge,m=f.create({preferred_agent:'codex'});
- const before=JSON.stringify(b.controlStore.requireMission(m.id).envelope);
- for(const start of [()=>b.codexAdapter.startTask(m.id,'direct-policy-denial'),()=>b.codexAdapter.continueTask(m.id,'continue-policy-denial')])
-  assert.throws(start,/CURSOR_IMPLEMENTATION_REQUIRED/);
+ const f=await require('./fixtures/mission-fixture.cjs').fixture(t),b=f.bridge;
+ for(const preferred_agent of ['codex','host','opencode']){
+  const m=f.create({preferred_agent,dispatch_policy:{native_actions:[{name:'file_read',path:'fixture.txt'}]}});
+  const before=JSON.stringify(b.controlStore.requireMission(m.id).envelope);
+  for(const start of [()=>b.codexAdapter.startTask(m.id,'direct-'+preferred_agent),()=>b.codexAdapter.continueTask(m.id,'continue-'+preferred_agent)])
+   assert.throws(start,/CURSOR_IMPLEMENTATION_REQUIRED/);
+  assert.equal(JSON.stringify(b.controlStore.requireMission(m.id).envelope),before);
+ }
  for(const table of ['cp_runs','cp_leases','cp_codex_handoffs','cp_agent_dispatch_intents'])
   assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM '+table).get().n,0,table);
- assert.equal(JSON.stringify(b.controlStore.requireMission(m.id).envelope),before);
 });
 
 test('historical pending handoff cannot claim a new attempt or select another implementation worker',async t=>{
