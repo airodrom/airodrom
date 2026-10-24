@@ -59,7 +59,7 @@ function preStartEvaluationRetryable(mission, opencodeRuns, attempt) {
   // Never redispatches Cursor. Uncertain (termination_verified=0) evaluators block
   // until reconcileBlockedEvaluation settles them with process evidence.
   if (mission?.state !== 'blocked' || !evaluationReasonRetryable(mission.reason)) return false;
-  if (!attempt || attempt.evaluation_run_id || attempt.verification?.status !== 'passed') return false;
+  if (!attempt || attempt.evaluation_run_id || !['passed', 'failed'].includes(attempt.verification?.status)) return false;
   const rows = Array.isArray(opencodeRuns) ? opencodeRuns : [];
   const forWorker = rows.filter(r => gatewayResult(r)?.worker_run_id === attempt.run_id);
   if (!forWorker.length) return false;
@@ -91,7 +91,7 @@ function evaluationContinuation(mission, attempt) {
   // evaluator run already exists by then, so this does not recount OpenCode runs.
   return mission?.state === 'blocked'
     && evaluationReasonRetryable(mission.reason)
-    && !!attempt && !attempt.evaluation_run_id && attempt.verification?.status === 'passed';
+    && !!attempt && !attempt.evaluation_run_id && ['passed', 'failed'].includes(attempt.verification?.status);
 }
 function classifyEvaluationFailure(error, { started, returned } = {}) {
   const code = String(error?.code || error?.message || 'opencode_runtime_unavailable');

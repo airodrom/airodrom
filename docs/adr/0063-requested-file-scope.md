@@ -20,7 +20,7 @@ existing enrollment and do not create authority. The host parses literal operati
 clauses (`read`, `inspect`, `review`, `edit`, `modify`, `change`, `update`, `rewrite`,
 `append to`, `write to`, or `create`, followed by a literal path). Quote paths with
 spaces or without a dot or slash, or use `read file LICENSE` for an extensionless
-path. An operation without a literal target requires clarification. Comma/and lists
+path. An operation without a literal target normally requires clarification. Comma/and lists
 retain every literal. Other bare
 dotted file references require an explicit operation; no model extracts authority.
 Negated operations do not grant scope. A leading `./` is normalized, while traversal,
@@ -33,6 +33,41 @@ An explicit `AGENTS.md substitution must be rejected` clause excludes that
 literal from requested scope; it never enrolls it. A conflicting positive operation
 on that same path requires clarification. Other unsupported filename prose still
 fails closed.
+
+### Documentation wording and content refinements
+
+The host also recognizes a finite content form: `Update the documentation in
+docs/README.md`, `Modify examples within docs/README.md`, or `Rewrite the text of
+"docs/README.md"`. The content noun is not a filename alias: the following literal
+is normalized, enrolled and sealed exactly as a direct `edit` target. Quoted paths
+with spaces and lists use the same literal handling. The host does not ask a model
+to infer file authority from prose.
+
+`Edit docs/README.md and update the examples` retains only the explicit edit
+binding. A bounded targetless content phrase may refine the immediately preceding
+positive edit, joined only by a conjunction/comma in the same clause, and must
+finish the instruction (apart from sentence
+punctuation); it cannot inherit from a read or create operation,
+cross a sentence/semicolon/newline, introduce a target with unsupported prepositions,
+or select an enrollment default. Content-form literal lists reject unquoted ambiguous
+entries rather than dropping them. Unknown targets such as `edit something` and
+unquoted extensionless filenames still require clarification. An explicit content
+operation naming another file always retains that operation and file, even when the
+file already has a read binding. No existing seal gains new paths or permissions.
+
+This is deterministic supported grammar, not unrestricted natural-language parsing.
+For unsupported wording, state the exact operation/path separately and describe the
+required result without another ambiguous file operation. `requested_file_operation_required`
+means the host needs an unambiguous operation/target; it is distinct from
+`requested_file_not_enrolled` and `requested_file_creation_not_authorized`. Parsing
+success alone is not authorization or proof of execution. The old ambiguous phrases
+were rejected before Mission creation; retry them as a new corrected request only
+after inspecting any prior request outcome. Ordinary direct forms retain their version-1 representation. Correct handling of
+punctuation after a quoted filename can differ from the old parser, which could
+include the closing quote in the path. `assertOriginal` rejects such an old seal as
+`requested_file_constraint_changed`; it never rewrites the stored binding or hash.
+No migration or historical-row rewrite is performed. Downgrade may reject newly supported wording and must not resume its
+Missions under the older parser.
 
 An explicit path must be enrolled and available as a regular admissible file before
 planning. Cognitive enrollment currently supports existing files; a creation request

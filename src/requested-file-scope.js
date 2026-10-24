@@ -28,29 +28,58 @@ function extract(instruction) {
   // Explicit operation followed by a quoted literal or an unquoted POSIX path
   // token. Bare tokens must contain a dot or slash; extensionless paths must be
   // quoted. Unsupported requests need clarification, never a guessed filename.
-  const pattern = /\b(reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create)\s+(?:(?:the\s+)?file\s+)?(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s,;:!?()]+)(?:[,:;!?]|(?=\s|$))/gi;
-  const bindings = []; let unresolvedOperation = false;
+  const verbs = String.raw`reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create`;
+  const literal = /`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s,;:!?()]+/.source;
+  // Content nouns describe an operation, never a filename alias. A following
+  // preposition must still bind an exact literal through the normal path checks.
+  const content = String.raw`(?:(?:the|its|their)\s+)?(?:documentation|docs|examples?|content|text|wording|headings?|paragraphs?|sections?|instructions?|links?|references?|descriptions?|comments?|formatting|tables?|notes?)`;
+  const pattern = new RegExp(String.raw`\b(${verbs})\s+(?:only\s+)?(?:(?:the\s+)?file\s+|${content}\s+(?:in|within|of)\s+)?(${literal})(?:[,:;!?]|\.(?=\s|$)|(?=\s|$))`, 'gi');
+  const contentTarget = new RegExp(String.raw`^(${verbs})\s+${content}\s+(?:in|within|of)\s+`, 'i');
+  const nextOperation = new RegExp('^(?:' + pattern.source + ')', 'i');
+  const refinementGap = /^[ \t]*(?:,[ \t]*(?:(?:and|then)[ \t]+)?|(?:and(?:[ \t]+then)?|then)[ \t]+)$/i;
+  const refinement = new RegExp(String.raw`^\s*${content}(?=$|\s|[.!?;,])`, 'i');
+  const refinementEnd = /^\s*[.!?]?\s*$/;
+  const bindings = [], literalRanges = []; let unresolvedOperation = false, anchor = null;
   for (const m of text.matchAll(pattern)) {
     const before = text.slice(0, m.index).split(/[.;\n]/).at(-1);
-    if (/\b(?:not|never|without|don't)\b[^,;]*$/i.test(before)) continue;
+    if (/\b(?:not|never|without|don't)\b[^,;]*$/i.test(before)) { anchor = null; continue; }
     const quoted = /^[`"']/.test(m[2]);
     const token = quoted ? m[2].slice(1, -1) : m[2].replace(/\.$/, '');
-    if (!quoted && !/[./\\]/.test(token) && !/^(?:reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create)\s+(?:the\s+)?file\s/i.test(m[0])) {
-      unresolvedOperation = true;
-      continue;
-    }
+    if (!quoted && /^(?:READY|ONLY|BLOCKED)$/i.test(token)) C.fail('requested_file_operation_required');
     const verb = m[1].toLowerCase().replace(/^(read|edit)s$/, '$1');
     const operation = /^(read|inspect|review)$/.test(verb) ? 'read' : verb === 'create' ? 'create' : 'edit';
+    if (!quoted && !/[./\\]/.test(token) && !/^(?:reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create)\s+(?:the\s+)?file\s/i.test(m[0])) {
+      const rest = text.slice(m.index + m[1].length), phrase = refinement.exec(rest);
+      // A targetless content refinement adds no operation or path. It may only
+      // refine the immediately preceding explicit edit within this same clause,
+      // and must terminate the instruction (apart from sentence punctuation).
+      // Reject trailing target prose, read/create anchors and sentence crossings.
+      const gap = anchor ? text.slice(anchor.end, m.index) : '';
+      if (operation === 'edit' && anchor?.operation === 'edit' && phrase
+          && refinementGap.test(gap) && !/[\r\n]/.test(phrase[0])
+          && refinementEnd.test(rest.slice(phrase[0].length))) continue;
+      unresolvedOperation = true; anchor = null;
+      continue;
+    }
     const tokens = [token];
+    const literalStart = m.index + m[0].lastIndexOf(m[2]);
+    literalRanges.push({ start: literalStart, end: literalStart + m[2].length });
     // A literal list belongs to the same operation. Stop before prose or a new
     // operation; never silently accept just the first explicitly listed file.
-    let tail = text.slice(m.index + m[0].length - (/[,:;!?]$/.test(m[0]) ? 1 : 0));
+    let tail = text.slice(m.index + m[0].length - (/[.,:;!?]$/.test(m[0]) ? 1 : 0));
     const next = /^\s*(?:,\s*(?:and\s+)?|and\s+)(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s,;:!?()]+)/i;
     for (let n; (n = next.exec(tail));) {
       const q = /^[`"']/.test(n[1]), v = q ? n[1].slice(1, -1) : n[1].replace(/\.$/, '');
-      if (!q && !/[./\\]/.test(v)) break;
-      tokens.push(v); tail = tail.slice(n[0].length);
+      if (!q && !/[./\\]/.test(v)) {
+        const start = text.length - tail.length + n[0].lastIndexOf(n[1]);
+        if (contentTarget.test(m[0]) && !nextOperation.test(text.slice(start))) unresolvedOperation = true;
+        break;
+      }
+      const start = text.length - tail.length + n[0].lastIndexOf(n[1]);
+      literalRanges.push({ start, end: start + n[1].length });
+      tokens.push(v); tail = tail.slice(n[0].length - (!q && n[1].endsWith('.') ? 1 : 0));
     }
+    anchor = { operation, end: text.length - tail.length };
     for (const value of tokens) {
       const file = normalize(value);
       if (!bindings.some(b => b.operation === operation && b.path === file)) bindings.push({ operation, path: file });
@@ -70,7 +99,9 @@ function extract(instruction) {
     }
     const before = text.slice(0, m.index).split(/[.;\n]/).at(-1);
     if (/\b(?:not|never|without|don't)\b[^,;]*$/i.test(before)) continue;
-    if (!bindings.some(b => b.path === file)) C.fail('requested_file_operation_required');
+    const start = m.index + m[0].lastIndexOf(m[1]);
+    const inLiteral = literalRanges.some(r => start >= r.start && start + m[1].length <= r.end);
+    if (!inLiteral && !bindings.some(b => b.path === file)) C.fail('requested_file_operation_required');
   }
   return parse({ version: 1, bindings });
 }

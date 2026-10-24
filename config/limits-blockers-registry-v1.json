@@ -24,7 +24,8 @@
       "src/opencode-gateway.js",
       "src/mission-service.js",
       "src/mission-terminal-notifications.js",
-      "src/requested-file-scope.js"
+      "src/requested-file-scope.js",
+      "src/mission-worker-policy.js"
     ],
     "note": "Unknown runtime codes resolve as unknown_blocker rather than inventing classifications."
   },
@@ -1339,7 +1340,7 @@
       "codes": [
         "cognitive_explicit_worker_syntax_required"
       ],
-      "description": "Instruction requires explicit worker syntax the planner did not receive.",
+      "description": "Historical worker-syntax blocker; ordinary implementation now defaults to Cursor without magic syntax.",
       "category": "operational_owner",
       "severity": "error",
       "source": {
@@ -1353,9 +1354,9 @@
       "security_critical": false,
       "automatic_recovery_allowed": false,
       "automatic_recovery": null,
-      "next_safe_action": "resubmit_with_explicit_worker_syntax",
-      "owner_approval_required": true,
-      "historical_status": "active",
+      "next_safe_action": "use_current_cursor_only_intake",
+      "owner_approval_required": false,
+      "historical_status": "legacy_diagnostic",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
       ],
@@ -3311,6 +3312,94 @@
         "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
       ],
       "missing_prerequisite": "A stage-correct valid evaluation bound to the same verified worker packet and current authority."
+    },
+    {
+      "id": "cursor_implementation_required",
+      "codes": [
+        "CURSOR_IMPLEMENTATION_REQUIRED"
+      ],
+      "description": "Coding requires Cursor with no implementation fallback.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/mission-worker-policy.js",
+        "symbol": "assertImplementation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "use_cursor_with_existing_authorization",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/CURSOR-ONLY-AUTONOMY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      },
+      "missing_prerequisite": "Coding requires Cursor with no implementation fallback."
+    },
+    {
+      "id": "cursor_planning_required",
+      "codes": [
+        "CURSOR_PLANNING_REQUIRED"
+      ],
+      "description": "Coding requires a sealed host-validated OpenCode planning contract.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/mission-worker-policy.js",
+        "symbol": "assertImplementation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "submit_through_cognitive_intake",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/CURSOR-ONLY-AUTONOMY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      },
+      "missing_prerequisite": "Coding requires a sealed host-validated OpenCode planning contract."
     }
   ],
   "authority": false

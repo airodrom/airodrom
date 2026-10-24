@@ -189,6 +189,7 @@ class MissionService {
   dispatch(id,{request_id},owner='operator'){
     const mission=this.require(id,owner);
     this.assertAuthority(mission);
+    require('./mission-worker-policy').assertImplementation(mission.envelope);
     if(!this.bridge.authorityRuntime?.routing&&mission.envelope.preferred_agent==='codex'&&mission.envelope.dispatch_policy&&!mission.envelope.worker_contract){const result=this.bridge.codexAdapter.startTask(id,request_id);this.bridge.agentDispatch.schedule();return result;}
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
@@ -221,7 +222,7 @@ class MissionService {
     }
   }
   queue(id,decisionId=null){
-    const m=this.store.requireMission(id);this.assertAuthority(m);if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').queue(this,m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
+    const m=this.store.requireMission(id);this.assertAuthority(m);require('./mission-worker-policy').assertImplementation(m.envelope);if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').queue(this,m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
     if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&!(m.envelope.preferred_agent==='cursor'&&m.envelope.contract)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     if(m.envelope.cognitive&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('cognitive_execution_attempts_exhausted');
     if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
@@ -312,6 +313,7 @@ class MissionService {
       transaction(this.db,()=>{this.db.prepare('UPDATE cp_dispatches SET route=?,updated_at=? WHERE id=?').run(JSON.stringify(route),Date.now(),dispatch.id);this.store.event('agent.route.planned',m.id,route);});
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
+      require('./mission-worker-policy').assertImplementation(m.envelope);
       if(require('./mission-web-policy').proposal(m.envelope.objective).needed){this.web.qualify(m);this.web.grant(m);}
       if(m.envelope.coding_plan)this.codingAdapter.assert(m);
       // ADR 0051: the governed sandboxed Cursor worker stages declared files exactly like OpenCode;
@@ -378,6 +380,7 @@ class MissionService {
     if(cursor&&!adapter)throw Error('worker_execution_unqualified');
     const specialist=require('./specialist-gateway').enabled(m)?require('./specialist-gateway').adapterScope(this.bridge,task,agentId):null;
     if(workspaceSnapshot(m.envelope.workspace).hash!==require('./specialist-gateway').baseline(this.bridge,m,task.id).hash)throw Error('opencode_workspace_changed');
+    require('./mission-worker-policy').assertImplementation(m.envelope);
     this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor||cursor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
     if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor||cursor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
     if(cursor&&!m.envelope.contract?.permissions?.external_disclosure?.authorized)throw Error('external_disclosure_unauthorized');

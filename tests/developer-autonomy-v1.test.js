@@ -444,10 +444,10 @@ test('enrolled verifier definitions and inputs stay immutable in disposable clon
   assert.throws(() => da.grantScope(grant.grant_id), /verification definitions/);
 });
 
-test('cleanup holds queued Missions and requires proven terminal ownership', async t => {
+test('cleanup holds undispatched legacy Missions until explicit cancellation', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput, 'operator');
   const auth = routine(da, policy), m = b.missions.create(auth.mission_input, 'operator');
-  b.missions.dispatch(m.id, {request_id: randomUUID()});
+  assert.throws(()=>b.missions.dispatch(m.id, {request_id: randomUUID()}),/CURSOR_IMPLEMENTATION_REQUIRED/);
   assert.equal(da.inspectWorkspace(auth.workspace.workspace_id).mission_id, m.id);
   const held = da.cleanupWorkspace({workspace_id: auth.workspace.workspace_id, confirmed: true}, 'operator');
   assert.equal(held.state, 'held'); assert.ok(fs.existsSync(auth.workspace.path));
@@ -610,7 +610,7 @@ test('idle needs_rework with remaining repair budget frees concurrent admission'
   b.missions.cancel(next.id, {request_id:randomUUID()});
 });
 
-test('settled retained worktrees do not exhaust the concurrent worktree budget', async t => {
+test('cancelled legacy Missions retain worktrees without exhausting concurrent capacity', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
   const policy = da.enroll({
     ...f.enrollInput,
@@ -621,9 +621,9 @@ test('settled retained worktrees do not exhaust the concurrent worktree budget',
   const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:0,
     criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   const m = b.missions.create(first.mission_input, 'operator');
-  b.missions.dispatch(m.id, {request_id:randomUUID()});
-  await f.settle(m.id, 'needs_rework');
-  assert.equal(da.inspectGrant(first.grant.grant_id).state, 'consumed');
+  assert.throws(()=>b.missions.dispatch(m.id, {request_id:randomUUID()}),/CURSOR_IMPLEMENTATION_REQUIRED/);
+  b.missions.cancel(m.id,{request_id:randomUUID()});
+  assert.notEqual(da.inspectGrant(first.grant.grant_id).state, 'active');
   assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
   assert.ok(fs.existsSync(first.workspace.path));
   const second = routine(da, policy, {objective:'Second Mission after retained worktree'});

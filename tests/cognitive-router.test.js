@@ -12,7 +12,7 @@ const I = require('../src/cognitive-integrity');
 const { canonicalHash } = require('../src/authority-hash');
 
 const caller = 'mcp:380c1915-b24c-40c5-9f7a-8e87c2da61f0';
-async function setup(t, { delegated = true, live = false, cursor = false } = {}) {
+async function setup(t, { delegated = true, live = false, cursor = true, standing = true } = {}) {
   const opencode = live ? { enabled: true, executable: '/opt/homebrew/bin/opencode', model: 'ollama/qwen3-coder:30b', timeoutMs: 120000 } : runtime(t).options;
   const f = await fixture(t, { opencode, settleTimeoutMs: live ? 150000 : 15000 });
   if (cursor) {
@@ -27,6 +27,7 @@ async function setup(t, { delegated = true, live = false, cursor = false } = {})
     project_id: project.projectId, goal_id: goal.goalId, workflows: ['routine_edit', 'test'],
     workers: cursor ? ['opencode', 'cursor'] : ['opencode'], duration_days: 1, confirmed: true, diff_check: 'diff-check', default_tests: ['fixture-test'],
     budgets: { max_repairs: 0 }, cognitive: { version: 1, files: ['fixture.txt'], delegated_callers: delegated ? [caller] : [], planning_attempts: 2, planning_ms: 120000, execution_ms: 120000 } }, 'operator');
+  if(cursor && standing)f.bridge.hostExecutionPolicy.enrollStandingCursorDevelopment({request_id:randomUUID(),confirmed:true,repository:f.repo,policy_id:f.policy.policy_id,acknowledge_unknown_cost:true,max_invocations_per_mission:1,max_runtime_ms:120000,max_missions:10,path_allowlist:['fixture.txt']},'operator');
   const execute = f.bridge.opencodeAdapter.execute.bind(f.bridge.opencodeAdapter);
   f.plannerCalls = 0;
   f.proposal = e => ({ version: 1, request_id: e.request_id, envelope_hash: e.hash, files: ['fixture.txt'], tasks: [{ id: 'edit', operation: 'edit', paths: ['fixture.txt'], description: 'Replace alpha with beta and preserve LF', depends_on: [] }], verification: ['fixture-test'], complexity: 'bounded' });
@@ -54,7 +55,7 @@ test('delegated ordinary text plans read-only, seals, verifies independently, an
   const result = await f.ask(id);
   assert.ok(result.mission_id && ['DISPATCHED', 'RUNNING'].includes(result.state), JSON.stringify(result));
   const m = await f.settle(result.mission_id);
-  assert.equal(m.envelope.cognitive.sealed.worker, 'opencode');
+  assert.equal(m.envelope.cognitive.sealed.worker, 'cursor');
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
   assert.equal(fs.readFileSync(path.join(m.envelope.workspace, 'fixture.txt'), 'utf8'), 'beta\n');
   const evidence = require('../src/mission-evidence').evidencePackage(f.bridge, m.id).cognitive;
@@ -153,9 +154,8 @@ test('status reads stay responsive while disposable workspace preparation awaits
   const agents = await f.bridge.orchestratorAgentStatus();
   const agentsMs = Date.now() - agentsStarted;
   assert.ok(agentsMs < 2000, 'agent_status must remain responsive during prep: ' + agentsMs);
-  assert.equal(agents.cursor?.host_execution_disabled, true);
-  assert.equal(agents.cursor?.available, false);
-  assert.match(String(agents.cursor?.reason || ''), /cursor_execution_disabled/);
+  assert.equal(agents.cursor?.host_execution_disabled, false);
+  assert.equal(agents.cursor?.available, true);
   await preparing;
   const done = await f.ask(id);
   assert.ok(done.mission_id, JSON.stringify(done));
@@ -203,7 +203,7 @@ test('revocation while planning prevents grant issuance and execution', async t 
 test('route preserves explicit worker and disregards advisory complexity', () => {
   const e = { requested_worker: 'auto', eligible_workers: ['host', 'opencode', 'cursor'] };
   const p = { files: ['a'], tasks: [{ operation: 'edit' }], complexity: 'complex' };
-  assert.equal(R.route(e, p, ['host', 'opencode', 'cursor']), 'opencode');
+  assert.equal(R.route(e, p, ['host', 'opencode', 'cursor']), 'cursor');
   assert.equal(R.route({ ...e, requested_worker: 'cursor' }, p, ['cursor']), 'cursor');
   assert.throws(() => R.route({ ...e, requested_worker: 'cursor' }, p, ['opencode']), /unqualified:cursor/);
   assert.equal(R.route(e, { ...p, tasks: [{ operation: 'read' }] }, ['host']), 'host');
@@ -245,7 +245,7 @@ test('oversized or wrapped OpenCode proposals coerce into the sealed assignment 
   );
   const proposal = R.validateProposal(wrapped, envelope);
   assert.equal(proposal.tasks.length, 2);
-  assert.ok(proposal.tasks.every(task => task.worker === 'cursor'));
+  assert.deepEqual(proposal.tasks.map(task=>task.worker),['opencode','cursor']);
   assert.deepEqual(proposal.files, [...new Set(proposal.tasks.flatMap(task => task.paths))].sort());
   assert.deepEqual(proposal.verification, ['diff-check', 'arecibo-typecheck']);
   assert.equal(proposal.request_id, envelope.request_id);
@@ -278,7 +278,7 @@ test('ChatGPT Autopilot worker-role reconciliation: role contract for historical
     ['repeated_opencode', 'Use OpenCode to plan. Use OpenCode to evaluate. Run the audit in Cursor.', 'cursor'],
     ['airodrom_verify', 'Start the audit in Cursor. Use OpenCode to plan. Airodrom verifies.', 'cursor'],
     ['opencode_only_planning', 'Use OpenCode for planning.', 'auto'],
-    ['opencode_execution', 'Use OpenCode for the Fixture change.', 'opencode']
+    ['ordinary_implementation', 'Edit fixture.txt.', 'cursor']
   ];
   for (const [name, instruction, specialist] of cases) {
     const roles = R.resolveWorkerRoles(instruction);
@@ -291,7 +291,8 @@ test('ChatGPT Autopilot worker-role reconciliation: role contract for historical
   assert.throws(() => R.resolveWorkerRoles('Use Cursor and Use OpenCode to edit the files'), /ambiguous/);
   assert.throws(() => R.resolveWorkerRoles('Assign to Cursor and assign to OpenCode'), /ambiguous/);
   assert.throws(() => R.resolveWorkerRoles('Use Claude Code in Cursor'), /named_worker_unavailable/);
-  assert.throws(() => R.resolveWorkerRoles('Cursor somehow must execute this.'), /explicit_worker_syntax/);
+  assert.equal(R.resolveWorkerRoles('Cursor somehow must execute this.').specialist,'cursor');
+  assert.throws(()=>R.requestedWorker('Use OpenCode for the Fixture change.'),/CURSOR_IMPLEMENTATION_REQUIRED/);
 });
 
 test('MCP and operator intake share the same worker-role resolver export', () => {
@@ -311,15 +312,10 @@ test('MCP and operator intake share the same worker-role resolver export', () =>
   );
 });
 
-test('destination worker phrases are explicit; unrecognized worker prose still blocks', async t => {
-  const f = await setup(t);
-  assert.equal(R.requestedWorker('Continue the Fixture project audit in Cursor.'), 'cursor');
-  assert.equal(R.requestedWorker('Use OpenCode for the Fixture change.'), 'opencode');
-  const blocked = await f.ask(randomUUID(), caller, 'In Fixture project Cursor somehow must execute this.');
-  assert.equal(blocked.state, 'BLOCKED');
-  assert.deepEqual(blocked.blockers, ['cognitive_explicit_worker_syntax_required']);
-  assert.equal(f.plannerCalls, 0);
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n, 0);
+test('ordinary worker narration requires no special selection syntax', () => {
+  assert.equal(R.requestedWorker('Continue the Fixture project audit in Cursor.'),'cursor');
+  assert.equal(R.requestedWorker('In Fixture project Cursor somehow must execute this.'),'cursor');
+  assert.throws(()=>R.requestedWorker('Use OpenCode for the Fixture change.'),/CURSOR_IMPLEMENTATION_REQUIRED/);
 });
 
 test('strict versioned schemas reject dependency cycles, unknown fields and tampered hashes', () => {
@@ -355,7 +351,7 @@ test('drift immediately before queue blocks dispatch and remains a durable block
 });
 
 test('explicit Cursor never launches OpenCode execution without its own qualification and grant', async t => {
-  const f = await setup(t);
+  const f = await setup(t,{cursor:false});
   const result = await f.ask(randomUUID(), caller, 'Use Cursor only in Fixture project to change fixture.txt from alpha to beta.');
   assert.equal(result.state, 'BLOCKED');
   // Local-First V3: host policy blocks before subscription gates; both remain precise.
@@ -364,7 +360,7 @@ test('explicit Cursor never launches OpenCode execution without its own qualific
 });
 
 test('Cursor proposal uses the existing local approval and finite subscription grant without fallback', async t => {
-  const f = await setup(t, { cursor: true }), request_id = randomUUID();
+  const f = await setup(t, { cursor: true, standing:false }), request_id = randomUUID();
   const prepared = await f.ask(request_id, caller, 'Use Cursor only in Fixture project to change fixture.txt from alpha to beta.');
   assert.equal(prepared.state, 'WAIT', JSON.stringify(prepared));
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
@@ -469,4 +465,23 @@ test('substitution proposal is refused before Mission dispatch and keeps origina
   const r = f.bridge.zeroSetupWork.read(p.request_id);
   assert.deepEqual(r.cognitive.envelope.requested_scope.bindings, [{ operation: 'edit', path: 'fixture.txt' }]);
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+});
+
+test('documentation wording reaches sealed host verification without adding authority', async t => {
+  const f = await setup(t), instruction = 'In Fixture project, required result: alpha to beta. Update the documentation in fixture.txt and update the examples.';
+  const result = await f.ask(randomUUID(), caller, instruction);
+  assert.ok(result.mission_id, JSON.stringify(result));
+  const m = await f.settle(result.mission_id);
+  assert.deepEqual(m.envelope.cognitive.envelope.requested_scope.bindings, [{ operation: 'edit', path: 'fixture.txt' }]);
+  assert.equal(fs.readFileSync(path.join(m.envelope.workspace, 'fixture.txt'), 'utf8'), 'beta\n');
+  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
+  const evidence = require('../src/mission-evidence').evidencePackage(f.bridge, m.id);
+  assert.equal(evidence.cognitive.verification.result, 'operator_review');
+  assert.equal(evidence.cognitive.acceptance, 'pending');
+  const planned = f.plannerCalls;
+  for (const text of ['Update the documentation in other.md.', 'Read fixture.txt and update the examples.']) {
+    const rejected = await f.ask(randomUUID(), caller, 'In Fixture project ' + text);
+    assert.equal(rejected.state, 'BLOCKED'); assert.equal(rejected.mission_id, null);
+  }
+  assert.equal(f.plannerCalls, planned);
 });

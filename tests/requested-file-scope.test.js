@@ -130,3 +130,111 @@ test('reported multi-task request keeps roles and exact scope without granting a
   S.assertEnrollment(s, [requested]); S.assertProposal(s, proposal());
   assert.throws(() => S.assertProposal(s, proposal(['AGENTS.md'])), /plan_mismatch/);
 });
+
+test('documentation content operations bind exact literal files without aliases', () => {
+  for (const text of ['Update the documentation in docs/README.md.', 'Modify examples within docs/README.md.', 'Rewrite the text of "docs/README.md".']) {
+    const s = S.extract(text);
+    assert.deepEqual(s.bindings, [{ operation: 'edit', path: 'docs/README.md' }]);
+    S.assertEnrollment(s, ['docs/README.md']);
+    assert.throws(() => S.assertEnrollment(s, ['README.md']), /not_enrolled/);
+    assert.throws(() => S.assertProposal(s, proposal(['README.md'])), /plan_mismatch/);
+  }
+  assert.deepEqual(S.extract('Update the documentation in "docs/My Guide.md".').bindings,
+    [{ operation: 'edit', path: 'docs/My Guide.md' }]);
+  assert.deepEqual(S.files(S.extract('Update the documentation in first.md, second.md and `third.md`.')), ['first.md', 'second.md', 'third.md']);
+  assert.deepEqual(S.extract('Update the documentation in `LICENSE`.').bindings, [{ operation: 'edit', path: 'LICENSE' }]);
+  assert.deepEqual(S.files(S.extract('Update the documentation in README.md and `LICENSE`.')), ['LICENSE', 'README.md']);
+});
+
+test('content refinement retains the immediate explicit edit and its read dependency', () => {
+  const direct = S.extract('Edit docs/README.md.');
+  for (const text of ['Edit docs/README.md and update the examples.', 'Edit docs/README.md, then rewrite its wording.']) {
+    assert.deepEqual(S.extract(text), direct);
+  }
+  const text = 'Read recovery-proof.txt then edit recovery-proof.txt and update the examples.';
+  const s = S.extract(text); assert.deepEqual(s, scope()); S.assertProposal(s, proposal());
+  const p = proposal(); p.tasks[1].depends_on = []; assert.throws(() => S.assertProposal(s, p), /dependency_mismatch/);
+  S.assertOriginal({ envelope: { requested_scope: s }, proposal: proposal() }, text);
+  const m = mission(); m.envelope.cognitive.envelope.requested_scope = s;
+  assert.equal(S.verification(m, { files: { [requested]: 'after', 'AGENTS.md': 'changed' } }).status, 'failed');
+});
+
+test('content refinement cannot inherit read, creation, negated or prior-clause authority', () => {
+  for (const text of [
+    'Read docs/README.md and update the examples.',
+    'Edit README.md. Update the examples.',
+    'Edit README.md; update the examples.',
+    'Edit README.md\nupdate the examples.',
+    'Edit first.md and second.md. Update the examples.',
+    'Edit "README.md". Update the examples.',
+    'Edit README.md then read input.txt and update the examples.',
+    'Do not edit README.md. Update the examples.',
+    'Create README.md and update the examples.',
+    'Edit README.md and create the examples.',
+    'Edit README.md and update LICENSE.',
+    'Edit README.md and edit something.',
+    'Edit README.md and update the examples under /etc/passwd.',
+    'Edit README.md and update the examples from `LICENSE`.',
+    'Edit README.md and update the examples in another file.',
+    'Edit README.md and update the examples with other/paths.',
+    'Edit README.md and update the examples. Extra file other.md.',
+    'Edit README.md and update the examples; `LICENSE`',
+    'Edit README.md and update the examples. Then /etc/passwd',
+    'Edit README.md and update the examples. other/secret',
+    'Edit README.md and update the examples? other/target',
+    'Edit README.md and update the examples and change the headings.',
+    'Edit README.md and delete `LICENSE` and update the examples.',
+    'Edit README.md using /etc/passwd and update the examples.',
+    'Edit README.md with other/secret and update the examples.',
+    'Edit README.md and update\nthe examples.',
+    'Update the documentation in README.md and LICENSE',
+    'Update the documentation in README.md, LICENSE',
+    'Update the documentation in README.md and update',
+    'Update the documentation in README.md and READ',
+    'Update the documentation in README.md and update: LICENSE',
+  ]) assert.throws(() => S.extract(text), /requested_file_operation_required/, text);
+});
+
+test('explicit content targets are never swallowed as refinements of a different file', () => {
+  const s = S.extract('Read examples.md then edit README.md and update the examples in examples.md.');
+  assert.deepEqual(s.bindings, [{ operation: 'read', path: 'examples.md' }, { operation: 'edit', path: 'README.md' }, { operation: 'edit', path: 'examples.md' }]);
+  assert.throws(() => S.assertProposal(s, { files: ['examples.md', 'README.md'], tasks: [
+    { id: 'r', operation: 'read', paths: ['examples.md'], depends_on: [] },
+    { id: 'w', operation: 'edit', paths: ['README.md'], depends_on: ['r'] }
+  ] }), /plan_mismatch/);
+  assert.deepEqual(S.extract('Edit README.md and update the examples in `private name`.').bindings,
+    [{ operation: 'edit', path: 'README.md' }, { operation: 'edit', path: 'private name' }]);
+});
+
+test('content syntax retains path validity and separate creation authorization', () => {
+  for (const file of ['/etc/passwd', '../README.md', 'docs/../README.md', 'docs\\README.md', '.git/config']) {
+    assert.throws(() => S.extract('Update the documentation in ' + file), /requested_file_path_invalid|Unsafe verification path/, file);
+  }
+  assert.throws(() => S.extract('Update the documentation in LICENSE'), /requested_file_operation_required/);
+  const s = S.extract('Create the documentation in docs/new.md.');
+  assert.deepEqual(s.bindings, [{ operation: 'create', path: 'docs/new.md' }]);
+  assert.throws(() => S.assertEnrollment(s, ['docs/new.md']), /creation_not_authorized/);
+});
+
+test('corrected quoted-path punctuation cannot rewrite an older sealed binding', () => {
+  const legacy = { version: 1, bindings: [{ operation: 'edit', path: 'LICENSE`' }] };
+  const cognitive = { envelope: { requested_scope: legacy }, proposal: proposal(['LICENSE`']) };
+  const before = JSON.stringify(cognitive);
+  assert.deepEqual(S.extract('Edit `LICENSE`.').bindings, [{ operation: 'edit', path: 'LICENSE' }]);
+  assert.throws(() => S.assertOriginal(cognitive, 'Edit `LICENSE`.'), /requested_file_constraint_changed/);
+  assert.equal(JSON.stringify(cognitive), before);
+});
+
+test('a reference document with filenames and freeze rules is not an edit instruction', () => {
+  const document = 'ARCHITECTURE FREEZE. Status: FROZEN — NO CHANGES AUTHORIZED.\n' +
+    'Verified baseline: recovery-proof.txt was the only changed file.\n' +
+    'Do not change agent responsibilities. Do not perform new installation cutovers.';
+  assert.throws(() => S.extract(document), /requested_file_operation_required/);
+});
+
+test('ONLY is an adverb and status words are not implicit filenames',()=>{
+ const S=require('../src/requested-file-scope');
+ for(const marker of ['READY','BLOCKED'])assert.deepEqual(S.extract('Edit ONLY fixture.txt and report '+marker+'.').bindings,[{operation:'edit',path:'fixture.txt'}]);
+ for(const word of ['READY','ONLY','BLOCKED'])assert.throws(()=>S.extract('Edit file '+word+'.'),/requested_file_operation_required/);
+ assert.deepEqual(S.extract('Edit `READY`.').bindings,[{operation:'edit',path:'READY'}]);
+});

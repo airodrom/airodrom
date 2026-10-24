@@ -524,36 +524,26 @@ class ZeroSetupWork {
           presentation: {
             worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
             workspace_label: readablePath(workspace),
-            status: 'Cursor execution disabled in Airodrom; use local OpenCode only',
+            status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
           },
         };
         this.write(request_id, principal, record, 'blocked');
         return {
           state: 'BLOCKED',
           code: 'CURSOR_EXECUTION_DISABLED',
-          message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+          message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
           blockers: ['CURSOR_EXECUTION_DISABLED'],
           authority: false,
           execution_authorized: false,
           requested_specialist: 'cursor',
           planner: 'opencode',
           evaluator: 'opencode',
-          next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+          next_action: 'enable_cursor_via_authenticated_local_api',
           presentation: record.presentation,
         };
       }
-      // Active standing enrollment is enough to auto-prepare cognitive discovery from
-      // prior same-repo enrollment files or Autopilot-admissible paths, and to attach
-      // the Cursor worker when host Cursor execution is already authorized. Autopilot MCP
-      // and the local operator share that authority; bare MCP without Autopilot does not.
-      const mayEnsureCognitive = principal === 'operator' || (autopilotOn && mcpHandoff);
-      const cognitiveMissing = !(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
-      const cursorWorkerMissing = Array.isArray(standing.workers) && standing.workers.length > 0 && !standing.workers.includes('cursor');
-      if (mayEnsureCognitive && (cognitiveMissing || cursorWorkerMissing)) {
-        try {
-          standing = this.bridge.developerAutonomy.ensureCognitiveDiscovery(standing.policy_id, 'operator') || standing;
-        } catch { /* fall through to precise cognitive / worker gates */ }
-      }
+      // Admission is read-only with respect to enrollment. Reuse an exact active
+      // policy; adding files or workers requires the existing owner control API.
       const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
       if (!cognitiveReady) {
         const record = {
@@ -599,7 +589,7 @@ class ZeroSetupWork {
         return {
           state: 'BLOCKED',
           code: 'standing_cursor_worker_not_enrolled',
-          message: 'Project ' + project.name + ' has a standing policy, but Cursor is not enrolled on that policy worker allowlist. Re-enroll Developer Autonomy with Cursor permitted, or use local OpenCode wording. Chat text cannot expand the allowlist.',
+          message: 'Project ' + project.name + ' has a standing policy, but Cursor is not enrolled on that policy worker allowlist. Use an owner-enrolled Developer Autonomy policy with Cursor permitted. Chat text cannot expand the allowlist.',
           blockers: ['standing_cursor_worker_not_enrolled'],
           authority: false,
           execution_authorized: false,
@@ -879,12 +869,12 @@ class ZeroSetupWork {
       return {
         state: 'BLOCKED',
         code: 'CURSOR_EXECUTION_DISABLED',
-        message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center.',
+        message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center.',
         blockers: ['CURSOR_EXECUTION_DISABLED'],
         presentation: { ...(live.presentation || {}), worker: 'cursor', status: 'Cursor execution disabled in Airodrom' },
         authority: false,
         execution_authorized: false,
-        next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+        next_action: 'enable_cursor_via_authenticated_local_api',
       };
     }
     // A generic task sandbox is not an executable Mission. Approval cannot supply

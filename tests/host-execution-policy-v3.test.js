@@ -13,7 +13,7 @@ async function setup(t) {
   return f;
 }
 
-describe('Local-First Autopilot V3 host execution policy', () => {
+describe('Cursor-only host execution policy', () => {
   test('Cursor execution defaults disabled and is reversible by operator only', async (t) => {
     const f = await setup(t);
     const policy = f.bridge.hostExecutionPolicy;
@@ -35,19 +35,12 @@ describe('Local-First Autopilot V3 host execution policy', () => {
     assert.throws(() => f.bridge.hostExecutionPolicy.assertCursorAllowed('dispatch'), /CURSOR_EXECUTION_DISABLED/);
   });
 
-  test('requestedWorker rejects explicit Cursor when disabled and accepts local OpenCode only', () => {
+  test('requestedWorker rejects disabled Cursor and conflicting implementation workers', () => {
     assert.throws(
       () => R.requestedWorker('Start the Arecibo audit in Cursor.', { cursorDisabled: true }),
       /CURSOR_EXECUTION_DISABLED/
     );
-    assert.equal(
-      R.requestedWorker('Start the Arecibo release-readiness audit using local OpenCode only. Do not deploy production.', { cursorDisabled: true }),
-      'opencode'
-    );
-    assert.equal(
-      R.requestedWorker('Start the Arecibo release-readiness audit using local OpenCode only. Do not call Cursor.', { cursorDisabled: true }),
-      'opencode'
-    );
+    for(const text of ['Start the Arecibo release-readiness audit using local OpenCode only. Do not deploy production.','Start the Arecibo release-readiness audit using local OpenCode only. Do not call Cursor.'])assert.throws(()=>R.requestedWorker(text,{cursorDisabled:true}),/CURSOR_IMPLEMENTATION_REQUIRED/);
   });
 
   test('route never auto-selects Cursor when host policy disables it', () => {
@@ -69,7 +62,7 @@ describe('Local-First Autopilot V3 host execution policy', () => {
       ],
     };
     assert.equal(R.route(envelope, proposal, ['host', 'opencode', 'cursor'], { cursorDisabled: false }), 'cursor');
-    assert.equal(R.route(envelope, proposal, ['host', 'opencode', 'cursor'], { cursorDisabled: true }), 'opencode');
+    assert.throws(()=>R.route(envelope, proposal, ['host', 'opencode', 'cursor'], { cursorDisabled: true }),/CURSOR_EXECUTION_DISABLED/);
   });
 
   test('coerceAutopilotDeliverable turns read-only audit plans into one enrolled edit', () => {
@@ -80,7 +73,7 @@ describe('Local-First Autopilot V3 host execution policy', () => {
       git_anchor: 'b'.repeat(40),
       integrity: { version: 1, hash: 'c'.repeat(64), entries: 1, bytes: 1, exclusions: 'none' },
       permitted_paths: ['CHANGELOG.md', 'README.md'], denied_paths: ['.git/**'],
-      operations: ['read', 'edit'], eligible_workers: ['host', 'opencode'],
+      operations: ['read', 'edit'], eligible_workers: ['host', 'opencode', 'cursor'],
       verification: ['diff-check', 'arecibo-typecheck'],
       limits: { planning_attempts: 2, execution_attempts: 2, repair_attempts: 1, planning_ms: 120000, execution_ms: 120000 },
       requested_worker: 'auto', instruction_hash: 'd'.repeat(64), expires_at: Date.now() + 60000
@@ -100,12 +93,13 @@ describe('Local-First Autopilot V3 host execution policy', () => {
     const coerced = R.coerceAutopilotDeliverable(proposal, envelope, 'Start the Arecibo release-readiness audit and produce a grounded report.');
     assert.equal(coerced.tasks.length, 1);
     assert.equal(coerced.tasks[0].operation, 'edit');
+    assert.equal(coerced.tasks[0].worker,'cursor');
     assert.equal(coerced.tasks[0].paths[0], 'CHANGELOG.md');
     assert.match(coerced.tasks[0].description, /diff --check|trailing whitespace/i);
     assert.equal(R.coerceAutopilotDeliverable(proposal, envelope, 'Summarize CHANGELOG only').tasks.length, 2);
   });
 
-  test('coercePlanningProposal clamps Cursor tasks to OpenCode when Cursor is ineligible', () => {
+  test('coercePlanningProposal blocks implementation when Cursor is ineligible', () => {
     const envelope = C.seal({
       version: 3, request_id: '11111111-1111-4111-8111-111111111111', caller: 'operator',
       delegation: { policy_id: '22222222-2222-4222-8222-222222222222', policy_hash: 'a'.repeat(64) },
@@ -118,7 +112,7 @@ describe('Local-First Autopilot V3 host execution policy', () => {
       limits: { planning_attempts: 2, execution_attempts: 2, repair_attempts: 1, planning_ms: 120000, execution_ms: 120000 },
       requested_worker: 'auto', instruction_hash: 'd'.repeat(64), expires_at: Date.now() + 60000
     });
-    const coerced = R.coercePlanningProposal({
+    assert.throws(()=>R.coercePlanningProposal({
       version: 3,
       request_id: envelope.request_id,
       envelope_hash: envelope.hash,
@@ -129,10 +123,7 @@ describe('Local-First Autopilot V3 host execution policy', () => {
       }],
       verification: ['diff-check'],
       complexity: 'bounded'
-    }, envelope);
-    assert.equal(coerced.tasks[0].worker, 'opencode');
-    const validated = R.validateProposal(coerced, envelope);
-    assert.equal(validated.tasks[0].worker, 'opencode');
+    }, envelope),/cognitive_worker_unqualified:cursor/);
   });
 
   test('Autopilot enrolls OpenCode-only workers while Cursor is disabled', async (t) => {

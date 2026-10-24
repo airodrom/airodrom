@@ -98,6 +98,7 @@ function assertFresh(bridge,m,taskId) {
 function queue(service, m) {
   const b=service.bridge,db=service.db;
   assertRoot(b,m); service.assertAuthority(m);
+  require('./mission-worker-policy').assertImplementation(m.envelope);
   if (!['ready','running'].includes(m.state)) fail('gateway_assignment_state');
   if (db.prepare("SELECT 1 FROM cp_dispatches WHERE mission_id=? AND state IN ('queued','dispatching','running','unknown')").get(m.id)) fail('gateway_assignment_active_or_uncertain');
   if (db.prepare("SELECT 1 FROM cp_leases WHERE resource=? AND state IN ('held','quarantined')").get(m.envelope.workspace)) fail('gateway_assignment_lease');
@@ -262,8 +263,8 @@ async function retryPreStartEvaluation(service, m) {
     m = service.store.getMission(m.id);
     if (!m || m.state !== 'blocked') return false;
     const runs = service.db.prepare("SELECT * FROM cp_runs WHERE mission_id=? AND agent_id='opencode'").all(m.id);
-    const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length === 1);
-    const attempt = node?.attempts[0];
+    const node = nodes(service.bridge, m).find(n => n.state === 'unavailable' && n.attempts.length > 0);
+    const attempt = node?.attempts.at(-1);
     // Completed specialist may be Cursor (Milestone B) or local OpenCode (Local-First).
     // Do not require a Cursor run — that blocked local-only evaluation recovery.
     const worker = attempt?.run_id ? service.store.run(attempt.run_id) : null;
@@ -302,7 +303,8 @@ async function retryPreStartEvaluation(service, m) {
     save(service.bridge, m, node, 'evaluating');
     const evaluation = await require('./opencode-gateway').evaluate(service.bridge, service.store.requireMission(m.id), worker, attempt.verification);
     const current = nodes(service.bridge, m).find(n => n.node_id === node.node_id);
-    const live = current.attempts[0];
+    const live = current.attempts.at(-1);
+    if (live.run_id !== worker.id) fail('gateway_result_assignment_mismatch');
     const receipt = require('./opencode-gateway').receipt(service.bridge, m.id, worker.id);
     live.evaluation_run_id = receipt.id;
     live.binding_hash = receipt.result.gateway.binding_hash;
@@ -327,13 +329,19 @@ async function retryPreStartEvaluation(service, m) {
       });
       if (final && service.store.requireMission(m.id).state === 'awaiting_acceptance') autoAccept(service.bridge, m.id);
       else if (!final) service.schedule();
+    } else if (evaluation.evaluation.recommendation === 'repair') {
+      transaction(service.db, () => {
+        save(service.bridge, m, current, 'evaluating');
+        if (!planRepair(service, service.store.requireMission(m.id), current, evaluation)) save(service.bridge, m, current, 'failed');
+      });
+      service.schedule();
     } else {
       save(service.bridge, m, current, 'failed');
     }
     return true;
   } catch (error) {
     // Lock holder only: restore unavailable so a later deferred retry can run.
-    const node = nodes(service.bridge, m).find(n => n.attempts?.length === 1 && ['evaluating', 'unavailable'].includes(n.state));
+    const node = nodes(service.bridge, m).find(n => n.attempts?.length > 0 && ['evaluating', 'unavailable'].includes(n.state));
     if (node) save(service.bridge, m, node, 'unavailable');
     const code = String(error.code || error.message);
     // A retry can fail differently from the initial evaluator. Update diagnostic
@@ -479,7 +487,21 @@ function assertReceipts(bridge,m,finalRun) {
 function finishResult(service,run) {
   service.db.prepare('UPDATE cp_run_results SET processed_at=? WHERE run_id=? AND processed_at=0').run(service.store.now(),run.id);
 }
+// Only ordinary implementation-check failures may authorize a corrective worker.
+// Protected inputs, scope, provenance, unavailable and unknown checks never do.
+function repairVerificationAllows(m, verification) {
+  const checks = verification?.checks;
+  if (!Array.isArray(checks) || !checks.length) return false;
+  if (verification.status === 'passed') return checks.every(c => c.status === 'passed');
+  if (verification.status !== 'failed' || !checks.some(c => c.status === 'failed')) return false;
+  const allowed = new Set([
+    ...(m.envelope.cognitive?.envelope.verification || []).map(label => 'task:' + label),
+    ...(m.envelope.criteria || []).filter(c => ['exact_file', 'registered_checks'].includes(c.type)).map(c => c.id),
+  ]);
+  return checks.every(c => c.status === 'passed' || (c.status === 'failed' && allowed.has(c.id)));
+}
 function planRepair(service,m,current,evaluation) {
+  if (!repairVerificationAllows(m, current.attempts?.at(-1)?.verification)) return false;
   const b=service.bridge,all=nodes(b,m),requested=evaluation.evaluation.repair_assignment;
   // The evaluator can name only an existing sealed edit assignment. The host
   // computes the affected suffix and all repeated invocations consume repairs.
@@ -492,6 +514,7 @@ function planRepair(service,m,current,evaluation) {
   transaction(service.db,()=>{
     for(const n of repeat)save(b,m,n,'pending');
     const latest=service.store.requireMission(m.id);
+    if(latest.state==='blocked')service.store.state(m.id,'ready','Bounded specialist repair after evaluator recovery');
     if(latest.state==='verifying'){
       service.store.state(m.id,'needs_rework','Bounded specialist repair under current policy');
       service.store.state(m.id,'ready','Bounded specialist repair');
@@ -562,26 +585,23 @@ async function processResult(service,row) {
       finishResult(service,run);
     }else{
       save(b,m,a.node,'failed');
-      if(['running','verifying'].includes(store.requireMission(m.id).state))store.state(m.id,'needs_rework','Specialist evaluation or host verification did not pass within the authorized repair budget');
+      if(['running','verifying'].includes(store.requireMission(m.id).state))store.state(m.id,'needs_rework','Specialist evaluation or host verification did not permit an authorized correction');
       finishResult(service,run);
     }
   }catch(error){
     const detail=String(error.code||error.message).slice(0,160);
     const current=store.requireMission(m.id);
-    // Host verification already failed: keep that evidence as needs_rework.
-    // Masking it as EVALUATION_UNAVAILABLE blocks durable settlement diagnostics
-    // and erases the distinction between empty worker writes and evaluator JSON.
-    if(verification&&verification.status==='failed'&&['running','verifying'].includes(current.state)){
+    const retryable = verification && ['passed', 'failed'].includes(verification.status)
+      && require('./opencode-gateway').automaticEvaluationRetryable(error);
+    // Retain failed host checks on the attempt. A classified evaluator failure
+    // may retry evaluation only; it never converts a failed check into success.
+    if(verification?.status==='failed' && !retryable && ['running','verifying'].includes(current.state)){
       save(b,m,a.node,'failed');
       store.state(m.id,'needs_rework','Host verification failed; evaluation unavailable: '+detail);
     }else{
       save(b,m,a.node,'unavailable');
       if(['running','verifying','awaiting_acceptance'].includes(current.state))store.state(m.id,'blocked','EVALUATION_UNAVAILABLE: '+detail);
-      // Local OpenCode (and Cursor→OpenCode) evaluator never-started misses are
-      // retryable once host verification already passed. Do not wait for reboot.
-      if (verification?.status === 'passed' && gateway.automaticEvaluationRetryable(error)) {
-        deferEvaluationRetry(service, store.requireMission(m.id));
-      }
+      if(retryable)deferEvaluationRetry(service,store.requireMission(m.id));
     }
     finishResult(service,run);
   }finally{store.updateRun(verifyId,{state:'completed',processState:'not_started',verified:true,deferAudit:true});}
@@ -641,4 +661,4 @@ function autoAccept(bridge,id) {
   db.prepare("UPDATE cp_mission_programs SET state='settled' WHERE id=?").run(id);
   return{accepted:true,verification_id:v.id};
 }
-module.exports={KIND,enabled,assignments,register,queue,select,started,active,adapterScope,baseline,assertFresh,assertRoot,isEvaluating,digest,returnPayload,inspect,tick,processResult,assertReceipts,autoAccept,repairCount,recover,deadline,workerInput,admitReady,admitPreparedReady};
+module.exports={repairVerificationAllows,KIND,enabled,assignments,register,queue,select,started,active,adapterScope,baseline,assertFresh,assertRoot,isEvaluating,digest,returnPayload,inspect,tick,processResult,assertReceipts,autoAccept,repairCount,recover,deadline,workerInput,admitReady,admitPreparedReady};
