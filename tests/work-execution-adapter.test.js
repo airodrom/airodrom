@@ -3,6 +3,7 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 const { fixture } = require('./fixtures/mission-fixture.cjs');
 const { WorkExecutionAdapter, REQUIRED, hash, surfaceDescriptor } = require('../src/work-execution-adapter');
 const { fingerprint } = require('../src/control-plane-store');
+const {seedHistoricalHandoff}=require('./fixtures/historical-codex-fixture.cjs');
 const count = (f, table) => f.bridge.controlStore.db.prepare('SELECT count(*) n FROM ' + table).get().n;
 const policy = { privacy: 'cloud_allowed', providers: ['codex_openai'], billing_classes: ['subscription'], task_category: 'focused_coding' };
 const seal = value => { delete value.content_hash; value.content_hash = fingerprint(value); return value; };
@@ -21,6 +22,19 @@ async function setup(t, extra = {}) {
   const input = { mission_id: m.id, request_id: 'work-test-request', workspace_handle: 'approved-fixture', timeout_ms: 60000, context_files: ['fixture.txt'] };
   return { f, m, adapter, surface, controls, calls, input };
 }
+// Seed a pre-upgrade binding and attempt. No current launcher or dispatch
+// permission is replaced; collect/observe/Acceptance use the production code.
+function seedBinding(f,adapter,input,controls={},status='accepted'){
+ const m=f.bridge.controlStore.requireMission(input.mission_id),h=seedHistoricalHandoff(f,m,input.request_id,{status});
+ const workspace={version:1,kind:'private',handle:input.workspace_handle,project_id:m.project_id,owner:m.owner};
+ const files=input.context_files.map(file=>{const content=fs.readFileSync(path.join(m.envelope.workspace,file),'utf8');return{path:file,content,sha256:hash(content)};});
+ const context={objective:m.envelope.objective,constraints:m.envelope.constraints,allowed_files:m.envelope.allowed_files,criteria:m.envelope.criteria,files};
+ const packet={version:1,runtime_id:'work',legacy_agent_id:'codex',mission_id:m.id,task_id:m.task_id,run_id:h.run_id,request_id:input.request_id,workspace,capabilities:['bounded_file_work','artifact_return'],context,context_hash:fingerprint(context),deadline:adapter.now()+input.timeout_ms,result_contract:{version:1,types:['text/plain','text/markdown','application/json'],max_bytes:24000,provenance_required:true,authority:'evidence_only'}};
+ f.bridge.controlStore.db.prepare('INSERT INTO cp_work_bindings VALUES(?,?,?,?,?,?,?,?,?)').run(h.run_id,m.id,input.request_id,fingerprint(input),fingerprint({version:2,envelope:m.envelope,ceiling:m.ceiling}),fingerprint(adapter.descriptor),adapter.descriptor.mode,JSON.stringify(packet),packet.deadline);
+ const d=f.bridge.agentDispatch.get(h.run_id);controls.packet={...packet,dispatch_id:d.dispatch_id,attempt_id:d.active_attempt_id,idempotency_key:d.idempotency_key};
+ if(status==='accepted')fs.writeFileSync(path.join(m.envelope.workspace,'fixture.txt'),'beta\n');
+ return adapter.binding(h.run_id);
+}
 function returned(p) {
   const artifact = { id: 'result-note', path: 'note.txt', type: 'text/plain', content: 'Harmless bounded fixture output\n', origin: { runtime_id: 'work', mission_id: p.mission_id, task_id: p.task_id, run_id: p.run_id, workspace_handle: p.workspace.handle, surface_id: 'work-test-surface' } };
   artifact.size = Buffer.byteLength(artifact.content); artifact.sha256 = hash(artifact.content);
@@ -36,15 +50,15 @@ test('default Work adapter reports implemented and unsupported; discovery does n
   assert.equal(surfaceDescriptor({ descriptor: { id: 'create_thread' } }), null);
 });
 test('return before dispatch, wrong mission and stale artifact attempt cannot enter the inbox',async t=>{
- const {f,adapter,input,controls}=await setup(t);const b=adapter.prepare(input);await assert.rejects(adapter.collect(b.run_id),/not_dispatched/);await adapter.dispatch(b.run_id);
+ const {f,adapter,input,controls}=await setup(t);assert.throws(()=>adapter.prepare(input),/CURSOR_IMPLEMENTATION_REQUIRED/);const b=seedBinding(f,adapter,input,controls);assert.equal((await adapter.dispatch(b.run_id)).state,'existing_dispatch');
  for(const change of [v=>v.mission_id='other-mission',v=>v.attempt_id='stale-attempt',v=>v.dispatch_id='wrong-dispatch']){const value=returned(controls.packet);change(value);controls.returnValue=seal(value);await assert.rejects(adapter.collect(b.run_id));assert.equal(count(f,'cp_result_inbox'),0);}
 });
 test('transport rejection, duplicate report and stale report retain canonical outcome rules',async t=>{
- const {f,adapter,input,controls,calls}=await setup(t,{response:{accepted:false,code:'rejected_by_transport'}});const b=adapter.prepare(input);
+ const {f,adapter,input,controls,calls}=await setup(t,{response:{accepted:false,code:'rejected_by_transport'}});const b=seedBinding(f,adapter,input,controls,'dispatching');
  assert.throws(()=>f.bridge.agentDispatch.report({dispatch_id:b.run_id,attempt_id:'unclaimed',outcome:{accepted:true}}),/Unknown/);
- await adapter.dispatch(b.run_id);const d=f.bridge.agentDispatch.get(b.run_id);assert.equal(d.last_outcome.classification,'rejected_by_transport');
+ const pending=f.bridge.agentDispatch.get(b.run_id);f.bridge.agentDispatch.report({dispatch_id:pending.dispatch_id,attempt_id:pending.active_attempt_id,outcome:controls.response});const d=f.bridge.agentDispatch.get(b.run_id);assert.equal(d.last_outcome.classification,'rejected_by_transport');
  assert.equal(f.bridge.agentDispatch.report({dispatch_id:d.dispatch_id,attempt_id:d.active_attempt_id,outcome:controls.response}).duplicate,true);
- assert.throws(()=>f.bridge.agentDispatch.report({dispatch_id:d.dispatch_id,attempt_id:d.active_attempt_id,outcome:{accepted:true}}),/conflict/);assert.equal(calls.launch,1);
+ assert.throws(()=>f.bridge.agentDispatch.report({dispatch_id:d.dispatch_id,attempt_id:d.active_attempt_id,outcome:{accepted:true}}),/conflict/);assert.equal(calls.launch,0);
 });
 test('supported port discovery separates launcher, workspace, return, lifecycle, cancel, and live qualification', async t => {
   const { adapter, surface } = await setup(t);
@@ -53,7 +67,7 @@ test('supported port discovery separates launcher, workspace, return, lifecycle,
   assert.throws(() => adapter.requireSurface(), /unavailable/);
 });
 test('opaque approved workspace binds project and owner; outbound packet includes only selected bounded context and no host paths', async t => {
-  const { f, adapter, surface, input } = await setup(t);
+  const { f, adapter, surface, input, controls } = await setup(t);
   assert.throws(() => adapter.prepare(input, 'mcp'), /operator/);
   for (const delta of [{ private: false }, { approved: false }, { project_id: 'other' }, { owner: 'other' }, { local_root: f.root }, { handle: 'other' }]) {
     surface.resolveWorkspace = () => ({ handle: input.workspace_handle, project_id: f.bridge.projects.listProjects()[0].projectId, owner: 'operator', local_root: f.repo, private: true, approved: true, ...delta });
@@ -61,12 +75,12 @@ test('opaque approved workspace binds project and owner; outbound packet include
   }
   surface.resolveWorkspace = ({ handle, project_id, owner }) => ({ handle, project_id, owner, local_root: f.repo, private: true, approved: true });
   assert.throws(() => adapter.prepare({ ...input, context_files: ['tests/fixture.test.cjs'] }), /scope/);
-  const b = adapter.prepare(input); assert.equal(b.packet.context.files.length, 1); assert.equal(b.packet.context.files[0].content, 'alpha\n');
+  const b = seedBinding(f,adapter,input,controls); assert.equal(b.packet.context.files.length, 1); assert.equal(b.packet.context.files[0].content, 'alpha\n');
   assert.equal(JSON.stringify(b.packet).includes(f.root), false); assert.equal(JSON.stringify(b.packet).includes('result_publication'), false); assert.equal(JSON.stringify(b.packet).includes('policy_ref'), false);
 });
-test('artifact round-trip enters canonical untrusted inbox; trusted termination then independent verification then Acceptance then Settlement', async t => {
+test('historical artifact return enters canonical untrusted inbox; trusted termination then independent verification then Acceptance then Settlement', async t => {
   const { f, m, adapter, input, controls } = await setup(t, { state: 'running' });
-  const b = adapter.prepare(input); assert.equal((await adapter.dispatch(b.run_id)).state, 'accepted');
+  const b = seedBinding(f,adapter,input,controls); assert.equal((await adapter.dispatch(b.run_id)).state, 'existing_dispatch');
   assert.equal((await adapter.collect(b.run_id)).state, 'termination_unverified');
   assert.equal(count(f, 'cp_result_inbox'), 1); assert.equal(count(f, 'cp_artifacts'), 1); assert.equal(count(f, 'cp_acceptances'), 0); assert.equal(count(f, 'cp_mission_settlements'), 0);
   assert.equal(f.bridge.controlStore.run(b.run_id).termination_verified, 0);
@@ -90,7 +104,7 @@ function surfaceModeCannotPromote(adapter, f, b) {
   adapter.surface.descriptor.mode = 'fixture';
 }
 test('artifact origin, hash, type, size, duplicates, traversal, and unsupported metadata fail closed without retaining content', async t => {
-  const { f, adapter, input, controls } = await setup(t); const b = adapter.prepare(input); await adapter.dispatch(b.run_id);
+  const { f, adapter, input, controls } = await setup(t); const b = seedBinding(f,adapter,input,controls); await adapter.dispatch(b.run_id);
   const changes = [v => v.workspace.handle = 'other', v => v.run_id = 'other', v => v.runtime_id = 'host', v => v.context_hash = 'other', v => v.artifacts[0].sha256 = '0'.repeat(64), v => v.artifacts[0].size++, v => v.artifacts[0].type = 'application/octet-stream', v => delete v.artifacts[0].origin, v => v.artifacts[0].origin.workspace_handle = 'other', v => v.artifacts.push(v.artifacts[0]), v => v.artifacts[0].path = '../outside', v => v.accepted = true, v => v.result.changed_files = ['outside.txt']];
   for (const change of changes) { const v = returned(controls.packet); change(v); controls.returnValue = seal(v); await assert.rejects(adapter.collect(b.run_id)); assert.equal(count(f, 'cp_artifacts'), 0); assert.equal(count(f, 'cp_result_inbox'), 0); }
   controls.returnValue = { ...returned(controls.packet), content_hash: 'wrong' }; await assert.rejects(adapter.collect(b.run_id), /hash/);
@@ -102,7 +116,7 @@ test('minimum context and returned secret or credential argument reject before p
   // The canonical snapshot includes file metadata. Freeze the restored fixture
   // in a new mission rather than weakening the existing preservation guard.
   const clean = f.create({ objective: 'Clean restored bounded Work fixture', preferred_agent: 'codex', fallback_agents: [], dispatch_policy: policy });
-  const b = adapter.prepare({ ...input, mission_id: clean.id }); assert.equal((await adapter.dispatch(b.run_id)).state, 'accepted');
+  const b = seedBinding(f,adapter,{ ...input, mission_id: clean.id },controls); assert.equal((await adapter.dispatch(b.run_id)).state, 'existing_dispatch');
   for (const content of [seed, '--api-key fixturePlainSecret', '/Users/owner/private/credentials.json']) {
     const v = returned(controls.packet); v.artifacts[0].content = content; v.artifacts[0].size = Buffer.byteLength(content); v.artifacts[0].sha256 = hash(content); controls.returnValue = seal(v);
     await assert.rejects(adapter.collect(b.run_id));
@@ -114,42 +128,42 @@ test('minimum context and returned secret or credential argument reject before p
   const source = fs.readFileSync(require.resolve('../src/apps/work-execution-adapter'), 'utf8'); assert.equal(/(?:spawn|execFile|execSync)\s*\(/.test(source), false);
   assert.equal(source.includes('process.env.CURSOR'), false); assert.equal(source.includes('process.env.OPENAI'), false);
 });
-test('retry reuses canonical idempotency key; duplicate prepare conflicts and unknown transport outcome cannot relaunch', async t => {
-  const { f, adapter, input, controls, calls } = await setup(t, { response: { accepted: false, code: 'temporarily_unavailable', message: 'credential diagnostic must be discarded' } });
-  const b = adapter.prepare(input); assert.equal(adapter.prepare(input).duplicate, true);
-  assert.throws(() => adapter.prepare({ ...input, context_files: [] }), /idempotency/);
-  assert.equal((await adapter.dispatch(b.run_id)).state, 'retry_wait'); const key = controls.packet.idempotency_key;
-  let clock = Date.now() + 31000; adapter.now = () => clock; f.bridge.agentDispatch.now = () => clock;
-  await f.bridge.agentDispatch.reconcile(); controls.response = { accepted: true }; assert.equal((await adapter.dispatch(b.run_id)).state, 'accepted'); assert.equal(controls.packet.idempotency_key, key);
-  assert.equal((await adapter.dispatch(b.run_id)).state, 'existing_dispatch'); assert.equal(calls.launch, 2);
-  assert.equal(JSON.stringify(f.bridge.agentDispatch.get(b.run_id)).includes('credential diagnostic'), false);
+test('historical refused transport cannot retry after upgrade; duplicate binding reads remain immutable',async t=>{
+ const {f,adapter,input,controls,calls}=await setup(t);
+ assert.throws(()=>adapter.prepare(input),/CURSOR_IMPLEMENTATION_REQUIRED/);
+ const b=seedBinding(f,adapter,input,controls,'dispatching');assert.equal(adapter.prepare(input).duplicate,true);
+ assert.throws(()=>adapter.prepare({...input,context_files:[]}),/idempotency/);
+ const d=f.bridge.agentDispatch.get(b.run_id);f.bridge.agentDispatch.report({dispatch_id:d.dispatch_id,attempt_id:d.active_attempt_id,outcome:{accepted:false,code:'temporarily_unavailable'}});
+ f.bridge.agentDispatch.now=()=>Date.now()+31000;await f.bridge.agentDispatch.reconcile();
+ assert.equal((await adapter.dispatch(b.run_id)).state,'WAIT');assert.equal(calls.launch,0);
+ assert.equal(f.bridge.agentDispatch.get(b.run_id).wait_reason,'CURSOR_IMPLEMENTATION_REQUIRED');
 });
 test('timeout preserves unknown writer ownership; cancellation acknowledgement cannot release a writer without correlated observed termination', async t => {
   const { f, adapter, input, controls, calls } = await setup(t, { hang: true, state: 'running', cancelError: 'crsr_fixtureDoNotPersist12345' });
   const clock = Date.now(); adapter.now = () => clock;
-  const b = adapter.prepare({ ...input, timeout_ms: 20 }); assert.equal((await adapter.dispatch(b.run_id)).state, 'running_unknown');
-  await adapter.cancel(b.run_id); assert.equal(calls.launch, 1); assert.equal(f.bridge.controlStore.run(b.run_id).termination_verified, 0);
+  const b = seedBinding(f,adapter,{ ...input, timeout_ms: 20 },controls,'running_unknown'); assert.equal((await adapter.dispatch(b.run_id)).state, 'existing_dispatch');
+  await adapter.cancel(b.run_id); assert.equal(calls.launch, 0); assert.equal(f.bridge.controlStore.run(b.run_id).termination_verified, 0);
   assert(f.bridge.controlStore.db.prepare("SELECT 1 FROM cp_leases WHERE run_id=? AND state IN ('held','quarantined')").get(b.run_id));
   controls.cancelError = null; controls.confirmCancel = true; await adapter.cancel(b.run_id);
   assert.equal(f.bridge.controlStore.run(b.run_id).termination_verified, 1); assert.equal(f.bridge.controlStore.run(b.run_id).state, 'cancelled'); assert.equal(count(f, 'cp_acceptances'), 0);
 });
 test('cross-workspace change or lifecycle spoof cannot collect, terminate, or accept', async t => {
-  const { f, adapter, surface, input, controls } = await setup(t); const b = adapter.prepare(input); await adapter.dispatch(b.run_id);
+  const { f, adapter, surface, input, controls } = await setup(t); const b = seedBinding(f,adapter,input,controls); await adapter.dispatch(b.run_id);
   const resolver = surface.resolveWorkspace; surface.resolveWorkspace = args => ({ ...resolver(args), local_root: f.root }); await assert.rejects(adapter.collect(b.run_id), /workspace/); surface.resolveWorkspace = resolver;
   surface.observe = async () => ({ runtime_id: 'work', run_id: b.run_id, workspace_handle: 'different-workspace', surface_id: 'work-test-surface', state: 'exited', receipt: 'claim' });
   await assert.rejects(adapter.collect(b.run_id), /origin/); assert.equal(f.bridge.controlStore.run(b.run_id).termination_verified, 0); assert.equal(count(f, 'cp_acceptances'), 0);
 });
 test('artifact mutation after return blocks canonical Acceptance; duplicate collection is immutable and restart keeps binding', async t => {
-  const { f, m, adapter, surface, input, controls, calls } = await setup(t); const b = adapter.prepare(input); await adapter.dispatch(b.run_id); await adapter.collect(b.run_id); const ready = await f.settle(m.id);
+  const { f, m, adapter, surface, input, controls, calls } = await setup(t); const b = seedBinding(f,adapter,input,controls); await adapter.dispatch(b.run_id); await adapter.collect(b.run_id); const ready = await f.settle(m.id);
   await adapter.collect(b.run_id); assert.equal(count(f, 'cp_result_inbox'), 1); assert.equal(count(f, 'cp_artifacts'), 1);
   controls.returnValue = returned(controls.packet); controls.returnValue.result.summary = 'conflict'; seal(controls.returnValue); await assert.rejects(adapter.collect(b.run_id), /conflict/);
   const row = f.bridge.controlStore.db.prepare('SELECT id,metadata FROM cp_artifacts').get(), metadata = JSON.parse(row.metadata); metadata.content = 'changed'; f.bridge.controlStore.db.prepare('UPDATE cp_artifacts SET metadata=? WHERE id=?').run(JSON.stringify(metadata), row.id);
   assert.throws(() => f.bridge.missions.accept(m.id, { request_id: 'tampered-accept', verification_id: ready.verifications[0].id, decision: 'accept', rationale: 'Must reject changed artifact' }), /hash/);
   assert.equal(count(f, 'cp_acceptances'), 0);
-  await f.reopen(); const reopened = new WorkExecutionAdapter(f.bridge, { surface }); assert.equal(reopened.binding(b.run_id).packet.context_hash, b.packet.context_hash); assert.equal(reopened.capabilities().live_qualification_complete, false); assert.equal(calls.launch, 1);
+  await f.reopen(); const reopened = new WorkExecutionAdapter(f.bridge, { surface }); assert.equal(reopened.binding(b.run_id).packet.context_hash, b.packet.context_hash); assert.equal(reopened.capabilities().live_qualification_complete, false); assert.equal(calls.launch, 0);
 });
 test('untrusted content-derived Work artifact IDs never determine canonical artifact identity',async t=>{
-  const {f,adapter,input,controls}=await setup(t),binding=adapter.prepare(input);await adapter.dispatch(binding.run_id);
+  const {f,adapter,input,controls}=await setup(t),binding=seedBinding(f,adapter,input,controls);await adapter.dispatch(binding.run_id);
   const value=returned(controls.packet);value.artifacts[0].id=hash(value.artifacts[0].content);controls.returnValue=seal(value);
   await adapter.collect(binding.run_id);const row=f.bridge.controlStore.db.prepare('SELECT * FROM cp_artifacts').get();
   assert.match(row.id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -159,7 +173,7 @@ test('untrusted content-derived Work artifact IDs never determine canonical arti
   assert.equal(f.bridge.controlStore.db.prepare('SELECT id FROM cp_artifacts').get().id,row.id);
 });
 test('Work artifact dedupe preserves an existing opaque identity by run and path',async t=>{
-  const {f,adapter,input,controls}=await setup(t),binding=adapter.prepare(input);await adapter.dispatch(binding.run_id);
+  const {f,adapter,input,controls}=await setup(t),binding=seedBinding(f,adapter,input,controls);await adapter.dispatch(binding.run_id);
   const value=returned(controls.packet),artifact=value.artifacts[0],id=require('node:crypto').randomUUID();
   const {id:external_label,...payload}=artifact;
   f.bridge.controlStore.db.prepare('INSERT INTO cp_artifacts VALUES(?,?,?,?,?,?,?)').run(id,binding.mission_id,binding.run_id,artifact.type,'work-artifact:'+artifact.id,JSON.stringify({...payload,external_label,workspace:binding.packet.workspace,untrusted:true}),1);
@@ -167,7 +181,7 @@ test('Work artifact dedupe preserves an existing opaque identity by run and path
   assert.equal(f.bridge.controlStore.db.prepare('SELECT id FROM cp_artifacts').get().id,id);
 });
 test('Work provider lifecycle labels cannot determine canonical receipt identity',async t=>{
-  const label=hash('Fixture content-derived lifecycle label'),{f,adapter,input}=await setup(t,{lifecycleReceipt:label}),binding=adapter.prepare(input);
+  const label=hash('Fixture content-derived lifecycle label'),{f,adapter,input,controls}=await setup(t,{lifecycleReceipt:label}),binding=seedBinding(f,adapter,input,controls);
   await adapter.dispatch(binding.run_id);await adapter.collect(binding.run_id);
   const receipt=f.bridge.controlStore.db.prepare('SELECT * FROM cp_work_receipts WHERE run_id=?').get(binding.run_id);
   assert.match(receipt.lifecycle_ref,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -175,12 +189,12 @@ test('Work provider lifecycle labels cannot determine canonical receipt identity
   await adapter.observe(binding.run_id);assert.equal(f.bridge.controlStore.db.prepare('SELECT lifecycle_ref FROM cp_work_receipts WHERE run_id=?').get(binding.run_id).lifecycle_ref,receipt.lifecycle_ref);
 });
 test('Work binding reads fail closed while identity migration is incomplete',async t=>{
-  const {f,adapter,input}=await setup(t),binding=adapter.prepare(input),db=f.bridge.controlStore.db;
+  const {f,adapter,input,controls}=await setup(t),binding=seedBinding(f,adapter,input,controls),db=f.bridge.controlStore.db;
   require('../src/memory-identity').install(db);db.prepare("UPDATE memory_identity_progress SET state='failed',safe_error_class='identity_migration_failed' WHERE id=1").run();
   assert.throws(()=>adapter.binding(binding.run_id),/identity|migration/i);
 });
 test('Work external hash labels stay erasable payload after identity migration and disappear on scoped erasure',async t=>{
-  const {f,m,adapter,input,controls}=await setup(t),binding=adapter.prepare(input);await adapter.dispatch(binding.run_id);
+  const {f,m,adapter,input,controls}=await setup(t),binding=seedBinding(f,adapter,input,controls);await adapter.dispatch(binding.run_id);
   const value=returned(controls.packet),label=hash(value.artifacts[0].content);value.artifacts[0].id=label;controls.returnValue=seal(value);
   await adapter.collect(binding.run_id);await f.settle(m.id);
   const memory=f.bridge.personalMemory.remember({domain:'session',taskId:binding.packet.task_id,type:'fact',subject:'artifact erasure owner',content:'Fixture task ownership',source:'user_explicit'});

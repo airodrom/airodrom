@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {normalizeAuthority,LEVELS,checkAuthority,callRequirements,trustedDefault}=require('../src/mission-permissions');
 const SafetyPolicy=require('../src/safety-policy');
 const {MissionAuthority}=require('../src/mission-authority');
-const {fixture}=require('./fixtures/mission-fixture.cjs');
+const {fixture,createReadMission}=require('./fixtures/read-mission-fixture.cjs');
 function isolated(t){const root=fs.realpathSync(fs.mkdtempSync('/private/tmp/mission-permissions-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const workspace=path.join(root,'repo');fs.mkdirSync(workspace);return{root,workspace};}
 function authority(workspace,level='development',extra={}){return normalizeAuthority({level,expiresAt:Date.now()+60000,...extra},{workspace,operator:true});}
 test('six levels bound independent dimensions; production rights and secrets are opt-in',t=>{
@@ -68,16 +68,16 @@ test('network and private data restrictions apply independently to otherwise tru
 });
 const native={max_attempts:1,fallback_after_attempts:1,privacy:'local_only',billing_classes:['local'],providers:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]};
 test('operator Mission ceiling persists across restart, native work verifies, STOP revokes task authority',async t=>{
- const f=await fixture(t),m=f.create({authority:{level:'development',expiresAt:Date.now()+60000},task_type:'local_files',preferred_agent:'host',fallback_agents:[],dispatch_policy:native});
+ const f=await fixture(t),m=createReadMission(f,{authority:{level:'development',expiresAt:Date.now()+60000}});
  assert.equal(f.bridge.missions.detail(m.id).envelope.authority.level,'development');await f.reopen();
  assert.equal(f.bridge.snapshotTask(f.bridge.tasks.get(m.task_id)).missionAuthority.level,'development');
- f.bridge.missions.dispatch(m.id,{request_id:'authority-dispatch'});await f.settle(m.id);assert.equal(f.calls(),0);assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'beta\n');
+ f.bridge.missions.dispatch(m.id,{request_id:'authority-dispatch'});await f.settle(m.id);assert.equal(f.calls(),0);assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');
  f.bridge.missions.cancel(m.id,{request_id:'authority-stop'});assert.equal(f.bridge.snapshotTask(f.bridge.tasks.get(m.task_id)).missionAuthority.status,'revoked');assert.equal(f.bridge.policy.tasks.has(m.task_id),false);
 });
 test('Read Only native write and unqualified external handoff stop before execution',async t=>{
  const f=await fixture(t),m=f.create({authority:{level:'read_only',expiresAt:Date.now()+60000},task_type:'local_files',preferred_agent:'host',fallback_agents:[],dispatch_policy:native});
- f.bridge.missions.dispatch(m.id,{request_id:'readonly-dispatch'});await f.settle(m.id,'blocked');assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');assert.ok(f.bridge.tasks.get(m.task_id).safetyStop.latched);assert.equal(f.calls(),0);
- const other=f.create({objective:'Separate explicit handoff',authority:{level:'development',expiresAt:Date.now()+60000},preferred_agent:'codex'});assert.throws(()=>f.bridge.codexAdapter.startTask(other.id,'authority-handoff'),/qualified/);
+ assert.throws(()=>f.bridge.missions.dispatch(m.id,{request_id:'readonly-dispatch'}),/CURSOR_IMPLEMENTATION_REQUIRED/);const denied=await f.bridge.invokeCapability(m.task_id,{name:'file_write',input:{path:path.join(f.repo,'fixture.txt'),content:'denied'},requestId:'readonly-direct'});assert.notEqual(denied.status,'completed');assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');assert.ok(f.bridge.tasks.get(m.task_id).safetyStop.latched);assert.equal(f.calls(),0);
+ const other=f.create({objective:'Separate explicit handoff',authority:{level:'development',expiresAt:Date.now()+60000},preferred_agent:'codex'});assert.throws(()=>f.bridge.codexAdapter.startTask(other.id,'authority-handoff'),/CURSOR_IMPLEMENTATION_REQUIRED|qualified/);
 });
 test('watchdog expires idle authority and resume cannot restore it',async t=>{
  const f=await fixture(t),task=f.bridge.createTask('bounded',{workspace:f.repo,missionAuthority:{level:'development',expiresAt:Date.now()+60000}});const saved=f.bridge.tasks.get(task.id);

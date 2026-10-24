@@ -62,8 +62,8 @@ test('repository requirement cannot be downgraded to reasoning by caller metadat
   const { bridge, root } = await fixture(t);
   assert.throws(() => bridge.createTask('inspect', { workspace: root, requiredExecutionKind: 'reasoning' }), /require native/);
 });
-test('Acceptance, fixture auto-acceptance and Next Action independently refuse a Pi run without native evidence', async t => {
-  const { fixture: missionFixture } = require('./fixtures/mission-fixture.cjs');
+test('Acceptance, fixture auto-acceptance and Next Action independently refuse a host run without native evidence', async t => {
+  const { fixture: missionFixture } = require('./fixtures/decision-read-fixture.cjs');
   const { randomUUID } = require('node:crypto');
   const f = await missionFixture(t), project = f.bridge.projects.listProjects()[0];
   f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');f.bridge.fixtureAcceptance.register({ project_id: project.projectId, workspace: f.repo, isolated: true, no_external_effects: true });

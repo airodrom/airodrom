@@ -4,7 +4,7 @@ const {scan}=require('../scripts/check-runtime-removal.cjs');
 const {REMOVED_RUNTIME,assertExecutable}=require('../src/removed-runtime');
 const {AgentAdapter,AgentRouter}=require('../src/agent-adapter');
 const Bridge=require('../src/bridge-controller');
-const {fixture}=require('./fixtures/mission-fixture.cjs');
+const {fixture,createReadMission}=require('./fixtures/read-mission-fixture.cjs');
 function copy(t){const root=fs.mkdtempSync(path.join(os.tmpdir(),'runtime-regression-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));for(const dir of ['src','scripts','config','public','macos','.github'])fs.cpSync(path.resolve(__dirname,'..',dir),path.join(root,dir),{recursive:true});for(const f of ['package.json','package-lock.json'])fs.copyFileSync(path.resolve(__dirname,'..',f),path.join(root,f));return root;}
 test('active source/config/UI/package/workflows have no removed runtime route or dependency',()=>assert.deepEqual(scan().errors,[]));
 test('architecture gate rejects a new removed adapter import',t=>{const root=copy(t);fs.writeFileSync(path.join(root,'src/rogue.js'),"require('./"+REMOVED_RUNTIME+"-adapter');\n");assert(scan(root).errors.some(x=>x.rule==='removed_runtime_dependency'));});
@@ -24,10 +24,10 @@ test('historical task principals cannot invoke tools or receive memory through a
 test('historical completed evidence stays readable and cannot gain new execution', async t => { const f=await fixture(t), b=f.bridge, m=f.create(); const task=b.tasks.get(m.task_id); task.executionAgent=REMOVED_RUNTIME; task.status='completed'; task.lastResult='Historical synthetic evidence'; b.tasks.save(task); const envelope={...m.envelope,preferred_agent:REMOVED_RUNTIME}; b.controlStore.db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify(envelope),m.id); const view=b.missions.detail(m.id); assert.equal(view.runtimeRemoved,true); assert.equal(view.next_action,'inspect'); assert.throws(()=>b.missions.dispatch(m.id,{request_id:'historical-dispatch'}),/Historical runtime removed/); await f.reopen(); const old=f.bridge.tasks.get(task.id); assert.equal(old.status,'completed'); assert.equal(old.lastResult,'Historical synthetic evidence'); assert.equal(f.bridge.snapshotTask(old).runtimeLabel,'Historical runtime removed'); await assert.rejects(f.bridge._ensureHostRuntime(old.id),/Historical runtime removed/); });
 
 test('queued historical dispatch is retired once and cannot stall supported Missions',async t=>{
- const f=await fixture(t),b=f.bridge,db=b.controlStore.db,old=f.create();
+ const f=await fixture(t),b=f.bridge,db=b.controlStore.db,old=createReadMission(f);
  b.missions.queue(old.id);
  db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify({...old.envelope,preferred_agent:REMOVED_RUNTIME}),old.id);
- const fresh=f.create({objective:'Fresh supported deterministic Mission',task_type:'local_files',dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
+ const fresh=createReadMission(f,{objective:'Fresh supported read-only Mission'});
  b.missions.queue(fresh.id);
  await b.missions.tick();await b.missions.tick();await b.missions.tick();
  assert.equal(b.missions.detail(old.id).state,'blocked');assert.equal(db.prepare('SELECT state FROM cp_dispatches WHERE mission_id=?').get(old.id).state,'blocked');

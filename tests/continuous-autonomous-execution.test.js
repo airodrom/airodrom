@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { fixture, createReadMission } = require('./fixtures/read-mission-fixture.cjs');
 const { manifest } = require('./fixtures/opencode-fixture.cjs');
 const { flightRecorder } = require('../src/mission-flight-recorder');
 const TestBridge = require('./fixtures/test-bridge.cjs');
@@ -13,17 +13,7 @@ const { SYNTHETIC_FIXTURE_DISPOSE } = TestBridge;
 // Objectives are human-readable fixture labels, not random identifiers.
 let objectiveSequence = 0;
 function native(f, extra = {}) {
-  return f.create({
-    objective: 'Synthetic CAE step ' + (++objectiveSequence),
-    task_type: 'local_files',
-    manifest: manifest(f.repo),
-    dispatch_policy: {
-      privacy: 'local_only', providers: ['local'], billing_classes: ['local'],
-      task_category: 'deterministic_files',
-      native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'beta\n' }]
-    },
-    ...extra
-  });
+  return createReadMission(f, {objective: 'Synthetic read-only scheduler step ' + (++objectiveSequence), ...extra});
 }
 function stage(m, id = 'one', deps = []) {
   return { id, depends_on: deps, mission_id: m?.id, objective: 'Synthetic bounded step', acceptance_criteria: ['Registered file criterion passes'], verification_requirements: ['Independent registered tests'], human_checkpoint: false };
@@ -67,11 +57,11 @@ test('02 multi-stage dependency graph completes in order', async t => {
   await accept(f, a.id, 'a');
   const b = native(f, {
     objective: 'Second synthetic file', allowed_files: ['second.txt'],
-    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'second.txt', content: 'beta\n' }],
+    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'second.txt', content: 'alpha\n' }],
     dispatch_policy: {
       privacy: 'local_only', providers: ['local'], billing_classes: ['local'],
       task_category: 'deterministic_files',
-      native_actions: [{ name: 'file_write', path: 'second.txt', content: 'beta\n' }]
+      native_actions: [{ name: 'file_read', path: 'second.txt' }]
     },
     manifest: (() => { const mf = manifest(f.repo); mf.mission.scope.include = ['second.txt']; return mf; })()
   });

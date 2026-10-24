@@ -12,6 +12,8 @@ test('all coding dispatch routes require Cursor and a sealed planning contract; 
  assert.throws(()=>P.assertImplementation({...base,fallback_agents:['opencode']}),/CURSOR_IMPLEMENTATION_REQUIRED/);
  assert.throws(()=>P.assertImplementation({...base,cognitive:null}),/CURSOR_PLANNING_REQUIRED/);
  P.assertImplementation({kind:'coding',preferred_agent:'host',dispatch_policy:{native_actions:[{name:'file_read'}]}});
+ for(const preferred_agent of ['opencode','cursor','claude_code','codex'])assert.throws(()=>P.assertImplementation({kind:'coding',preferred_agent,dispatch_policy:{native_actions:[{name:'file_read'}]}}),/CURSOR_IMPLEMENTATION_REQUIRED|CURSOR_PLANNING_REQUIRED/);
+ assert.throws(()=>P.assertImplementation({kind:'coding',preferred_agent:'host',fallback_agents:['claude_code'],dispatch_policy:{native_actions:[{name:'file_read'}]}}),/CURSOR_IMPLEMENTATION_REQUIRED/);
  assert.throws(()=>P.assertImplementation({kind:'coding',preferred_agent:'host',dispatch_policy:{native_actions:[{name:'file_write'}]}}),/CURSOR_IMPLEMENTATION_REQUIRED/);
  for(const preferred_agent of ['host','opencode','cursor','codex'])assert.throws(()=>P.assertImplementation({kind:'coding',preferred_agent,dispatch_policy:{native_actions:[{name:'file_read'}]}},{worker:'codex'}),/CURSOR_IMPLEMENTATION_REQUIRED/);
  P.assertImplementation({kind:'conversation'});

@@ -246,7 +246,7 @@ test('accepted episode audit timestamps cannot become false secret alarms or run
   let stamp=Date.now();for(let i=0;i<20&&!require('../src/personal-memory').containsSecret(JSON.stringify({accepted_at:stamp}));i++)stamp++;
   assert.equal(require('../src/personal-memory').containsSecret(JSON.stringify({accepted_at:stamp})),true);
   const m=f.create({preferred_agent:'host',task_type:'local_files',manifest:manifest(f.repo),capability_scopes:['repo'],dispatch_policy:{task_category:'deterministic_files',privacy:'local_only',providers:['local'],billing_classes:['local'],native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]}});
-  f.b.missions.dispatch(m.id,{request_id:'episode-source'});const done=await f.settle(m.id),clock=a.store.now;
+  await require('./fixtures/historical-native-fixture.cjs').completeHistoricalNative(f,m);const done=await f.settle(m.id),clock=a.store.now;
   try{a.store.now=()=>stamp;f.b.missions.accept(m.id,{request_id:'episode-acceptance',verification_id:done.verifications[0].id,decision:'accept',rationale:'Synthetic exact-file evidence passed'});}finally{a.store.now=clock;}
   fs.writeFileSync(path.join(f.repo,'fixture.txt'),'alpha\n');
   const next=f.create({preferred_agent:undefined,objective:'Read current accepted synthetic mission history.',manifest:manifest(f.repo),target_domains:['mission_history']});

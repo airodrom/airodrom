@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { completeHistoricalOpenCode } = require('./fixtures/historical-opencode-fixture.cjs');
 const { runtime, manifest } = require('./fixtures/opencode-fixture.cjs');
 const { LOCAL_POLICY } = require('../src/default-runtime');
 const { missionView } = require('../src/product-observability');
@@ -22,14 +23,14 @@ function riskCreate(f, extra = {}) {
   });
 }
 
-test('eligible low-risk OpenCode WORK auto-accepts, settles, and is idempotent after reopen', async t => {
+test('historical eligible low-risk OpenCode WORK auto-accepts, settles, and is idempotent after reopen', async t => {
   const r = runtime(t);
   const f = await fixture(t, { opencode: r.options });
   // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
   f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
   const m = riskCreate(f, { manifest: manifest(f.repo) });
   assert.equal(m.envelope.risk_auto_acceptance.authorized, true);
-  f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, m);
   const done = await f.settle(m.id, 'completed');
   assert.equal(done.acceptance.length, 1);
   assert.equal(done.acceptance[0].decision, 'accept');
@@ -57,7 +58,7 @@ test('pending approval and high-risk shapes stay awaiting with durable review_re
   // Ordinary Mission without opt-in remains awaiting_acceptance after verification.
   const ordinary = f.create({ preferred_agent: 'opencode', fallback_agents: [], dispatch_policy: { ...LOCAL_POLICY } });
   assert.equal(ordinary.envelope.risk_auto_acceptance, undefined);
-  f.bridge.missions.dispatch(ordinary.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, ordinary);
   const waiting = await f.settle(ordinary.id, 'awaiting_acceptance');
   assert.equal(waiting.acceptance.length, 0);
   assert.equal(f.bridge.missions.riskAcceptance.attempt(ordinary.id).reason, 'not_preauthorized_risk');
@@ -66,7 +67,7 @@ test('pending approval and high-risk shapes stay awaiting with durable review_re
   const m = riskCreate(f, { objective: 'Risk-policy Mission: change fixture.txt from alpha to beta. Make its test pass.' });
   const attempt = f.bridge.missions.riskAcceptance.attempt.bind(f.bridge.missions.riskAcceptance);
   f.bridge.missions.riskAcceptance.attempt = () => ({ accepted: false, reason: 'deferred' });
-  f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, m);
   await f.settle(m.id, 'awaiting_acceptance');
   f.bridge.missions.riskAcceptance.attempt = attempt;
   const list = f.bridge.policy.list;
@@ -108,7 +109,7 @@ test('MCP owner cannot authorize risk auto acceptance', async t => {
   assert.throws(() => f.bridge.missions.riskAcceptance.setPreference({ enabled: true, confirmed: true }, 'mcp'), /operator/);
 });
 
-test('operator preference enables new WORK only; historical awaits require authorizeExisting', async t => {
+test('operator preference is nonretroactive for historical WORK completions', async t => {
   const r = runtime(t);
   const f = await fixture(t, { opencode: r.options });
   // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
@@ -129,7 +130,7 @@ test('operator preference enables new WORK only; historical awaits require autho
   });
   assert.equal(viaPref.envelope.risk_auto_acceptance.authorized, true);
   assert.equal(viaPref.envelope.risk_auto_acceptance.source, 'operator_preference');
-  f.bridge.missions.dispatch(viaPref.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, viaPref);
   await f.settle(viaPref.id, 'completed');
   reset(f);
 
@@ -142,7 +143,7 @@ test('operator preference enables new WORK only; historical awaits require autho
     risk_auto_acceptance: false
   });
   assert.equal(historical.envelope.risk_auto_acceptance, undefined);
-  f.bridge.missions.dispatch(historical.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, historical);
   await f.settle(historical.id, 'awaiting_acceptance');
   risk.setPreference({ enabled: true, confirmed: true }, 'operator');
   risk.reconcile();

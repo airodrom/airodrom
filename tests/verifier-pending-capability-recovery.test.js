@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { fixture, createReadMission } = require('./fixtures/read-mission-fixture.cjs');
 const { runtime } = require('./fixtures/opencode-fixture.cjs');
 const { capabilityRequestId, capabilityDeadline } = require('../src/mission-verifier');
 const repair = require('../src/autonomous-repair');
@@ -49,47 +49,11 @@ function wrapPending(bridge, { names = null, settleMs = 80, exitCode = 0, foreve
   };
 }
 
-async function opencodeFixture(t) {
+async function verificationFixture(t) {
   const f = await fixture(t, { opencode: runtime(t).options });
   f.bridge.missions.verifier.recoveryWaitMs = 20;
   f.bridge.missions.verifier.defaultCapabilityBudgetMs = 2_000;
   return f;
-}
-
-async function daSetup(t) {
-  const f = await opencodeFixture(t);
-  f.bridge.missionAuthority.initializeOperatorKey();
-  const project = f.bridge.projects.listProjects({ status: 'active' })[0];
-  const goal = f.bridge.projects.summary(project.projectId).goals.find(g => g.status === 'active')
-    || f.bridge.projects.createGoal({ projectId: project.projectId, name: 'Pending recovery ' + randomUUID() });
-  f.seed = { project_id: project.projectId, goal_id: goal.goalId };
-  f.policy = f.bridge.developerAutonomy.enroll({
-    alias: 'pending-recovery',
-    repository: f.repo,
-    project_id: f.seed.project_id,
-    goal_id: f.seed.goal_id,
-    workflows: ['routine_edit', 'repair'],
-    budgets: { max_repairs: 1, max_concurrent_missions: 1, grant_ttl_minutes: 60, max_files: 4, max_worktrees: 8, max_runtime_hours: 1, max_disk_mb: 256 },
-    workers: ['opencode'],
-    duration_days: 7,
-    confirmed: true,
-    diff_check: 'diff-check',
-    default_tests: ['fixture-test']
-  }, 'operator');
-  return f;
-}
-
-function authorize(f, extra = {}) {
-  return f.bridge.developerAutonomy.authorizeRoutine({
-    policy_id: f.policy.policy_id,
-    request_id: randomUUID(),
-    objective: 'Leave the approved fixture unchanged',
-    allowed_files: ['fixture.txt'],
-    workflow: 'routine_edit',
-    criteria: [{ id: 'expected-file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }],
-    repair_budget: 1,
-    ...extra
-  }, 'operator');
 }
 
 function repairsOf(f, parentId) {
@@ -109,10 +73,10 @@ test('stable request identity and deadline helpers stay deterministic', () => {
 });
 
 test('pending capability that later completes with exit 0 continues host verification', async t => {
-  const f = await opencodeFixture(t);
+  const f = await verificationFixture(t);
   const wrap = wrapPending(f.bridge, { names: new Set(['fixture-test']), settleMs: 60, exitCode: 0 });
   t.after(wrap.restore);
-  const m = f.create();
+  const m = createReadMission(f);
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
   const done = await f.settle(m.id);
   assert.equal(done.state, 'awaiting_acceptance');
@@ -125,10 +89,10 @@ test('pending capability that later completes with exit 0 continues host verific
 });
 
 test('pending capability that later completes with nonzero exit records a failed registered check', async t => {
-  const f = await opencodeFixture(t);
+  const f = await verificationFixture(t);
   const wrap = wrapPending(f.bridge, { names: new Set(['fixture-test']), settleMs: 60, exitCode: 1 });
   t.after(wrap.restore);
-  const m = f.create();
+  const m = createReadMission(f);
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
   const failed = await f.settle(m.id, 'needs_rework');
   assert.equal(failed.verifications[0].result, 'failed');
@@ -140,12 +104,12 @@ test('pending capability that later completes with nonzero exit records a failed
 });
 
 test('capability that remains pending past the authorized deadline stays unavailable', async t => {
-  const f = await opencodeFixture(t);
+  const f = await verificationFixture(t);
   f.bridge.missions.verifier.defaultCapabilityBudgetMs = 120;
   f.bridge.missions.verifier.recoveryWaitMs = 15;
   const wrap = wrapPending(f.bridge, { names: new Set(['git_status']), forever: true });
   t.after(wrap.restore);
-  const m = f.create();
+  const m = createReadMission(f);
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
   const failed = await f.settle(m.id, 'needs_rework');
   assert.equal(failed.verifications[0].result, 'unavailable');
@@ -158,10 +122,10 @@ test('capability that remains pending past the authorized deadline stays unavail
 });
 
 test('repeated pending responses recover one underlying capability execution', async t => {
-  const f = await opencodeFixture(t);
+  const f = await verificationFixture(t);
   const wrap = wrapPending(f.bridge, { names: new Set(['fixture-test']), settleMs: 150, exitCode: 0 });
   t.after(wrap.restore);
-  const m = f.create();
+  const m = createReadMission(f);
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
   await f.settle(m.id);
   assert.equal(wrap.executions(), 1);
@@ -170,10 +134,10 @@ test('repeated pending responses recover one underlying capability execution', a
 });
 
 test('denied capability fails closed without inventing a completed check', async t => {
-  const f = await opencodeFixture(t);
+  const f = await verificationFixture(t);
   const wrap = wrapPending(f.bridge, { names: new Set(['git_status']), deny: true });
   t.after(wrap.restore);
-  const m = f.create();
+  const m = createReadMission(f);
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
   const failed = await f.settle(m.id, 'needs_rework');
   assert.equal(failed.verifications[0].result, 'unavailable');
@@ -183,7 +147,7 @@ test('denied capability fails closed without inventing a completed check', async
 });
 
 test('cancelled task stops pending recovery without a second execution', async t => {
-  const f = await opencodeFixture(t);
+  const f = await verificationFixture(t);
   f.bridge.missions.verifier.defaultCapabilityBudgetMs = 1_000;
   f.bridge.missions.verifier.recoveryWaitMs = 20;
   const wrap = wrapPending(f.bridge, { names: new Set(['git_status']), forever: true });
@@ -196,7 +160,7 @@ test('cancelled task stops pending recovery without a second execution', async t
     return response;
   };
   t.after(wrap.restore);
-  const m = f.create();
+  const m = createReadMission(f);
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
   const failed = await f.settle(m.id, 'needs_rework');
   assert.equal(failed.verifications[0].result, 'unavailable');
@@ -204,38 +168,23 @@ test('cancelled task stops pending recovery without a second execution', async t
   assert.equal(wrap.executions(), 1);
 });
 
-test('controlled registered verification failure still dispatches exactly one authorized repair', async t => {
-  const f = await daSetup(t);
-  const auth = authorize(f);
-  const parent = f.bridge.missions.create(auth.mission_input, 'operator');
-  f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });
-  const failed = await f.settle(parent.id, 'needs_rework');
-  assert.equal(failed.verifications[0].result, 'failed');
-  assert.equal(repairsOf(f, parent.id).length, 1);
-  const child = await f.settle(repairsOf(f, parent.id)[0].id);
-  assert.equal(child.state, 'awaiting_acceptance');
-  assert.equal(child.acceptance.length, 0);
-  assert.equal(repairsOf(f, parent.id).length, 1);
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n, 0);
+test('controlled registered verification failure dispatches one separate authorized Cursor correction', async t => {
+  const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:1,manual:true});
+  f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+  const p=await f.ask({review:false}),m=await f.settle(p.mission_id),attempts=m.specialists.assignments[0].attempts;
+  assert.equal(attempts.length,2);assert.notEqual(attempts[0].run_id,attempts[1].run_id);
+  assert.equal(attempts[0].verification.status,'failed');assert.equal(attempts[1].verification.status,'passed');
+  assert.equal(m.specialists.repair_attempts,1);assert.equal(f.calls.length,2);assert.equal(m.acceptance.length,0);
+  assert.equal(f.bridge.controlStore.listMissions().length,1);
 });
 
-test('unavailable verification does not automatically dispatch a repair', async t => {
-  const f = await daSetup(t);
-  f.bridge.missions.verifier.defaultCapabilityBudgetMs = 120;
-  f.bridge.missions.verifier.recoveryWaitMs = 15;
-  // Intercept after the worker settles so the controlled marker can apply, then keep
-  // the first capability pending until the verifier deadline.
-  const auth = authorize(f, { objective: 'Change fixture.txt from alpha to beta for unavailable verification' });
-  const wrap = wrapPending(f.bridge, { names: new Set(['git_status']), forever: true });
-  t.after(wrap.restore);
-  const parent = f.bridge.missions.create(auth.mission_input, 'operator');
-  f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });
-  const failed = await f.settle(parent.id, 'needs_rework');
-  assert.equal(failed.verifications[0].result, 'unavailable');
-  assert.equal(repairsOf(f, parent.id).length, 0);
-  const considered = repair.considerVerifiedRepair(f.bridge, parent.id);
-  assert.equal(considered.action, 'skipped');
-  assert.equal(considered.reason, 'no_host_verification_failure');
-  assert.equal(repairsOf(f, parent.id).length, 0);
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_acceptances WHERE mission_id=?').get(parent.id).n, 0);
+test('unavailable verification never authorizes another Cursor implementation', async t => {
+  const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:1,manual:true});f.plan=f.plan.slice(0,1);
+  f.bridge.missions.verifier.defaultCapabilityBudgetMs=120;f.bridge.missions.verifier.recoveryWaitMs=15;
+  const wrap=wrapPending(f.bridge,{names:new Set(['git_status']),deny:true});t.after(wrap.restore);
+  const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+  assert.equal(m.specialists.assignments[0].attempts[0].verification.status,'unavailable');
+  assert.equal(m.specialists.repair_attempts,0);assert.equal(f.calls.length,1);assert.equal(m.acceptance.length,0);
+  const considered=repair.considerVerifiedRepair(f.bridge,m.id);assert.equal(considered.action,'skipped');
+  assert.equal(repairsOf(f,m.id).length,0);
 });

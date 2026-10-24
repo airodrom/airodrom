@@ -6,7 +6,7 @@ const path = require('node:path');
 const Bridge = require('./fixtures/test-bridge.cjs');
 const { McpTools, validate } = require('../src/mcp-tools');
 const TaskSessionManager = require('../src/task-session-model');
-const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { fixture } = require('./fixtures/decision-read-fixture.cjs');
 
 async function isolated(t) {
   const root = fs.mkdtempSync('/private/tmp/native-router-');
@@ -81,7 +81,7 @@ test('true reasoning failure durably waits for Ollama, releases lease, survives 
   assert.equal(f.bridge.nativeExecution.providerFailure(policyTask, Error('Worker exited before the task settled')), false);
 });
 
-test('Claude Mission, Decision exact continuation and verification/acceptance bypass unavailable Ollama', async t => {
+test('Host read Mission, Decision exact continuation and verification/acceptance bypass unavailable Ollama', async t => {
   const f = await fixture(t);
   f.bridge.config.provider = 'ollama';
   const m = f.create({ objective: 'DECISION before editing' });
@@ -95,7 +95,7 @@ test('Claude Mission, Decision exact continuation and verification/acceptance by
   assert.equal(f.calls(), 2);
   assert.equal(f.inference(), 0);
   const events = f.bridge.ledger.list({ missionId: m.id, limit: 500 }).events;
-  for (const dispatch_path of ['agent_direct', 'decision_resume_native', 'verification_native']) assert.ok(events.some(e => e.metadata?.dispatch_path === dispatch_path), dispatch_path);
+  for (const dispatch_path of ['decision_resume_native', 'verification_native']) assert.ok(events.some(e => e.metadata?.dispatch_path === dispatch_path), dispatch_path);
   assert.equal(f.bridge.memory.db.prepare('SELECT count(*) n FROM cp_continuations WHERE decision_id=?').get(decision.id).n, 1);
 });
 
@@ -132,21 +132,14 @@ test('Slack bot gateway delivery and validated answer resume use no unavailable 
   assert.ok(f.bridge.ledger.list({ missionId: m.id, limit: 500 }).events.some(e => e.event_type === 'slack.message.sent' && e.metadata?.dispatch_path === 'native_workflow'));
 });
 
-test('declared agent fallback remains explicit and policy-bound without inference', async t => {
-  const f = await fixture(t); f.bridge.config.provider = 'ollama'; f.bridge.cursorWorker.readiness=async()=>({installed:false,ready:false,available:false,availability:'unavailable',reason:'fixture_worker_unavailable',tiers:{authenticated:false,qualified:false}});
-  const m = f.create({ preferred_agent: 'cursor', fallback_agents: ['claude_code'] });
-  f.bridge.missions.dispatch(m.id, { request_id: 'fallback-native' });
-  await f.settle(m.id);
-  const route = JSON.parse(f.bridge.memory.db.prepare('SELECT route FROM cp_dispatches WHERE mission_id=?').get(m.id).route);
-  assert.equal(route.selected, 'claude_code');
-  assert.equal(f.inference(), 0);
-  const g = await fixture(t); g.bridge.config.provider = 'ollama'; g.bridge.cursorWorker.readiness=async()=>({installed:false,ready:false,available:false,availability:'unavailable',reason:'fixture_worker_unavailable',tiers:{authenticated:false,qualified:false}});
-  const denied = g.create({ preferred_agent: 'cursor' });
-  g.bridge.missions.dispatch(denied.id, { request_id: 'no-fallback-native' });
-  assert.equal((await g.settle(denied.id, 'blocked')).reason, 'no_compatible_available_agent');
-  assert.equal(g.inference(), 0);
-  assert.equal(g.calls(), 0);
-  assert.equal(f.calls(), 1);
+test('retired implementation fallback is denied without inference or file changes',async t=>{
+ const {fixture:legacyFixture}=require('./fixtures/mission-fixture.cjs');
+ const f=await legacyFixture(t);f.bridge.config.provider='ollama';
+ for(const fallback_agents of [[],['claude_code'],['host']]){
+  const m=f.create({objective:'Forbidden fallback '+fallback_agents.join(','),preferred_agent:'cursor',fallback_agents});
+  assert.throws(()=>f.bridge.missions.dispatch(m.id,{request_id:'fallback-'+fallback_agents.join(',')}),/CURSOR_IMPLEMENTATION_REQUIRED|CURSOR_PLANNING_REQUIRED/);
+ }
+ assert.equal(f.inference(),0);assert.equal(f.calls(),0);assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');
 });
 
 

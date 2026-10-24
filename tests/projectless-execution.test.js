@@ -9,33 +9,18 @@ const { runtime } = require('./fixtures/opencode-fixture.cjs');
 const { CursorWorker } = require('../src/cursor-worker');
 const sandbox = require('../src/projectless-sandbox');
 
-test('projectless OpenCode mission verifies and accepts without a Project', async t => {
-  const rt = runtime(t);
-  const f = await fixture(t, { opencode: rt.options, defaultRuntime: 'opencode' });
-  f.bridge.expandedAutonomy.setMode({ mode: 'expanded_auto', confirmed: true, request_id: randomUUID() }, 'operator');
-  const before = f.bridge.projects.listProjects().length;
-  const asked = await f.bridge.zeroSetupWork.ask({
-    request_id: randomUUID(),
-    instruction: 'In a projectless task sandbox, change fixture.txt from alpha to beta.'
-  }, 'operator');
-  assert.equal(asked.state, 'DISPATCHED');
-  assert.equal(asked.projectless, true);
-  assert.equal(asked.execution_authorized, true);
-  assert.equal(f.bridge.projects.listProjects().length, before);
-  t.after(() => fs.rmSync(asked.workspace, { recursive: true, force: true }));
-  const done = await f.settle(asked.mission_id, 'completed');
-  assert.equal(done.project_id, null);
-  assert.equal(done.goal_id, null);
-  assert.equal(done.runs[0].agent_id, 'opencode');
-  assert.equal(done.verifications[0].result, 'passed');
-  assert.equal(done.acceptance.length, 1);
-  assert.equal(done.acceptance[0].decision, 'accept');
-  const bytes = fs.readFileSync(path.join(asked.workspace, 'fixture.txt'));
-  assert.equal(bytes.toString('hex'), '626574610a');
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), createHash('sha256').update('beta\n').digest('hex'));
+test('projectless implementation lacks a sealed plan even under Expanded Auto',async t=>{
+ const f=await fixture(t,{opencode:runtime(t).options});
+ f.bridge.expandedAutonomy.setMode({mode:'expanded_auto',confirmed:true,request_id:randomUUID()},'operator');
+ const request_id=randomUUID(),before=f.bridge.projects.listProjects().length;
+ const asked=await f.bridge.zeroSetupWork.ask({request_id,instruction:'In a projectless task sandbox, change fixture.txt from alpha to beta.'},'operator');
+ const record=f.bridge.zeroSetupWork.read(request_id);t.after(()=>fs.rmSync(record.workspace,{recursive:true,force:true}));
+ assert.equal(asked.state,'BLOCKED');assert.equal(asked.code,'CURSOR_PLANNING_REQUIRED');assert.equal(asked.execution_authorized,false);
+ assert.equal(f.bridge.projects.listProjects().length,before);assert.equal(f.bridge.controlStore.listMissions().length,0);
+ assert.equal(fs.existsSync(path.join(record.workspace,'fixture.txt')),false);
 });
 
-test('failed projectless verification is not accepted', async t => {
+test('historical failed projectless verification is not accepted', async t => {
   const rt = runtime(t);
   const f = await fixture(t, { opencode: rt.options, defaultRuntime: 'opencode' });
   const allocated = sandbox.allocate();
@@ -44,7 +29,7 @@ test('failed projectless verification is not accepted', async t => {
   const input = sandbox.exactMissionInput(allocated.workspace, randomUUID());
   input.criteria = [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'wrong\n' }];
   const mission = f.bridge.missions.create(input, 'operator');
-  f.bridge.missions.dispatch(mission.id, { request_id: randomUUID() });
+  await require('./fixtures/historical-opencode-fixture.cjs').completeHistoricalOpenCode(f,mission);
   const done = await f.settle(mission.id, 'needs_rework');
   assert.equal(done.acceptance.length, 0);
   assert.equal(done.verifications[0].result, 'failed');

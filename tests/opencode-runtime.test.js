@@ -65,16 +65,17 @@ test('child environment is isolated and tools deny memory, shell, network, subag
  assert.deepEqual(c.permissions.slice(1),[{action:'read',resource:'fixture.txt',effect:'allow'},{action:'edit',resource:'fixture.txt',effect:'allow'}]);
  const value=await f.adapter.execute({...f.request,objective:'environment'});assert.doesNotMatch(value.result.summary,/OPENAI_API_KEY|GITHUB_TOKEN|NODE_OPTIONS|AIRODROM/);
 });
-test('OpenCode Mission runs through independent verifier, Acceptance and ordered Settlement; duplicate dispatch does not rerun',async t=>{
+test('historical OpenCode completion runs through independent verifier, Acceptance and ordered Settlement; duplicate dispatch does not rerun',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),canonical=qualifyCanonical(f.bridge);assert.equal(canonical.routing,true);
  assert.throws(()=>f.create({preferred_agent:'opencode'}),/local-only/);
  assert.throws(()=>f.create({fallback_agents:['opencode']}),/explicit preferred route/);
  const m=f.create({preferred_agent:'opencode',fallback_agents:[],dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'focused_coding'},manifest:manifest(f.repo)});
  assert.throws(()=>f.bridge.missions.accept(m.id,{request_id:'early',verification_id:'unverified',decision:'accept',rationale:'No evidence'}));
  assert.throws(()=>f.bridge.missions.program.settle(m.id,'accept'),/Settlement requires/);
- const dispatch=f.bridge.missions.dispatch(m.id,{request_id:'opencode-dispatch'}),same=f.bridge.missions.dispatch(m.id,{request_id:'opencode-dispatch'});assert.equal(dispatch.dispatch_id,same.dispatch_id);
+ await require('./fixtures/historical-opencode-fixture.cjs').completeHistoricalOpenCode(f,m);
+ assert.throws(()=>f.bridge.missions.dispatch(m.id,{request_id:'new-opencode-dispatch'}),/CURSOR_IMPLEMENTATION_REQUIRED|not ready/);
  const done=await f.settle(m.id);assert.equal(done.verifications[0].result,'passed');assert.equal(done.acceptance.length,0);assert.equal(done.program_contract.settlement.state,'waiting_acceptance');
- assert.equal(done.runs.filter(r=>r.agent_id==='opencode').length,1);assert.equal(done.dispatches[0].route.selected,'opencode');assert.ok(done.dispatches[0].route.authority_routing_decision_id);assert.equal(canonical.store.listAcceptancesForMission(m.id).length,0);assert.equal(f.calls(),0);
+ assert.equal(done.runs.filter(r=>r.agent_id==='opencode').length,1);assert.equal(done.dispatches[0].route.selected,'opencode');assert.equal(done.dispatches[0].route.reason,'historical_fixture');assert.equal(canonical.store.listAcceptancesForMission(m.id).length,0);assert.equal(f.calls(),0);
  f.bridge.missions.accept(m.id,{request_id:'verified-acceptance',verification_id:done.verifications[0].id,decision:'accept',rationale:'Independent fixture evidence passed'});
  assert.equal(f.bridge.missions.detail(m.id).program_contract.settlement.state,'settled');assert.equal(canonical.store.listAcceptancesForMission(m.id).length,1);assert.equal(canonical.store.integrity().ok,true);
  const task=f.bridge.tasks.get(done.runs.find(run=>run.agent_id==='opencode').task_id);

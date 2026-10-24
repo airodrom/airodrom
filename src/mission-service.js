@@ -268,6 +268,15 @@ class MissionService {
         if(chains.some(chain=>{if(Date.now()-chain.started_at>=chain.max_runtime_ms){this.bridge.boundedNextActions.pause(chain.id,'runtime_budget');return true;}return chain.state==='paused';}))continue;
         if(m.state==='cancelled'){this.db.prepare("UPDATE cp_continuations SET state='cancelled' WHERE id=?").run(c.id);continue;}
         const answered=this.store.decision(c.decision_id);
+        try{require('./mission-worker-policy').assertImplementation(m.envelope,{worker:answered?.agent_id==='codex'?'codex':m.envelope.preferred_agent});}
+        catch(error){
+          if(!['CURSOR_IMPLEMENTATION_REQUIRED','CURSOR_PLANNING_REQUIRED'].includes(error.code))throw error;
+          transaction(this.db,()=>{
+            this.db.prepare("UPDATE cp_continuations SET state='blocked' WHERE id=? AND state='queued'").run(c.id);
+            if(require('./mission-lifecycle').TRANSITIONS[m.state]?.includes('blocked'))this.store.state(m.id,'blocked',error.code);
+            this.store.event('mission.continuation_blocked',m.id,{decision_id:c.decision_id,reason:error.code,authority:false});
+          });continue;
+        }
         if(answered?.agent_id==='codex'){
           // Human input is evidence, never proof that the previous writer stopped.
           if(this.bridge.codexAdapter.getTask(answered.run_id).state!=='settled')continue;
@@ -313,7 +322,7 @@ class MissionService {
       transaction(this.db,()=>{this.db.prepare('UPDATE cp_dispatches SET route=?,updated_at=? WHERE id=?').run(JSON.stringify(route),Date.now(),dispatch.id);this.store.event('agent.route.planned',m.id,route);});
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
-      require('./mission-worker-policy').assertImplementation(m.envelope);
+      require('./mission-worker-policy').assertImplementation(m.envelope,require('./specialist-gateway').enabled(m)?{}:{worker:route.selected});
       if(require('./mission-web-policy').proposal(m.envelope.objective).needed){this.web.qualify(m);this.web.grant(m);}
       if(m.envelope.coding_plan)this.codingAdapter.assert(m);
       // ADR 0051: the governed sandboxed Cursor worker stages declared files exactly like OpenCode;
@@ -380,7 +389,7 @@ class MissionService {
     if(cursor&&!adapter)throw Error('worker_execution_unqualified');
     const specialist=require('./specialist-gateway').enabled(m)?require('./specialist-gateway').adapterScope(this.bridge,task,agentId):null;
     if(workspaceSnapshot(m.envelope.workspace).hash!==require('./specialist-gateway').baseline(this.bridge,m,task.id).hash)throw Error('opencode_workspace_changed');
-    require('./mission-worker-policy').assertImplementation(m.envelope);
+    require('./mission-worker-policy').assertImplementation(m.envelope,specialist?{}:{worker:agentId});
     this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor||cursor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
     if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor||cursor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
     if(cursor&&!m.envelope.contract?.permissions?.external_disclosure?.authorized)throw Error('external_disclosure_unauthorized');
@@ -438,6 +447,7 @@ class MissionService {
     }
   }
   async launchNative(dispatch,m,fallback){
+    require('./mission-worker-policy').assertImplementation(m.envelope,{worker:'host'});
     const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),plan=fallback.fallback_policy.native_actions;
     if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
     // Prior rejected agents may have written allowed_files; only protected paths block fallback.

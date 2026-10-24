@@ -16,52 +16,12 @@ test('exact-file natural language intent is recognized without IDs', () => {
   assert.equal(intent.to, 'beta\n');
 });
 
-test('ask prepares WAIT approval without writing or dispatching; approve runs once', async t => {
-  const f = await fixture(t, { opencode: runtime(t).options });
-  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
-  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
-  f.bridge.missionAuthority.initializeOperatorKey();
-  qualifyCanonical(f.bridge);
-  const project = f.bridge.projects.createProject({ name: 'Human Acceptance Exact File', repositories: [f.repo], privacyPolicy: 'local_only' });
-  f.bridge.projects.createGoal({ projectId: project.projectId, name: 'Exact-file alpha to beta' });
-  const request_id = randomUUID();
-  const prepared = await f.bridge.zeroSetupWork.ask({
-    instruction: 'Airodrom, change the test file from alpha to beta, verify the result, and tell me when you are finished.',
-    request_id,
-  }, 'mcp:zero-setup-test');
-  assert.equal(prepared.state, 'WAIT');
-  assert.equal(prepared.execution_authorized, false);
-  assert.equal(prepared.presentation.project_name, 'Human Acceptance Exact File');
-  assert.deepEqual(prepared.presentation.files, ['fixture.txt']);
-  assert.match(prepared.presentation.worker, /OpenCode/i);
-  assert.match(prepared.presentation.completion_policy, /initial approval.*preauthorizes automatic completion/i);
-  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
-  assert.equal(f.bridge.controlStore.listMissions({ owner: 'operator', limit: 20 }).filter(m => m.envelope?.work_template).length, 0);
-  assert.equal(f.bridge.workTemplates.list('operator').length, 0);
-  assert.equal(f.bridge.workTemplates.listProposals('operator').length, 1);
-
-  const approved = await f.bridge.zeroSetupWork.approve({ request_id, confirmed: true }, 'operator');
-  assert.equal(approved.execution_authorized, true);
-  assert.ok(approved.technical.mission_id);
-  assert.ok(approved.technical.plan_id);
-  assert.equal(f.bridge.workTemplates.list('operator')[0].state, 'active');
-  const mission = f.bridge.missions.require(approved.technical.mission_id);
-  assert.ok(['ready', 'dispatching', 'running', 'verifying', 'awaiting_acceptance'].includes(mission.state), mission.state);
-  // Owner approval triggers CAE; OpenCode runs without further ChatGPT/Cursor prompts.
-  const done = await f.settle(approved.technical.mission_id, 'completed');
-  assert.equal(done.state, 'completed');
-  assert.equal(done.verifications[0].result, 'passed');
-  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'beta\n');
-  assert.equal(Buffer.from(fs.readFileSync(path.join(f.repo, 'fixture.txt'))).toString('hex'), '626574610a');
-  assert.ok(done.verifications[0].evidence.some(c => c.id === 'task:fixture-test' && c.status === 'passed'));
-  assert.equal(done.acceptance.length, 1);
-  assert.equal(done.acceptance[0].decision, 'accept');
-  assert.equal(done.program_contract.settlement.state, 'settled');
-  const replay = await f.bridge.zeroSetupWork.ask({
-    instruction: 'Airodrom, change the test file from alpha to beta, verify the result, and tell me when you are finished.',
-    request_id,
-  }, 'mcp:zero-setup-test');
-  assert.equal(replay.technical.mission_id, approved.technical.mission_id);
+test('standing Cursor intake executes once and reconnects without a repeated approval',async t=>{
+ const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:0});f.plan=f.plan.slice(0,1);
+ const prepared=await f.ask({review:false});assert.ok(prepared.mission_id,JSON.stringify(prepared));
+ const done=await f.settle(prepared.mission_id,'completed');assert.equal(done.acceptance.length,1);assert.equal(f.calls.length,1);
+ const replay=await f.bridge.zeroSetupWork.ask(f.request,'operator');assert.equal(replay.mission_id,done.id);assert.equal(replay.state,'ACCEPTED');assert.equal(f.calls.length,1);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT missions_used n FROM cp_standing_cursor_development WHERE id=?').get(f.grant.id).n,1);
 });
 
 test('MCP catalog includes ask_airodrom and get_ask_status', () => {
@@ -133,74 +93,16 @@ test('prepared self-repair test workspace resolves to Self-Repair Acceptance whe
   assert.equal(scope.workspace, fs.realpathSync(f.repo));
 });
 
-test('needs_rework stays non-terminal until repair is genuinely blocked', async t => {
-  const f = await fixture(t);
-  f.bridge.missionAuthority.initializeOperatorKey();
-  const project = f.bridge.projects.createProject({ name: 'Self-Repair Acceptance', repositories: [f.repo], privacyPolicy: 'local_only' });
-  const goal = f.bridge.projects.createGoal({ projectId: project.projectId, name: 'Exact-file alpha to beta' });
-  const { manifest } = require('./fixtures/opencode-fixture.cjs');
-  const parent = f.create({
-    project_id: project.projectId,
-    goal_id: goal.goalId,
-    objective: 'Change fixture.txt from alpha to beta. Preserve exactly one trailing newline.',
-    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'gamma\n' }],
-    manifest: manifest(f.repo),
-    task_type: 'local_files',
-    dispatch_policy: {
-      privacy: 'local_only', providers: ['local'], billing_classes: ['local'],
-      task_category: 'deterministic_files',
-      native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'gamma\n' }],
-    },
-  });
-  const plan = f.bridge.missions.goalPlanner.create({
-    request_id: randomUUID(),
-    goal_id: goal.goalId,
-    stages: [{
-      id: 'work', depends_on: [], mission_id: parent.id,
-      objective: parent.envelope.objective,
-      acceptance_criteria: ['Independent host verification passed'],
-      verification_requirements: ['exact_file_or_registered_tests'],
-      human_checkpoint: false,
-    }],
-    max_runtime_hours: 1,
-    max_attempts: 2,
-  }, 'operator');
-  f.bridge.autonomousExecution.authorize(plan.id, {
-    request_id: randomUUID(), workers: ['host'], max_concurrent_missions: 1,
-    max_dispatches: 3, max_repairs: 1, confirmed: true,
-  }, 'operator');
-  const request_id = randomUUID();
-  f.bridge.zeroSetupWork.write(request_id, 'operator', {
-    version: 1,
-    instruction: 'change fixture',
-    intent: { kind: 'exact_file', file: 'fixture.txt', from: 'alpha\n', to: 'beta\n' },
-    project_id: project.projectId,
-    project_name: project.name,
-    goal_id: goal.goalId,
-    mission_id: parent.id,
-    plan_id: plan.id,
-    presentation: { status: 'Working', files: ['fixture.txt'] },
-    execution_enabled: true,
-    authority: false,
-  }, 'running');
-  f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });
-  await f.settle(parent.id, 'needs_rework');
-
-  const pending = f.bridge.zeroSetupWork.refreshState(request_id);
-  assert.equal(pending.state, 'RUNNING');
-  assert.match(pending.presentation.status, /Verification failed|Repairing|preparing automatic repair/i);
-  assert.notEqual(pending.state, 'BLOCKED');
-
-  const autonomous = f.bridge.autonomousExecution.readAutonomous(f.bridge.autonomousExecution.planRow(plan.id));
-  autonomous.repair_blocked = { work: 'repair_budget' };
-  autonomous.last_action = 'repair_blocked';
-  f.bridge.autonomousExecution.writeAutonomous(plan.id, autonomous);
-  const blocked = f.bridge.zeroSetupWork.refreshState(request_id);
-  assert.equal(blocked.state, 'BLOCKED');
-  assert.equal(blocked.technical.repair_blocked_reason, 'repair_budget');
-  assert.match(blocked.presentation.status, /repair_budget/);
+test('Cursor first failure stays observable through correction and ends after bounded repair',async t=>{
+ const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:1});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ let release,observe;const gate=new Promise(r=>release=r),started=new Promise(r=>observe=r),evaluate=f.evaluate;t.after(()=>release());
+ f.evaluate=async o=>{if(f.evaluations.length===1){observe();await gate;}return evaluate(o);};
+ const p=await f.ask({review:false});await started;
+ const waiting=f.bridge.zeroSetupWork.refreshState(f.request.request_id);assert.ok(['RUNNING','VERIFYING'].includes(waiting.state),JSON.stringify(waiting));
+ assert.equal(require('../src/zero-setup-terminal').isTerminalView(waiting),false);release();
+ const done=await f.settle(p.mission_id,'completed');assert.equal(done.specialists.repair_attempts,1);assert.equal(done.specialists.assignments[0].attempts.length,2);
+ const final=f.bridge.zeroSetupWork.refreshState(f.request.request_id);assert.equal(final.state,'ACCEPTED');assert.equal(require('../src/zero-setup-terminal').isTerminalView(final),true);
 });
-
 
 test('named release project overrides unrelated self-repair fixture heuristics', async t => {
   const f = await fixture(t);

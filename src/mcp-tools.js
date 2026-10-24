@@ -258,7 +258,20 @@ class McpTools {
       return view;
     }
     if(name==='prepare_mission')return this.bridge.zeroSetupWork.ask({instruction:args.objective,request_id:args.request_id},'mcp:'+(this.handoffPrincipal ||= randomUUID()));
-    if(name==='inspect_mission_proposal'){const view=this.bridge.zeroSetupWork.refreshState(args.request_id);if(!view)throw Error('Prepared proposal unavailable');return {...view,proposal:{goal:view.presentation?.goal,workspace_label:view.presentation?.workspace_label,files:view.presentation?.files,worker:view.presentation?.worker,success_criteria:view.presentation?.success_criteria||[],measurable:view.presentation?.measurable??null,repair_budget:view.presentation?.repair_budget,network:view.presentation?.network,production:view.presentation?.production},approval:{required:view.state==='WAIT',standard_approval_supported:view.admission?.standard_approval_supported===true,channel:view.next_action==='define_bounded_projectless_work'?null:view.next_action==='authorize_cursor_via_authenticated_local_api'?'authenticated local operator API with scoped disclosure and subscription grant':'authenticated Terminal y/N or Control Center',granted_by_chatgpt_text:false},authority:false};}
+    if(name==='inspect_mission_proposal'){
+      const view=this.bridge.zeroSetupWork.refreshState(args.request_id);
+      if(!view)throw Error('Prepared proposal unavailable');
+      const standard=view.admission?.standard_approval_supported===true;
+      const scoped=view.next_action==='authorize_cursor_via_authenticated_local_api'||/^enroll_standing_cursor/.test(view.next_action||'');
+      const channel=view.state!=='WAIT'?null:scoped
+        ?'authenticated local operator API with scoped disclosure and subscription grant'
+        :standard?'authenticated Terminal y/N or Control Center':null;
+      return {...view,proposal:{goal:view.presentation?.goal,workspace_label:view.presentation?.workspace_label,
+        files:view.presentation?.files,worker:view.presentation?.worker,success_criteria:view.presentation?.success_criteria||[],
+        measurable:view.presentation?.measurable??null,repair_budget:view.presentation?.repair_budget,
+        network:view.presentation?.network,production:view.presentation?.production},
+        approval:{required:channel!==null,standard_approval_supported:standard,channel,granted_by_chatgpt_text:false},authority:false};
+    }
     if(name==='get_mission_status'){const pkg=require('./mission-evidence').evidencePackage(this.bridge,args.mission_id);return {mission_id:pkg.mission_id,root_mission_id:pkg.root_mission_id,status:pkg.status,phase:pkg.phase,...(pkg.specialists?{specialists:pkg.specialists}:{}),repair_attempts:pkg.repair_attempts,acceptance_status:pkg.acceptance_status,approval_status:pkg.approval_status,next_safe_action:pkg.next_safe_action,authority:false};}
     if(name==='get_mission_events')return require('./mission-evidence').missionEvents(this.bridge,args.mission_id,{limit:args.limit||100});
     if(name==='get_mission_engineering_report')return require('./mission-evidence').engineeringReport(this.bridge,args.mission_id,{limit:args.limit||200});

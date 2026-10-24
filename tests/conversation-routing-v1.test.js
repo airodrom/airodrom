@@ -61,7 +61,7 @@ for(const canonical of [false,true])test('unscoped Work and explicit Missions pe
  assert.equal(missions.cancel(server,{mission_id:m.id,request_id:id()}).state,'cancelled');assert.equal(missions.list(server,{active:true}).items.length,0);
  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
 });
-test('registered Work template retains exact files, checks and governed verification',async t=>{
+test('legacy Work intake retains scope and reports missing planning without execution',async t=>{
  const r=runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge,server={bridge:b};
   // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
   f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
@@ -70,12 +70,10 @@ test('registered Work template retains exact files, checks and governed verifica
  b.projects.createGoal({projectId:p.projectId,name:'Exact-file alpha to beta'});
  // Natural-language exact-file WORK prepares WAIT approval; owner approve then verifies independently.
  const created=await service.submit(server,{message:'Fix fixture.txt from alpha to beta',request_id:id(),workspace:f.repo});
- assert.equal(created.kind,'zero_setup');assert.equal(created.route,'WORK');assert.equal(created.state,'WAIT');assert.equal(created.execution_authorized,false);
+ assert.equal(created.kind,'zero_setup');assert.equal(created.route,'WORK');assert.equal(created.state,'BLOCKED');assert.equal(created.code,'CURSOR_PLANNING_REQUIRED');assert.equal(created.execution_authorized,false);
  assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');
  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);
- const approved=await b.zeroSetupWork.approve({request_id:created.technical.request_id,confirmed:true,channel:'fixture'},'operator');
- // Exact-file alpha→beta pilot: owner approve includes bounded completion; Mission settles without a second Acceptance.
- const verified=await f.settle(approved.technical.mission_id,'completed');assert.equal(verified.state,'completed');assert.ok(['passed','operator_review'].includes(verified.verifications[0].result));assert.equal(b.memory.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n,1);
+ await assert.rejects(b.zeroSetupWork.approve({request_id:created.technical.request_id,confirmed:true,channel:'fixture'},'operator'),/not awaiting approval/);
  // A website capability cannot piggyback on a repository's write template.
  const website=await service.submit(server,{message:'Audit this website',request_id:id(),workspace:f.repo});assert.equal(website.kind,'clarify');assert.match(website.message,/one URL.*domain scope/);
  const combined=await service.submit(server,{message:'Fix the repository and email the report',request_id:id(),workspace:f.repo});

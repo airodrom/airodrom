@@ -39,7 +39,7 @@ test('natural-language change/verify intent routes to WORK without Mission draft
   assert.equal(parsed.kind, 'work');
 });
 
-test('assistant submit prepares zero_setup WAIT and never creates a draft work_request Mission', async t => {
+test('assistant submit reports unplanned zero_setup work and never creates a draft work_request Mission', async t => {
   const f = await setup(t);
   const request_id = randomUUID();
   const receipt = await submit(f.server, {
@@ -48,7 +48,7 @@ test('assistant submit prepares zero_setup WAIT and never creates a draft work_r
     include_memory: true,
   });
   assert.equal(receipt.kind, 'zero_setup');
-  assert.equal(receipt.state, 'WAIT');
+  assert.equal(receipt.state, 'BLOCKED');assert.equal(receipt.code,'CURSOR_PLANNING_REQUIRED');
   assert.equal(receipt.execution_authorized, false);
   assert.match(preview(receipt.presentation), /Human Acceptance Exact File/);
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
@@ -56,80 +56,25 @@ test('assistant submit prepares zero_setup WAIT and never creates a draft work_r
   assert.equal(drafts.length, 0);
 });
 
-test('terminal y/N consent authorizes once; n cancels without writes', async t => {
-  const f = await setup(t);
-  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
-  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
-  const request_id = randomUUID();
-  const prepared = await f.bridge.zeroSetupWork.ask({
-    instruction: 'Change the test file from alpha to beta, verify the result, and tell me when finished.',
-    request_id,
-  }, 'operator');
-  assert.equal(prepared.state, 'WAIT');
-  const cancel = terminal(['n\r']);
-  const cancelled = await guide({
-    receipt: { kind: 'zero_setup', ...prepared },
-    input: cancel.input,
-    output: cancel.output,
-    home: f.root,
-    request: async (_home, route, body) => {
-      if (route.endsWith('/reject')) return f.bridge.zeroSetupWork.reject(body, 'operator');
-      throw Error('unexpected ' + route);
-    },
-  });
-  assert.equal(cancelled.state, 'REJECTED');
-  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
-
-  const request2 = randomUUID();
-  const prepared2 = await f.bridge.zeroSetupWork.ask({
-    instruction: 'Change the test file from alpha to beta, verify the result, and tell me when finished.',
-    request_id: request2,
-  }, 'operator');
-  const yes = terminal(['y\r']);
-  const calls = [];
-  const done = await guide({
-    receipt: { kind: 'zero_setup', ...prepared2 },
-    input: yes.input,
-    output: yes.output,
-    home: f.root,
-    request: async (_home, route, body) => {
-      calls.push(route);
-      if (route.endsWith('/approve')) {
-        const approved = await f.bridge.zeroSetupWork.approve(body, 'operator');
-        await f.settle(approved.technical.mission_id, 'completed');
-        return approved;
-      }
-      if (route.includes('/status')) return f.bridge.zeroSetupWork.refreshState(request2);
-      throw Error('unexpected ' + route);
-    },
-  });
-  assert.ok(calls.some(r => r.endsWith('/approve')));
-  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'beta\n');
-  assert.equal(Buffer.from(fs.readFileSync(path.join(f.repo, 'fixture.txt'))).toString('hex'), '626574610a');
-  assert.match(yes.text(), /Verification passed/);
-  assert.match(yes.text(), /Working/);
-  const missionId = done.technical.mission_id;
-  assert.ok(missionId);
-  assert.equal(f.bridge.missions.detail(missionId).acceptance.length, 1);
+test('Terminal never requests approval for an unplanned or scope-gated request',async t=>{
+ const f=await setup(t),request_id=randomUUID(),prepared=await f.bridge.zeroSetupWork.ask({instruction:'Change fixture.txt from alpha to beta.',request_id},'operator');
+ for(const receipt of [{kind:'zero_setup',...prepared},{kind:'zero_setup',state:'WAIT',admission:{standard_approval_supported:false},message:'Scoped authorization required'}]){
+  const io=terminal(['y\r']);let calls=0;const view=await guide({receipt,input:io.input,output:io.output,home:f.root,request:async()=>{calls++;throw Error('No approval supported');}});
+  assert.equal(calls,0);assert.equal(view,receipt);assert.doesNotMatch(io.text(),/Approve this task/);
+ }
+ assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');
 });
-
-test('non-TTY cannot authorize bounded work', async t => {
-  const f = await setup(t);
-  const request_id = randomUUID();
-  const prepared = await f.bridge.zeroSetupWork.ask({
-    instruction: 'Change the test file from alpha to beta and verify it.',
-    request_id,
-  }, 'operator');
-  const input = new PassThrough();
-  const output = new PassThrough();
-  await assert.rejects(guide({
-    receipt: { kind: 'zero_setup', ...prepared },
-    input,
-    output,
-    home: f.root,
-    request: async () => { throw Error('must not approve'); },
-  }), /interactive owner terminal/i);
-  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
+test('non-TTY cannot submit an otherwise supported local confirmation',async t=>{
+ const f=await setup(t);await assert.rejects(guide({receipt:{kind:'zero_setup',state:'WAIT',technical:{request_id:randomUUID()},admission:{standard_approval_supported:true}},input:new PassThrough(),output:new PassThrough(),home:f.root,request:async()=>{throw Error('must not approve');}}),/interactive owner terminal/i);
+});
+test('current cognitive terminal states stop polling and clear remembered requests',async t=>{
+ const f=await setup(t),T=require('../src/zero-setup-terminal');
+ for(const state of ['ACCEPTED','CANCELLED','NEEDS_REWORK']){
+  const request_id=randomUUID(),view={kind:'zero_setup',state,cognitive:{version:3},request_id};rememberActive(f.root,request_id);
+  let calls=0;const polled=await poll(f.root,request_id,{request:async()=>{calls++;return view;},sleep:async()=>{throw Error('Terminal state must not wait');}});assert.equal(polled,view);assert.equal(calls,1);assert.equal(T.isTerminalView(view),true);
+  const io=terminal([]);await resumeActive(f.root,{input:io.input,output:io.output,request:async()=>view});assert.equal(readActive(f.root),null);
+  if(state==='ACCEPTED')assert.match(io.text(),/Acceptance and settlement are recorded/);
+ }
 });
 
 test('leading workspace phrasing still routes to WORK; ordinary questions stay conversational', () => {
