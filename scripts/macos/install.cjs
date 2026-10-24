@@ -27,8 +27,8 @@ function prepare() {
   if(process.platform!=='darwin') throw new Error('macOS is required.');
   const configuredNode=process.env.AIRODROM_NODE;
   const candidates=configuredNode?[configuredNode]:['/opt/homebrew/opt/node@22/bin/node','/usr/local/opt/node@22/bin/node',process.execPath];
-  const node=candidates.find(p=>path.isAbsolute(p)&&spawnSync(p,['--experimental-sqlite','-e',"new(require('node:sqlite').DatabaseSync)(':memory:').exec('CREATE VIRTUAL TABLE f USING fts5(content)')"],{stdio:'ignore'}).status===0);
-  if(!node) throw new Error('Select an absolute Node executable with SQLite FTS5.');
+  const node=candidates.find(p=>path.isAbsolute(p)&&spawnSync(p,['--experimental-sqlite','-e',"const v=process.versions.node.split('.').map(Number);if(v[0]!==22||v[1]<23||v[1]===23&&v[2]<4)process.exit(1);new(require('node:sqlite').DatabaseSync)(':memory:').exec('CREATE VIRTUAL TABLE f USING fts5(content)')"],{stdio:'ignore'}).status===0);
+  if(!node) throw new Error('Select an absolute Node 22.23.4 or later in the 22.x line with SQLite FTS5.');
   const existingFile=path.join(project,'.runtime/macos.json');
   const existing=fs.existsSync(existingFile)?JSON.parse(fs.readFileSync(existingFile,'utf8')):{};
   const dataDir=path.resolve(process.env.AIRODROM_DATA_DIR || existing.dataDir || path.join(project,'.runtime'));

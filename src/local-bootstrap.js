@@ -77,12 +77,12 @@ function resolveOpenCodeExecutable(env, pins, missing) {
   }
 }
 function supportedNodeFloor() {
-  return /^22\./.test(process.versions.node) && (Number(process.versions.node.split('.')[1]) > 23 || Number(process.versions.node.split('.')[1]) === 23 && Number(process.versions.node.split('.')[2]) >= 3);
+  return /^22\./.test(process.versions.node) && (Number(process.versions.node.split('.')[1]) > 23 || Number(process.versions.node.split('.')[1]) === 23 && Number(process.versions.node.split('.')[2]) >= 4);
 }
 async function qualify({ executable, model = 'ollama/qwen3-coder:30b', adapter = null, signal } = {}) {
   if (signal?.aborted) throw Error('Local qualification was interrupted; previous pins preserved.');
   const version=process.versions.node.split('.').map(Number);
-  if(version[0]!==22||version[1]<23||version[1]===23&&version[2]<3)throw Error('Local qualification requires supported Node 22.23.3 or later in the 22.x line.');
+  if(version[0]!==22||version[1]<23||version[1]===23&&version[2]<4)throw Error('Local qualification requires supported Node 22.23.4 or later in the 22.x line.');
   const { OpenCodeAdapter, VERSION } = require('./opencode-adapter');
   const runtime = adapter || new OpenCodeAdapter(null, { enabled: true, executable, model });
   const evidence = require('../config/agent-runtime-qualification-v1.json').opencode;
@@ -181,6 +181,7 @@ function assertDurableIdle(home) {
   finally{database?.close();}
 }
 function validatePins(pins) {
+  if (!supportedNodeFloor()) throw Error('Local runtime requires Node 22.23.4 or later in the 22.x line. Existing runtime pins were preserved.');
   const evidence = require('../config/agent-runtime-qualification-v1.json').opencode;
   if (pins?.version !== 1 || pins.platform !== process.platform + '-' + process.arch || pins.runtime_version !== evidence.runtime_version || pins.model !== evidence.model || !Array.isArray(pins.executables) || pins.executables.length !== 3) throw Error('Local runtime pins are invalid. Run airodrom restart after restoring qualified artifacts.');
   if (new Set(pins.executables.map(p => p.id)).size !== 3) throw Error('Local runtime pins contain duplicate identities.');

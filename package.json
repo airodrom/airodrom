@@ -5,7 +5,7 @@
   "description": "Airodrom AI operating platform with mission orchestration, fail-closed approvals and Control Center",
   "main": "src/bridge-controller.js",
   "engines": {
-    "node": ">=22.23.3 <23"
+    "node": ">=22.23.4 <23"
   },
   "scripts": {
     "start": "node scripts/run.cjs src/index.js",
@@ -210,10 +210,11 @@
     "docs/adr/0063-requested-file-scope.md",
     "docs/adr/0064-preventive-policy-diagnostics.md",
     "docs/adr/0065-cursor-only-routine-autonomy.md",
-    "docs/operations/CURSOR-ONLY-AUTONOMY.md",
     "docs/images/control-center-v2.png",
     "docs/images/mission-lifecycle-v2.png",
     "docs/images/terminal-v2.png",
+    "docs/operations/CURSOR-AUTONOMY-RELEASE.md",
+    "docs/operations/CURSOR-ONLY-AUTONOMY.md",
     "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md",
     "macos/AirodromMenu.swift",
     "public/app.js",
@@ -448,7 +449,6 @@
     "src/mission-result.js",
     "src/mission-schema.js",
     "src/mission-service.js",
-    "src/mission-worker-policy.js",
     "src/mission-supervisor.js",
     "src/mission-terminal-notifications.js",
     "src/mission-verifier.js",
@@ -458,6 +458,7 @@
     "src/mission-web-policy.js",
     "src/mission-web-search.js",
     "src/mission-web.js",
+    "src/mission-worker-policy.js",
     "src/model-worker-router.js",
     "src/native-execution-router.js",
     "src/natural-private-vault.js",

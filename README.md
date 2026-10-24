@@ -15,7 +15,7 @@ No supported production release has been published. This source candidate is for
 
 ## Local quickstart
 
-On the qualified macOS platform, use Node 22.23.3 or later in the 22.x line, Xcode command-line tools, qualified OpenCode 2.0.25 and local Ollama with qwen3-coder:30b. Read [installation](docs/INSTALLATION.md) before startup.
+On the qualified macOS platform, use Node 22.23.4 or later in the 22.x line, Xcode command-line tools, qualified OpenCode 2.0.25 and local Ollama with qwen3-coder:30b. Read [installation](docs/INSTALLATION.md) before startup.
 
 ```sh
 npm ci --ignore-scripts
@@ -62,7 +62,7 @@ Agents perform work; reasoning providers supply inference. Model selection and a
 
 ## Source review and development validation
 
-Use a compatible Node **22.23.3 or later in the 22.x line**, with SQLite and FTS5, and npm 10.9.9. The audited host is macOS arm64; other operating systems are unqualified. Extract the source archive into an empty private directory, verify its checksum and file manifest, then run:
+Use a compatible Node **22.23.4 or later in the 22.x line**, with SQLite and FTS5, and npm 10.9.9. The audited host is macOS arm64; other operating systems are unqualified. Extract the source archive into an empty private directory, verify its checksum and file manifest, then run:
 
 ```sh
 npm ci --ignore-scripts

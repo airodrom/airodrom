@@ -1,6 +1,6 @@
 # Installation and bootstrap
 
-The supported candidate distribution is a source archive with a SHA-256 checksum and exact file manifest. Start in an empty private directory on macOS arm64, using Node 22.23.3 with SQLite/FTS5 and npm 10.9.9. No prebuilt application, native helper or vendor agent binary is bundled. Other operating systems require qualification.
+The supported candidate distribution is a source archive with a SHA-256 checksum and exact file manifest. Start in an empty private directory on macOS arm64, using Node 22.23.4 with SQLite/FTS5 and npm 10.9.9. No prebuilt application, native helper or vendor agent binary is bundled. Other operating systems require qualification.
 
 Verify the archive against the separately reviewed checksums. Inspect its file list before extraction. The OS boundary regressions also require Xcode with its macOS SDK and a source-built local helper. Run `npm ci --ignore-scripts`, `node scripts/macos/build-slack-keychain-helper.cjs`, `npm run verify`, `npm test`, both type checks and `node scripts/airodrom.cjs --help`. Initialize an isolated validation checkout with a first commit when testing a source archive; see [development](DEVELOPMENT.md). These checks do not start the application, read Keychain credentials or install a service. Dependencies are locked; lifecycle install scripts are disabled. No general transpilation build is required for the foreground JavaScript CLI.
 

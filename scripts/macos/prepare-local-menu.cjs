@@ -18,7 +18,7 @@ function assertMenuControlAligned(home=local.localHome(),root=local.ROOT){
  return {app,control,aligned:true};
 }
 function prepare(home=local.localHome()){
- const version=process.versions.node.split('.').map(Number);if(version[0]!==22||version[1]<23||version[1]===23&&version[2]<3)throw Error('Native menu preparation requires supported Node 22.23.3 or later in the 22.x line.');
+ const version=process.versions.node.split('.').map(Number);if(version[0]!==22||version[1]<23||version[1]===23&&version[2]<4)throw Error('Native menu preparation requires supported Node 22.23.4 or later in the 22.x line.');
  local.privateDirectory(home,true);local.privateDirectory(path.join(home,'data'),true);
  const directory=local.privateDirectory(path.join(home,'menu'),true),app=path.join(directory,'Airodrom.app');
  if(fs.existsSync(app)||(()=>{try{fs.lstatSync(app);return true;}catch{return false;}})())validateTree(app);
