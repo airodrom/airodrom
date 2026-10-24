@@ -2,7 +2,7 @@
 
 This procedure integrates ADRs [0064](../adr/0064-preventive-policy-diagnostics.md) and [0065](../adr/0065-cursor-only-routine-autonomy.md). It is a release contract, not a record of installation or owner authorization.
 
-The frozen route is USER → ChatGPT → Airodrom → OpenCode → Airodrom → ChatGPT → USER. Within Airodrom, OpenCode plans and evaluates; Cursor implements and corrects. Airodrom remains the sole authority for admission, exact repository/file binding, dispatch, leases, verification, Acceptance and Settlement. There is no automatic implementation fallback or second controller. Routine work reuses existing finite standing authorization without subscription/account inspection or repeated approval. Missing or expired authority stays blocked.
+The frozen route is USER → ChatGPT → Airodrom → OpenCode → Airodrom → ChatGPT → USER. Within Airodrom, OpenCode plans and evaluates; Cursor implements and corrects. Airodrom remains the sole authority for admission, exact repository/file binding, dispatch, leases, verification, Acceptance and Settlement. There is no automatic implementation fallback or second controller. The direct Codex handoff and legacy pending-transport boundaries enforce the same implementation policy as Mission dispatch. Historical unknown handoffs retain reconciliation and quarantined ownership; a policy change cannot authorize their replay or fallback. Routine work reuses existing finite standing authorization without subscription/account inspection or repeated approval. Missing or expired authority stays blocked.
 
 ## Dependency and runtime security
 

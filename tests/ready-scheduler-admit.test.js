@@ -8,31 +8,15 @@ const { runtime, qualifyCanonical } = require('./fixtures/opencode-fixture.cjs')
 const G = require('../src/specialist-gateway');
 
 async function setup(t) {
-  const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 45000 });
+  const f = await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:0});
   const b = f.bridge;
-  b.missionAuthority.initializeOperatorKey();
-  qualifyCanonical(b);
-  b.expandedAutonomy.setMode({
-    mode: 'routine_auto', confirmed: true, request_id: randomUUID(), sync_risk_acceptance: false,
-  }, 'operator');
-  const p = b.projects.listProjects({ status: 'active' })[0];
-  const g = b.projects.summary(p.projectId).goals[0];
-  b.developerAutonomy.enroll({
-    alias: 'ready-admit-fixture', repository: f.repo, project_id: p.projectId, goal_id: g.goalId,
-    workflows: ['routine_edit', 'test'], workers: ['opencode'], duration_days: 1, confirmed: true,
-    diff_check: 'diff-check', default_tests: ['fixture-test'], budgets: { max_repairs: 0 },
-    cognitive: {
-      version: 3, files: ['fixture.txt'], delegated_callers: [], planning_attempts: 2,
-      planning_ms: 120000, execution_ms: 120000, repair_attempts: 0, max_assignments: 2, acceptance: 'automatic',
-    },
-  }, 'operator');
   f.plan = [
     {
       id: 'read-1', worker: 'opencode', role: 'analysis', operation: 'read', paths: ['fixture.txt'],
       description: 'Read fixture.txt', depends_on: [], verification: [],
     },
     {
-      id: 'change-1', worker: 'opencode', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
+      id: 'change-1', worker: 'cursor', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
       description: 'Change alpha to beta', depends_on: ['read-1'], verification: [],
     },
   ];
@@ -45,29 +29,6 @@ async function setup(t) {
       ? 'Host-verified read.'
       : 'Host-verified edit.',
   });
-  const adapter = b.opencodeAdapter;
-  const worker = adapter.execute.bind(adapter);
-  adapter.execute = async (o) => {
-    if (o.planning) {
-      return {
-        result: { summary: JSON.stringify({ ...o.planning, tasks: f.plan }) },
-        changes: [], provenance: { termination_verified: true },
-      };
-    }
-    if (o.coordination) {
-      f.evaluations.push(o.coordination);
-      assert.deepEqual(o.writable, []);
-      return {
-        result: { summary: JSON.stringify(await f.evaluate(o)) },
-        changes: [],
-        provenance: { runtime_id: 'opencode', sandbox: 'fixture', termination_verified: true, authority: false },
-      };
-    }
-    f.calls.push({ files: o.files, writable: o.writable });
-    return worker(o.writable.length ? o : {
-      ...o, objective: 'Inspect fixture.txt without changes', objectiveProof: null,
-    });
-  };
   // Simulate lost cognitive-dispatch / ignored prepared tick: Mission seals READY
   // with a prepared specialist graph and zero dispatches.
   f.holdAtPreparedReady = () => {

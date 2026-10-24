@@ -5,8 +5,6 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { canonicalHash } = require('../src/authority-hash');
 const G = require('../src/opencode-gateway');
-const { fixture } = require('./fixtures/mission-fixture.cjs');
-const { runtime, qualifyCanonical } = require('./fixtures/opencode-fixture.cjs');
 
 test('parseEvaluation accepts exact JSON and one embedded JSON object', () => {
   const binding = { version: 1, mission_id: randomUUID(), worker_run_id: randomUUID(),
@@ -22,28 +20,12 @@ test('parseEvaluation accepts exact JSON and one embedded JSON object', () => {
 });
 
 async function specialistSetup(t, { repairs = 0 } = {}) {
-  const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 30000 }), b = f.bridge;
-  b.missionAuthority.initializeOperatorKey(); qualifyCanonical(b);
-  b.expandedAutonomy.setMode({ mode: 'routine_auto', confirmed: true, request_id: randomUUID(), sync_risk_acceptance: false }, 'operator');
-  const p = b.projects.listProjects({ status: 'active' })[0], g = b.projects.summary(p.projectId).goals[0];
-  f.policy = b.developerAutonomy.enroll({
-    alias: 'v8-settlement-fixture', repository: f.repo, project_id: p.projectId, goal_id: g.goalId,
-    workflows: ['routine_edit', 'test', ...(repairs ? ['repair'] : [])], workers: ['opencode'], duration_days: 1, confirmed: true,
-    diff_check: 'diff-check', default_tests: ['fixture-test'], budgets: { max_repairs: repairs },
-    cognitive: { version: 3, files: ['fixture.txt'], delegated_callers: [], planning_attempts: 2, planning_ms: 120000,
-      execution_ms: 120000, repair_attempts: repairs, max_assignments: 1, acceptance: 'automatic' }
-  }, 'operator');
-  f.plan = [{ id: 'change', worker: 'opencode', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
-    description: 'Change alpha to beta', depends_on: [], verification: [] }];
+  const f = await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t, {repairs}), b = f.bridge;
+  f.plan = [{id:'change',worker:'cursor',role:'implementation',operation:'edit',paths:['fixture.txt'],description:'Change alpha to beta',depends_on:[],verification:[]}];
   f.evaluations = [];
-  f.noopWorker = false;
-  f.wrongTrailingLf = false;
   f.evaluateBroken = false;
   f.evaluateWrapped = false;
   const adapter = b.opencodeAdapter;
-  const { createHash } = require('node:crypto');
-  const fileDigest = require('../src/qualified-coding-adapter').digest;
-  const contentDigest = text => createHash('sha256').update(text).digest('hex');
   f.worker = adapter.execute.bind(adapter);
   adapter.execute = async o => {
     if (o.planning) {
@@ -64,24 +46,6 @@ async function specialistSetup(t, { repairs = 0 } = {}) {
       return { result: { summary }, changes: [],
         provenance: { runtime_id: 'opencode', sandbox: 'fixture', termination_verified: true, authority: false } };
     }
-    if (f.noopWorker) {
-      return {
-        result: { status: 'completed', summary: 'Edited fixture.txt to beta with a single LF.', changed_files: [],
-          tests: [], artifacts: [], limitations: [] },
-        changes: [],
-        provenance: { runtime_id: 'opencode', sandbox: 'fixture', termination_verified: true, authority: false }
-      };
-    }
-    if (f.wrongTrailingLf) {
-      const target = path.join(o.workspace, 'fixture.txt');
-      const after = 'beta\n\n';
-      return {
-        result: { status: 'completed', summary: 'Wrote beta with an extra trailing LF.', changed_files: ['fixture.txt'],
-          tests: [], artifacts: [], limitations: [] },
-        changes: [{ path: 'fixture.txt', content: after, preimage_sha256: fileDigest(target), sha256: contentDigest(after), size: Buffer.byteLength(after) }],
-        provenance: { runtime_id: 'opencode', sandbox: 'fixture', termination_verified: true, authority: false }
-      };
-    }
     return f.worker(o);
   };
   f.ask = async () => {
@@ -99,7 +63,7 @@ async function specialistSetup(t, { repairs = 0 } = {}) {
 
 test('edit claim with no host-observed changes settles needs_rework without evaluator JSON', async t => {
   const f = await specialistSetup(t);
-  f.noopWorker = true;
+  f.cursorMode = 'fabricate';
   const p = await f.ask();
   const m = await f.settle(p.mission_id, 'needs_rework');
   assert.match(m.reason, /no host-observed file changes/);
@@ -116,7 +80,7 @@ test('edit claim with no host-observed changes settles needs_rework without eval
 
 test('failed host verification plus evaluator JSON failure settles needs_rework not EVALUATION_UNAVAILABLE', async t => {
   const f = await specialistSetup(t);
-  f.wrongTrailingLf = true;
+  f.cursorMode = 'trailing_lf';
   const gateway = require('../src/opencode-gateway');
   const evaluate = gateway.evaluate;
   gateway.evaluate = async (...args) => {
@@ -126,7 +90,7 @@ test('failed host verification plus evaluator JSON failure settles needs_rework 
   t.after(() => { gateway.evaluate = evaluate; });
   const p = await f.ask();
   const m = await f.settle(p.mission_id, 'needs_rework');
-  const worker = m.runs.find(r => r.result?.opencode_provenance);
+  const worker = m.runs.find(r => r.agent_id === 'cursor');
   assert.ok(worker, 'worker run missing');
   assert.ok((worker.result.artifacts || []).length >= 1, 'expected host-applied artifact: ' + JSON.stringify(worker.result.artifacts));
   assert.match(m.reason || '', /Host verification failed; evaluation unavailable/);

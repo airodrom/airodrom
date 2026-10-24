@@ -127,12 +127,15 @@ test('standing reservation is durable, idempotent, bounded and cannot move betwe
  db.prepare('UPDATE cp_standing_cursor_development SET max_missions=1 WHERE id=?').run(f.grant.id);
  h.consumeStandingCursorDevelopment(f.grant.id,id);h.consumeStandingCursorDevelopment(f.grant.id,id);
  assert.equal(db.prepare('SELECT missions_used n FROM cp_standing_cursor_development WHERE id=?').get(f.grant.id).n,1);
- assert.ok(m.runs.every(r=>['completed','failed','cancelled','interrupted'].includes(r.state)));
- assert.ok(m.dispatches.every(d=>d.state==='settled'));
+ assert.equal(db.prepare('SELECT count(*) n FROM cp_runs').get().n,0);
+ assert.equal(db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
  assert.throws(()=>h.consumeStandingCursorDevelopment(f.grant.id,randomUUID()),/unavailable/);
  assert.throws(()=>h.consumeStandingCursorDevelopment(randomUUID(),id),/Idempotency conflict/);
  const query={repository:f.repo,policy_id:f.policy.policy_id,files:['fixture.txt'],max_invocations:1,max_runtime_ms:120000,data_class:'public'};
  assert.equal(h.matchStandingCursorDevelopment(query),null);
+ await f.reopen({beforeResume:()=>f.bindAdapter()});
+ f.bridge.hostExecutionPolicy.consumeStandingCursorDevelopment(f.grant.id,id);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT missions_used n FROM cp_standing_cursor_development WHERE id=?').get(f.grant.id).n,1);
 });
 
 test('standing grant matches the source repository and exact policy, never another repository or file',async t=>{

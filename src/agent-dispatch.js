@@ -63,7 +63,7 @@ class AgentDispatch {
  guard(r,{lease=true}={}){
   this.assertReadable();
   const ownLease=this.db.prepare("SELECT state,expires_at FROM cp_leases WHERE run_id=? AND state IN ('held','quarantined')").get(r.run_id);if(ownLease&&(ownLease.state==='quarantined'||ownLease.expires_at<=this.store.now()))return'unverified_workspace_lease';
-  const m=this.store.requireMission(r.mission_id);if(['completed','cancelled','needs_rework','awaiting_acceptance','verifying'].includes(m.state))return'mission_not_dispatchable';
+  const m=this.store.requireMission(r.mission_id);try{require('./mission-worker-policy').assertImplementation(m.envelope);}catch(error){return error.code||error.message;}if(['completed','cancelled','needs_rework','awaiting_acceptance','verifying'].includes(m.state))return'mission_not_dispatchable';
   if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(r.policy_ref||'')||fingerprint({version:2,envelope:m.envelope,ceiling:m.ceiling})!==r.policy_hash)return'immutable_policy_changed';
   const p=this.bridge.projects.getProject(m.project_id);if(p.status!=='active')return'project_inactive';
   if(this.bridge.tasks.get(r.task_id).safetyStop?.latched)return'safety_stop';
@@ -133,6 +133,7 @@ class AgentDispatch {
  fallbackChoice(r,observations){
   const p=r.fallback_policy,m=this.store.getMission(r.mission_id),project=this.bridge.projects.getProject(m.project_id);
   if(!r.no_side_effects)return{selected:null,reason:'reconcile_unknown_outcome'};
+  try{require('./mission-worker-policy').assertImplementation(m.envelope);}catch(error){return{selected:null,reason:error.code||error.message};}
   if(project.privacyPolicy||project.costPolicy)return{selected:null,reason:'project_policy_requires_review'};
   if(m.envelope.allowed_files.length>p.max_changed_files)return{selected:null,reason:'edit_breadth'};
   if(['research','large_coding'].includes(p.task_category))return{selected:null,reason:'semantic_fallback_unproven'};
