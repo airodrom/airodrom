@@ -36,7 +36,7 @@ test('only passed evidence or ordinary registered failures permit another correc
 test('direct and continuation Codex handoffs cannot bypass Cursor policy or allocate ownership',async t=>{
  const f=await require('./fixtures/mission-fixture.cjs').fixture(t),b=f.bridge;
  for(const preferred_agent of ['codex','host','opencode']){
-  const m=f.create({preferred_agent,dispatch_policy:{native_actions:[{name:'file_read',path:'fixture.txt'}]}});
+  const m=f.create({objective:'Read fixture.txt with '+preferred_agent+' label',preferred_agent,dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],native_actions:[{name:'file_read',path:'fixture.txt'}]}});
   const before=JSON.stringify(b.controlStore.requireMission(m.id).envelope);
   for(const start of [()=>b.codexAdapter.startTask(m.id,'direct-'+preferred_agent),()=>b.codexAdapter.continueTask(m.id,'continue-'+preferred_agent)])
    assert.throws(start,/CURSOR_IMPLEMENTATION_REQUIRED/);
