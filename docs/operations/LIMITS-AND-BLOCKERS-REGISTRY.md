@@ -6,6 +6,8 @@ Canonical, source-grounded registry of Airodrom operational limits, execution bl
 **Runtime:** [`src/limits-blockers-registry.js`](../../src/limits-blockers-registry.js)  
 **Recovery dispatcher:** [`src/limits-blockers-recovery.js`](../../src/limits-blockers-recovery.js)
 
+The [preventive diagnostics guide](PREVENTIVE-DIAGNOSTICS-V1.md) documents exact policy enforcement, strict error matching, durable recovery reservations, repository-capacity preflight, the isolated simulator, and release limits. Private incident counts stay in the installation's investigation report.
+
 ## Autonomous Blocker Resolution V1
 
 Every registered blocker triggers automatic diagnosis. Executable recovery runs only through the allowlisted host operations in `limits-blockers-recovery.js` (max 2 attempts per Mission/request lineage). Security-critical entries investigate and fail closed. Unknown codes are diagnosed and reported — never executed from their text.

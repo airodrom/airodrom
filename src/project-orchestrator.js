@@ -51,9 +51,10 @@ function strings(value, name, maximum = 24, itemMaximum = 500) {
 // accidentally match the payment-card digit detector; scan a projection that
 // replaces RFC-4122 UUID components with a fixed non-secret placeholder.
 const UUID_PATH = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+const MAX_PROJECT_REPOSITORIES = 24;
 function repositoryPaths(value) {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 24) throw new Error('Invalid repositories');
+  if (!Array.isArray(value) || value.length > MAX_PROJECT_REPOSITORIES) throw new Error('Invalid repositories');
   return value.map((item, index) => {
     if (typeof item !== 'string' || !item.trim() || Buffer.byteLength(item, 'utf8') > 500 || item.includes('\0')) {
       throw new Error(`Invalid repositories[${index}]`);
@@ -274,4 +275,4 @@ class ProjectMissionOrchestrator {
   }
 }
 
-module.exports = { ProjectMissionOrchestrator, SCHEMA_VERSION };
+module.exports = { ProjectMissionOrchestrator, SCHEMA_VERSION, MAX_PROJECT_REPOSITORIES };

@@ -1061,3 +1061,81 @@ let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{
   assert.equal(settled.acceptance.length, 0);
   assert.equal(fs.readFileSync(path.join(denied.workspace.path, 'tests/events.test.ts'), 'utf8'), applicationTest);
 });
+
+test('repository preflight retires cleaned aliases before the 24-path ceiling without deleting history', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy, policy = da.enroll(f.enrollInput, 'operator');
+  const ws = da.prepareWorkspace({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  // Fault injection: cleanup completed but its best-effort project unbind was lost.
+  da.db.prepare("UPDATE cp_developer_autonomy_workspaces SET state='cleaned' WHERE workspace_id=?").run(ws.workspace_id);
+  fs.rmSync(ws.path,{recursive:true});
+  const other = Array.from({length:22},(_,i)=>path.join(f.root,'unmanaged-'+i));
+  f.bridge.projects.updateProject(policy.project_id,{repositories:[f.repo,ws.path,...other]});
+  const next = await da.prepareWorkspaceAsync({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  const project = f.bridge.projects.getProject(policy.project_id);
+  assert.equal(project.repositories.length,24);assert.ok(!project.repositories.includes(ws.path));assert.ok(project.repositories.includes(next.path));
+  assert.equal(da.inspectWorkspace(ws.workspace_id).state,'cleaned');assert.ok(fs.existsSync(f.repo));
+  assert.ok(other.every(p=>project.repositories.includes(p)),'unregistered missing paths must not be retired');
+});
+
+test('repository preflight preserves held file evidence while retiring only its idle binding', async t => {
+  const f = await setup(t), da=f.bridge.developerAutonomy, policy=da.enroll(f.enrollInput,'operator');
+  const ws=da.prepareWorkspace({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  fs.writeFileSync(path.join(ws.path,'evidence.txt'),'retained dirty evidence\n');
+  da.db.prepare("UPDATE cp_developer_autonomy_workspaces SET state='held' WHERE workspace_id=?").run(ws.workspace_id);
+  const before=da.db.prepare('SELECT record FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').get(ws.workspace_id).record;
+  da.reconcileRepositoryRegistrations(policy,'operator');
+  assert.equal(fs.readFileSync(path.join(ws.path,'evidence.txt'),'utf8'),'retained dirty evidence\n');
+  assert.equal(da.db.prepare('SELECT record FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').get(ws.workspace_id).record,before);
+  assert.ok(!f.bridge.projects.getProject(policy.project_id).repositories.includes(ws.path));
+  assert.ok(f.bridge.projects.getProject(policy.project_id).repositories.includes(f.repo));
+});
+
+test('repository preflight fails before clone when every binding is protected or unknown', async t => {
+  const f=await setup(t),da=f.bridge.developerAutonomy,policy=da.enroll(f.enrollInput,'operator');
+  const repos=[f.repo,...Array.from({length:23},(_,i)=>path.join(f.root,'owner-repo-'+i))];
+  f.bridge.projects.updateProject(policy.project_id,{repositories:repos});
+  const trees=path.join(da.dataRoot(policy.repository),'worktrees'),before=fs.readdirSync(trees);
+  await assert.rejects(da.prepareWorkspaceAsync({policy_id:policy.policy_id,request_id:randomUUID()},'operator'),e=>{
+    assert.equal(e.code,'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED');assert.equal(e.diagnosis.limit,24);return true;
+  });
+  assert.deepEqual(fs.readdirSync(trees),before);assert.deepEqual(f.bridge.projects.getProject(policy.project_id).repositories,repos);
+});
+
+test('repository retirement preserves planning, unsettled, quarantined and changed-identity bindings', async t => {
+  const f=await setup(t),da=f.bridge.developerAutonomy,policy=da.enroll(f.enrollInput,'operator');
+  const ws=da.prepareWorkspace({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  da.db.prepare("UPDATE cp_developer_autonomy_workspaces SET state='held' WHERE workspace_id=?").run(ws.workspace_id);
+  f.bridge.zeroSetupWork.write('fixture-planning','operator',{workspace:ws.path},'planning');
+  assert.equal(da.repositoryRegistrationPlan(policy).retired.length,0);
+  da.db.prepare("UPDATE cp_zero_setup_requests SET state='blocked' WHERE request_id='fixture-planning'").run();
+  const original=da.workspaceIdle;da.workspaceIdle=()=>false;
+  assert.equal(da.repositoryRegistrationPlan(policy).retired.length,0);da.workspaceIdle=original;
+  fs.renameSync(ws.path,ws.path+'-evidence');fs.mkdirSync(ws.path);
+  assert.equal(da.repositoryRegistrationPlan(policy).retired.length,0);
+  assert.throws(()=>da.reconcileRepositoryRegistrations(policy,'mcp:fixture'),/operator/);
+});
+
+
+test('repository slot race holds the newly created clone without registering or dispatching it', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy, policy = da.enroll(f.enrollInput, 'operator');
+  const reconcile = da.reconcileRepositoryRegistrations.bind(da);
+  let checks = 0;
+  da.reconcileRepositoryRegistrations = (p, owner) => {
+    if (++checks === 2) f.bridge.projects.updateProject(policy.project_id, {
+      repositories: [f.repo, ...Array.from({ length: 23 }, (_, i) => path.join(f.root, 'concurrent-' + i))],
+    });
+    return reconcile(p, owner);
+  };
+  assert.throws(() => da.prepareWorkspace({ policy_id: policy.policy_id, request_id: randomUUID() }, 'operator'),
+    { code: 'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED' });
+  const rows = da.db.prepare('SELECT * FROM cp_developer_autonomy_workspaces').all();
+  assert.equal(rows.length, 1);
+  const ws = da.inspectWorkspace(rows[0].workspace_id);
+  assert.equal(ws.state, 'held');
+  assert.equal(ws.preparation_blocker, 'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED');
+  assert.equal(ws.grant_id, null);
+  assert.equal(ws.mission_id, null);
+  assert.ok(fs.existsSync(ws.path));
+  assert.ok(!f.bridge.projects.getProject(policy.project_id).repositories.includes(ws.path));
+  assert.throws(() => da.bindWorkspace(ws.workspace_id, {}), /Ready task workspace required/);
+});

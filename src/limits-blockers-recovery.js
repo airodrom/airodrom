@@ -68,12 +68,9 @@ function lineageKey({ request_id, mission_id, registry_id }) {
 }
 
 function attemptCount(db, key, registryId) {
-  if (!db) return 0;
-  try {
-    return db.prepare(
-      'SELECT COUNT(*) AS n FROM cp_limits_blocker_recovery_attempts WHERE lineage_key=? AND registry_id=?'
-    ).get(key, registryId)?.n || 0;
-  } catch { return 0; }
+  if (!db) throw Error('recovery_accounting_unavailable');
+  return db.prepare('SELECT COUNT(*) AS n FROM cp_limits_blocker_recovery_attempts WHERE lineage_key=? AND registry_id=?')
+    .get(key, registryId)?.n || 0;
 }
 
 function recordAttempt(bridge, row) {
@@ -84,7 +81,8 @@ function recordAttempt(bridge, row) {
     db.prepare(
       `INSERT INTO cp_limits_blocker_recovery_attempts
         (id,registry_id,request_id,mission_id,lineage_key,attempt,operation,outcome,receipt_json,created_at)
-       VALUES(?,?,?,?,?,?,?,?,?,?)`
+       VALUES(?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,receipt_json=excluded.receipt_json,operation=excluded.operation`
     ).run(
       row.id, row.registry_id, row.request_id, row.mission_id, row.lineage_key,
       row.attempt, row.operation, row.outcome, JSON.stringify(row.receipt), row.created_at
@@ -114,6 +112,7 @@ function baseDiagnosis(entry, report, evidence) {
 }
 
 function ownerGate(entry, detail) {
+  if (entry.owner_approval_required === false && entry.category === 'operational_owner') return null;
   return {
     required: true,
     registry_id: entry.id,
@@ -164,8 +163,20 @@ function collectEvidence(bridge, ctx) {
   return evidence;
 }
 
-function recoverReclaimWorktrees(bridge, owner) {
-  const policies = bridge.developerAutonomy?.list?.(owner) || [];
+function recoverReclaimWorktrees(bridge, owner, ctx) {
+  // A capacity error never authorizes cleanup of every enrolled project.
+  let policyId = null;
+  try {
+    if (ctx.mission_id) {
+      const m = bridge.controlStore.requireMission(ctx.mission_id);
+      policyId = m.envelope?.developer_autonomy?.policy_id || m.envelope?.developer_autonomy_policy_id || null;
+    } else if (ctx.request_id) {
+      const row = bridge.controlStore.db.prepare('SELECT record FROM cp_zero_setup_requests WHERE request_id=?').get(ctx.request_id);
+      policyId = row ? JSON.parse(row.record).developer_autonomy_policy_id : null;
+    }
+  } catch { /* no cleanup without an exact durable policy binding */ }
+  if (!policyId) return { operation: 'reclaim_idle_ready_workspaces', performed: false, reason: 'recovery_policy_binding_required' };
+  const policies = (bridge.developerAutonomy?.list?.(owner) || []).filter(p => p.policy_id === policyId);
   let before = 0, after = 0;
   for (const policy of policies.filter(p => p.state === 'active')) {
     before += bridge.developerAutonomy.occupiedWorktrees(policy.policy_id);
@@ -182,25 +193,15 @@ function recoverReclaimWorktrees(bridge, owner) {
 }
 
 function recoverEnsureCognitiveTiming(bridge, owner, evidence) {
-  const results = [];
-  for (const p of evidence.developer_autonomy || []) {
-    try {
-      const before = bridge.developerAutonomy.inspect(p.policy_id);
-      const after = bridge.developerAutonomy.ensureCognitiveDiscovery(p.policy_id, owner);
-      results.push({
-        policy_id: p.policy_id,
-        before_execution_ms: before?.cognitive?.execution_ms ?? null,
-        after_execution_ms: after?.cognitive?.execution_ms ?? null,
-        refreshed: (after?.cognitive?.execution_ms || 0) >= 120000,
-      });
-    } catch (error) {
-      results.push({ policy_id: p.policy_id, error: String(error.message || error).slice(0, 160) });
-    }
-  }
   return {
-    operation: 'ensure_cognitive_timing_floor',
-    performed: results.some(r => r.refreshed),
-    policies: results,
+    operation: 'ensure_cognitive_timing_floor', performed: false,
+    policies: (evidence.developer_autonomy || []).map(p => {
+      try {
+        const policy = bridge.developerAutonomy.inspect(p.policy_id);
+        return { policy_id: p.policy_id, current_execution_ms: policy?.cognitive?.execution_ms ?? null };
+      } catch { return { policy_id: p.policy_id, current_execution_ms: null }; }
+    }),
+    note: 'Diagnosis only: renewal or changed execution ceilings require explicit owner authorization; no enrollment is resealed.',
   };
 }
 
@@ -740,7 +741,7 @@ function planFor(entry) {
     return { operation: 'consolidate_owner_gate', executable: false, note: 'wait_or_owner_raise_assignment_budget' };
   }
   if (id === 'cursor_subscription_deadline' || id === 'cursor_proxy_aborted' || id === 'standing_cursor_grant_runtime_limit') {
-    return { operation: 'ensure_cognitive_timing_floor', executable: true, owner_if_still_short: true, verify: 'cognitive_execution_ms_floor' };
+    return { operation: 'ensure_cognitive_timing_floor', executable: false, owner_gate_if_unmatched: true };
   }
   if (id === 'blocked_spend_authorization' || id === 'scoped_external_disclosure_required'
     || id === 'standing_cursor_grant_missing' || id === 'standing_cursor_grant_expired'
@@ -773,7 +774,7 @@ function planFor(entry) {
   }
   if (id === 'evaluation_unavailable' || id === 'gateway_evaluation_deadline'
     || id === 'opencode_runtime_unavailable' || id === 'opencode_evaluation_timeout'
-    || id === 'opencode_evaluation_cancelled') {
+    || id === 'opencode_evaluation_cancelled' || id === 'opencode_evaluation_stage_mismatch') {
     return { operation: 'reconcile_blocked_evaluation', executable: true, verify: 'evaluation_reconciled_or_terminal' };
   }
   // Proof-gated reconcile only; never treats unverified termination as Mission success.
@@ -825,7 +826,7 @@ function planFor(entry) {
   if (entry.category === 'operational_auto') {
     return { operation: 'diagnose_only', executable: false, note: entry.next_safe_action };
   }
-  return { operation: 'consolidate_owner_gate', executable: false };
+  return { operation: entry.owner_approval_required === false ? 'diagnose_only' : 'consolidate_owner_gate', executable: false };
 }
 
 function executePlan(bridge, entry, plan, ctx, evidence, owner) {
@@ -834,7 +835,7 @@ function executePlan(bridge, entry, plan, ctx, evidence, owner) {
   }
   switch (plan.operation) {
     case 'reclaim_idle_ready_workspaces':
-      return recoverReclaimWorktrees(bridge, owner);
+      return recoverReclaimWorktrees(bridge, owner, ctx);
     case 'ensure_cognitive_timing_floor':
       return recoverEnsureCognitiveTiming(bridge, owner, evidence);
     case 'match_standing_cursor_grant':
@@ -953,15 +954,40 @@ function dispatch(bridge, {
   const plan = planFor(entry);
   const key = lineageKey({ request_id, mission_id, registry_id: entry.id });
   const db = bridge?.controlStore?.db;
-  ensureAttemptsSchema(db);
-  const prior = attemptCount(db, key, entry.id);
+  const receiptId = randomUUID();
+  let prior = 0, accountingAvailable = false;
+  try {
+    if (!db) throw Error('recovery_accounting_unavailable');
+    ensureAttemptsSchema(db);
+    // Claim before callbacks or deferred work. A crash consumes this attempt;
+    // nested recovery observes it, and storage errors can never reset a budget.
+    prior = require('./control-transaction').transaction(db, () => {
+      const count = attemptCount(db, key, entry.id);
+      if (count < MAX_ATTEMPTS_PER_BLOCKER) db.prepare(`INSERT INTO cp_limits_blocker_recovery_attempts
+        (id,registry_id,request_id,mission_id,lineage_key,attempt,operation,outcome,receipt_json,created_at)
+        VALUES(?,?,?,?,?,?,?,'reserved','{}',?)`).run(receiptId, entry.id, request_id, mission_id, key,
+          count + 1, plan.operation, Date.now());
+      return count;
+    });
+    accountingAvailable = true;
+  } catch { /* fail closed below; never execute with unavailable accounting */ }
 
   let recovery = { operation: plan.operation, performed: false, skipped: false };
   let verification = { verified: false, mode: 'not_attempted', authority: false };
   let owner_gate = null;
   let resumed = false;
 
-  if (prior >= MAX_ATTEMPTS_PER_BLOCKER) {
+  // A second unknown/security blocker cannot be hidden by an operational first
+  // code. Proof-gated termination reconciliation is allowed only on its own.
+  const mixedUnsafe = report.blockers.length > 1
+    && report.blockers.some(b => !b.registered || b.security_critical);
+  if (plan.executable && (!accountingAvailable || (!request_id && !mission_id))) {
+    recovery = { operation: 'diagnose_only', performed: false, fail_closed: true,
+      reason: accountingAvailable ? 'recovery_lineage_required' : 'recovery_accounting_unavailable' };
+  } else if (mixedUnsafe) {
+    recovery = { operation: 'diagnose_only', performed: false, fail_closed: true,
+      reason: 'unresolved_compound_blockers', registry_ids: report.blockers.map(b => b.registry_id) };
+  } else if (prior >= MAX_ATTEMPTS_PER_BLOCKER) {
     recovery = {
       operation: plan.operation, performed: false, skipped: true,
       reason: 'recovery_attempt_budget_exhausted',
@@ -982,14 +1008,7 @@ function dispatch(bridge, {
         || recovery.diagnosis?.reason
         || 'Existing authorization does not cover this Mission; owner action required.';
       owner_gate = ownerGate(entry, detail);
-      if (recovery.reenrollment) owner_gate.reenrollment = recovery.reenrollment;
-    }
-    if (plan.owner_if_still_short) {
-      const stillShort = !(recovery.policies || []).some(p => p.after_execution_ms >= 120000);
-      // Cognitive floor may be raised automatically; standing grant runtime still owner raise-only.
-      owner_gate = ownerGate(entry,
-        'Ensure standing Cursor max_runtime_ms is raised to 120000 via raise-standing-cursor-runtime (raise-only). Cognitive execution_ms floor refresh '
-        + (stillShort ? 'incomplete or unavailable.' : 'applied.'));
+      if (recovery.reenrollment && owner_gate) owner_gate.reenrollment = recovery.reenrollment;
     }
     if (plan.operation === 'consolidate_owner_gate' || (entry.category === 'operational_owner' && !recovery.performed && !owner_gate)) {
       owner_gate = ownerGate(entry);
@@ -1002,11 +1021,11 @@ function dispatch(bridge, {
 
   const attempt = prior + 1;
   const receipt = {
-    id: randomUUID(),
+    id: receiptId,
     registry_id: entry.id,
     category: entry.category,
     diagnosis,
-    plan: { operation: plan.operation, executable: !!plan.executable, allowlisted: ALLOWLIST.includes(plan.operation) },
+    plan: { operation: recovery.operation, executable: !!plan.executable && !mixedUnsafe && accountingAvailable && !!(request_id || mission_id), allowlisted: ALLOWLIST.includes(recovery.operation) },
     evidence: {
       missions: evidence.missions,
       cursor: evidence.cursor,
@@ -1031,7 +1050,7 @@ function dispatch(bridge, {
     mission_id,
     lineage_key: key,
     attempt,
-    operation: plan.operation,
+    operation: recovery.operation,
     outcome: (recovery.performed && verification.completed_repair) ? 'recovered'
       : (recovery.fail_closed ? 'fail_closed'
         : (owner_gate ? 'owner_gate' : 'diagnosed')),
@@ -1062,7 +1081,7 @@ function coverage() {
       auto_diagnosis: true,
       executable_recovery: !!plan.executable && ALLOWLIST.includes(plan.operation),
       operation: plan.operation,
-      owner_gate_possible: entry.category === 'operational_owner' || !!plan.owner_gate_if_unmatched || !!plan.owner_if_still_short,
+      owner_gate_possible: entry.owner_approval_required !== false && (entry.category === 'operational_owner' || !!plan.owner_gate_if_unmatched),
       security_fail_closed: entry.category === 'security_critical' || !!plan.security_fail_closed,
       canonical_operational_owner: OPERATIONAL_OWNER_CANONICAL.includes(entry.id),
       authority: false,

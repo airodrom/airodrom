@@ -52,12 +52,12 @@ function normalizeCode(value) {
   return String(value).trim().replace(/\s+/g, ' ').slice(0, 300);
 }
 
+function safeCode(code) { return require('./control-plane-store').redactValue(normalizeCode(code)); }
+
 function codeKey(value) {
   const n = normalizeCode(value);
   if (!n) return '';
-  // Prefer exact uppercase token when present at start (WORKTREE_BUDGET_EXHAUSTED: detail)
-  const token = n.match(/^([A-Za-z][A-Za-z0-9_]{2,})/);
-  return (token ? token[1] : n).toLowerCase();
+  return n.toLowerCase();
 }
 
 /** Normalize codes and human messages to a comparable token (spaces/punct → _). */
@@ -66,7 +66,7 @@ function looseKey(value) {
 }
 
 function unknownEntry(code) {
-  const normalized = normalizeCode(code) || 'unknown';
+  const normalized = safeCode(code) || 'unknown';
   return {
     id: 'unknown_blocker',
     codes: [normalized],
@@ -100,24 +100,17 @@ function resolve(codeOrMessage) {
   const loose = looseKey(normalized);
   let ids = registry.byCode.get(key) || registry.byCode.get(loose) || [];
   if (!ids.length) {
-    // Message forms like "Worktree budget exhausted: 4/4" map via loose prefix/contains.
-    let best = '';
-    for (const [k, list] of registry.byCode.entries()) {
-      if (!k || k.length < 8) continue;
-      if (loose === k || loose.startsWith(k + '_') || loose.includes(k)) {
-        if (k.length > best.length) {
-          best = k;
-          ids = list;
-        }
-      }
-    }
+    // Only a complete registered prefix followed by ':' may carry detail.
+    // A known token embedded in an unknown error is never executable recovery.
+    const prefix = normalized.split(':', 1)[0];
+    if (prefix !== normalized) ids = registry.byCode.get(codeKey(prefix)) || registry.byCode.get(looseKey(prefix)) || [];
   }
   if (!ids.length) return unknownEntry(normalized);
   const entry = registry.byId.get(ids[0]);
   return {
     ...entry,
     registered: true,
-    matched_code: normalized,
+    matched_code: safeCode(normalized),
     authority: false,
   };
 }
@@ -127,7 +120,7 @@ function annotateBlockers(codes) {
   return list.map(code => {
     const entry = resolve(code);
     return {
-      code: normalizeCode(code),
+      code: safeCode(code),
       registry_id: entry.id,
       category: entry.category,
       severity: entry.severity,
@@ -139,6 +132,9 @@ function annotateBlockers(codes) {
       registered: entry.registered !== false,
       historical_status: entry.historical_status || 'active',
       description: entry.description,
+      policy_decision: entry.registered === false ? 'unknown_fail_closed' : 'blocked',
+      missing_prerequisite: entry.missing_prerequisite || entry.failure_condition || null,
+      allowed_recovery: entry.automatic_recovery || null,
       authority: false,
     };
   });
@@ -346,6 +342,7 @@ function observedBlockers(bridge, { limit = 20 } = {}) {
         request_id: row.request_id,
         mission_id: record.mission_id || null,
         state: row.state,
+        project_id: record.project_id || null,
         blockers: annotated,
         next_safe_action: annotated[0]?.next_safe_action || null,
         updated_at: row.updated_at,
@@ -355,12 +352,12 @@ function observedBlockers(bridge, { limit = 20 } = {}) {
   } catch { /* optional */ }
   try {
     const missions = db.prepare(
-      "SELECT id, state, envelope, updated_at FROM cp_missions WHERE state IN ('blocked','needs_rework') ORDER BY updated_at DESC LIMIT ?"
+      "SELECT id, state, reason, project_id, envelope, updated_at FROM cp_missions WHERE state IN ('blocked','needs_rework') ORDER BY updated_at DESC LIMIT ?"
     ).all(Math.min(50, Math.max(1, limit)));
     for (const row of missions) {
       let envelope = {};
       try { envelope = JSON.parse(row.envelope); } catch { envelope = {}; }
-      const reason = envelope.block_reason || envelope.reason || row.state;
+      const reason = row.reason || envelope.block_reason || envelope.reason || row.state;
       const annotated = annotateBlockers([reason]);
       items.push({
         kind: 'mission',
@@ -369,13 +366,13 @@ function observedBlockers(bridge, { limit = 20 } = {}) {
         state: row.state,
         blockers: annotated,
         next_safe_action: annotated[0]?.next_safe_action || null,
-        project_id: envelope.project_id || null,
+        project_id: row.project_id || envelope.project_id || null,
         updated_at: row.updated_at,
         authority: false,
       });
     }
   } catch { /* optional */ }
-  return items.slice(0, limit);
+  return items.sort((a, b) => b.updated_at - a.updated_at).slice(0, limit);
 }
 
 /**
@@ -387,7 +384,10 @@ function diagnostics(bridge, filters = {}) {
   const da = developerAutonomyLive(bridge, { policy_id: filters.policy_id || null });
   const cursor = cursorLive(bridge);
   const missions = missionCounts(bridge);
-  const observed = filterEntries(observedBlockers(bridge, { limit: filters.limit || 20 }), filters);
+  const observed = observedBlockers(bridge, { limit: 50 }).filter(item =>
+    (!filters.project_id || item.project_id === filters.project_id)
+    && filterEntries(item.blockers, filters).length > 0
+  ).slice(0, filters.limit || 20);
   const definitions = filterEntries(registry.entries.map(e => ({
     id: e.id,
     category: e.category,

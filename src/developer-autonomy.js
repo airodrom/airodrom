@@ -250,16 +250,16 @@ class DeveloperAutonomy {
     if (owner !== 'operator') throw Error('Authenticated local operator required');
   }
 
-  dataRoot(repository) {
+  dataRoot(repository, { create = true } = {}) {
     const parent = path.dirname(fs.realpathSync(repository));
     let root = path.join(parent, '.airodrom-da-worktrees');
     if (root === this.bridge.dataDir || root.startsWith(this.bridge.dataDir + path.sep)) {
       const token = createHash('sha256').update(String(this.bridge.dataDir || '')).digest('hex').slice(0, 16);
-      const base = privateDirectory(path.join(fs.realpathSync(os.tmpdir()), 'airodrom-da'));
+      const basePath = path.join(fs.realpathSync(os.tmpdir()), 'airodrom-da');
+      const base = create ? privateDirectory(basePath) : basePath;
       root = path.join(base, token);
     }
-    privateDirectory(root);
-    privateDirectory(path.join(root, 'worktrees'));
+    if (create) { privateDirectory(root); privateDirectory(path.join(root, 'worktrees')); }
     return root;
   }
 
@@ -1026,6 +1026,67 @@ class DeveloperAutonomy {
 
   // --- Workspaces ------------------------------------------------------------
 
+  // Project repository aliases are active scope bindings, not the historical
+  // workspace ledger. Retire only this policy's independently idle terminal
+  // bindings. No directory, Mission, grant, policy or evidence row is removed.
+  repositoryRegistrationPlan(policy) {
+    const project = this.bridge.projects.getProject(policy.project_id);
+    const limit = require('./project-orchestrator').MAX_PROJECT_REPOSITORIES;
+    const retired = [];
+    for (const registered of project.repositories) {
+      if (registered === policy.repository) continue;
+      const rows = this.db.prepare('SELECT * FROM cp_developer_autonomy_workspaces WHERE path=?').all(registered);
+      if (rows.length !== 1) continue;
+      const row = rows[0];
+      if (row.policy_id !== policy.policy_id || row.repository !== policy.repository || row.disposable !== 1
+        || !['cleaned', 'bound', 'held'].includes(row.state)) continue;
+      try {
+        const record = JSON.parse(row.record);
+        if (record.path !== registered || record.workspace_id !== row.workspace_id || record.repository !== policy.repository
+          || record.policy_id !== policy.policy_id || !record.disposable
+          || registered !== path.join(this.dataRoot(policy.repository, { create: false }), 'worktrees', row.workspace_id)) continue;
+        // Unknown grants, live approvals, pending repair and uncertain writers
+        // keep their registration, even if the directory has disappeared.
+        if (row.grant_id) {
+          const grant = this.db.prepare('SELECT state FROM cp_developer_autonomy_grants WHERE grant_id=?').get(row.grant_id);
+          if (!grant || grant.state === 'active') continue;
+        }
+        if (!this.workspaceIdle(registered) || this.workspaceOccupiesBudget(row)) continue;
+        const missions = this.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.workspace')=?")
+          .all(registered).map(m => this.bridge.controlStore.requireMission(m.id));
+        if (missions.length && !this.lineageSettled(missions)) continue;
+        if (this.db.prepare("SELECT 1 FROM cp_zero_setup_requests WHERE json_extract(record,'$.workspace')=? AND state IN ('planning','running','awaiting_approval','approved')").get(registered)) continue;
+        if (fs.existsSync(registered)) this.assertWorkspace({ ...record, state: row.state });
+        else assertIdentities(record.identities.slice(1));
+        retired.push({ path: registered, workspace_id: row.workspace_id });
+      } catch { /* uncertainty preserves registration */ }
+    }
+    const repositories = project.repositories.filter(p => !retired.some(r => r.path === p));
+    return { repositories, retired, limit, used: project.repositories.length, remaining: limit - repositories.length };
+  }
+
+  reconcileRepositoryRegistrations(policy, owner) {
+    this.owner(owner);
+    const plan = this.repositoryRegistrationPlan(policy);
+    if (plan.retired.length) {
+      this.bridge.projects.updateProject(policy.project_id, { repositories: plan.repositories });
+      this.bridge.controlStore.event('developer_autonomy.repository_bindings_retired', null, {
+        policy_id: policy.policy_id, workspace_ids: plan.retired.map(r => r.workspace_id),
+        evidence_preserved: true, authority: false,
+      });
+    }
+    if (plan.remaining < 1) {
+      const error = Error('PROJECT_REPOSITORY_CAPACITY_EXHAUSTED');
+      error.code = 'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED';
+      error.diagnosis = { registry_id: 'project_repository_capacity_exhausted', policy_decision: 'blocked',
+        enforcement: 'DeveloperAutonomy.reconcileRepositoryRegistrations', used: plan.repositories.length,
+        limit: plan.limit, missing_prerequisite: 'one_available_project_repository_binding',
+        next_safe_action: 'inspect_retained_bindings_without_deleting_workspaces', authority: false };
+      throw error;
+    }
+    return plan;
+  }
+
   #workspacePreparePrelude(input, owner) {
     this.owner(owner);
     object(input, ['policy_id', 'request_id', 'prefer_disposable', 'branch_prefix']);
@@ -1051,6 +1112,7 @@ class DeveloperAutonomy {
       throw this.worktreeBudgetError(policy);
     }
 
+    this.reconcileRepositoryRegistrations(policy, owner);
     const dirty = workspaceDirty(policy.repository);
     const forceDisposable = input.prefer_disposable === true || dirty.length > 0;
     const workspaceId = randomUUID();
@@ -1067,16 +1129,6 @@ class DeveloperAutonomy {
 
   #workspacePrepareFinalize(input, ctx, { disposable, reason }) {
     const { policy, requestHash, dirty, workspaceId, branch, trees, workPath, baseSha } = ctx;
-    try {
-      const project = this.bridge.projects.getProject(policy.project_id);
-      if (!project.repositories.includes(workPath)) {
-        this.bridge.projects.updateProject(policy.project_id, {
-          repositories: [...project.repositories, workPath]
-        });
-      }
-    } catch (e) {
-      throw e;
-    }
     const now = Date.now();
     const record = {
       workspace_id: workspaceId,
@@ -1094,9 +1146,32 @@ class DeveloperAutonomy {
       preserved_dirty: dirty.slice(0, 40),
       created_at: now
     };
-    this.db.prepare('INSERT INTO cp_developer_autonomy_workspaces VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    const persist = state => this.db.prepare('INSERT INTO cp_developer_autonomy_workspaces VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(workspaceId, policy.policy_id, null, null, workPath, policy.repository, branch, baseSha,
-        disposable ? 1 : 0, 'ready', JSON.stringify(record), now, now);
+        disposable ? 1 : 0, state, JSON.stringify(record), now, now);
+    try {
+      transaction(this.db, () => {
+        // Recheck after async materialization; registration and its ready row
+        // must commit together if another preparation consumed the last slot.
+        this.reconcileRepositoryRegistrations(policy, 'operator');
+        const project = this.bridge.projects.getProject(policy.project_id);
+        if (!project.repositories.includes(workPath)) {
+          this.bridge.projects.updateProject(policy.project_id, { repositories: [...project.repositories, workPath] });
+        }
+        persist('ready');
+      });
+    } catch (error) {
+      if (error.code === 'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED') {
+        // Keep this newly created clone discoverable without granting it scope.
+        record.preparation_blocker = error.code;
+        persist('held');
+        this.bridge.controlStore.event('developer_autonomy.workspace_preparation_held', null, {
+          workspace_id: workspaceId, policy_id: policy.policy_id, code: error.code,
+          evidence_preserved: true, authority: false,
+        });
+      }
+      throw error;
+    }
     this.bridge.controlStore.event('developer_autonomy.workspace_prepared', null, {
       workspace_id: workspaceId, policy_id: policy.policy_id, path: workPath, disposable, reason, authority: false
     });
