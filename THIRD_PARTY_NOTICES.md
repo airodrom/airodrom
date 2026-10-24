@@ -41,7 +41,7 @@ The source archive does not vendor dependencies or agent/native binaries. Locked
 | p-timeout | 3.2.0 | MIT | runtime |
 | retry | 0.13.1 | MIT | runtime |
 | typescript | 7.0.2 | Apache-2.0 | development |
-| undici | 7.30.0 | MIT | runtime |
+| undici | 7.30.1 | MIT | runtime |
 | undici-types | 8.9.0 | MIT | runtime |
 
 ## Upstream license and notice texts
@@ -1586,7 +1586,7 @@ SOFTWARE.
 ---------------------------------------------------------
 ```
 
-### undici 7.30.0 — LICENSE
+### undici 7.30.1 — LICENSE
 
 ```text
 MIT License

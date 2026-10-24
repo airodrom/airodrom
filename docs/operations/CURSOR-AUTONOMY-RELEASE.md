@@ -20,6 +20,10 @@ Authority qualification compares the bridge's captured fingerprint with current 
 
 Finish source/dependency edits before starting qualification. Record the exact commit, a clean status, runtime version and source fingerprint. Run lifecycle fixtures from that fixed candidate; do not edit `src`, `package.json` or `package-lock.json` while they run. Record the fingerprint again afterward and invalidate the run if it differs. Repeat a previously unstable case against the same bytes. `tests/qualification-source-stability.test.js` preserves the drift denial and demonstrates which inputs change the fingerprint; it does not weaken qualification or patch a global cache.
 
+## Legacy regression compatibility gate
+
+Pre-ADR-0065 tests include positive OpenCode, Codex, Claude Code and native host implementation/fallback cases. The exclusive-worker guard intentionally rejects those routes, including direct handoff APIs. Their verification, recovery and negative-security coverage must be migrated to the canonical Cursor fixture before the full regression gate can pass. Keep the complete suite enabled and retain every failed result. Do not exempt a legacy test, disable a guard or represent a focused green run as whole-release verification. Baseline timing/termination failures must be recorded separately and investigated under controlled load.
+
 ## Canonical lifecycle and correction evidence
 
 Intake uses `planning`; Mission progression uses `ready → dispatching → running → verifying → awaiting_acceptance → completed`. A repairable result follows `verifying → needs_rework → ready` with a new specialist attempt. An evaluator failure can use `blocked`, then return to `ready` only under the existing recovery checks. Automatic Acceptance is an accepted record, and Settlement is a separate settled execution/program record. `CORRECTING` and `AUTOMATICALLY_ACCEPTED` are descriptions, not new persisted Mission states.
