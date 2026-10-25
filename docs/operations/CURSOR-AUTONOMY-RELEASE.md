@@ -2,6 +2,31 @@
 
 This procedure integrates ADRs [0064](../adr/0064-preventive-policy-diagnostics.md) and [0065](../adr/0065-cursor-only-routine-autonomy.md). It is a release contract, not a record of installation or owner authorization.
 
+## Observed release boundary (2026-10-25)
+
+PR #227 remains the release vehicle; #228 is included. The earlier full suite on
+`4a93202` passed 2,683 tests with six explicit skips, but final review reproduced
+structured-negation, stage-order and duplicate-retarget defects. The corrective
+source must have its own fixed-revision qualification; the earlier result does
+not qualify those new bytes. Keep the exact revision, source fingerprint, runtime,
+skip list and exit status with the PR evidence.
+
+Remote main and the installed source remain `1a3a12e`. Hosted candidate CI is
+manually disabled and the remote branch currently requires no checks or reviews;
+this configuration does not grant permission to merge or install. The running
+service is healthy and idle, with released leases, but its recorded old Node
+executable no longer exists on disk. Before stopping it, independently validate
+the candidate runtime and an executable rollback route. Reusing the old service
+configuration alone is insufficient.
+
+The Self-Repair Acceptance policy has two assignments and one repair; no standing
+Cursor grant matches it. Its historical request is awaiting authorization and has
+no Mission ID. Do not transfer a handoff/source-development grant, increase policy
+limits, replay that request, or claim a live correction from isolated tests. A
+four-stage canary requires four original assignments plus the bounded corrective
+invocation, an explicitly covered wrong-first-result task, current Cursor
+qualification, and the actual ChatGPT connector as initiator.
+
 The frozen route is USER → ChatGPT → Airodrom → OpenCode → Airodrom → ChatGPT → USER. Within Airodrom, OpenCode plans and evaluates; Cursor implements and corrects. Airodrom remains the sole authority for admission, exact repository/file binding, dispatch, leases, verification, Acceptance and Settlement. There is no automatic implementation fallback or second controller. The direct Codex handoff and legacy pending-transport boundaries enforce the same implementation policy as Mission dispatch. Historical unknown handoffs retain reconciliation and quarantined ownership; a policy change cannot authorize their replay or fallback. Routine work reuses existing finite standing authorization without subscription/account inspection or repeated approval. Missing or expired authority stays blocked.
 
 ## Dependency and runtime security
@@ -19,6 +44,14 @@ The upstream [Undici 7.30.1 release](https://github.com/nodejs/undici/releases/t
 Authority qualification compares the bridge's captured fingerprint with current source and package manifests. Source edits or a lockfile update during a running suite correctly trigger `Source/live fingerprint mismatch`. A later successful rerun alone does not establish stability or identify the edited file.
 
 Finish source/dependency edits before starting qualification. Record the exact commit, a clean status, runtime version and source fingerprint. Run lifecycle fixtures from that fixed candidate; do not edit `src`, `package.json` or `package-lock.json` while they run. Record the fingerprint again afterward and invalidate the run if it differs. Repeat a previously unstable case against the same bytes. `tests/qualification-source-stability.test.js` preserves the drift denial and demonstrates which inputs change the fingerprint; it does not weaken qualification or patch a global cache.
+
+Literal structured phrases obey the same negation boundary as ordinary file
+operations. Merge parsed stages by their source position before sealing; do not
+prepend structured edits to earlier reads. An explicit `fix ... in PATH` is one
+stage even when both direct parsing and refinement recognize it. Implicit
+refinement may use only an unambiguous earlier exact target, never a future read.
+Regression coverage must include planner rejection of unauthorized edits and
+missing dependencies, as well as preservation of four distinct stage IDs.
 
 ## Legacy regression compatibility gate
 

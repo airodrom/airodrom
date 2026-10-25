@@ -62,6 +62,12 @@ function isPathToken(quoted, token) {
   return quoted || /[./\\]/.test(token);
 }
 
+function negatedAt(text, index) {
+  // A dot inside a filename is not a sentence boundary.
+  const before = text.slice(0, index).split(/[;!?\n]|\.(?=\s|$)/).at(-1);
+  return /\b(?:not|never|without|don't)\b[^,;]*$/i.test(before);
+}
+
 /** Descriptive frames that must never invent a file target. */
 function descriptiveProse(text, index, verb, token, matched) {
   const before = text.slice(Math.max(0, index - 48), index);
@@ -84,7 +90,12 @@ function descriptiveProse(text, index, verb, token, matched) {
 
 /** Always retain the ordered stage graph. Identity hashing normalizes omission. */
 function finalizeScope(bindings, stageList) {
-  return parse({ version: 1, bindings, stages: stageList });
+  const ordered = stageList.sort((a, b) => a.at - b.at).map(({ operation, path }) => ({ operation, path }));
+  const orderedBindings = [];
+  for (const binding of [...ordered, ...bindings]) {
+    if (!orderedBindings.some(b => b.operation === binding.operation && b.path === binding.path)) orderedBindings.push(binding);
+  }
+  return parse({ version: 1, bindings: orderedBindings, stages: ordered });
 }
 
 /** Hash-stable identity: stages default to bindings when omitted on sealed scopes. */
@@ -93,8 +104,8 @@ function scopeIdentity(scope) {
   return { version: 1, bindings: parsed.bindings, stages: stages(parsed) };
 }
 
-function pushStage(stages, bindings, operation, file, literalRanges, range, { stages: addStages = true } = {}) {
-  if (addStages) stages.push({ operation, path: file });
+function pushStage(stages, bindings, operation, file, literalRanges, range, { stages: addStages = true, at = range?.start } = {}) {
+  if (addStages) stages.push({ operation, path: file, at });
   if (!bindings.some(b => b.operation === operation && b.path === file)) bindings.push({ operation, path: file });
   if (range) literalRanges.push(range);
 }
@@ -103,11 +114,12 @@ function extractStructuredPhrases(text, stages, bindings, literalRanges) {
   // "Make changes only to|in PATH"
   const onlyTo = new RegExp(String.raw`\bmake\s+changes\s+only\s+(?:to|in)\s+(${LITERAL})(?:[,:;!?]|\.(?=\s|$)|(?=\s|$))`, 'gi');
   for (const m of text.matchAll(onlyTo)) {
+    if (negatedAt(text, m.index)) continue;
     const { quoted, token } = unwrapLiteral(m[1]);
     if (!isPathToken(quoted, token)) continue;
     const file = normalize(token);
     const start = m.index + m[0].lastIndexOf(m[1]);
-    pushStage(stages, bindings, 'edit', file, literalRanges, { start, end: start + m[1].length });
+    pushStage(stages, bindings, 'edit', file, literalRanges, { start, end: start + m[1].length }, { at: m.index });
   }
   // "Use PATH for read and edit" / "PATH for read" / "PATH for read and edit".
   // When Task-labeled stages already exist, only refresh permissions — do not
@@ -115,53 +127,59 @@ function extractStructuredPhrases(text, stages, bindings, literalRanges) {
   const pathFor = new RegExp(String.raw`\b(?:use\s+)?(${LITERAL})\s+for\s+read(?:\s+and\s+edit)?(?:\s+operations?)?(?:[,:;!?]|\.(?=\s|$)|(?=\s|$))`, 'gi');
   const taskLabeled = /\bTask\s+[A-Z0-9]+\s*:/i.test(text);
   for (const m of text.matchAll(pathFor)) {
+    if (negatedAt(text, m.index)) continue;
     const { quoted, token } = unwrapLiteral(m[1]);
     if (!isPathToken(quoted, token)) continue;
     const file = normalize(token);
     const start = m.index + m[0].lastIndexOf(m[1]);
     const range = { start, end: start + m[1].length };
     const both = /\bfor\s+read\s+and\s+edit\b/i.test(m[0]);
-    pushStage(stages, bindings, 'read', file, literalRanges, range, { stages: !taskLabeled });
-    if (both) pushStage(stages, bindings, 'edit', file, literalRanges, range, { stages: !taskLabeled });
+    pushStage(stages, bindings, 'read', file, literalRanges, range, { stages: !taskLabeled, at: m.index });
+    if (both) pushStage(stages, bindings, 'edit', file, literalRanges, range, { stages: !taskLabeled, at: m.index });
   }
   // "after editing PATH" / "Review the result after editing PATH"
   const afterEdit = new RegExp(String.raw`\bafter\s+editing\s+(${LITERAL})(?:[,:;!?]|\.(?=\s|$)|(?=\s|$))`, 'gi');
   for (const m of text.matchAll(afterEdit)) {
+    if (negatedAt(text, m.index)) continue;
     const { quoted, token } = unwrapLiteral(m[1]);
     if (!isPathToken(quoted, token)) continue;
     const file = normalize(token);
     const start = m.index + m[0].lastIndexOf(m[1]);
-    pushStage(stages, bindings, 'edit', file, literalRanges, { start, end: start + m[1].length });
+    pushStage(stages, bindings, 'edit', file, literalRanges, { start, end: start + m[1].length }, { at: m.index });
   }
 }
 
 
 /** Refine pathless fix/patch/implement onto a unique prior exact path only. */
 function refineImplicitMutation(text, stages, bindings, literalRanges) {
-  if (!MUTATION_REFINE.test(text) || CONDITIONAL_MUTATION.test(text)) return false;
-  if (/\b(?:do\s+not|don't|never|without)\s+(?:fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b/i.test(text)) return false;
-  if (/\b(?:fix|patch|implement)\s+nothing\b/i.test(text)) return false;
-  if (/\bread[- ]only\b/i.test(text) && MUTATION_REFINE.test(text) && !/\b(?:and|then)\s+(?:fix|patch|implement)\b/i.test(text)) return false;
-  // Explicit retarget: "fix typos in PATH" / "implement the corrections in PATH".
-  const retarget = new RegExp(String.raw`\b(?:fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b(?:(?!\b(?:fix|patch|implement)\b)[\s\S]){0,96}?\b(?:in|within|of)\s+(` + LITERAL + `)`, 'i');
-  const m = text.match(retarget);
-  if (m) {
-    const { quoted, token } = unwrapLiteral(m[1]);
-    if (isPathToken(quoted, token)) {
-      const file = normalize(token);
-      const start = m.index + m[0].lastIndexOf(m[1]);
-      pushStage(stages, bindings, 'edit', file, literalRanges, { start, end: start + m[1].length });
-      return false;
+  for (const mutation of text.matchAll(new RegExp(MUTATION_REFINE.source, 'gi'))) {
+    const tail = text.slice(mutation.index);
+    if (negatedAt(text, mutation.index) || CONDITIONAL_MUTATION.exec(tail)?.index === 0
+        || /^(?:fix|patch|implement)\s+nothing\b/i.test(tail)) continue;
+    if (/\bread[- ]only\b/i.test(text) && !/\b(?:and|then)\s+(?:fix|patch|implement)\b/i.test(text)) continue;
+    // The direct parser already recorded this exact mutation. Do not turn one
+    // explicit retarget into two distinct worker assignments.
+    if (stages.some(s => s.operation === 'edit' && s.at === mutation.index)) continue;
+    // Explicit retarget: "fix typos in PATH" / "implement the corrections in PATH".
+    const retarget = new RegExp(String.raw`^(?:fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b(?:(?!\b(?:fix|patch|implement|read|inspect|review|edit|change|update|create|not|never|without)\b)[^\n;.!?]){0,96}?\b(?:in|within|of)\s+(` + LITERAL + `)`, 'i');
+    const m = tail.match(retarget);
+    if (m) {
+      const { quoted, token } = unwrapLiteral(m[1]);
+      if (isPathToken(quoted, token)) {
+        const file = normalize(token);
+        const start = mutation.index + m.index + m[0].lastIndexOf(m[1]);
+        pushStage(stages, bindings, 'edit', file, literalRanges, { start, end: start + m[1].length }, { at: mutation.index });
+        continue;
+      }
     }
+    const prior = stages.filter(s => s.at < mutation.index).sort((a, b) => a.at - b.at);
+    const priorPaths = [...new Set(prior.map(s => s.path))];
+    if (priorPaths.length === 1) {
+      if (prior.at(-1).operation !== 'edit') pushStage(stages, bindings, 'edit', priorPaths[0], literalRanges, null, { at: mutation.index });
+      continue;
+    }
+    return true;
   }
-  if (bindings.some(b => b.operation === 'edit') || stages.some(s => s.operation === 'edit')) return false;
-  const readPaths = [...new Set(stages.filter(s => s.operation === 'read').map(s => s.path))];
-  if (readPaths.length === 1) {
-    pushStage(stages, bindings, 'edit', readPaths[0], literalRanges, null);
-    return false;
-  }
-  if (readPaths.length > 1) return true;
-  if (!stages.length && MUTATION_REFINE.test(text)) return true;
   return false;
 }
 
@@ -180,8 +198,7 @@ function extract(instruction) {
   const refinementEnd = /^\s*[.!?]?\s*$/;
 
   for (const m of text.matchAll(pattern)) {
-    const before = text.slice(0, m.index).split(/[.;\n]/).at(-1);
-    if (/\b(?:not|never|without|don't)\b[^,;]*$/i.test(before)) { anchor = null; continue; }
+    if (negatedAt(text, m.index)) { anchor = null; continue; }
     const { quoted, token } = unwrapLiteral(m[2]);
     const verb = m[1];
     const operation = operationOf(verb);
@@ -233,7 +250,7 @@ function extract(instruction) {
     anchor = { operation, end: text.length - tail.length };
     for (const value of tokens) {
       const file = normalize(value);
-      stages.push({ operation, path: file });
+      stages.push({ operation, path: file, at: m.index });
       if (!bindings.some(b => b.operation === operation && b.path === file)) bindings.push({ operation, path: file });
     }
   }
@@ -254,8 +271,8 @@ function extract(instruction) {
       if (bindings.some(b => b.path === file)) C.fail('requested_file_operation_required');
       continue;
     }
-    const before = text.slice(0, m.index).split(/[.;\n]/).at(-1);
-    if (/\b(?:not|never|without|don't)\b[^,;]*$/i.test(before)) continue;
+    const before = text.slice(0, m.index).split(/[;!?\n]|\.(?=\s|$)/).at(-1);
+    if (negatedAt(text, m.index)) continue;
     // Exception / contrast mentions under negation are not positive requests.
     if (/\b(?:besides|except|excluding|other\s+than|instead\s+of)\b\s*$/i.test(before)) continue;
     if (/\bdo\s+not\s+edit\b[\s\S]*$/i.test(before) && /\b(?:besides|except|excluding|other\s+than)\b/i.test(before)) continue;
@@ -440,5 +457,5 @@ function seedTasks(scope) {
 
 module.exports = {
   normalize, parse, extract, files, stages, scopeIdentity, assertEnrollment, assertProposal, assertOriginal, verification,
-  diagnoseWorkspaceFile, seedTasks, descriptiveProse,
+  diagnoseWorkspaceFile, seedTasks, descriptiveProse, negatedAt,
 };

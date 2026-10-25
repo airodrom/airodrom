@@ -339,6 +339,25 @@ test('read-only proposals use existing host capabilities and cannot satisfy an u
   assert.equal(done.runs.filter(r => r.agent_id === 'host' && r.result?.native_execution_evidence).length, 1);
 });
 
+test('negated structured edits cannot become sealed write authority or dispatch', async t => {
+  const f = await setup(t);
+  const original = f.proposal, observed = [];
+  f.proposal = e => {
+    observed.push(e);
+    return original(e); // Untrusted planner still proposes an edit.
+  };
+  const result = await f.ask(randomUUID(), caller,
+    'Use cognitive-fixture to read fixture.txt. Do not make changes only to `fixture.txt`.');
+  assert.equal(result.state, 'BLOCKED', JSON.stringify(result));
+  assert.equal(observed.length, 2);
+  for (const e of observed) {
+    assert.deepEqual(e.operations, ['read']);
+    assert.deepEqual(e.requested_scope.bindings, [{ operation: 'read', path: 'fixture.txt' }]);
+  }
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
+  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
+});
+
 test('drift immediately before queue blocks dispatch and remains a durable blocked result', async t => {
   const f = await setup(t), dispatch = f.bridge.missions.dispatch.bind(f.bridge.missions);
   f.bridge.missions.dispatch = (id, input) => {

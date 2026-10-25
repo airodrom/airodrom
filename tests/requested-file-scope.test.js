@@ -397,3 +397,56 @@ test('negated and empty mutation phrases do not refine edits', () => {
   ]);
 });
 
+test('structured file phrases preserve negation before planning and sealing', () => {
+  for (const text of [
+    'Do not make changes only to README.md.',
+    'Never make changes only in README.md.',
+    "Don't use README.md for read and edit.",
+    'Do not review the result after editing README.md.',
+    'Implement nothing.',
+  ]) {
+    assert.deepEqual(S.extract(text).bindings, [], text);
+    assert.equal(R.requestedWorker(text), 'auto', text);
+  }
+  const text = 'Read README.md. Do not use README.md for read and edit.';
+  const s = S.extract(text);
+  assert.deepEqual(s.stages, [{ operation: 'read', path: 'README.md' }]);
+  assert.equal(R.requestedWorker(text), 'auto');
+  assert.throws(() => S.assertProposal(s, { files: ['README.md'], tasks: [
+    { id: 'write', operation: 'edit', paths: ['README.md'], depends_on: [] },
+  ] }), /requested_file_plan_mismatch/);
+});
+
+test('structured operations retain source order and dependency requirements', () => {
+  const s = S.extract('Read README.md then make changes only to README.md.');
+  assert.deepEqual(s.stages, [
+    { operation: 'read', path: 'README.md' }, { operation: 'edit', path: 'README.md' },
+  ]);
+  assert.throws(() => S.assertProposal(s, { files: ['README.md'], tasks: [
+    { id: 'read', operation: 'read', paths: ['README.md'], depends_on: [] },
+    { id: 'edit', operation: 'edit', paths: ['README.md'], depends_on: [] },
+  ] }), /requested_file_dependency_mismatch/);
+  const four = S.extract('Task A: Read fixture.txt. Task B: Inspect fixture.txt. Task C: Make changes only to fixture.txt. Task D: Read fixture.txt.');
+  assert.deepEqual(four.stages.map(s => s.operation), ['read', 'read', 'edit', 'read']);
+  const tasks = S.seedTasks(four);
+  assert.equal(new Set(tasks.map(t => t.id)).size, 4);
+  S.assertProposal(four, { files: ['fixture.txt'], tasks });
+});
+
+test('mutation refinement neither duplicates explicit targets nor borrows future reads', () => {
+  for (const text of ['Read A.md and fix typos in B.md.', 'Read A.md and implement corrections in B.md.']) {
+    assert.deepEqual(S.extract(text).stages, [
+      { operation: 'read', path: 'A.md' }, { operation: 'edit', path: 'B.md' },
+    ]);
+  }
+  assert.deepEqual(S.extract('Read A.md and fix typos, then read A.md.').stages, [
+    { operation: 'read', path: 'A.md' }, { operation: 'edit', path: 'A.md' }, { operation: 'read', path: 'A.md' },
+  ]);
+  assert.throws(() => S.extract('Fix typos, then read A.md.'), /requested_file_operation_required/);
+  assert.throws(() => S.extract('Fix typos. Read the content in B.md.'), /requested_file_operation_required/);
+  const text = 'Read A.md and fix typos. Do not patch B.md.';
+  assert.deepEqual(S.extract(text).stages, [
+    { operation: 'read', path: 'A.md' }, { operation: 'edit', path: 'A.md' },
+  ]);
+});
+

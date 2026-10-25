@@ -154,8 +154,11 @@ function sealedOperations(instruction, requested) {
     .replace(/\b(?:don't|never|without)\s+(?:edit|modify|write|change|fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b/gi, ' ')
     .replace(/\b(?:fix|patch|implement)\s+nothing\b/gi, ' ')
     .replace(/\bread[- ]only\b/gi, ' ');
-  const mutationCue = /\b(?:edit|change|modify|write|append|replace|update|rewrite|fix|patch|implement)\b/i.test(positive);
-  return readOnlyCue && !mutationCue ? ['read'] : ['read', 'edit'];
+  const mutations = /\b(?:edits?|editing|change|modify|write|append|replace|update|rewrite|fix|patch|implement|make\s+changes)\b/gi;
+  const mutationCue = [...positive.matchAll(mutations)].some(m => !requestedScope.negatedAt(positive, m.index));
+  const negatedMutation = [...text.matchAll(mutations)].some(m => requestedScope.negatedAt(text, m.index));
+  const emptyMutation = /\b(?:fix|patch|implement)\s+nothing\b/i.test(text);
+  return (readOnlyCue || negatedMutation || emptyMutation) && !mutationCue ? ['read'] : ['read', 'edit'];
 }
 
 // OpenCode sometimes wraps the proposal, returns an empty task list, or emits

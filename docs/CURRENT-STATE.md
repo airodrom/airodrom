@@ -1,5 +1,31 @@
 # Current state (2026-10-10)
 
+## PR #227 release closeout — SOURCE, NOT INSTALLED (2026-10-25)
+
+The installed service remains at `1a3a12e2bd21d18d68b6c6df9bde223733b86be4`.
+PR #227 contains the combined Cursor-only implementation, exact-file/stage admission,
+and Node/Undici security changes. Its previously qualified `4a93202` candidate
+needed further parser hardening: structured negated instructions could add edit
+scope, structured stages could be reordered, and explicit retargets could be
+duplicated. The follow-up preserves negation, source order and distinct stage
+identity, and refuses to infer an earlier mutation from a later read. Previously
+sealed requests are never rewritten to adopt the corrected interpretation.
+
+Production preflight found a healthy, idle managed controller with no unresolved
+run blockers or held/quarantined leases. It still uses the old Node process image;
+the recorded Node executable is absent from disk after the host runtime upgrade.
+An unchanged service configuration therefore is not yet a validated restart or
+rollback procedure. Preserve the live controller until an authorized managed
+cutover qualifies executable pins, service ownership and a current checkpoint.
+
+The Self-Repair Acceptance enrollment does not have a matching standing Cursor
+grant and currently allows only two assignments. Other repository grants cannot
+authorize the four-stage canary. The installed Cursor version is also unqualified.
+No merge, installation, live four-stage correction, Acceptance or Settlement is
+claimed. See [the release procedure](operations/CURSOR-AUTONOMY-RELEASE.md) and
+the exact-head validation attached to [PR #227](https://github.com/airodrom/airodrom/pull/227).
+Earlier dated implementation and rollout entries below are historical evidence.
+
 ## Cursor execution decision authority — SOURCE (2026-10-23)
 
 - **Cause (Mission `63385742-6877-4320-9dc4-956b3af05c87` / ChatGPT `chatgpt_post224_scheduler_e2e_20261023_a` / dispatch `0f6964ab…`):** READY admit succeeded; first Cursor assignment queued; `specialist-gateway.select` failed `cognitive_worker_unqualified:cursor` with empty route and zero runs while the agent registry could still show Cursor available. Root cause: select equated `!observation.available` with cognitive ineligibility, lost the readiness reason, permanently blocked, and the code was an unregistered `unknown_blocker`.
