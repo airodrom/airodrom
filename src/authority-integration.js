@@ -45,7 +45,19 @@ class AuthorityRuntime {
       // prose still cross the ordinary secret scanner; persisted bytes stay exact.
       return {...envelope,workspace:path.join(b.tasks.root,'host-task-id','workspace')};
     }
-    if(!c)return envelope;
+    if(!c){
+      const nonce=envelope.contract?.identity?.idempotency_key;
+      const handoff=typeof nonce==='string'&&/^handoff:(operator|mcp:.+):([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.exec(nonce);
+      if(envelope.work_template && handoff){
+        const request=(owner,key)=>b.controlStore.db.prepare('SELECT state,result FROM cp_requests WHERE owner=? AND request_id=?').get(owner,key);
+        const bound=(r,key)=>r && (r.state==='running'&&r.result===null || r.state==='settled'&&JSON.parse(r.result)?.[key]===m.id);
+        if(!bound(request(handoff[1],handoff[2]),'mission_id') || !bound(request(m.owner,nonce),'id'))throw Error('Host handoff scan binding changed');
+        // Keep the authenticated principal visible to scanning; only its bound
+        // request UUID is opaque. Never rewrite the durable idempotency key.
+        return {...envelope,contract:{...envelope.contract,identity:{...envelope.contract.identity,idempotency_key:'handoff:'+handoff[1]+':host-request-id'}}};
+      }
+      return envelope;
+    }
     const C=require('./cognitive-contracts'),e=C.parse('RequestEnvelope',c.envelope),sealed=C.parse('SealedMissionContract',c.sealed);
     const record=b.zeroSetupWork.read(e.request_id),project=envelope.contract?.project;
     if(!record || canonicalHash(record.cognitive?.envelope)!==canonicalHash(e) || record.workspace!==envelope.workspace

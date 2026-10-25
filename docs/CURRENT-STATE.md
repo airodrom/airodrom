@@ -18,6 +18,9 @@ Full regression also exposed a generated conversation workspace UUID that matche
 the payment-card detector. The host now recognizes only the exact UUID segment
 bound to the durable conversation/task and canonical private workspace. Parent
 paths, arbitrary paths and free text remain scanned; persisted scope is unchanged.
+The same collision in a template handoff idempotency key is recognized only when
+both durable request records bind to that exact Mission. The principal remains
+scanned and the original key is retained, including across idempotent replay.
 
 Production preflight found a healthy, idle managed controller with no unresolved
 run blockers or held/quarantined leases. It still uses the old Node process image;

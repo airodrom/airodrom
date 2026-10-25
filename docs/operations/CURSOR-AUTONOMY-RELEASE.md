@@ -19,6 +19,9 @@ Regression also reproduced a conversation workspace UUID matching the payment-ca
 detector. Its scan-only coordinate view requires an exact canonical Mission,
 durable task binding and real host-owned workspace path. It masks only the generated
 UUID segment, retaining parent-path and prose scanning and original persisted bytes.
+Template handoff request UUIDs use the same narrow treatment only after both
+durable request records bind to the exact Mission. Principal text remains scanned;
+standalone keys and mismatched bindings remain rejected, and replay identity stays exact.
 
 Remote main and the installed source remain `1a3a12e`. Hosted candidate CI is
 manually disabled and the remote branch currently requires no checks or reviews;
