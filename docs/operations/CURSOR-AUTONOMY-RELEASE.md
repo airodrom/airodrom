@@ -2,6 +2,22 @@
 
 This procedure integrates ADRs [0064](../adr/0064-preventive-policy-diagnostics.md) and [0065](../adr/0065-cursor-only-routine-autonomy.md). It is a release contract, not a record of installation or owner authorization.
 
+## Observed release boundary (2026-10-25 closeout)
+
+PR #227 tip is `b703c0bef831111db7d4726b5a489f337698986e` (security fail-closed
+`5c05d8d` plus SBOM Undici dependency-ref hygiene). Remote main and the
+installed source remain `1a3a12e`. Operator directed omission of a full
+`npm test` suite on `5c05d8d`/`b703c0b`; reuse the prior complete suite on
+`a16715b` (2,693 pass / 0 fail / 4 optional skips) plus targeted exact-head
+suites (67 admission/boundary + 3 Undici security). Independent Security and
+Bugbot reviews found no blocking findings after the sensitive-file staging
+fix. Immutable stage: `~/.airodrom/activation/staged-b703c0b-no-cutover`.
+Node rollback is isolated-qualified against Node 22.23.4 for install
+`1a3a12e`; LaunchAgent/pins still record the missing `22.23.3_3` path and
+were not mutated. Live four-stage ChatGPT canary remains blocked: Self-Repair
+Acceptance lacks a matching standing Cursor grant and four-assignment ceiling.
+Merge, managed cutover, grant issuance and live canary stay owner-gated.
+
 ## Observed release boundary (2026-10-25)
 
 PR #227 remains the release vehicle; #228 is included. The earlier full suite on
