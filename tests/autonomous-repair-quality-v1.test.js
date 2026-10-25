@@ -1,184 +1,27 @@
 'use strict';
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const { randomUUID } = require('node:crypto');
-const { fixture } = require('./fixtures/mission-fixture.cjs');
-const { runtime } = require('./fixtures/opencode-fixture.cjs');
-
-async function setup(t) {
-  const f = await fixture(t, { opencode: runtime(t).options });
-  f.bridge.missionAuthority.initializeOperatorKey();
-  const project = f.bridge.projects.listProjects({ status: 'active' })[0];
-  const goal = f.bridge.projects.summary(project.projectId).goals.find(g => g.status === 'active')
-    || f.bridge.projects.createGoal({ projectId: project.projectId, name: 'Repair quality ' + randomUUID() });
-  f.seed = { project_id: project.projectId, goal_id: goal.goalId };
-  f.policy = f.bridge.developerAutonomy.enroll({
-    alias: 'repair-quality',
-    repository: f.repo,
-    project_id: f.seed.project_id,
-    goal_id: f.seed.goal_id,
-    workflows: ['routine_edit', 'repair'],
-    budgets: { max_repairs: 1, max_concurrent_missions: 1, grant_ttl_minutes: 60, max_files: 4, max_worktrees: 8, max_runtime_hours: 1, max_disk_mb: 256 },
-    workers: ['opencode'],
-    duration_days: 7,
-    confirmed: true,
-    diff_check: 'diff-check',
-    default_tests: ['fixture-test']
-  }, 'operator');
-  return f;
-}
-
-function authorize(f, extra = {}) {
-  return f.bridge.developerAutonomy.authorizeRoutine({
-    policy_id: f.policy.policy_id,
-    request_id: randomUUID(),
-    objective: 'Leave the approved fixture unchanged',
-    allowed_files: ['fixture.txt'],
-    workflow: 'routine_edit',
-    criteria: [{ id: 'expected-file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }],
-    repair_budget: 1,
-    ...extra
-  }, 'operator');
-}
-
-function release(f, ids) {
-  for (const id of ids) {
-    try { f.bridge.missions.cancel(id, { request_id: randomUUID() }); } catch { /* already terminal */ }
-  }
-}
-
-function repairsOf(f, parentId) {
-  return f.bridge.controlStore.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").all(parentId);
-}
-
-test('one preauthorized repair passes host verification and leaves Acceptance pending', async t => {
-  const f = await setup(t), b = f.bridge;
-  const auth = authorize(f);
-  const parent = b.missions.create(auth.mission_input, 'operator');
-  b.missions.dispatch(parent.id, { request_id: randomUUID() });
-  const failed = await f.settle(parent.id, 'needs_rework');
-  assert.equal(failed.verifications[0].result, 'failed');
-  assert.equal(failed.acceptance.length, 0);
-  const parentVerification = failed.verifications[0].id;
-  const rows = repairsOf(f, parent.id);
-  assert.equal(rows.length, 1);
-  const child = await f.settle(rows[0].id);
-  assert.equal(child.state, 'awaiting_acceptance');
-  assert.equal(child.acceptance.length, 0);
-  assert.ok(['passed', 'operator_review'].includes(child.verifications[0].result));
-  assert.match(child.envelope.objective, /REPAIR CONTEXT/);
-  assert.match(child.envelope.objective, /diff check/);
-  assert.match(child.envelope.objective, /Remaining automatic repair budget after this attempt: 0/);
-  assert.equal(fs.readFileSync(child.envelope.workspace + '/fixture.txt', 'utf8'), 'beta\n');
-  const again = require('../src/autonomous-repair').considerVerifiedRepair(b, parent.id);
-  assert.equal(again.action, 'duplicate');
-  assert.equal(again.reason, 'repair_already_dispatched');
-  assert.equal(repairsOf(f, parent.id).length, 1);
-  assert.equal(b.missions.detail(parent.id).verifications[0].id, parentVerification);
-  assert.equal(b.missions.detail(parent.id).verifications[0].result, 'failed');
-  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_acceptances').get().n, 0);
+// ADR 0065 corrections are distinct Cursor assignments in the same sealed Mission.
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto');
+const {setup:base}=require('./fixtures/cursor-autonomy-fixture.cjs');
+async function setup(t,options={}){const f=await base(t,{repairs:1,manual:true,...options});f.plan=f.plan.slice(0,1);return f;}
+test('correction receives failed host checks as untrusted context and preserves both attempts',async t=>{
+ const f=await setup(t);f.wrongFirst=true;const p=await f.ask({review:false}),m=await f.settle(p.mission_id),a=m.specialists.assignments[0].attempts;
+ assert.equal(a.length,2);assert.notEqual(a[0].run_id,a[1].run_id);assert.equal(a[0].verification.status,'failed');assert.equal(a[1].verification.status,'passed');assert.equal(m.acceptance.length,0);
+ const repair=f.calls[1].input.repair_context;assert.equal(repair.worker_run_id,a[0].run_id);assert.equal(repair.untrusted,true);assert.equal(repair.authority,false);assert.ok(repair.host_checks.some(c=>c.id==='task:fixture-test'&&c.status==='failed'));
+ assert.deepEqual(f.calls[0].input.assignment.paths,f.calls[1].input.assignment.paths);assert.equal(f.calls[1].input.assignment.worker,'cursor');assert.equal(f.evaluations[1].specialist_return.remaining_repair_budget,0);
+ await f.bridge.missions.tick();assert.equal(f.calls.length,2);assert.equal(f.bridge.controlStore.listMissions().length,1);
 });
-
-test('budget zero, expired authority, duplicate dispatch, failed repair, and unauthorized writes stay closed', async t => {
-  const f = await setup(t), b = f.bridge;
-  const zero = authorize(f, { repair_budget: 0, objective: 'Leave the approved fixture unchanged for budget zero' });
-  const blocked = b.missions.create(zero.mission_input, 'operator');
-  b.missions.dispatch(blocked.id, { request_id: randomUUID() });
-  const denied = await f.settle(blocked.id, 'needs_rework');
-  assert.equal(denied.verifications[0].result, 'failed');
-  assert.equal(repairsOf(f, blocked.id).length, 0);
-  const skipped = require('../src/autonomous-repair').considerVerifiedRepair(b, blocked.id);
-  assert.equal(skipped.reason, 'repair_budget');
-  const withheld = b.ledger.list({ missionId: blocked.id, limit: 50 }).events.find(event => event.event_type === 'mission.repair_withheld');
-  assert.equal(withheld.metadata.reason, 'repair_budget');
-  assert.equal(withheld.metadata.authority, false);
-  assert.equal(repairsOf(f, blocked.id).length, 0);
-  release(f, [blocked.id]);
-
-  const expiredAuth = authorize(f, { objective: 'Leave the approved fixture unchanged for expiry' });
-  const originalVerify = b.missions.verifier.verify.bind(b.missions.verifier);
-  b.missions.verifier.verify = async (...args) => {
-    const result = await originalVerify(...args);
-    b.controlStore.db.prepare('UPDATE cp_developer_autonomy_grants SET expires_at=? WHERE grant_id=?').run(1, expiredAuth.grant.grant_id);
-    return result;
-  };
-  const expiring = b.missions.create(expiredAuth.mission_input, 'operator');
-  b.missions.dispatch(expiring.id, { request_id: randomUUID() });
-  const expired = await f.settle(expiring.id, 'needs_rework');
-  b.missions.verifier.verify = originalVerify;
-  assert.equal(expired.verifications[0].result, 'failed');
-  assert.equal(repairsOf(f, expiring.id).length, 0);
-  assert.equal(require('../src/autonomous-repair').considerVerifiedRepair(b, expiring.id).reason, 'authority_expired');
-  release(f, [expiring.id]);
-
-  const failedRepair = authorize(f, {
-    objective: 'Leave the approved fixture unchanged',
-    criteria: [{ id: 'expected-file', type: 'exact_file', path: 'fixture.txt', content: 'gamma\n' }]
-  });
-  const parent = b.missions.create(failedRepair.mission_input, 'operator');
-  b.missions.dispatch(parent.id, { request_id: randomUUID() });
-  const first = await f.settle(parent.id, 'needs_rework');
-  const evidence = first.verifications[0].id;
-  const childRows = repairsOf(f, parent.id);
-  assert.equal(childRows.length, 1);
-  const child = await f.settle(childRows[0].id, 'needs_rework');
-  assert.equal(child.verifications[0].result, 'failed');
-  assert.equal(child.acceptance.length, 0);
-  assert.equal(repairsOf(f, child.id).length, 0);
-  assert.equal(b.missions.detail(parent.id).verifications.find(v => v.id === evidence).result, 'failed');
-  assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_dispatches WHERE mission_id=?").get(child.id).n, 1);
-  release(f, [child.id, parent.id]);
-
-  const originalDispatch = b.opencodeAdapter.dispatch.bind(b.opencodeAdapter);
-  b.opencodeAdapter.dispatch = async (request) => {
-    const output = await originalDispatch(request);
-    const mission = b.controlStore.getMission(request.task.controlPlaneMissionId);
-    if (mission?.envelope?.repair_of) output.changes.push({ path: 'outside.txt', content: 'no\n', preimage_sha256: '0'.repeat(64) });
-    return output;
-  };
-  const outside = authorize(f, { objective: 'Leave the approved fixture unchanged for an unauthorized write' });
-  const outsideParent = b.missions.create(outside.mission_input, 'operator');
-  b.missions.dispatch(outsideParent.id, { request_id: randomUUID() });
-  const outsideFailed = await f.settle(outsideParent.id, 'needs_rework');
-  const outsideChild = repairsOf(f, outsideParent.id);
-  assert.equal(outsideChild.length, 1);
-  const stopped = await f.settle(outsideChild[0].id, 'needs_rework');
-  assert.equal(fs.existsSync(stopped.envelope.workspace + '/outside.txt'), false);
-  assert.equal(b.missions.detail(outsideParent.id).verifications[0].id, outsideFailed.verifications[0].id);
-  assert.equal(b.missions.detail(outsideParent.id).acceptance.length, 0);
-  assert.equal(stopped.acceptance.length, 0);
+for(const repairs of [0,1])test('persistent incorrect Cursor result stops at repair ceiling '+repairs,async t=>{
+ const f=await setup(t,{repairs});f.cursorMode='wrong';const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+ assert.equal(f.calls.length,repairs+1);assert.equal(m.specialists.repair_attempts,repairs);assert.equal(m.acceptance.length,0);assert.ok(m.specialists.assignments[0].attempts.every(a=>a.verification.status==='failed'));
+ await f.bridge.missions.tick();await f.reopen({beforeResume:()=>f.bindAdapter()});await f.bridge.missions.tick();assert.equal(f.calls.length,repairs+1);
 });
-
-test('an interrupted repair dispatch leaves no mission and a retry dispatches once', async t => {
-  const f = await setup(t), b = f.bridge;
-  const repair = require('../src/autonomous-repair');
-  let interrupt = true;
-  const original = b.missions.dispatch.bind(b.missions);
-  b.missions.dispatch = (id, input, owner) => {
-    const mission = b.controlStore.getMission(id);
-    if (interrupt && mission?.envelope?.repair_of) throw Error('dispatch_interrupted');
-    return original(id, input, owner);
-  };
-  const auth = authorize(f);
-  const parent = b.missions.create(auth.mission_input, 'operator');
-  b.missions.dispatch(parent.id, { request_id: randomUUID() });
-  const failed = await f.settle(parent.id, 'needs_rework');
-  assert.equal(failed.verifications[0].result, 'failed');
-  assert.equal(repairsOf(f, parent.id).length, 0);
-  const denied = b.ledger.list({ missionId: parent.id, limit: 80 }).events.filter(event => event.event_type === 'mission.repair_withheld');
-  assert.equal(denied.at(-1).metadata.reason, 'dispatch_interrupted');
-  assert.equal(denied.at(-1).metadata.action, 'failed');
-  interrupt = false;
-  const retried = repair.considerVerifiedRepair(b, parent.id);
-  assert.equal(retried.action, 'dispatched');
-  assert.equal(repairsOf(f, parent.id).length, 1);
-  const childId = repairsOf(f, parent.id)[0].id;
-  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(childId).n, 1);
-  const repeated = repair.considerVerifiedRepair(b, parent.id);
-  assert.equal(repeated.action, 'duplicate');
-  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(childId).n, 1);
-  assert.equal(b.ledger.list({ missionId: parent.id, limit: 80 }).events.filter(event => event.event_type === 'mission.repair_dispatched').length, 1);
-  assert.equal(b.missions.detail(parent.id).verifications[0].id, failed.verifications[0].id);
-  assert.equal(b.missions.detail(parent.id).acceptance.length, 0);
+test('revocation after first failed verification prevents a corrective assignment',async t=>{
+ const f=await setup(t);f.wrongFirst=true;const evaluate=f.evaluate;
+ f.evaluate=o=>{f.bridge.developerAutonomy.revoke({policy_id:f.policy.policy_id,policy_hash:f.policy.policy_hash,confirmed:true},'operator');return evaluate(o);};
+ const p=await f.ask({review:false});let m;for(let i=0;i<1000;i++){await f.bridge.missions.tick();m=f.bridge.missions.detail(p.mission_id);if(['blocked','needs_rework'].includes(m.state))break;await new Promise(r=>setTimeout(r,20));}
+ assert.ok(['blocked','needs_rework'].includes(m.state),m.state);assert.equal(f.calls.length,1);assert.equal(m.acceptance.length,0);assert.equal(m.specialists.assignments[0].attempts.length,1);
+});
+test('worker attempts outside declared files cannot produce an accepted correction',async t=>{
+ const f=await setup(t);f.cursorMode='outside';const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+ assert.equal(m.acceptance.length,0);assert.equal(f.calls.length,1);assert.equal(fs.existsSync(path.join(m.envelope.workspace,'escaped.txt')),false);assert.equal(fs.readFileSync(path.join(m.envelope.workspace,'fixture.txt'),'utf8'),'alpha\n');
 });

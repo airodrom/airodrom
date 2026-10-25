@@ -177,52 +177,18 @@ test('cursor worker: cancellation aborts the run and verifies termination', asyn
   } finally { delete process.env.AIRODROM_CURSOR_FIXTURE_MODE; }
 });
 
-test('governed Cursor Mission: contract + disclosure + approval → sandboxed worker → independent host verification; ungoverned Cursor never routes', async t => {
+test('direct legacy Cursor Mission cannot bypass sealed OpenCode planning, even with owner approval', async t => {
   const f = await fixture(t, { defaultRuntime: 'opencode' });
-  assert.equal(f.bridge.hostExecutionPolicy.cursorDisabled(), true);
   f.bridge.hostExecutionPolicy.enableCursor({ confirmed: true, request_id: randomUUID() }, 'operator');
   f.bridge.cursorWorker = new CursorWorker(f.bridge, { fixtureExecutable: FIXTURE });
-  const ws = f.repo;
-  const authority = { level: 'development', permissions: { repository: ['read', 'write'], runtime: ['diagnostic', 'test'], network: ['internet', 'localhost'], secrets: [], data: ['read', 'workspace_write'] }, filesystem: { read: [ws], write: [path.join(ws, 'fixture.txt')] }, expiresAt: Date.now() + 60 * 60 * 1000 };
-  const disclosure = { permissions: { external_disclosure: { authorized: true, providers: ['cursor'], purpose: 'Disposable Cursor qualification fixture' }, network: { mode: 'allowlist', allow: CURSOR_HOSTS } }, budget: { risk_class: 'fixture' } };
-  // Ungoverned: a Cursor Mission without contract/disclosure never routes to Cursor.
-  const ungoverned = f.create({ preferred_agent: 'cursor', fallback_agents: [], objective: 'Ungoverned ' + randomUUID().slice(0, 8), authority, dispatch_policy: { privacy: 'cloud_allowed', providers: ['cursor_runtime'], billing_classes: ['subscription'], max_attempts: 1 } });
-  assert.equal(ungoverned.envelope.contract, undefined);
-  // Governed: contract with disclosure, approval bound, dispatch runs the sandboxed worker.
-  process.env.AIRODROM_CURSOR_FIXTURE_MODE = 'edit';
-  try {
-    const m = f.create({ preferred_agent: 'cursor', fallback_agents: [], objective: 'Change fixture.txt from alpha to beta via governed Cursor ' + randomUUID().slice(0, 8), authority, contract: disclosure, dispatch_policy: { privacy: 'cloud_allowed', providers: ['cursor_runtime'], billing_classes: ['subscription'], max_attempts: 1 } });
-    assert.equal(m.envelope.contract.permissions.external_disclosure.authorized, true);
-    assert.equal(m.envelope.contract.execution.sandbox, 'sandbox-exec');
-    // No approval yet: dispatch is refused before subscription use.
-    assert.throws(() => f.bridge.missions.dispatch(m.id, { request_id: randomUUID() }), /BLOCKED_SPEND_AUTHORIZATION/);
-    const approval = f.bridge.missionApprovals.issue({ request_id: 'cursor-approve-' + m.id, channel: 'control_center', contract: m.envelope.contract, confirmed: true, subscription_execution: { provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 1, max_runtime_ms: 60000 } }, 'operator');
-    assert.equal(approval.external_disclosure, true);
-    assert.deepEqual(approval.disclosure_providers, ['cursor']);
-    f.bridge.missionApprovals.bind(approval.approval_id, m.id, 'operator');
-    f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
-    const done = await f.settle(m.id, 'awaiting_acceptance');
-    assert.equal(Buffer.from(fs.readFileSync(path.join(ws, 'fixture.txt'))).toString('hex'), '626574610a');
-    const cursorRuns = done.runs.filter(r => r.agent_id === 'cursor');
-    assert.equal(cursorRuns.length, 1, 'exactly one cursor run: ' + JSON.stringify(done.runs.map(r => [r.agent_id, r.state, r.result ? Object.keys(r.result) : null])));
-    const run = cursorRuns[0];
-    assert.equal(run.termination_verified, 1);
-    assert.equal(run.result.cursor_provenance.sandbox, 'sandbox-exec');
-    assert.ok(done.verifications[0].evidence.some(c => c.id === 'expected_file' && c.status === 'passed'));
-    assert.ok(done.verifications[0].evidence.some(c => c.id === 'task:fixture-test' && c.status === 'passed'));
-    assert.ok(done.verifications[0].evidence.some(c => c.id === 'security:secret_scan' && c.status === 'passed'));
-    assert.equal(done.acceptance.length, 0, 'Acceptance remains owner-only');
-    const dispatch = f.bridge.controlStore.db.prepare('SELECT route FROM cp_dispatches WHERE mission_id=?').get(m.id);
-    assert.equal(JSON.parse(dispatch.route).selected, 'cursor');
-    // Trace events are durable, redacted and provenance-tagged.
-    const traces = f.bridge.ledger.list({ missionId: m.id, limit: 200 }).events.filter(e => e.event_type === 'worker.trace');
-    assert.ok(traces.length >= 3);
-    assert.ok(traces.every(e => ['HOST_MEDIATED', 'WORKER_REPORTED', 'SANDBOX_OBSERVED'].includes(e.metadata.provenance)));
-    assert.ok(traces.some(e => e.metadata.kind === 'worker.exited' && e.metadata.termination_verified === true));
-  } finally { delete process.env.AIRODROM_CURSOR_FIXTURE_MODE; }
-  // Routing: the plain ungoverned Mission is rejected by the router with the honest reason.
-  f.bridge.missions.dispatch(ungoverned.id, { request_id: randomUUID() });
-  const blocked = await f.settle(ungoverned.id, 'blocked');
-  assert.match(blocked.reason, /worker_execution_unqualified|no_compatible_available_agent|requires a qualified bounded native adapter/);
-  assert.equal(blocked.runs.filter(r => r.agent_id === 'cursor').length, 0, 'ungoverned Cursor never executed');
+  f.bridge.missionAuthority.initializeOperatorKey();
+  const ws=f.repo;
+  const authority={level:'development',permissions:{repository:['read','write'],runtime:['diagnostic','test'],network:['internet','localhost'],secrets:[],data:['read','workspace_write']},filesystem:{read:[ws],write:[path.join(ws,'fixture.txt')]},expiresAt:Date.now()+3600000};
+  const m=f.create({preferred_agent:'cursor',fallback_agents:[],authority,contract:{permissions:{external_disclosure:{authorized:true,providers:['cursor'],purpose:'Isolated regression'},network:{mode:'allowlist',allow:CURSOR_HOSTS}},budget:{risk_class:'fixture'}},dispatch_policy:{privacy:'cloud_allowed',providers:['cursor_runtime'],billing_classes:['subscription'],max_attempts:1}});
+  assert.throws(()=>f.bridge.missions.dispatch(m.id,{request_id:randomUUID()}),/BLOCKED_SPEND_AUTHORIZATION|CURSOR_PLANNING_REQUIRED/);
+  const approval=f.bridge.missionApprovals.issue({request_id:randomUUID(),channel:'control_center',contract:m.envelope.contract,confirmed:true,subscription_execution:{provider:'cursor',acknowledge_unknown_cost:true,max_invocations:1,max_runtime_ms:60000}},'operator');
+  f.bridge.missionApprovals.bind(approval.approval_id,m.id,'operator');
+  assert.throws(()=>f.bridge.missions.dispatch(m.id,{request_id:randomUUID()}),/CURSOR_PLANNING_REQUIRED/);
+  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_subscription_invocations').get().n,0);
+  assert.equal(fs.readFileSync(path.join(ws,'fixture.txt'),'utf8'),'alpha\n');
 });

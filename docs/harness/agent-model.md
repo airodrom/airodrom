@@ -1,7 +1,7 @@
 # Canonical agent model
 
-Cursor remains experimental; governed execution is disabled until independent qualification.
+Cursor is the exclusive implementation worker; governed execution still requires independent qualification and existing scoped authorization.
 
 See [architecture](../ARCHITECTURE.md) and the [runtime matrix](../RUNTIME-SUPPORT-MATRIX.md).
 
-OpenCode is the default primary execution runtime for new bounded general Missions. Airodrom owns typed plans and independent verification; Pi is removed and cannot receive or replay context.
+OpenCode plans and independently evaluates; Cursor implements and corrects within sealed scope. Airodrom owns authority, verification, Acceptance and Settlement. No implementation fallback is permitted.

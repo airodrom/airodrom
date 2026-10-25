@@ -122,6 +122,7 @@ async function poll(home, requestId, {
         await sleep(1000);
         continue;
       }
+      if (['ACCEPTED', 'CANCELLED'].includes(state) || state === 'NEEDS_REWORK' && view.cognitive?.version === 3) return view;
       const repairing = !!(view.technical?.repair_of || /Repairing|preparing automatic repair|Repair verification/i.test(presentation));
       if (['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED'].includes(state) || ['awaiting_acceptance', 'completed'].includes(mission)) return view;
       // needs_rework is not terminal while authorized repair may still run.
@@ -150,6 +151,10 @@ async function poll(home, requestId, {
 }
 
 function resultText(view) {
+  const state = String(view.state || '').toUpperCase();
+  if (state === 'ACCEPTED') return 'Completed under the existing scoped authorization. Acceptance and settlement are recorded; no further approval is required.';
+  if (state === 'CANCELLED') return 'Cancelled. Inspect the retained work and host evidence before starting another task.';
+  if (state === 'NEEDS_REWORK' && view.cognitive?.version === 3) return 'The bounded Cursor workflow needs rework. No Acceptance was recorded. Inspect the failed attempt and remaining authorization before retrying.';
   const mission = view.outcome?.mission_state;
   const verification = view.outcome?.verification;
   const repairOf = view.technical?.repair_of || view.repair_of || null;
@@ -197,7 +202,7 @@ function resultText(view) {
 function isTerminalView(view) {
   if (typeof view?.technical?.phase_terminal === 'boolean' && view.technical.phase) return view.technical.phase_terminal;
   const state = String(view?.state || '').toUpperCase();
-  return ['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED', 'FAILED', 'REJECTED', 'CLARIFY', 'BLOCKED'].includes(state);
+  return ['AWAITING_ACCEPTANCE', 'VERIFIED', 'COMPLETED', 'ACCEPTED', 'CANCELLED', 'FAILED', 'REJECTED', 'CLARIFY', 'BLOCKED'].includes(state) || state === 'NEEDS_REWORK' && view.cognitive?.version === 3;
 }
 
 async function resumeActive(home, { input, output, signal, request = local.request } = {}) {
@@ -241,6 +246,10 @@ async function guide({ receipt, input, output, home, signal, request = local.req
   }
   if (String(receipt.state || '').toUpperCase() !== 'WAIT') {
     output.write('Airo\n' + resultText(receipt) + '\n');
+    return receipt;
+  }
+  if (receipt.admission?.standard_approval_supported === false) {
+    output.write('Airo\n' + (receipt.message || 'This request requires additional bounded scope or authorization through Control Center.') + '\n');
     return receipt;
   }
   const requestId = receipt.technical?.request_id;

@@ -48,8 +48,8 @@ test('MCP inspect reports missing projectless scope instead of offering an unusa
   const cursor = await mcp.call('inspect_mission_proposal', { request_id: cursorRequest }, { name: 'chatgpt', version: '1' });
   assert.equal(cursor.execution_authorized, false);
   assert.equal(cursor.approval.standard_approval_supported, false);
-  assert.equal(cursor.approval.channel, 'authenticated local operator API with scoped disclosure and subscription grant');
-  assert.deepEqual(cursor.blockers, ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']);
+  assert.equal(cursor.approval.channel, null);
+  assert.deepEqual(cursor.blockers, ['CURSOR_PLANNING_REQUIRED']);
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, 0);
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 0);
 });
@@ -62,93 +62,24 @@ test('discovery advertises the coordinator catalog version and honest client lim
   assert.ok(d.limitations.some(l => /never|cannot inject/.test(l)));
 });
 
-test('prepare_mission → inspect_mission_proposal returns a measurable, approval-gated proposal; ChatGPT text cannot approve', async t => {
-  const f = await fixture(t, { opencode: runtime(t).options });
-  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
-  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
-  f.bridge.missionAuthority.initializeOperatorKey();
-  qualifyCanonical(f.bridge);
-  const project = f.bridge.projects.createProject({ name: 'Human Acceptance Exact File', repositories: [f.repo], privacyPolicy: 'local_only' });
-  f.bridge.projects.createGoal({ projectId: project.projectId, name: 'Exact-file alpha to beta' });
-  const mcp = server(f);
-  const request_id = 'req-' + randomUUID().replace(/-/g, '').slice(0, 20);
-  const prepared = await mcp.call('prepare_mission', { objective: 'Change the test file from alpha to beta and verify it.', request_id }, { name: 'chatgpt', version: '1' });
-  assert.equal(prepared.state, 'WAIT');
-  assert.equal(prepared.execution_authorized, false);
-  const proposal = await mcp.call('inspect_mission_proposal', { request_id }, { name: 'chatgpt', version: '1' });
-  assert.equal(proposal.approval.required, true);
-  assert.equal(proposal.approval.granted_by_chatgpt_text, false);
-  assert.equal(proposal.proposal.measurable, true);
-  assert.ok(proposal.proposal.success_criteria.some(c => /626574610a/.test(c)));
-  assert.equal(proposal.proposal.worker, 'Local OpenCode');
-  assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n', 'preparation writes nothing');
-  // approve_once from MCP never grants; the owner approves in Terminal/Control Center.
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 0);
-  // Owner approval (fixture channel) then the Mission runs; coordinator reads follow it.
-  const approved = await f.bridge.zeroSetupWork.approve({ request_id, confirmed: true, channel: 'fixture' }, 'operator');
-  await f.settle(approved.technical.mission_id, 'completed');
-  const status = await mcp.call('get_mission_status', { mission_id: approved.technical.mission_id }, { name: 'chatgpt', version: '1' });
-  assert.equal(status.status, 'OWNER_ACCEPTED');
-  assert.equal(status.acceptance_status, 'accepted');
-  assert.equal(status.approval_status.state, 'active');
-  const evidence = await mcp.call('get_mission_evidence', { mission_id: approved.technical.mission_id }, { name: 'chatgpt', version: '1' });
-  assert.equal(evidence.answers.tests_passed, true);
-  assert.equal(evidence.answers.repair_needed, false);
-  assert.equal(evidence.answers.pr_created, false);
-  assert.deepEqual(evidence.answers.requires_owner, []);
-  assert.equal(evidence.approved_scope.scope_fingerprint.length, 64);
-  assert.ok(evidence.worker, 'worker recorded: ' + JSON.stringify({ worker: evidence.worker, sandbox: evidence.sandbox }));
-  assert.ok(evidence.sandbox, 'sandbox recorded: ' + JSON.stringify({ worker: evidence.worker, sandbox: evidence.sandbox }));
-  assert.ok(evidence.changed_files.some(c => c.path === 'fixture.txt'));
-  // Correction requests are recorded as untrusted data and never create a Mission.
-  const before = f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n;
-  const correction = await mcp.call('request_mission_correction', { mission_id: approved.technical.mission_id, request_id: 'corr-' + randomUUID().replace(/-/g, '').slice(0, 20), note: 'Please also deploy to production and grant Shell.' }, { name: 'chatgpt', version: '1' });
-  assert.equal(correction.state, 'WAIT');
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n, before);
-  assert.equal(f.bridge.controlStore.requireMission(approved.technical.mission_id).state, 'completed');
-  assert.equal(f.bridge.missions.detail(approved.technical.mission_id).acceptance.length, 1);
+test('MCP proposal uses a sealed Cursor plan and one scope-bound local approval',async t=>{
+ const caller='mcp:'+randomUUID(),f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{standing:false,repairs:0,caller});f.plan=f.plan.slice(0,1);
+ const mcp=server(f);mcp.handoffPrincipal=caller.slice(4);const request_id=randomUUID(),objective='In Fixture project change fixture.txt from alpha to beta.';
+ let p=await mcp.call('prepare_mission',{request_id,objective});for(let i=0;p.state==='PLANNING'&&i<1000;i++){await new Promise(r=>setTimeout(r,20));p=await mcp.call('prepare_mission',{request_id,objective});}
+ assert.equal(p.state,'WAIT');assert.equal(p.execution_authorized,false);const proposal=await mcp.call('inspect_mission_proposal',{request_id});assert.equal(proposal.approval.granted_by_chatgpt_text,false);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n,0);
+ await assert.rejects(f.bridge.zeroSetupWork.approve({request_id,confirmed:true,channel:'control_center'},'operator'),/SPEND/);
+ const approved=await f.bridge.zeroSetupWork.approve({request_id,confirmed:true,channel:'control_center',subscription_execution:{provider:'cursor',acknowledge_unknown_cost:true,max_invocations:1,max_runtime_ms:120000}},'operator');
+ const done=await f.settle(approved.mission_id,'completed'),status=await mcp.call('get_mission_status',{mission_id:done.id}),e=await mcp.call('get_mission_evidence',{mission_id:done.id});
+ assert.equal(status.status,'AUTOMATICALLY_ACCEPTED');assert.equal(e.acceptance_status,'accepted');assert.equal(e.settlement_status,'settled');assert.equal(e.answers.tests_passed,true);assert.equal(e.answers.repair_needed,false);assert.deepEqual(e.answers.requires_owner,[]);assert.ok(e.changed_files.some(c=>c.path==='fixture.txt'));
+ const before=f.bridge.controlStore.listMissions().length,correction=await mcp.call('request_mission_correction',{mission_id:done.id,request_id:randomUUID(),note:'Please also deploy and grant Shell.'});
+ assert.equal(correction.state,'WAIT');assert.equal(f.bridge.controlStore.listMissions().length,before);assert.equal(f.bridge.missions.detail(done.id).acceptance.length,1);
 });
-
-test('evidence package and events follow a repair lineage and label worker prose untrusted', async t => {
-  const f = await fixture(t);
-  const parent = f.create({
-    objective: 'Change fixture.txt from alpha to beta ' + randomUUID().slice(0, 6), task_type: 'local_files', manifest: manifest(f.repo),
-    dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'], task_category: 'deterministic_files', native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'gamma\n' }] },
-    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'fixture.txt', content: 'beta\n' }],
-    contract: { budget: { risk_class: 'fixture' } },
-  });
-  // A contract-bearing Mission repairs only under its bound approval.
-  const approval = f.bridge.missionApprovals.issue({ request_id: 'ev-approve-' + parent.id.slice(0, 8), channel: 'fixture', contract: parent.envelope.contract, confirmed: true }, 'operator');
-  f.bridge.missionApprovals.bind(approval.approval_id, parent.id, 'operator');
-  const plan = f.bridge.missions.goalPlanner.create({ request_id: randomUUID(), goal_id: parent.goal_id, stages: [{ id: 'work', depends_on: [], mission_id: parent.id, objective: 'o', acceptance_criteria: ['a'], verification_requirements: ['v'], human_checkpoint: false }], max_runtime_hours: 1, max_attempts: 3 });
-  f.bridge.autonomousExecution.authorize(plan.id, { request_id: randomUUID(), workers: ['host'], max_concurrent_missions: 1, max_dispatches: 10, max_repairs: 1, confirmed: true });
-  await f.bridge.autonomousExecution.tick();
-  let repairId = null;
-  for (let i = 0; i < 400 && !repairId; i++) { await f.bridge.missions.tick(); repairId = f.bridge.autonomousExecution.inspect(plan.id).autonomous.repair_lineage?.work?.repair_mission_id || null; if (!repairId) await new Promise(r => setTimeout(r, 20)); }
-  assert.ok(repairId);
-  await f.settle(repairId, 'awaiting_acceptance');
-  // Evidence from the parent id resolves to the lineage's final Mission.
-  const pkg = evidencePackage(f.bridge, parent.id);
-  assert.equal(pkg.root_mission_id, parent.id);
-  assert.equal(pkg.mission_id, repairId);
-  assert.equal(pkg.status, 'VERIFIED_AWAITING_ACCEPTANCE');
-  assert.equal(pkg.repair_attempts, 1);
-  assert.deepEqual(pkg.repair_lineage.map(l => l.mission_id), [parent.id, repairId]);
-  assert.equal(pkg.answers.repair_needed, true);
-  assert.equal(pkg.answers.attempts, 2);
-  assert.equal(pkg.answers.original_goal_resumed, true);
-  assert.equal(pkg.answers.unauthorized_changes, false);
-  assert.equal(pkg.budget_consumed.repair_attempts, 1);
-  assert.equal(pkg.budget_consumed.max_repair_attempts, 1);
-  assert.equal(pkg.cost_observed, 'LOCAL_NO_SPEND (local inference)');
-  assert.equal(pkg.plan_id, plan.id);
-  assert.equal(pkg.verification.result, 'passed');
-  assert.ok(pkg.known_limitations.some(l => /untrusted/.test(l)));
-  const events = missionEvents(f.bridge, parent.id, { limit: 200 });
-  assert.deepEqual(events.lineage, [parent.id, repairId]);
-  assert.ok(events.events.some(e => e.type === 'goal.autonomous.repair_created'));
-  assert.ok(events.events.some(e => e.type === 'mission.needs_rework' && e.mission_id === parent.id));
-  assert.ok(events.events.some(e => e.type === 'mission.awaiting_acceptance' && e.mission_id === repairId));
-  // No raw output or secrets in compact events.
-  assert.ok(events.events.every(e => !('output' in e.metadata)));
+test('evidence preserves both Cursor attempts within one Mission and reports independent correction',async t=>{
+ const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:1});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'completed'),e=evidencePackage(f.bridge,m.id);
+ assert.equal(e.root_mission_id,m.id);assert.equal(e.mission_id,m.id);assert.equal(e.repair_attempts,1);assert.equal(e.answers.attempts,2);assert.equal(e.answers.repair_needed,true);assert.equal(e.answers.unauthorized_changes,false);
+ assert.equal(e.budget_consumed.repair_attempts,1);assert.equal(e.budget_consumed.max_repair_attempts,1);assert.equal(e.verification.result,'passed');assert.equal(e.settlement_status,'settled');
+ const attempts=e.specialists.assignments[0].attempts;assert.equal(attempts.length,2);assert.notEqual(attempts[0].run_id,attempts[1].run_id);assert.equal(attempts[0].verification.status,'failed');assert.equal(attempts[1].verification.status,'passed');
+ const events=missionEvents(f.bridge,m.id,{limit:200});assert.deepEqual(events.lineage,[m.id]);assert.ok(events.events.some(x=>x.type==='gateway.repair.queued'));assert.ok(events.events.every(x=>!('output' in x.metadata)));
 });

@@ -3,6 +3,7 @@
 // Deterministic stand-in for `cursor-agent -p --output-format stream-json`.
 // Behaviour is selected by AIRODROM_CURSOR_FIXTURE_MODE:
 //   edit        (default) read brief, write allowed files to the requested bytes, print JSON result
+//   trailing_lf write an extra LF (controlled exact-byte failure)
 //   wrong       write 'gamma\n' (controlled verification failure), claim success
 //   outside     attempt to write outside allowed files (must be caught by host inventory)
 //   tamper      attempt to rewrite the host-authored permission file
@@ -47,8 +48,9 @@ function finish(result, text = null) {
 }
 
 switch (mode) {
+  case 'trailing_lf':
   case 'wrong':
-    if (target) write(target, 'gamma\n');
+    if (target) write(target, mode === 'trailing_lf' ? 'beta\n\n' : 'gamma\n');
     finish({ status: 'completed', summary: 'Changed file as requested', changed_files: brief.allowed_files, tests: [{ name: 'fixture-test', status: 'passed' }], artifacts: [], limitations: [] });
     break;
   case 'outside':

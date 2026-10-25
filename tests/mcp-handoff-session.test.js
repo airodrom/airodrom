@@ -38,12 +38,12 @@ test('natural Cursor intake crosses authenticated HTTP MCP; missing grant, sessi
   const session = (await post('/api/mcp/session', {})).body.session_id;
   const prepared = await call(server.port, server.mcpToken, 'prepare_mission', args, session);
   assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
-  assert.equal(prepared.body.state, 'PREPARED');
+  assert.equal(prepared.body.state, 'BLOCKED');
   assert.equal(prepared.body.execution_authorized, false);
   assert.equal(prepared.body.presentation.worker, 'cursor');
   assert.deepEqual(prepared.body.presentation.files, ['alpha.txt', 'beta.txt']);
   assert.equal(prepared.body.presentation.measurable, true);
-  assert.deepEqual(prepared.body.blockers, ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']);
+  assert.deepEqual(prepared.body.blockers, ['CURSOR_PLANNING_REQUIRED']);
   const record = f.bridge.zeroSetupWork.read(request_id);
   t.after(() => fs.rmSync(record.workspace, { recursive: true, force: true }));
   assert.deepEqual(record.work_spec.files, [{ path: 'alpha.txt', content: 'alpha\n' }, { path: 'beta.txt', content: 'beta\n' }]);
@@ -51,7 +51,7 @@ test('natural Cursor intake crosses authenticated HTTP MCP; missing grant, sessi
   const approval = { request_id, confirmed: true, channel: 'control_center',
     subscription_execution: { provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 1, max_runtime_ms: 10000 } };
   assert.equal((await post('/api/assistant/zero-setup/approve', approval)).status, 401, 'MCP bearer cannot become owner');
-  assert.match((await post('/api/assistant/zero-setup/approve', { request_id, confirmed: true }, server.token)).body.error, /BLOCKED_SPEND_AUTHORIZATION/);
+  assert.match((await post('/api/assistant/zero-setup/approve', { request_id, confirmed: true }, server.token)).body.error, /not awaiting approval/);
   assert.match((await call(server.port, server.mcpToken, 'prepare_mission', { ...args, subscription_execution: approval.subscription_execution }, session)).body.error, /Unknown tool argument/);
   assert.match((await call(server.port, server.mcpToken, 'prepare_mission', { ...args, objective: objective.replace('beta\\n', 'changed\\n') }, session)).body.error, /replay_mismatch/);
   // Decode and screen literal data too; escaping letters cannot bypass intake's
@@ -66,18 +66,18 @@ test('natural Cursor intake crosses authenticated HTTP MCP; missing grant, sessi
   server.mcpSessions.clear();
   assert.equal((await post('/api/mcp/session', { session_id: session })).body.session_id, session);
   const replay = await call(server.port, server.mcpToken, 'prepare_mission', args, session);
-  assert.equal(replay.body.state, 'WAIT');
+  assert.equal(replay.body.state, 'BLOCKED');
   assert.deepEqual(replay.body.blockers, prepared.body.blockers);
   assert.equal(f.bridge.zeroSetupWork.read(request_id).workspace, record.workspace);
   const inspect = await call(server.port, server.mcpToken, 'inspect_mission_proposal', { request_id }, session);
   assert.deepEqual(inspect.body.proposal.files, ['alpha.txt', 'beta.txt']);
   assert.equal(inspect.body.approval.standard_approval_supported, false);
-  assert.equal(inspect.body.next_action, 'authorize_cursor_via_authenticated_local_api');
+  assert.equal(inspect.body.next_action, 'prepare_planned_cursor_mission');
   for (const table of ['cp_missions', 'cp_mission_approvals', 'cp_subscription_invocations', 'cp_dispatches'])
     assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM ' + table).get().n, 0, table);
 });
 
-test('ChatGPT prepare_mission obtains a fresh handoff session, rejects expiry and replay, and runs projectless OpenCode only under standing Expanded Auto', async t => {
+test('ChatGPT prepare_mission obtains a fresh handoff session, rejects expiry and replay, and never treats Expanded Auto as a sealed implementation plan', async t => {
   const f = await fixture(t, { opencode: runtime(t).options, defaultRuntime: 'opencode' });
   const server = new (require('../src/control-server'))(f.bridge, { port: 0 });
   await server.start();
@@ -102,20 +102,11 @@ test('ChatGPT prepare_mission obtains a fresh handoff session, rejects expiry an
   const request_id = 'run' + randomUUID().replace(/-/g, '').slice(0, 20);
   const refreshed = createClient({ dataDir: data, sessionFile });
   const started = await refreshed('prepare_mission', { objective, request_id });
-  assert.equal(started.execution_authorized, true);
-  assert.equal(started.projectless, true);
-  assert.equal(started.state, 'DISPATCHED');
-  t.after(() => fs.rmSync(started.workspace, { recursive: true, force: true }));
+  assert.equal(started.execution_authorized,false);assert.equal(started.state,'BLOCKED');assert.equal(started.code,'CURSOR_PLANNING_REQUIRED');
+  const record=f.bridge.zeroSetupWork.read(request_id);t.after(()=>fs.rmSync(record.workspace,{recursive:true,force:true}));
   const other = createClient({ dataDir: data });
   await assert.rejects(() => other('prepare_mission', { objective, request_id }), /original authenticated handoff session/);
   server.mcpSessions.clear();
   const resumed = createClient({ dataDir: data, sessionFile });
-  const status = await resumed('get_mission_status', { mission_id: started.mission_id });
-  assert.equal(status.mission_id, started.mission_id);
-  const done = await f.settle(started.mission_id, 'completed');
-  assert.equal(done.project_id, null);
-  assert.equal(done.runs.some(run => run.agent_id === 'opencode'), true);
-  assert.equal(done.verifications[0].result, 'passed');
-  assert.equal(done.acceptance[0].decision, 'accept');
-  assert.equal(fs.readFileSync(path.join(started.workspace, 'fixture.txt'), 'utf8'), 'beta\n');
+  const status=await resumed('prepare_mission',{objective,request_id});assert.equal(status.state,'BLOCKED');assert.equal(f.bridge.controlStore.listMissions().length,0);assert.equal(fs.existsSync(path.join(record.workspace,'fixture.txt')),false);
 });

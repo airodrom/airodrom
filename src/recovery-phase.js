@@ -30,12 +30,14 @@ const PERMANENT_REASONS = new Set([
   'no_host_verification_failure', 'repair_pending_timeout', 'approval_unavailable', 'approval_expired',
   'approval_revoked', 'external_disclosure_unauthorized', 'repeated_failure_signature', 'risk_policy_no_retry',
   'not_needs_rework', 'repair_already_spawned', 'failure_not_repairable', 'contract_expired', 'contract_budget',
-  'mission_contract_invalid', 'repair_identity_conflict',
+  'mission_contract_invalid', 'repair_identity_conflict', 'CURSOR_IMPLEMENTATION_REQUIRED', 'CURSOR_PLANNING_REQUIRED',
 ]);
 
 const QUARANTINE_REASONS = new Set(['unverified_termination', 'quarantined_lease', 'uncertain_execution']);
 
 const EXPLANATIONS = Object.freeze({
+  CURSOR_IMPLEMENTATION_REQUIRED: 'the historical worker route does not satisfy the current Cursor implementation policy',
+  CURSOR_PLANNING_REQUIRED: 'a sealed OpenCode plan is required before Cursor implementation can start',
   repair_budget: 'the authorized automatic repair budget is used up',
   budget_expired: 'the authorized time window for this Goal has expired',
   dispatch_budget: 'the authorized dispatch budget is used up',

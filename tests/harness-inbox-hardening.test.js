@@ -1,15 +1,17 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {fixture}=require('./fixtures/mission-fixture.cjs');
+const {seedHistoricalHandoff}=require('./fixtures/historical-codex-fixture.cjs');
+const {fixture:readFixture}=require('./fixtures/decision-read-fixture.cjs');
 test('inbox filters survive reopen; reviewed cannot regress or confer acceptance',async t=>{
- const f=await fixture(t),m=f.create();f.bridge.missions.dispatch(m.id,{request_id:'inbox-filter'});await f.settle(m.id);
- const inbox=f.bridge.resultInbox,r=inbox.latest({mission:m.id,agent:'claude_code'});assert.ok(r);assert.equal(inbox.latest({mission:'absent'}),null);
+ const f=await readFixture(t),m=f.create();f.bridge.missions.dispatch(m.id,{request_id:'inbox-filter'});await f.settle(m.id);
+ const inbox=f.bridge.resultInbox,r=inbox.latest({mission:m.id,agent:'host'});assert.ok(r);assert.equal(inbox.latest({mission:'absent'}),null);
  assert.equal(inbox.list({task:r.task_id,run:r.run_id}).length,1);assert.throws(()=>inbox.list({state:'accepted'}),/state/);
  inbox.review(r.run_id,'reviewed');assert.throws(()=>inbox.review(r.run_id,'read'),/regress/);assert.equal(inbox.review(r.run_id,'reviewed').acceptance_changed,false);
  await f.reopen();assert.equal(f.bridge.resultInbox.latest({run:r.run_id}).state,'reviewed');assert.equal(f.bridge.controlStore.getMission(m.id).state,'awaiting_acceptance');assert.equal(f.inference(),0);
 });
 test('hostile result collections and status contradictions fail before publication',async t=>{
- const f=await fixture(t),m=f.create(),h=f.bridge.codexAdapter.startTask(m.id,'invalid-result');
+ const f=await fixture(t),m=f.create(),h=seedHistoricalHandoff(f,m,'invalid-result');
  f.bridge.controlStore.updateRun(h.run_id,{state:'failed',processState:'exited',verified:true});
  const base={run_id:h.run_id,mission_id:m.id,task_id:m.task_id,agent_id:'codex',request_id:'invalid-result',result:{status:'failed',summary:'Fixture failure'}};
  assert.throws(()=>f.bridge.resultInbox.publish({...base,result:{status:'completed',summary:'Forged success'}}),/contradicts/);

@@ -34,7 +34,7 @@ test('manual worker selection reports the concrete denial while auto keeps OpenC
 test('failure classification emits only fixed classes, never vendor credentials or request text',()=>{
  for(const [text,expected] of [['workspace routing discovery failed','workspace_routing_failed'],['failed to spawn code-mode host','child_process_denied'],['authentication required','owner_login_required'],['rate limit','quota_limited'],['arbitrary vendor response with authorization: synthetic-secret','process_failed']])assert.equal(worker.failureClass(text),expected);
 });
-test('authenticated local MCP transport applies one scoped fixture and returns verification and explicit Settlement',async t=>{
+test('authenticated local MCP transport rejects retired Codex implementation without effects',async t=>{
  const opts=synthetic.options(root(t)),f=await fixture(t,{workers:{codex:opts}}),b=f.bridge;b.missionAuthority.initializeOperatorKey();await b.workers.qualify('codex',{confirmed:true,model:'fixture-model',request_id:randomUUID()});
  const grant={level:'development',permissions:{network:['internet']},filesystem:{read:[f.repo],write:[f.repo]},expiresAt:Date.now()+600000};
  // Choose a future numeric timestamp that the text scanner classifies as a card.
@@ -48,13 +48,14 @@ test('authenticated local MCP transport applies one scoped fixture and returns v
  b.workers.registerTemplate({project:'synthetic',workspace_alias:'public',confirmed:true,template});
  const server=new(require('../src/control-server'))(b,{port:0});await server.start();t.after(()=>server.close());fs.chmodSync(path.join(f.root,'data'),0o700);require('../src/local-bootstrap').writePrivate(path.join(f.root,'data/mcp.json'),{port:server.port,token:server.mcpToken,pid:process.pid});
  const client=require('../src/mcp-client').createClient({dataDir:path.join(f.root,'data')}),packet={version:2,request_id:randomUUID(),objective:'Public synthetic fixture change to beta newline',mission_class:'WORK',data_class:'public',privacy:'approved_external',project:'synthetic',workspace:'public',worker:'codex',model:'codex:fixture-model'};
- const receipt=await client('submit_mission',{packet});assert.ok(receipt.mission_id);assert.equal((await client('submit_mission',{packet})).mission_id,receipt.mission_id);const done=await f.settle(receipt.mission_id);assert.equal(done.acceptance.length,0);assert.equal((await client('get_mission_handoff',{mission_id:receipt.mission_id})).state,'awaiting_acceptance');assert.throws(()=>b.missions.program.settle(receipt.mission_id,'accept'),/Settlement requires/);b.missions.accept(receipt.mission_id,{request_id:randomUUID(),verification_id:done.verifications[0].id,decision:'accept',rationale:'Independent synthetic checks passed'});assert.equal((await client('get_mission_handoff',{mission_id:receipt.mission_id})).state,'completed');assert.equal(b.missions.detail(receipt.mission_id).program_contract.settlement.state,'settled');
+ const before=b.controlStore.listMissions().length;await assert.rejects(client('submit_mission',{packet}),/CURSOR_IMPLEMENTATION_REQUIRED/);assert.equal(b.controlStore.listMissions().length,before);assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_runs').get().n,0);assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');
 });
-test('late completed output after Mission cancellation cannot write, accept, settle or retain its lease',async t=>{
- const opts=synthetic.options(root(t)),f=await fixture(t,{workers:{codex:opts}}),b=f.bridge;b.missionAuthority.initializeOperatorKey();await b.workers.qualify('codex',{confirmed:true,model:'fixture-model',request_id:randomUUID()});
- const adapter=b.workers.get('codex'),execute=adapter.execute.bind(adapter);let release,ready;const started=new Promise(r=>ready=r),gate=new Promise(r=>release=r);adapter.execute=async input=>{const output=await execute(input);ready();await gate;return output;};
- const m=f.create({manifest:synthetic.manifest(f.repo),preferred_agent:'codex',model:'codex:fixture-model',dispatch_policy:{privacy:'cloud_allowed',providers:['codex_openai'],billing_classes:['subscription'],max_attempts:1},authority:{level:'development',permissions:{network:['internet']},filesystem:{read:[f.repo],write:[f.repo]},expiresAt:Date.now()+600000}});
- b.missions.dispatch(m.id,{request_id:randomUUID()});await started;b.missions.cancel(m.id,{request_id:randomUUID()});release();
- for(let n=0;n<150;n++){await b.missions.tick();if(!adapter.active.size&&b.missions.detail(m.id).runs.every(r=>r.state==='cancelled'&&r.termination_verified))break;await new Promise(r=>setTimeout(r,20));}
- const done=b.missions.detail(m.id);assert.equal(done.state,'cancelled');assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');assert.equal(done.acceptance.length,0);assert.equal(done.program_contract.settlement?.state==='settled',false);assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE state IN ('held','quarantined')").get().n,0);assert.equal(done.runs[0].termination_verified,1);
+test('late Cursor result after cancellation cannot apply files or record Acceptance',async t=>{
+ const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:0,manual:true}),b=f.bridge;f.plan=f.plan.slice(0,1);
+ const execute=b.cursorWorker.execute.bind(b.cursorWorker);let ready,release;const started=new Promise(r=>ready=r),gate=new Promise(r=>release=r);t.after(()=>release());
+ b.cursorWorker.execute=async o=>{const output=await execute(o);ready();await gate;return output;};
+ const p=await f.ask({review:false});await started;b.missions.cancel(p.mission_id,{request_id:randomUUID()});release();
+ let done;for(let i=0;i<500;i++){await b.missions.tick();done=b.missions.detail(p.mission_id);if(done.runs.every(r=>r.termination_verified))break;await new Promise(r=>setTimeout(r,20));}
+ assert.equal(done.state,'cancelled');assert.equal(done.acceptance.length,0);assert.equal(fs.readFileSync(path.join(done.envelope.workspace,'fixture.txt'),'utf8'),'alpha\n');
+ assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(done.id).n,0);assert.equal(done.runs.find(r=>r.agent_id==='cursor').termination_verified,1);
 });

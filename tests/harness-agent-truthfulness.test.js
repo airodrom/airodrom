@@ -18,8 +18,8 @@ test('routing waits for semantic fit and respects auth, quota/busy and locality'
  assert.equal((await run(context(),{taskType:'tests',privacy:'local_only'})).suggested_agent,'host');
 });
 test('a selected different agent is never silently dispatched through Claude',async t=>{
- const {fixture}=require('./fixtures/mission-fixture.cjs');const f=await fixture(t),m=f.create();
+ const {fixture}=require('./fixtures/decision-read-fixture.cjs');const f=await fixture(t),m=f.create();
  f.bridge.missions.agents.select=async()=>({selected:'codex',reason:'injected future availability'});
  f.bridge.missions.dispatch(m.id,{request_id:'dispatch-identity'});await f.settle(m.id,'blocked');
- assert.equal(f.calls(),0);assert.match(f.bridge.controlStore.getMission(m.id).reason,/handoff required/);assert.equal(f.inference(),0);
+ assert.equal(f.calls(),0);assert.match(f.bridge.controlStore.getMission(m.id).reason,/CURSOR_IMPLEMENTATION_REQUIRED/);assert.equal(f.inference(),0);
 });

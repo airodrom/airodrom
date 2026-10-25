@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
-const {fixture,wait}=require('./fixtures/mission-fixture.cjs');
+const {fixture}=require('./fixtures/decision-read-fixture.cjs');
 const {redactText,safeValue,observeProcesses}=require('../src/secret-observation');
 function authorize(f){const p=f.bridge.projects.listProjects()[0];f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');f.bridge.fixtureAcceptance.register({project_id:p.projectId,workspace:f.repo,isolated:true,no_external_effects:true});f.bridge.projects.updateProject(p.projectId,{autonomyLevel:'auto_development'});return p;}
 test('secret observation excludes argv and environment; redacts credential text before evidence export',async()=>{
@@ -27,7 +27,7 @@ test('ordinary missions, agent self-enablement, operator criteria, missing check
  db.prepare('UPDATE cp_verifications SET evidence=? WHERE id=?').run('[]',v.id);assert.equal(attempt(m.id).reason,'missing_or_failed_checker');db.prepare("UPDATE cp_verifications SET result='failed' WHERE id=?").run(v.id);assert.equal(attempt(m.id).reason,'independent_verification_required');
 });
 test('real reconciliation loop advances bounded two missions with deterministic operator hinge and no manual next',async t=>{
- const f=await fixture(t);authorize(f);const a=f.create({fixture_auto_acceptance:true}),b=f.create({fixture_auto_acceptance:true,objective:'DECISION before fixture update',allowed_files:['fixture.txt','strategy.txt'],criteria:[{id:'strategy',type:'exact_file',path:'strategy.txt',content:'A\n'}]});
+ const f=await fixture(t);authorize(f);const a=f.create({fixture_auto_acceptance:true}),b=f.create({fixture_auto_acceptance:true,objective:'DECISION before fixture update',allowed_files:['fixture.txt']});
  const e=f.bridge.boundedNextActions,id=randomUUID();e.register({id,mode:'auto_development',mission_ids:[a.id,b.id],max_missions:2,max_runtime_ms:60000});
  await Promise.all([e.reconcile(),e.reconcile()]);await f.settle(a.id,'completed');await e.reconcile();await f.settle(b.id,'waiting_for_operator');assert.equal(f.calls(),2);await e.reconcile();assert.equal(f.calls(),2);
  const d=f.bridge.controlStore.decisions(b.id)[0];await f.reopen();await f.bridge.boundedNextActions.reconcile();assert.equal(f.calls(),2);f.bridge.missions.answer(d.id,{request_id:'deterministic-answer',option_id:'A'});f.bridge.missions.answer(d.id,{request_id:'duplicate-answer',option_id:'B'});await f.settle(b.id,'completed');await f.bridge.boundedNextActions.reconcile();assert.equal(f.calls(),3);assert.equal(f.bridge.boundedNextActions.inspect(id).state,'paused');assert.equal(f.inference(),0);

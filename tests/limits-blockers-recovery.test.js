@@ -60,10 +60,10 @@ test('coverage: all 29 canonical operational blockers have auto-diagnosis', () =
   assert.ok(cov.security_fail_closed >= 22);
 });
 
-test('security-critical: none of the 22 invent executable authority bypass', () => {
+test('security-critical: none of the 25 invent executable authority bypass', () => {
   const registry = Registry.loadRegistry();
   const sec = registry.entries.filter(e => e.category === 'security_critical');
-  assert.equal(sec.length, 22);
+  assert.equal(sec.length, 25);
   for (const entry of sec) {
     const plan = Recovery.planFor(entry);
     assert.equal(plan.operation === 'security_investigate_fail_closed' || plan.security_fail_closed === true

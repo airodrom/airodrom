@@ -1,27 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
 const {randomUUID}=require('node:crypto');
-const {fixture}=require('./fixtures/mission-fixture.cjs');
-const {runtime,qualifyCanonical}=require('./fixtures/opencode-fixture.cjs');
-async function setup(t,{cursor=false,repairs=2,manual=false}={}) {
- const f=await fixture(t,{opencode:runtime(t).options,settleTimeoutMs:30000}),b=f.bridge;
- b.missionAuthority.initializeOperatorKey();qualifyCanonical(b);
- if(!manual)b.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,request_id:randomUUID(),sync_risk_acceptance:false},'operator');
- if(cursor)b.hostExecutionPolicy.enableCursor({confirmed:true,request_id:randomUUID()},'operator');
- if(cursor)b.cursorWorker=new(require('../src/cursor-worker').CursorWorker)(b,{fixtureExecutable:path.join(__dirname,'fixtures/cursor-agent-fixture.cjs')});
- const p=b.projects.listProjects({status:'active'})[0],g=b.projects.summary(p.projectId).goals[0];
- f.policy=b.developerAutonomy.enroll({alias:'specialist-fixture',repository:f.repo,project_id:p.projectId,goal_id:g.goalId,workflows:['routine_edit','test','repair'],workers:cursor?['opencode','cursor']:['opencode'],duration_days:1,confirmed:true,diff_check:'diff-check',default_tests:['fixture-test'],budgets:{max_repairs:repairs},cognitive:{version:3,files:['fixture.txt'],delegated_callers:[],planning_attempts:2,planning_ms:120000,execution_ms:120000,repair_attempts:repairs,max_assignments:3,acceptance:'automatic'}},'operator');
- f.plan=[{id:'implement',worker:cursor?'cursor':'opencode',role:'implementation',operation:'edit',paths:['fixture.txt'],description:'Change alpha to beta',depends_on:[],verification:[]},{id:'review',worker:'opencode',role:'review',operation:'read',paths:['fixture.txt'],description:'Review the implementation without modifying files',depends_on:['implement'],verification:[]}];
- f.calls=[];f.evaluations=[];
- f.evaluate=o=>({...o.coordination.result_contract,recommendation:o.coordination.host_checks.some(c=>c.status==='failed')?'repair':'ready',summary:'Reviewed host evidence and supplied files.'});
- f.bindAdapter=()=>{const adapter=f.bridge.opencodeAdapter;f.worker=adapter.execute.bind(adapter);adapter.execute=async o=>{
-  if(o.planning)return{result:{summary:JSON.stringify({...o.planning,tasks:f.plan})},changes:[],provenance:{termination_verified:true}};
-  if(o.coordination){f.evaluations.push(o.coordination);assert.deepEqual(o.writable,[]);return{result:{summary:JSON.stringify(await f.evaluate(o))},changes:[],provenance:{runtime_id:'opencode',sandbox:'fixture',termination_verified:true,authority:false}};}
-  f.calls.push({files:o.files,writable:o.writable,input:JSON.parse(o.objective)});return f.worker(o.writable.length?o:{...o,objective:'Inspect current files without changes',objectiveProof:null});
- };};f.bindAdapter();
- f.ask=async({review=true}={})=>{const request_id=randomUUID(),instruction='In Fixture project change fixture.txt from alpha to beta'+(review?' and independently review fixture.txt.':'.');let view=await b.zeroSetupWork.ask({request_id,instruction},'operator');for(let i=0;i<200&&view.state==='PLANNING';i++){await new Promise(r=>setTimeout(r,20));view=await b.zeroSetupWork.ask({request_id,instruction},'operator');}return view;};
- return f;
-}
+const {setup}=require('./fixtures/cursor-autonomy-fixture.cjs');
 test('specialist graph returns each result to OpenCode and automatically accepts after final host checks',async t=>{
  const f=await setup(t),p=await f.ask();assert.ok(p.mission_id&&['DISPATCHED','RUNNING'].includes(p.state),JSON.stringify(p));
  const m=await f.settle(p.mission_id,'completed');assert.equal(m.specialists.assignments.length,2);assert.ok(m.specialists.assignments.every(a=>a.state==='ready'));
@@ -32,7 +12,7 @@ test('specialist graph returns each result to OpenCode and automatically accepts
  await f.reopen();assert.equal(require('../src/mission-evidence').evidencePackage(f.bridge,m.id).acceptance_status,'accepted');
 });
 test('mixed Cursor and OpenCode tasks preserve worker identity and share one parent scope',async t=>{
- const f=await setup(t,{cursor:true,repairs:0}),p=await f.ask();assert.equal(p.state,'WAIT',JSON.stringify(p));
+ const f=await setup(t,{cursor:true,repairs:0,standing:false}),p=await f.ask();assert.equal(p.state,'WAIT',JSON.stringify(p));
  const a=await f.bridge.zeroSetupWork.approve({request_id:p.request_id,confirmed:true,channel:'control_center',subscription_execution:{provider:'cursor',acknowledge_unknown_cost:true,max_invocations:1,max_runtime_ms:120000}},'operator');
  const m=await f.settle(a.mission_id,'completed');assert.deepEqual(m.specialists.assignments.map(a=>a.worker),['cursor','opencode']);
  assert.deepEqual(f.evaluations.map(e=>e.worker.agent),['cursor','opencode']);assert.equal(m.acceptance.length,1);
@@ -112,4 +92,100 @@ test('pending host check is cancelled synchronously when the graph deadline wins
  const v=new(require('../src/mission-verifier').MissionVerifier)(b,{requireMission:()=>m});
  const keep=setTimeout(()=>{},3000);S.assertRoot=()=>{};
  try{await assert.rejects(v.invokeVerificationCapability({id:job.taskId},m,{id:'synthetic-run'},'vscode_run_task',{timeoutSeconds:60}),/deadline exceeded/);assert.ok(cancelled>0);}finally{S.assertRoot=oldAssert;clearTimeout(keep);}
+});
+
+test('one ordinary request reuses standing authority and corrects actual wrong bytes with a separate Cursor run',async t=>{
+ const fs=require('node:fs'),f=await setup(t,{repairs:1,caller:'mcp:'+randomUUID()});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ const snapshots=[];const evaluate=f.evaluate;f.evaluate=o=>{snapshots.push({bytes:fs.readFileSync(path.join(o.workspace,'fixture.txt')).toString('hex'),checks:o.coordination.host_checks});return evaluate(o);};
+ assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt')).toString('hex'),'616c7068610a');
+ const p=await f.ask({review:false});assert.ok(p.mission_id,JSON.stringify(p));
+ const same=await f.bridge.zeroSetupWork.ask(f.request,f.caller);assert.equal(same.mission_id,p.mission_id);
+ const m=await f.settle(p.mission_id,'completed'),e=require('../src/mission-evidence').evidencePackage(f.bridge,m.id);
+ const attempts=m.specialists.assignments[0].attempts;
+ assert.equal(attempts.length,2);assert.notEqual(attempts[0].run_id,attempts[1].run_id);
+ assert.deepEqual(f.calls.map(c=>c.worker),['cursor','cursor']);
+ assert.deepEqual(snapshots.map(s=>s.bytes),['67616d6d610a','626574610a']);
+ assert.ok(snapshots[0].checks.some(c=>c.status==='failed'));assert.ok(snapshots[1].checks.every(c=>c.status==='passed'));
+ assert.equal(attempts[0].verification.status,'failed');assert.equal(attempts[1].verification.status,'passed');
+ assert.equal(e.acceptance_status,'accepted');assert.equal(e.settlement_status,'settled');assert.equal(m.acceptance.length,1);
+ assert.equal(fs.readFileSync(path.join(m.envelope.workspace,'fixture.txt')).toString('hex'),'626574610a');
+ const db=f.bridge.controlStore.db;
+ assert.equal(db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(m.id).n,0);
+ assert.equal(db.prepare('SELECT missions_used n FROM cp_standing_cursor_development WHERE id=?').get(f.grant.id).n,1);
+ assert.ok(m.runs.every(r=>['completed','failed','cancelled','interrupted'].includes(r.state)));
+ assert.ok(m.dispatches.every(d=>d.state==='settled'));
+ for(const a of attempts){assert.equal(f.bridge.controlStore.run(a.run_id).termination_verified,1);assert.equal(f.bridge.controlStore.run(a.evaluation_run_id).termination_verified,1);}
+ const proof={caller:f.caller,qualification:'isolated synthetic Cursor/OpenCode transports; production control plane, real child processes and host checks',request_id:p.request_id,mission_id:m.id,standing_grant_id:f.grant.id,standing_uses:1,initial_hex:'616c7068610a',observed_hex:snapshots.map(s=>s.bytes),attempts:attempts.map((a,i)=>({cursor_run_id:a.run_id,opencode_evaluation_run_id:a.evaluation_run_id,verification:a.verification.status,checks:snapshots[i].checks,cursor_termination_verified:f.bridge.controlStore.run(a.run_id).termination_verified===1,evaluator_termination_verified:f.bridge.controlStore.run(a.evaluation_run_id).termination_verified===1})),planner_run_ids:m.envelope.cognitive.planner_run_ids,acceptance:e.acceptance_status,settlement:e.settlement_status,active_leases:0,active_runs:0,dispatches_settled:true};
+ await f.reopen({beforeResume:()=>f.bindAdapter()});
+ const replay=await f.bridge.zeroSetupWork.ask(f.request,f.caller);assert.equal(replay.mission_id,m.id);assert.equal(f.calls.length,2);assert.equal(f.bridge.missions.detail(m.id).acceptance.length,1);
+ proof.reconnect={same_mission:true,no_worker_replay:true,acceptance_count:1};
+ if(process.env.AIRODROM_TEST_PROOF_OUTPUT)fs.writeFileSync(process.env.AIRODROM_TEST_PROOF_OUTPUT,JSON.stringify(proof,null,2)+'\n');
+});
+
+test('standing reservation is durable, idempotent, bounded and cannot move between grants',async t=>{
+ const f=await setup(t),h=f.bridge.hostExecutionPolicy,db=f.bridge.controlStore.db,id=randomUUID();
+ db.prepare('UPDATE cp_standing_cursor_development SET max_missions=1 WHERE id=?').run(f.grant.id);
+ h.consumeStandingCursorDevelopment(f.grant.id,id);h.consumeStandingCursorDevelopment(f.grant.id,id);
+ assert.equal(db.prepare('SELECT missions_used n FROM cp_standing_cursor_development WHERE id=?').get(f.grant.id).n,1);
+ assert.equal(db.prepare('SELECT count(*) n FROM cp_runs').get().n,0);
+ assert.equal(db.prepare('SELECT count(*) n FROM cp_dispatches').get().n,0);
+ assert.throws(()=>h.consumeStandingCursorDevelopment(f.grant.id,randomUUID()),/unavailable/);
+ assert.throws(()=>h.consumeStandingCursorDevelopment(randomUUID(),id),/Idempotency conflict/);
+ const query={repository:f.repo,policy_id:f.policy.policy_id,files:['fixture.txt'],max_invocations:1,max_runtime_ms:120000,data_class:'public'};
+ assert.equal(h.matchStandingCursorDevelopment(query),null);
+ await f.reopen({beforeResume:()=>f.bindAdapter()});
+ f.bridge.hostExecutionPolicy.consumeStandingCursorDevelopment(f.grant.id,id);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT missions_used n FROM cp_standing_cursor_development WHERE id=?').get(f.grant.id).n,1);
+});
+
+test('standing grant matches the source repository and exact policy, never another repository or file',async t=>{
+ const f=await setup(t),h=f.bridge.hostExecutionPolicy;
+ const q={repository:f.repo,policy_id:f.policy.policy_id,files:['fixture.txt'],max_invocations:1,max_runtime_ms:120000,data_class:'public'};
+ assert.equal(h.matchStandingCursorDevelopment(q).id,f.grant.id);
+ for(const delta of [{repository:f.root},{policy_id:randomUUID()},{files:['other.txt']},{max_invocations:99},{data_class:'private'}])assert.equal(h.matchStandingCursorDevelopment({...q,...delta}),null);
+});
+
+test('standing reservation failure cannot create or dispatch a Mission',async t=>{
+ const f=await setup(t);f.bridge.hostExecutionPolicy.consumeStandingCursorDevelopment=()=>{throw Error('standing_reservation_unavailable');};
+ const p=await f.ask();assert.equal(p.state,'BLOCKED');assert.equal(p.mission_id,null);assert.equal(f.calls.length,0);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_subscription_invocations').get().n,0);
+});
+
+for(const failedAttempt of [1,2])test('evaluator failure on attempt '+failedAttempt+' retries evaluation without replaying Cursor',async t=>{
+ const f=await setup(t,{repairs:1});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ const normal=f.evaluate;let malformed=false;
+ f.evaluate=o=>{const count=f.calls.filter(c=>c.worker==='cursor').length;if(count===failedAttempt&&!malformed){malformed=true;return {unexpected:'malformed evaluator result'};}return normal(o);};
+ const p=await f.ask({review:false});assert.ok(p.mission_id,JSON.stringify(p));
+ let m;for(let n=0;n<800;n++){await f.bridge.missions.tick();m=f.bridge.missions.detail(p.mission_id);if(m.state==='completed')break;if(m.state==='needs_rework')assert.fail(m.reason);await new Promise(r=>setTimeout(r,50));}
+ assert.equal(m.state,'completed',m.reason);assert.equal(f.calls.length,2);assert.equal(f.evaluations.length,3);
+ const a=m.specialists.assignments[0].attempts;assert.equal(a.length,2);assert.notEqual(a[0].run_id,a[1].run_id);assert.equal(m.acceptance.length,1);
+ assert.equal(f.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_leases WHERE mission_id=? AND state IN ('held','quarantined')").get(m.id).n,0);
+});
+
+test('queued authorized Cursor work protects its workspace until cancellation; settled work frees capacity',async t=>{
+ const f=await setup(t,{repairs:0});f.bridge.missions.schedule=()=>{};f.bridge.missions.program.tick=()=>{};
+ const p=await f.ask(),record=f.bridge.zeroSetupWork.read(p.request_id),id=record.cognitive.envelope.workspace_id,da=f.bridge.developerAutonomy;
+ assert.ok(p.mission_id,JSON.stringify(p));
+ assert.equal(da.cleanupWorkspace({workspace_id:id,confirmed:true},'operator').state,'held');
+ f.bridge.missions.cancel(p.mission_id,{request_id:randomUUID()});
+ assert.equal(f.calls.length,0);assert.equal(da.occupiedWorktrees(f.policy.policy_id),0);
+ assert.equal(da.cleanupWorkspace({workspace_id:id,confirmed:true},'operator').state,'cleaned');
+});
+
+test('fabricated Cursor success without changes fails host verification and cannot accept or repair on prose',async t=>{
+ const f=await setup(t,{repairs:1});f.plan=f.plan.slice(0,1);f.cursorMode='fabricate';
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+ assert.equal(f.calls.length,1);assert.equal(f.evaluations.length,0);assert.equal(m.acceptance.length,0);
+ assert.equal(m.specialists.assignments[0].attempts[0].verification.status,'failed');
+ assert.equal(require('node:fs').readFileSync(path.join(m.envelope.workspace,'fixture.txt'),'utf8'),'alpha\n');
+});
+
+test('protected verifier tampering blocks registered checks and acceptance on the Cursor path',async t=>{
+ const fs=require('node:fs'),f=await setup(t,{repairs:1});f.plan=f.plan.slice(0,1);
+ const verify=f.bridge.missions.verifier.verify.bind(f.bridge.missions.verifier);let result;
+ f.bridge.missions.verifier.verify=async(m,run,...args)=>{fs.writeFileSync(path.join(m.envelope.workspace,'tests/fixture.test.cjs'),'// assertions removed\n');result=await verify(m,run,...args);return result;};
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+ assert.equal(result.status,'failed');assert.equal(m.acceptance.length,0);assert.equal(f.calls.length,1);
+ assert.ok(result.checks.some(c=>c.id==='verifier_inputs_unchanged'&&c.status==='failed'));
+ assert.ok(!result.checks.some(c=>/^task:/.test(c.id)),'tampered registered checks must not run');
 });

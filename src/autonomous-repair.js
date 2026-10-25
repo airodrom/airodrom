@@ -392,7 +392,8 @@ class AutonomousRepair {
     } catch (error) {
       const message = String(error.message || '');
       let reason = 'repair_spawn_failed';
-      if (/^[a-z_]+$/.test(message)) reason = message;
+      if (['CURSOR_IMPLEMENTATION_REQUIRED', 'CURSOR_PLANNING_REQUIRED'].includes(error.code)) reason = error.code;
+      else if (/^[a-z_]+$/.test(message)) reason = message;
       else if (/UNIQUE constraint failed:\s*project_missions/i.test(message) || /unique.*project_missions\.name/i.test(message)) {
         reason = 'repair_mission_name_conflict';
       } else if (/Idempotency conflict/i.test(message)) reason = 'repair_identity_conflict';

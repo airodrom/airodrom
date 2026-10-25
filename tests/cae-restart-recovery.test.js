@@ -3,23 +3,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { fixture, createReadMission } = require('./fixtures/read-mission-fixture.cjs');
 const { manifest } = require('./fixtures/opencode-fixture.cjs');
 
 // Objectives are human-readable fixture labels, not random identifiers.
 let objectiveSequence = 0;
 function native(f, extra = {}) {
-  return f.create({
-    objective: 'Synthetic CAE restart step ' + (++objectiveSequence),
-    task_type: 'local_files',
-    manifest: manifest(f.repo),
-    dispatch_policy: {
-      privacy: 'local_only', providers: ['local'], billing_classes: ['local'],
-      task_category: 'deterministic_files',
-      native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'beta\n' }]
-    },
-    ...extra
-  });
+  return createReadMission(f, {objective: 'Synthetic read-only scheduler step ' + (++objectiveSequence), ...extra});
 }
 function stage(m, id = 'one', deps = []) {
   return {
@@ -134,11 +124,11 @@ test('G restart mid multi-stage goal resumes only verified-ready work', async t 
   assert.deepEqual(f.bridge.missions.goalPlanner.inspect(g.id).ready, []);
   const b = native(f, {
     objective: 'Second synthetic file', allowed_files: ['second.txt'],
-    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'second.txt', content: 'beta\n' }],
+    criteria: [{ id: 'expected_file', type: 'exact_file', path: 'second.txt', content: 'alpha\n' }],
     dispatch_policy: {
       privacy: 'local_only', providers: ['local'], billing_classes: ['local'],
       task_category: 'deterministic_files',
-      native_actions: [{ name: 'file_write', path: 'second.txt', content: 'beta\n' }]
+      native_actions: [{ name: 'file_read', path: 'second.txt' }]
     },
     manifest: (() => { const mf = manifest(f.repo); mf.mission.scope.include = ['second.txt']; return mf; })()
   });

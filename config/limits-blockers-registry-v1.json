@@ -24,7 +24,8 @@
       "src/opencode-gateway.js",
       "src/mission-service.js",
       "src/mission-terminal-notifications.js",
-      "src/requested-file-scope.js"
+      "src/requested-file-scope.js",
+      "src/mission-worker-policy.js"
     ],
     "note": "Unknown runtime codes resolve as unknown_blocker rather than inventing classifications."
   },
@@ -86,7 +87,8 @@
         "note": null,
         "owner_gate_if_needed": false,
         "security_fail_closed": false
-      }
+      },
+      "missing_prerequisite": "An execution slot within the same policy max_worktrees budget, after proof-gated idle cleanup or settlement."
     },
     {
       "id": "da_filesystem_capacity_exhausted",
@@ -389,7 +391,8 @@
         "owner_gate_if_needed": true,
         "security_fail_closed": false
       },
-      "canonical_operational_recovery_v1": true
+      "canonical_operational_recovery_v1": true,
+      "missing_prerequisite": "An active enrollment for the exact source repository; an alias alone cannot enroll it."
     },
     {
       "id": "arecibo_repository_not_enrolled",
@@ -623,7 +626,8 @@
         "owner_gate_if_needed": true,
         "security_fail_closed": false
       },
-      "canonical_operational_recovery_v1": true
+      "canonical_operational_recovery_v1": true,
+      "missing_prerequisite": "A current scoped subscription/spend authorization matching the worker, repository, files and remaining budget."
     },
     {
       "id": "scoped_external_disclosure_required",
@@ -670,7 +674,8 @@
         "owner_gate_if_needed": true,
         "security_fail_closed": false
       },
-      "canonical_operational_recovery_v1": true
+      "canonical_operational_recovery_v1": true,
+      "missing_prerequisite": "Existing authorization for the exact external provider and disclosed data classes."
     },
     {
       "id": "standing_cursor_grant_missing",
@@ -1066,10 +1071,10 @@
       "failure_condition": null,
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": true,
+      "automatic_recovery_allowed": false,
       "automatic_recovery": null,
-      "next_safe_action": "owner_raise_runtime_limit_or_narrow_work",
-      "owner_approval_required": false,
+      "next_safe_action": "inspect_deadline_and_request_exact_owner_renewal_if_needed",
+      "owner_approval_required": true,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
@@ -1335,7 +1340,7 @@
       "codes": [
         "cognitive_explicit_worker_syntax_required"
       ],
-      "description": "Instruction requires explicit worker syntax the planner did not receive.",
+      "description": "Historical worker-syntax blocker; ordinary implementation now defaults to Cursor without magic syntax.",
       "category": "operational_owner",
       "severity": "error",
       "source": {
@@ -1349,9 +1354,9 @@
       "security_critical": false,
       "automatic_recovery_allowed": false,
       "automatic_recovery": null,
-      "next_safe_action": "resubmit_with_explicit_worker_syntax",
-      "owner_approval_required": true,
-      "historical_status": "active",
+      "next_safe_action": "use_current_cursor_only_intake",
+      "owner_approval_required": false,
+      "historical_status": "legacy_diagnostic",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
       ],
@@ -1375,7 +1380,8 @@
         "owner_gate_if_needed": true,
         "security_fail_closed": false
       },
-      "canonical_operational_recovery_v1": true
+      "canonical_operational_recovery_v1": true,
+      "missing_prerequisite": "An unambiguous eligible worker selection in the bounded request."
     },
     {
       "id": "cognitive_ambiguous_worker",
@@ -1845,7 +1851,8 @@
         "owner_gate_if_needed": true,
         "security_fail_closed": false
       },
-      "canonical_operational_recovery_v1": true
+      "canonical_operational_recovery_v1": true,
+      "missing_prerequisite": "Current host-observed qualification for the selected worker and a matching execution contract."
     },
     {
       "id": "cursor_runtime_not_ready",
@@ -1943,7 +1950,8 @@
         "owner_gate_if_needed": false,
         "security_fail_closed": false
       },
-      "canonical_operational_recovery_v1": true
+      "canonical_operational_recovery_v1": true,
+      "missing_prerequisite": "An available qualified evaluator, current authority and a valid verified packet within remaining evaluation budget."
     },
     {
       "configured_limit": null,
@@ -1998,7 +2006,8 @@
         "file": "src/apps/opencode-adapter.js",
         "symbol": "execute"
       },
-      "next_safe_action": "reconcile_evaluator_then_retry_local_evaluation"
+      "next_safe_action": "reconcile_evaluator_then_retry_local_evaluation",
+      "missing_prerequisite": "An available supported OpenCode runtime; retry only within the existing authority and evaluation budget."
     },
     {
       "configured_limit": null,
@@ -2289,7 +2298,8 @@
         "file": "src/opencode-gateway.js",
         "symbol": "parseEvaluation"
       },
-      "next_safe_action": "inspect_evaluation_receipt_then_owner_decide"
+      "next_safe_action": "inspect_evaluation_receipt_then_owner_decide",
+      "missing_prerequisite": "A schema-valid, stage-correct evaluation of the unchanged verified worker packet."
     },
     {
       "id": "gateway_evaluation_deadline",
@@ -2571,7 +2581,8 @@
         "note": null,
         "owner_gate_if_needed": false,
         "security_fail_closed": true
-      }
+      },
+      "missing_prerequisite": "Independent host proof that every recorded writer/process has terminated, followed by lease settlement."
     },
     {
       "id": "bridge_restart_cooldown",
@@ -2873,10 +2884,10 @@
       "failure_condition": null,
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": true,
+      "automatic_recovery_allowed": false,
       "automatic_recovery": null,
-      "next_safe_action": "raise_standing_cursor_runtime_or_cognitive_execution_ms",
-      "owner_approval_required": false,
+      "next_safe_action": "inspect_deadline_and_request_exact_owner_renewal_if_needed",
+      "owner_approval_required": true,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
@@ -2922,10 +2933,10 @@
       "failure_condition": null,
       "operational": true,
       "security_critical": false,
-      "automatic_recovery_allowed": true,
+      "automatic_recovery_allowed": false,
       "automatic_recovery": null,
-      "next_safe_action": "raise_standing_cursor_runtime_and_ensure_cognitive_120s",
-      "owner_approval_required": false,
+      "next_safe_action": "inspect_deadline_and_request_exact_owner_renewal_if_needed",
+      "owner_approval_required": true,
       "historical_status": "active",
       "docs": [
         "docs/operations/LIMITS-AND-BLOCKERS-REGISTRY.md"
@@ -3054,7 +3065,6 @@
         "requested_file_constraint_changed",
         "requested_file_execution_mismatch",
         "requested_file_path_invalid",
-        "requested_file_operation_required",
         "requested_file_scope_version",
         "requested_file_operation_invalid"
       ],
@@ -3094,7 +3104,302 @@
         "note": null,
         "owner_gate_if_needed": false,
         "security_fail_closed": true
-      }
+      },
+      "missing_prerequisite": "The original exact operation/path bindings retained in the proposal, execution and independent host verification."
+    },
+    {
+      "id": "repository_input_invalid",
+      "codes": [
+        "Invalid repositories"
+      ],
+      "description": "Repository registration input is malformed or exceeds the bounded registry; legacy text alone cannot distinguish these causes.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/project-orchestrator.js",
+        "symbol": "repositoryPaths"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": "Repository input has invalid shape, path values or more than the allowed number of bindings; legacy text does not distinguish them.",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "inspect_repository_shape_and_capacity_without_widening_scopes",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
+      ],
+      "missing_prerequisite": "Array required, at most MAX_PROJECT_REPOSITORIES entries, each a valid screened path."
+    },
+    {
+      "id": "project_repository_capacity_exhausted",
+      "codes": [
+        "PROJECT_REPOSITORY_CAPACITY_EXHAUSTED"
+      ],
+      "description": "Project repository bindings have no free slot after safe retirement of terminal disposable aliases.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/developer-autonomy.js",
+        "symbol": "reconcileRepositoryRegistrations"
+      },
+      "configured_limit": {
+        "field": "MAX_PROJECT_REPOSITORIES",
+        "default": 24,
+        "max": 24
+      },
+      "runtime_usage": null,
+      "failure_condition": "The retained repository array has reached the 24-path ceiling before a new workspace can be registered.",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "inspect_retained_bindings_without_deleting_workspaces",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
+      ],
+      "missing_prerequisite": "Fewer than 24 retained project repository bindings before allocating a new workspace."
+    },
+    {
+      "id": "cognitive_repository_ambiguous",
+      "codes": [
+        "cognitive_repository_ambiguous"
+      ],
+      "description": "More than one active enrolled repository matches the request.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/cognitive-router.js",
+        "symbol": "prepare"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": "More than one active enrolled repository matches the request.",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "supply_exact_enrolled_repository_alias",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
+      ],
+      "missing_prerequisite": "One exact enrolled repository or policy alias."
+    },
+    {
+      "id": "projectless_scope_required",
+      "codes": [
+        "projectless_scope_required"
+      ],
+      "description": "A projectless request has no registered bounded workspace or verification scope.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/zero-setup-work.js",
+        "symbol": "ZeroSetupWork.statusView"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": "No registered bounded projectless scope and verification contract is available.",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "bind_registered_workspace_and_verification",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
+      ],
+      "missing_prerequisite": "Registered projectless scope and measurable verification contract."
+    },
+    {
+      "id": "filesystem_scope_denied",
+      "codes": [
+        "Path is outside every read scope",
+        "Path is outside every write scope",
+        "Symbolic link resolves outside every read scope",
+        "Symbolic link resolves outside every write scope"
+      ],
+      "description": "Lexical or canonical file target falls outside the required read/write scope.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/fs-scopes.js",
+        "symbol": "FilesystemScopes.resolve"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": "The lexical or canonical target is outside the required existing read/write scope.",
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "use_an_already_authorized_path_or_request_exact_owner_scope",
+      "owner_approval_required": true,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
+      ],
+      "missing_prerequisite": "Both lexical and real target must be in existing authorized scopes."
+    },
+    {
+      "id": "requested_file_operation_required",
+      "codes": [
+        "requested_file_operation_required"
+      ],
+      "description": "The request needs an explicit literal file operation; no file or privilege is inferred.",
+      "category": "operational_owner",
+      "severity": "error",
+      "source": {
+        "file": "src/requested-file-scope.js",
+        "symbol": "extract"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": "A literal requested file has no unambiguous explicit operation.",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "supply_explicit_operation_and_exact_relative_path",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
+      ],
+      "missing_prerequisite": "An explicit read/edit/create operation for every requested literal path."
+    },
+    {
+      "id": "opencode_evaluation_stage_mismatch",
+      "codes": [
+        "opencode_evaluation_stage_mismatch",
+        "gateway_evaluation_stage_mismatch"
+      ],
+      "description": "An evaluation applied edit completion criteria to a host-verified read assignment; never promote the blocked receipt.",
+      "category": "operational_auto",
+      "severity": "error",
+      "source": {
+        "file": "src/opencode-gateway.js",
+        "symbol": "assertEvaluationSemantics / classifyEvaluationFailure"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": "The evaluation uses completion criteria that conflict with the host-verified assignment stage.",
+      "operational": true,
+      "security_critical": false,
+      "automatic_recovery_allowed": true,
+      "automatic_recovery": {
+        "host_operation": "reconcileBlockedEvaluation",
+        "requires": [
+          "verified_worker_packet",
+          "current_authority",
+          "remaining_evaluation_budget",
+          "independent_termination_proof"
+        ],
+        "note": "No Cursor redispatch and no automatic acceptance from this diagnosis."
+      },
+      "next_safe_action": "retry_stage_scoped_evaluation_within_existing_budget",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/PREVENTIVE-DIAGNOSTICS-V1.md"
+      ],
+      "missing_prerequisite": "A stage-correct valid evaluation bound to the same verified worker packet and current authority."
+    },
+    {
+      "id": "cursor_implementation_required",
+      "codes": [
+        "CURSOR_IMPLEMENTATION_REQUIRED"
+      ],
+      "description": "Coding requires Cursor with no implementation fallback.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/mission-worker-policy.js",
+        "symbol": "assertImplementation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "use_cursor_with_existing_authorization",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/CURSOR-ONLY-AUTONOMY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      },
+      "missing_prerequisite": "Coding requires Cursor with no implementation fallback."
+    },
+    {
+      "id": "cursor_planning_required",
+      "codes": [
+        "CURSOR_PLANNING_REQUIRED"
+      ],
+      "description": "Coding requires a sealed host-validated OpenCode planning contract.",
+      "category": "security_critical",
+      "severity": "error",
+      "source": {
+        "file": "src/mission-worker-policy.js",
+        "symbol": "assertImplementation"
+      },
+      "configured_limit": null,
+      "runtime_usage": null,
+      "failure_condition": null,
+      "operational": false,
+      "security_critical": true,
+      "automatic_recovery_allowed": false,
+      "automatic_recovery": null,
+      "next_safe_action": "submit_through_cognitive_intake",
+      "owner_approval_required": false,
+      "historical_status": "active",
+      "docs": [
+        "docs/operations/CURSOR-ONLY-AUTONOMY.md"
+      ],
+      "automatic_diagnostic": {
+        "always": true,
+        "dispatcher": "src/limits-blockers-recovery.js#dispatch",
+        "evidence": [
+          "request_state",
+          "mission"
+        ]
+      },
+      "recovery_dispatcher": {
+        "operation": "security_investigate_fail_closed",
+        "executable": false,
+        "allowlisted": true,
+        "verification": "diagnostic_complete",
+        "note": null,
+        "owner_gate_if_needed": false,
+        "security_fail_closed": true
+      },
+      "missing_prerequisite": "Coding requires a sealed host-validated OpenCode planning contract."
     }
   ],
   "authority": false

@@ -27,7 +27,7 @@ const CODE = 'CURSOR_EXECUTION_DISABLED';
 const OPS = Object.freeze(['enable_cursor', 'disable_cursor']);
 const SCOPE = 'authenticated_mcp';
 const NOTE_DISABLED =
-  'Cursor execution is disabled in Airodrom. Local OpenCode remains the default worker. '
+  'Cursor execution is disabled in Airodrom. Implementation waits for authorized enablement; no worker fallback is permitted. '
   + 'This does not cancel any external Cursor subscription. Re-enable only from the authenticated Terminal or Control Center, or via an owner-enrolled ChatGPT MCP delegation.';
 const NOTE_ENABLED =
   'Cursor execution is enabled in Airodrom. Standing Cursor development grants may cover routine spend/disclosure for enrolled repositories; otherwise subscription and disclosure grants still apply before paid dispatch.';
@@ -594,8 +594,8 @@ class HostExecutionPolicy {
       return {
         matched: false,
         code: 'CURSOR_EXECUTION_DISABLED',
-        reason: 'Cursor execution is disabled in Airodrom. Re-enable from the authenticated Terminal or Control Center, or use local OpenCode only.',
-        next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+        reason: 'Cursor execution is disabled in Airodrom. Re-enable from the authenticated Terminal or Control Center. Implementation cannot fall back to another worker.',
+        next_action: 'enable_cursor_via_authenticated_local_api',
         authority: false,
       };
     }
@@ -758,15 +758,17 @@ class HostExecutionPolicy {
   consumeStandingCursorDevelopment(grantId, requestId) {
     identifier(grantId);
     identifier(requestId);
-    const changed = this.db.prepare(
-      `UPDATE cp_standing_cursor_development SET missions_used=missions_used+1
-       WHERE id=? AND state='active' AND expires_at>? AND missions_used<max_missions`
-    ).run(grantId, Date.now()).changes;
-    if (changed !== 1) throw Error('Standing Cursor development grant unavailable');
-    this.bridge.controlStore.event('host_execution_policy.standing_cursor_development_consumed', null, {
-      grant_id: grantId, request_id: requestId, authority: false
+    return this.bridge.controlStore.request('standing-cursor', requestId, { grant_id: grantId }, () => {
+      const changed = this.db.prepare(
+        `UPDATE cp_standing_cursor_development SET missions_used=missions_used+1
+         WHERE id=? AND state='active' AND expires_at>? AND missions_used<max_missions`
+      ).run(grantId, Date.now()).changes;
+      if (changed !== 1) throw Error('Standing Cursor development grant unavailable');
+      this.bridge.controlStore.event('host_execution_policy.standing_cursor_development_consumed', null, {
+        grant_id: grantId, request_id: requestId, authority: false
+      });
+      return this.standingView(this.db.prepare('SELECT * FROM cp_standing_cursor_development WHERE id=?').get(grantId));
     });
-    return this.standingView(this.db.prepare('SELECT * FROM cp_standing_cursor_development WHERE id=?').get(grantId));
   }
 
   /**

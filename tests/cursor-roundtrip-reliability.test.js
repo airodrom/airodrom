@@ -22,12 +22,10 @@ test('explicit Have Cursor change preserves specialist and fails closed when dis
   assert.equal(roles.evaluator, 'opencode');
 });
 
-test('implicit local OpenCode selection remains available without Cursor phrases', () => {
-  assert.equal(sandbox.explicitlyRequestsCursor('Change fixture.txt from alpha to beta using local OpenCode only.'), false);
-  assert.equal(
-    R.requestedWorker('In Fixture project change fixture.txt from alpha to beta, preserving one final newline.', { cursorDisabled: true }),
-    'auto'
-  );
+test('implicit implementation requires Cursor and fails closed while disabled', () => {
+  const instruction='In Fixture project change fixture.txt from alpha to beta, preserving one final newline.';
+  assert.equal(R.requestedWorker(instruction,{cursorDisabled:false}),'cursor');
+  assert.throws(()=>R.requestedWorker(instruction,{cursorDisabled:true}),/CURSOR_EXECUTION_DISABLED/);
 });
 
 test('coercePlanningProposal never substitutes OpenCode for explicit Cursor when ineligible', () => {
@@ -50,7 +48,7 @@ test('coercePlanningProposal never substitutes OpenCode for explicit Cursor when
       tasks: [{ id: 'edit', operation: 'edit', paths: ['fixture.txt'], description: 'edit', depends_on: [], worker: 'cursor', role: 'implementation', verification: [] }],
       verification: ['fixture-test'], complexity: 'bounded'
     }, envelope),
-    /CURSOR_EXECUTION_DISABLED/
+    /cognitive_worker_unqualified:cursor/
   );
 });
 
@@ -92,39 +90,21 @@ test('MCP and operator role parsing agree on Have Cursor change', () => {
   assert.throws(() => R.requestedWorker(instruction, { cursorDisabled: true }), /CURSOR_EXECUTION_DISABLED/);
 });
 
-test('architecture path narration does not select Cursor as specialist', () => {
+test('path narration cannot request an OpenCode implementation fallback', () => {
   const pathOnly =
     'Prove ChatGPT to Airodrom to OpenCode to Cursor to OpenCode to Airodrom to ChatGPT Mission path using local OpenCode only.';
   assert.equal(sandbox.explicitlyRequestsCursor(pathOnly), false);
-  // Local OpenCode only selects opencode; Cursor must not win from path narration.
-  assert.equal(R.requestedWorker(pathOnly, { cursorDisabled: true }), 'opencode');
-  assert.doesNotThrow(() => R.requestedWorker(pathOnly, { cursorDisabled: true }));
+  for (const cursorDisabled of [false,true])
+    assert.throws(() => R.requestedWorker(pathOnly, { cursorDisabled }), /CURSOR_IMPLEMENTATION_REQUIRED/);
 });
 
 test('cancel_mission is durable and replay-safe for ask-origin Missions', async t => {
-  const f = await fixture(t, { opencode: runtime(t).options });
-  f.bridge.missionAuthority.initializeOperatorKey();
-  qualifyCanonical(f.bridge);
-  const project = f.bridge.projects.listProjects({ status: 'active' })[0];
-  const goal = f.bridge.projects.summary(project.projectId).goals[0];
-  const principal = 'mcp:' + randomUUID();
-  f.bridge.developerAutonomy.enroll({
-    alias: 'cursor-roundtrip-cancel', repository: f.repo, project_id: project.projectId, goal_id: goal.goalId,
-    workflows: ['routine_edit'], workers: ['opencode'], duration_days: 1, confirmed: true,
-    diff_check: 'diff-check', default_tests: ['fixture-test'], budgets: { max_repairs: 0 }
-  }, 'operator');
-  f.bridge.globalAutopilot?.enable?.({ confirmed: true, request_id: randomUUID() }, 'operator');
-  const askId = 'cancel_probe_' + randomUUID().replace(/-/g, '').slice(0, 12);
-  let view = await f.bridge.zeroSetupWork.ask({
-    request_id: askId,
-    instruction: 'In Fixture project change fixture.txt from alpha to beta using local OpenCode only.'
-  }, principal);
-  for (let i = 0; i < 100 && !(view.mission_id || view.technical?.mission_id); i++) {
-    await new Promise(r => setTimeout(r, 20));
-    view = f.bridge.zeroSetupWork.refreshState(askId) || view;
-  }
-  const missionId = view.mission_id || view.technical?.mission_id;
-  assert.ok(missionId, JSON.stringify(view));
+  const principal='mcp:'+randomUUID();
+  const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{caller:principal,repairs:0});
+  f.plan=f.plan.slice(0,1);
+  const view=await f.ask({review:false});
+  const missionId=view.mission_id;
+  assert.ok(missionId,JSON.stringify(view));
   const cancelId = 'cancel_req_' + randomUUID().replace(/-/g, '').slice(0, 12);
   const first = handoff.cancel(f.bridge, missionId, principal, cancelId);
   assert.equal(first.cancellation_requested, true);

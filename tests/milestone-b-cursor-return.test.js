@@ -189,34 +189,10 @@ test('Milestone B: unauthorized worker and path proposals are rejected without s
 });
 
 test('Milestone B: evaluator ready cannot override failed host verification', async (t) => {
-  const f = await setup(t, { cursor: false, repairs: 0 });
-  f.plan = f.plan.slice(0, 1);
-  f.evaluate = (o) => ({
-    ...o.coordination.result_contract,
-    recommendation: 'ready',
-    summary: 'I fixed everything successfully.',
-  });
-  const adapter = f.bridge.opencodeAdapter;
-  const prev = adapter.execute;
-  adapter.execute = async (o) => {
-    if (o.planning) return prev(o);
-    if (o.coordination) {
-      f.evaluations.push(o.coordination);
-      assert.deepEqual(o.writable, []);
-      return {
-        result: { summary: JSON.stringify(await f.evaluate(o)) },
-        changes: [],
-        provenance: { runtime_id: 'opencode', sandbox: 'fixture', termination_verified: true, authority: false },
-      };
-    }
-    // Claim an edit without host-observed changes — verification must fail.
-    return {
-      result: { summary: 'I fixed everything successfully.', tests: [], limitations: [] },
-      changes: [],
-      provenance: { runtime_id: 'opencode', sandbox: 'fixture', termination_verified: true, authority: false },
-    };
-  };
-  const pending = await f.ask();
+  const f = await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t, {repairs:0});
+  f.plan = f.plan.slice(0,1); f.wrongFirst = true;
+  f.evaluate = o => ({...o.coordination.result_contract,recommendation:'ready',summary:'I fixed everything successfully.'});
+  const pending = await f.ask({review:false});
   assert.ok(pending.mission_id, JSON.stringify(pending));
   const m = await f.settle(pending.mission_id, 'needs_rework');
   assert.equal(m.acceptance.length, 0);

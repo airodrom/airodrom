@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
+const {setup:cursorFixture}=require('./fixtures/cursor-autonomy-fixture.cjs');
 const { manifest } = require('./fixtures/opencode-fixture.cjs');
 const { CursorWorker } = require('../src/cursor-worker');
 const contracts = require('../src/mission-contract');
@@ -78,48 +79,27 @@ test('S3 unapproved network endpoint → contract rejects unknown hosts; proxy d
   assert.ok(events.some(e => e.type === 'worker.proxy_denied' && e.reason === 'endpoint'));
 });
 
-test('S4/S5/S6 worker modifies a protected test, removes assertions, edits verifier config → tampering detected before any task runs', async t => {
-  const f = await fixture(t);
-  const m = failingNative(f, { dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'], task_category: 'deterministic_files', native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'beta\n' }] } });
-  approve(f, m);
-  const baseline = m.envelope.contract.audit.verifier_baseline;
-  // Tamper the test (remove the assertion) and the verifier config between dispatch and verification.
-  const original = f.bridge.missions.verifier.verify.bind(f.bridge.missions.verifier);
-  f.bridge.missions.verifier.verify = async (mission, run) => {
-    fs.writeFileSync(path.join(f.repo, 'tests/fixture.test.cjs'), "// assertions removed\n");
-    fs.writeFileSync(path.join(f.repo, '.vscode/tasks.json'), JSON.stringify({ version: '2.0.0', tasks: [{ label: 'diff-check', type: 'process', command: 'git', args: ['diff', '--check'] }, { label: 'fixture-test', type: 'process', command: 'node', args: ['-e', 'process.exit(0)'] }] }));
-    return original(mission, run);
-  };
-  f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
-  const failed = await f.settle(m.id, 'needs_rework');
-  const v = failed.verifications[0];
-  const integrity = v.evidence.find(c => c.id === 'verifier_inputs_unchanged');
-  assert.equal(integrity.status, 'failed');
-  assert.ok(integrity.evidence.tampering.some(x => x.file === 'tests/fixture.test.cjs' && x.classification === 'verifier_owned_immutable' && x.removed_assertions >= 1));
-  assert.ok(integrity.evidence.tampering.some(x => x.file === '.vscode/tasks.json'));
-  assert.equal(v.evidence.find(c => c.id === 'protected_tests_unchanged').status, 'failed');
-  assert.ok(!v.evidence.some(c => /^task:/.test(c.id)), 'no registered task ran against tampered inputs');
-  // Trusted source remains reproducible from the base commit.
-  const audit = vb.audit(f.repo, baseline, require('../src/control-context').workspaceSnapshot(f.repo), { contract: m.envelope.contract, allowedFiles: ['fixture.txt'] });
-  assert.equal(audit.trusted_source.available, true);
-  // Repair for test tampering is classified VERIFICATION but the repair context tells the worker to restore scope only.
-  const c = classifyMission(f.bridge.controlStore.requireMission(m.id), f.bridge.controlStore);
-  assert.equal(c.category, 'VERIFICATION');
-  assert.equal(failed.acceptance.length, 0);
+test('S4/S5/S6 Cursor verifier tampering is detected before registered checks run', async t => {
+ const f=await cursorFixture(t,{repairs:0});f.plan=f.plan.slice(0,1);
+ const verify=f.bridge.missions.verifier.verify.bind(f.bridge.missions.verifier);let verification;
+ f.bridge.missions.verifier.verify=async(m,run,...args)=>{
+  fs.writeFileSync(path.join(m.envelope.workspace,'tests/fixture.test.cjs'),'// assertions removed\n');
+  fs.writeFileSync(path.join(m.envelope.workspace,'.vscode/tasks.json'),JSON.stringify({version:'2.0.0',tasks:[]}));
+  verification=await verify(m,run,...args);return verification;
+ };
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+ const check=verification.checks.find(c=>c.id==='verifier_inputs_unchanged');assert.equal(check.status,'failed');
+ assert.ok(check.evidence.tampering.some(x=>x.file==='tests/fixture.test.cjs'&&x.removed_assertions>=1));
+ assert.ok(check.evidence.tampering.some(x=>x.file==='.vscode/tasks.json'));
+ assert.ok(!verification.checks.some(c=>/^task:/.test(c.id)));assert.equal(m.acceptance.length,0);
 });
 
-test('S7 fabricated success without changes → host inventory wins; verification fails on expected_changes', async t => {
-  const { ws, promise } = cursorRun('fabricate');
-  const r = await promise;
-  assert.deepEqual(r.result.changed_files, []);
-  assert.deepEqual(r.result.tests, []);
-  fs.rmSync(ws, { recursive: true, force: true });
-  // Mission level: a completed run with no change fails verification rather than passing on prose.
-  const f = await fixture(t);
-  const m = failingNative(f, { dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'], task_category: 'deterministic_files', native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'alpha\n' }] } });
-  f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
-  const failed = await f.settle(m.id, 'needs_rework');
-  assert.ok(failed.verifications[0].evidence.some(c => c.id === 'expected_changes' && c.status === 'failed'));
+test('S7 fabricated Cursor success cannot override host inventory or verification', async t => {
+ const f=await cursorFixture(t,{repairs:0});f.plan=f.plan.slice(0,1);f.cursorMode='fabricate';
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+ assert.equal(m.specialists.assignments[0].attempts[0].verification.status,'failed');
+ assert.equal(fs.readFileSync(path.join(m.envelope.workspace,'fixture.txt'),'utf8'),'alpha\n');
+ assert.equal(m.acceptance.length,0);assert.equal(f.calls.length,1);assert.equal(f.evaluations.length,0);
 });
 
 test('S8/S9/S10 malformed JSON, illegal changed_files, omitted fields → claims discarded, host inventory authoritative', async () => {
@@ -134,18 +114,18 @@ test('S8/S9/S10 malformed JSON, illegal changed_files, omitted fields → claims
   }
 });
 
-test('S11 worker exits without verified termination → quarantine policy, no repair', async t => {
-  const f = await fixture(t), m = failingNative(f), plan = planFor(f, m);
-  approve(f, m);
-  f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
-  await f.settle(m.id, 'needs_rework');
-  f.bridge.controlStore.db.prepare("UPDATE cp_runs SET termination_verified=0, state='running' WHERE mission_id=? AND agent_id='host'").run(m.id);
-  f.bridge.controlStore.db.prepare("INSERT INTO cp_autonomous_claims VALUES(?,?,?,?,?,?)").run(plan.id, 'work', m.id, 'cae:' + randomUUID(), 'dispatched', Date.now());
-  await f.bridge.autonomousExecution.tick();
-  const view = f.bridge.autonomousExecution.inspect(plan.id);
-  assert.equal(view.autonomous.repair_lineage.work, undefined);
-  assert.ok(['uncertain_execution', 'unverified_termination', 'failure_not_repairable'].includes(view.autonomous.repair_blocked.work), view.autonomous.repair_blocked.work);
-  assert.equal(classifyMission(f.bridge.controlStore.requireMission(m.id), f.bridge.controlStore).policy, 'quarantine');
+test('S11 unverified Cursor termination prevents correction and acceptance', async t => {
+ const f=await cursorFixture(t,{repairs:1});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ const evaluate=f.evaluate;f.evaluate=o=>{
+  const m=f.bridge.controlStore.requireMission(o.coordination.specialist_return.assignment.parent_mission_id);
+  f.bridge.controlStore.db.prepare("UPDATE cp_runs SET termination_verified=0 WHERE mission_id=? AND agent_id='cursor'").run(m.id);
+  return evaluate(o);
+ };
+ const p=await f.ask({review:false});let m;
+ for(let i=0;i<600;i++){await f.bridge.missions.tick();m=f.bridge.missions.detail(p.mission_id);if(['blocked','needs_rework'].includes(m.state))break;await new Promise(r=>setTimeout(r,50));}
+ assert.ok(['blocked','needs_rework'].includes(m.state),m.state);assert.equal(m.acceptance.length,0);assert.equal(f.calls.length,1);
+ assert.ok(m.runs.some(r=>r.agent_id==='cursor'&&!r.termination_verified));
+ assert.ok(['quarantine','owner'].includes(classifyMission(f.bridge.controlStore.requireMission(m.id),f.bridge.controlStore).policy));
 });
 
 test('S12 worker requests new capabilities via output → data only; permissions unchanged', async () => {
@@ -181,22 +161,12 @@ test('S13/S14/S15 duplicate request_id, approval replay, approval expiry', async
   assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(m.id).n, 0, 'no dispatch under an expired approval');
 });
 
-test('S16 repair budget exhausted → repair_budget, no further Missions', async t => {
-  const f = await fixture(t), m = failingNative(f), plan = planFor(f, m, { max_repairs: 1 });
-  approve(f, m);
-  // Every verification sees wrong bytes: the parent and the single corrective attempt both fail.
-  const original = f.bridge.missions.verifier.verify.bind(f.bridge.missions.verifier);
-  f.bridge.missions.verifier.verify = async (mi, r) => { fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'wrong\n'); return original(mi, r); };
-  await f.bridge.autonomousExecution.tick();
-  let repairId = null;
-  for (let i = 0; i < 400 && !repairId; i++) { await f.bridge.missions.tick(); repairId = f.bridge.autonomousExecution.inspect(plan.id).autonomous.repair_lineage?.work?.repair_mission_id || null; if (!repairId) await new Promise(r => setTimeout(r, 20)); }
-  assert.ok(repairId);
-  await f.settle(repairId, 'needs_rework');
-  await f.bridge.autonomousExecution.tick();
-  const view = f.bridge.autonomousExecution.inspect(plan.id);
-  assert.ok(['repair_budget', 'contract_budget'].includes(view.autonomous.repair_blocked.work), view.autonomous.repair_blocked.work);
-  assert.equal(f.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_missions WHERE json_extract(envelope,'$.repair_of') IS NOT NULL").get().n, 1);
-  assert.match(view.autonomous.phases.work.message, /budget is used up/);
+test('S16 exhausted Cursor repair budget permits no further worker or Mission', async t => {
+ const f=await cursorFixture(t,{repairs:0});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ const p=await f.ask({review:false}),m=await f.settle(p.mission_id,'needs_rework');
+ for(let n=0;n<4;n++)await f.bridge.missions.tick();
+ assert.equal(f.calls.length,1);assert.equal(m.specialists.repair_attempts,0);assert.equal(m.acceptance.length,0);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,1);
 });
 
 test('S17 uncertain prior side effects → quarantine blocks dispatch and repair', async t => {
@@ -220,59 +190,28 @@ test('S18 symlink escape in the workspace → worker staging refuses; verifier f
   fs.rmSync(ws, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true });
 });
 
-test('S19/S20 parent verification fails safely and exactly one repair is created even under concurrent ticks and restart', async t => {
-  const f = await fixture(t), m = failingNative(f), plan = planFor(f, m, { max_repairs: 3 });
-  approve(f, m);
-  f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });
-  await f.settle(m.id, 'needs_rework');
-  f.bridge.controlStore.db.prepare("INSERT INTO cp_autonomous_claims VALUES(?,?,?,?,?,?)").run(plan.id, 'work', m.id, 'cae:' + randomUUID(), 'dispatched', Date.now());
-  // Concurrent ticks + a direct handleFailure race: deterministic keys guarantee one corrective Mission.
-  const ae = f.bridge.autonomousExecution;
-  const repair = new AutonomousRepair(ae);
-  const view = ae.inspect(plan.id);
-  const claim = view.autonomous.claims.find(c => c.mission_id === m.id);
-  await Promise.all([ae.tick(), ae.tick(), Promise.resolve().then(() => { try { repair.handleFailure(plan.id, view, view.autonomous, claim, f.bridge.controlStore.requireMission(m.id)); } catch { /* race loser */ } })]);
-  await f.reopen(); f.ensureAdmission();
-  await f.bridge.autonomousExecution.tick();
-  assert.equal(f.bridge.controlStore.db.prepare("SELECT count(*) n FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").get(m.id).n, 1);
-  assert.equal(f.bridge.autonomousExecution.inspect(plan.id).autonomous.repair_counts.work, 1);
+test('S19/S20 failed verification triggers exactly one Cursor correction under concurrent ticks and restart', async t => {
+ const f=await cursorFixture(t,{repairs:1});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ const p=await f.ask({review:false});await Promise.all(Array.from({length:10},()=>f.bridge.missions.tick()));
+ const m=await f.settle(p.mission_id,'completed');assert.equal(f.calls.length,2);assert.equal(m.specialists.repair_attempts,1);assert.equal(m.acceptance.length,1);
+ await f.reopen({beforeResume:()=>f.bindAdapter()});await Promise.all(Array.from({length:5},()=>f.bridge.missions.tick()));
+ assert.equal(f.calls.length,2);assert.equal(f.bridge.missions.detail(m.id).acceptance.length,1);
 });
 
-test('S21/S22/S23 Terminal and ChatGPT disconnects do not cancel or redispatch; reconnect uses the original identity', async t => {
-  const f = await fixture(t), m = failingNative(f, { dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'], task_category: 'deterministic_files', native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'beta\n' }] } });
-  approve(f, m);
-  const plan = planFor(f, m);
-  const request_id = randomUUID();
-  f.bridge.zeroSetupWork.write(request_id, 'mcp:chatgpt-session', { version: 1, instruction: 'change fixture', intent: { kind: 'exact_file', file: 'fixture.txt', from: 'alpha\n', to: 'beta\n' }, project_id: m.project_id, project_name: 'Fixture project', goal_id: m.goal_id, mission_id: m.id, plan_id: plan.id, presentation: { status: 'Working', files: ['fixture.txt'] }, execution_enabled: true, authority: false }, 'running');
-  terminal.rememberActive(f.root, request_id);
-  await f.bridge.autonomousExecution.tick();
-  // "Disconnect": nobody polls while the scheduler finishes the work.
-  await f.settle(m.id, 'awaiting_acceptance');
-  const dispatches = f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(m.id).n;
-  // Reconnect from Terminal: same request id, terminal view, identity cleared only now.
-  assert.equal(terminal.readActive(f.root).request_id, request_id);
-  const view = f.bridge.zeroSetupWork.refreshState(request_id);
-  assert.equal(view.technical.mission_id, m.id);
-  assert.equal(view.technical.phase_terminal, true);
-  // Reconnect from ChatGPT: durable evidence available without any wake-up.
-  const pkg = require('../src/mission-evidence').evidencePackage(f.bridge, m.id);
-  assert.equal(pkg.status, 'VERIFIED_AWAITING_ACCEPTANCE');
-  await f.bridge.autonomousExecution.tick();
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(m.id).n, dispatches, 'no redispatch after reconnect');
+test('S21/S22/S23 disconnect and reconnect retain the automatically settled Mission identity', async t => {
+ const f=await cursorFixture(t,{repairs:0});f.plan=f.plan.slice(0,1);const p=await f.ask({review:false});
+ terminal.rememberActive(f.root,p.request_id);const m=await f.settle(p.mission_id,'completed');
+ assert.equal(terminal.readActive(f.root).request_id,p.request_id);
+ const view=f.bridge.zeroSetupWork.refreshState(p.request_id);assert.equal(view.mission_id,m.id);
+ const evidence=require('../src/mission-evidence').evidencePackage(f.bridge,m.id);assert.equal(evidence.acceptance_status,'accepted');assert.equal(evidence.settlement_status,'settled');
+ const replay=await f.bridge.zeroSetupWork.ask(f.request,'operator');assert.equal(replay.mission_id,m.id);assert.equal(f.calls.length,1);
 });
 
-test('S24 Airodrom restart without duplicate execution', async t => {
-  const f = await fixture(t), m = failingNative(f, { dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'], task_category: 'deterministic_files', native_actions: [{ name: 'file_write', path: 'fixture.txt', content: 'beta\n' }] } });
-  approve(f, m);
-  const plan = planFor(f, m);
-  await f.bridge.autonomousExecution.tick();
-  const first = f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(m.id).n;
-  await f.reopen(); f.ensureAdmission();
-  await f.bridge.autonomousExecution.tick();
-  await f.bridge.autonomousExecution.tick();
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_dispatches WHERE mission_id=?').get(m.id).n, first);
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 1, 'approval survives restart');
-  assert.equal(f.bridge.autonomousExecution.inspect(plan.id).autonomous.claims.filter(c => c.state === 'dispatched').length <= 1, true);
+test('S24 controller reopen preserves accepted Cursor work with no duplicate execution', async t => {
+ const f=await cursorFixture(t,{repairs:0});f.plan=f.plan.slice(0,1);const p=await f.ask({review:false});await f.settle(p.mission_id,'completed');
+ await f.reopen({beforeResume:()=>f.bindAdapter()});await f.bridge.missions.tick();
+ assert.equal(f.calls.length,1);assert.equal(f.bridge.missions.detail(p.mission_id).acceptance.length,1);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n,1);
 });
 
 test('S25 worker changes a denied file and claims success → denied before any apply; secrets never appear in evidence', async t => {

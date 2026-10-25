@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { completeHistoricalOpenCode } = require('./fixtures/historical-opencode-fixture.cjs');
 const { runtime, qualifyCanonical } = require('./fixtures/opencode-fixture.cjs');
 const ControlServer = require('../src/control-server');
 
@@ -222,7 +223,7 @@ test('revoked and expired policy/grant fail closed at dispatch', async t => {
   }
 });
 
-test('authorizeRoutine Mission completes with OpenCode fixture without WORK template renewal', async t => {
+test('historical authorizeRoutine completion retains verification without WORK template renewal', async t => {
   const f = await setup(t);
   qualifyCanonical(f.bridge);
   const da = f.bridge.developerAutonomy;
@@ -241,7 +242,7 @@ test('authorizeRoutine Mission completes with OpenCode fixture without WORK temp
   assert.equal(auth.grant.state, 'active');
   assert.ok(auth.workspace.path.includes('.airodrom-da-worktrees'));
   const mission = f.bridge.missions.create(auth.mission_input, 'operator');
-  f.bridge.missions.dispatch(mission.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, mission);
   const done = await f.settle(mission.id);
   assert.equal(done.state, 'awaiting_acceptance');
   assert.equal(done.runs[0].agent_id, 'opencode');
@@ -444,10 +445,10 @@ test('enrolled verifier definitions and inputs stay immutable in disposable clon
   assert.throws(() => da.grantScope(grant.grant_id), /verification definitions/);
 });
 
-test('cleanup holds queued Missions and requires proven terminal ownership', async t => {
+test('cleanup holds undispatched legacy Missions until explicit cancellation', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput, 'operator');
   const auth = routine(da, policy), m = b.missions.create(auth.mission_input, 'operator');
-  b.missions.dispatch(m.id, {request_id: randomUUID()});
+  assert.throws(()=>b.missions.dispatch(m.id, {request_id: randomUUID()}),/CURSOR_IMPLEMENTATION_REQUIRED/);
   assert.equal(da.inspectWorkspace(auth.workspace.workspace_id).mission_id, m.id);
   const held = da.cleanupWorkspace({workspace_id: auth.workspace.workspace_id, confirmed: true}, 'operator');
   assert.equal(held.state, 'held'); assert.ok(fs.existsSync(auth.workspace.path));
@@ -522,30 +523,21 @@ test('legacy max_disk_mb is not an aggregate admission ceiling; retained files a
   );
 });
 
-test('ordinary owner request uses enrollment; MCP remains a proposal', async t => {
-  const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
-  const policy = da.enroll({...f.enrollInput, workflows:['routine_edit'], budgets:{...f.enrollInput.budgets,max_repairs:0}}, 'operator');
-  const instruction = 'Fix fixture.txt from alpha to beta';
-  const remoteId = randomUUID();
-  const remote = await b.zeroSetupWork.ask({instruction, request_id:remoteId}, 'mcp:fixture');
-  assert.equal(remote.state,'WAIT'); assert.equal(remote.execution_authorized,false);
-  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_developer_autonomy_grants').get().n,0);
-  const localId = randomUUID();
-  const local = await b.zeroSetupWork.ask({instruction, request_id:localId}, 'operator');
-  assert.equal(local.execution_authorized,true);
-  const record = b.zeroSetupWork.read(localId), mission = b.controlStore.requireMission(record.mission_id);
-  assert.equal(mission.envelope.developer_autonomy.policy_id,policy.policy_id);
-  assert.notEqual(mission.envelope.workspace,f.repo);
-  assert.equal(da.inspectGrant(mission.envelope.developer_autonomy.grant_id).repair_budget,0);
-  assert.equal(b.workTemplates.list('operator').length,0);
-  b.missions.cancel(mission.id,{request_id:randomUUID()});
+test('legacy enrollment cannot activate implementation without a sealed Cursor plan', async t => {
+ const f=await setup(t),b=f.bridge,da=b.developerAutonomy;
+ da.enroll({...f.enrollInput,workflows:['routine_edit'],budgets:{...f.enrollInput.budgets,max_repairs:0}},'operator');
+ for(const principal of ['mcp:fixture','operator']){
+  const result=await b.zeroSetupWork.ask({instruction:'Fix fixture.txt from alpha to beta',request_id:randomUUID()},principal);
+  assert.equal(result.state,'BLOCKED');assert.ok(result.blockers.includes('CURSOR_EXECUTION_DISABLED'));assert.equal(result.execution_authorized,false);
+ }
+ assert.equal(b.controlStore.listMissions().length,0);assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_developer_autonomy_grants').get().n,0);
 });
 
 test('repair keeps grant lineage and rejects zero budget and revocation', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
   const auth = routine(da,policy,{objective:'Synthetic unchanged implementation',repair_budget:0,
     criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
-  const m = b.missions.create(auth.mission_input,'operator'); b.missions.dispatch(m.id,{request_id:randomUUID()});
+  const m = b.missions.create(auth.mission_input,'operator'); await completeHistoricalOpenCode(f, m);
   await f.settle(m.id,'needs_rework');
   const failed = b.controlStore.requireMission(m.id), repair = require('../src/autonomous-repair');
   const input = repair.repairInput(failed,{objective:'Bounded correction'},{request_id:randomUUID()});
@@ -562,7 +554,7 @@ test('zero-repair needs_rework consumes the concurrent reservation', async t => 
   const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:0,
     criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   const m = b.missions.create(first.mission_input, 'operator');
-  b.missions.dispatch(m.id, {request_id:randomUUID()});
+  await completeHistoricalOpenCode(f, m);
   await f.settle(m.id, 'needs_rework');
   assert.equal(da.reservations(policy.policy_id), 0);
   assert.equal(da.inspectGrant(first.grant.grant_id).state, 'consumed');
@@ -579,7 +571,7 @@ test('needs_rework with remaining repair budget keeps reservation while writers 
   const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:1,
     criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   const m = b.missions.create(first.mission_input, 'operator');
-  b.missions.dispatch(m.id, {request_id:randomUUID()});
+  await completeHistoricalOpenCode(f, m);
   await f.settle(m.id, 'needs_rework');
   // Without forcing verified idle termination, unsettled writers still occupy capacity.
   if (!da.workspaceIdle(first.workspace.path)) {
@@ -610,7 +602,7 @@ test('idle needs_rework with remaining repair budget frees concurrent admission'
   b.missions.cancel(next.id, {request_id:randomUUID()});
 });
 
-test('settled retained worktrees do not exhaust the concurrent worktree budget', async t => {
+test('cancelled legacy Missions retain worktrees without exhausting concurrent capacity', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy;
   const policy = da.enroll({
     ...f.enrollInput,
@@ -621,9 +613,9 @@ test('settled retained worktrees do not exhaust the concurrent worktree budget',
   const first = routine(da, policy, {objective:'Synthetic unchanged implementation', repair_budget:0,
     criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   const m = b.missions.create(first.mission_input, 'operator');
-  b.missions.dispatch(m.id, {request_id:randomUUID()});
-  await f.settle(m.id, 'needs_rework');
-  assert.equal(da.inspectGrant(first.grant.grant_id).state, 'consumed');
+  assert.throws(()=>b.missions.dispatch(m.id, {request_id:randomUUID()}),/CURSOR_IMPLEMENTATION_REQUIRED/);
+  b.missions.cancel(m.id,{request_id:randomUUID()});
+  assert.notEqual(da.inspectGrant(first.grant.grant_id).state, 'active');
   assert.equal(da.occupiedWorktrees(policy.policy_id), 0);
   assert.ok(fs.existsSync(first.workspace.path));
   const second = routine(da, policy, {objective:'Second Mission after retained worktree'});
@@ -730,41 +722,27 @@ test('explicitly named enrolled requests retain the full instruction beyond the 
   assert.ok(instruction.length>1000);
   const request_id=randomUUID();
   const result=await b.zeroSetupWork.ask({instruction,request_id},'operator');
-  assert.equal(result.execution_authorized,true);
-  const record=b.zeroSetupWork.read(request_id),mission=b.controlStore.requireMission(record.mission_id);
-  assert.equal(record.intent.objective,instruction);
-  assert.equal(mission.envelope.objective,instruction);
-  assert.equal(mission.envelope.contract.objective.original_instruction,instruction);
-  b.missions.cancel(mission.id,{request_id:randomUUID()});
+  assert.equal(result.execution_authorized,false);assert.ok(result.blockers.includes('CURSOR_EXECUTION_DISABLED'));
+  const record=b.zeroSetupWork.read(request_id);assert.equal(record.instruction,instruction);assert.ok(!record.mission_id);
 });
 
 
-test('permitted repair preserves limits, completes, and releases its reservation', async t => {
-  const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
-  const auth = routine(da,policy,{objective:'Synthetic unchanged implementation',repair_budget:1,
-    criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
-  const parent = b.missions.create(auth.mission_input,'operator'); b.missions.dispatch(parent.id,{request_id:randomUUID()});
-  await f.settle(parent.id,'needs_rework');
-  const failed = b.controlStore.requireMission(parent.id);
-  const repair = require('../src/autonomous-repair');
-  const childId = b.controlStore.db.prepare("SELECT id FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").get(parent.id).id;
-  const queued = b.controlStore.getMission(childId);
-  assert.equal(queued.envelope.authority.expiresAt, parent.envelope.authority.expiresAt);
-  assert.equal(queued.envelope.developer_autonomy.grant_id, auth.grant.grant_id);
-  assert.equal(b.missions.detail(childId).acceptance.length, 0);
-  assert.throws(()=>b.missions.create(repair.repairInput(failed,{objective:'Extra correction'},{request_id:randomUUID()}),'operator'),/repair budget|repair already/);
-  const done = await f.settle(childId);
-  assert.equal(done.state,'awaiting_acceptance');
-  b.missions.accept(childId,{request_id:randomUUID(),decision:'accept',verification_id:done.verifications[0].id,rationale:'Synthetic exact bytes and independent checks verified'},'operator');
-  assert.equal(da.inspectGrant(auth.grant.grant_id).state,'consumed');
-  assert.ok(routine(da,policy).grant.grant_id);
+test('historical failure retains its grant and cannot launch an unplanned legacy repair',async t=>{
+ const f=await setup(t),b=f.bridge,da=b.developerAutonomy,policy=da.enroll(f.enrollInput,'operator');
+ const auth=routine(da,policy,{objective:'Synthetic unchanged implementation',repair_budget:1,criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
+ const parent=b.missions.create(auth.mission_input,'operator');await completeHistoricalOpenCode(f,parent);const failed=await f.settle(parent.id,'needs_rework');
+ const before=failed.verifications[0].id,result=require('../src/autonomous-repair').considerVerifiedRepair(b,parent.id);
+ assert.equal(result.action,'failed');assert.match(result.reason,/CURSOR_IMPLEMENTATION_REQUIRED/);
+ assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").get(parent.id).n,0);
+ assert.equal(b.controlStore.requireMission(parent.id).envelope.developer_autonomy.grant_id,auth.grant.grant_id);
+ assert.equal(b.missions.detail(parent.id).verifications[0].id,before);assert.equal(b.missions.detail(parent.id).acceptance.length,0);
 });
 
 test('owner Acceptance remains available after Developer Autonomy grant TTL expiry', async t => {
   const f = await setup(t), b = f.bridge, da = b.developerAutonomy, policy = da.enroll(f.enrollInput,'operator');
   const auth = routine(da,policy,{criteria:[{id:'expected-file',type:'exact_file',path:'fixture.txt',content:'beta\n'}]});
   const m = b.missions.create(auth.mission_input,'operator');
-  b.missions.dispatch(m.id,{request_id:randomUUID()});
+  await completeHistoricalOpenCode(f, m);
   const done = await f.settle(m.id);
   assert.equal(done.state,'awaiting_acceptance');
   da.assertMission(b.controlStore.requireMission(m.id));
@@ -802,7 +780,7 @@ test('owner Acceptance still works if authority expiry incorrectly blocked after
     max_runtime_hours: 1,
     max_attempts: 3
   });
-  b.missions.dispatch(m.id,{request_id:randomUUID()});
+  await completeHistoricalOpenCode(f, m);
   const done = await f.settle(m.id);
   assert.equal(done.state,'awaiting_acceptance');
   const verifiedRevision = b.controlStore.requireMission(m.id).revision;
@@ -850,7 +828,7 @@ test('MANUAL Developer Autonomy cannot enable or inherit automatic Acceptance', 
   assert.equal(m.envelope.risk_auto_acceptance,undefined);
   assert.throws(()=>b.missions.riskAcceptance.authorizeExisting(m.id,{request_id:randomUUID(),confirmed:true},'operator'),/explicit Acceptance/);
   assert.equal(b.missions.riskAcceptance.evaluate(m.id).reason,'expanded_autonomy_manual_or_stopped');
-  b.missions.dispatch(m.id,{request_id:randomUUID()});
+  await completeHistoricalOpenCode(f, m);
   const done=await f.settle(m.id);
   assert.equal(done.state,'awaiting_acceptance');
 });
@@ -1024,7 +1002,7 @@ let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{
   const mission = f.bridge.missions.create(auth.mission_input, 'operator');
   assert.equal(mission.state, 'ready');
   assert.deepEqual(mission.envelope.verification_manifest.authorized_auxiliary_files, ['tests/events.test.ts']);
-  f.bridge.missions.dispatch(mission.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, mission);
   const done = await f.settle(mission.id);
   assert.equal(done.state, 'awaiting_acceptance');
   assert.equal(done.acceptance.length, 0);
@@ -1049,7 +1027,7 @@ let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{
     allowed_files: ['tests/events.test.ts'], workflow: 'routine_edit', diff_check: 'diff-check', tests: ['static-typecheck']
   }, 'operator');
   const rejected = f.bridge.missions.create(denied.mission_input, 'operator');
-  f.bridge.missions.dispatch(rejected.id, { request_id: randomUUID() });
+  await completeHistoricalOpenCode(f, rejected);
   let settled;
   for (let n = 0; n < 200; n++) {
     await f.bridge.missions.tick();
@@ -1060,4 +1038,82 @@ let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{
   assert.notEqual(settled.state, 'awaiting_acceptance');
   assert.equal(settled.acceptance.length, 0);
   assert.equal(fs.readFileSync(path.join(denied.workspace.path, 'tests/events.test.ts'), 'utf8'), applicationTest);
+});
+
+test('repository preflight retires cleaned aliases before the 24-path ceiling without deleting history', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy, policy = da.enroll(f.enrollInput, 'operator');
+  const ws = da.prepareWorkspace({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  // Fault injection: cleanup completed but its best-effort project unbind was lost.
+  da.db.prepare("UPDATE cp_developer_autonomy_workspaces SET state='cleaned' WHERE workspace_id=?").run(ws.workspace_id);
+  fs.rmSync(ws.path,{recursive:true});
+  const other = Array.from({length:22},(_,i)=>path.join(f.root,'unmanaged-'+i));
+  f.bridge.projects.updateProject(policy.project_id,{repositories:[f.repo,ws.path,...other]});
+  const next = await da.prepareWorkspaceAsync({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  const project = f.bridge.projects.getProject(policy.project_id);
+  assert.equal(project.repositories.length,24);assert.ok(!project.repositories.includes(ws.path));assert.ok(project.repositories.includes(next.path));
+  assert.equal(da.inspectWorkspace(ws.workspace_id).state,'cleaned');assert.ok(fs.existsSync(f.repo));
+  assert.ok(other.every(p=>project.repositories.includes(p)),'unregistered missing paths must not be retired');
+});
+
+test('repository preflight preserves held file evidence while retiring only its idle binding', async t => {
+  const f = await setup(t), da=f.bridge.developerAutonomy, policy=da.enroll(f.enrollInput,'operator');
+  const ws=da.prepareWorkspace({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  fs.writeFileSync(path.join(ws.path,'evidence.txt'),'retained dirty evidence\n');
+  da.db.prepare("UPDATE cp_developer_autonomy_workspaces SET state='held' WHERE workspace_id=?").run(ws.workspace_id);
+  const before=da.db.prepare('SELECT record FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').get(ws.workspace_id).record;
+  da.reconcileRepositoryRegistrations(policy,'operator');
+  assert.equal(fs.readFileSync(path.join(ws.path,'evidence.txt'),'utf8'),'retained dirty evidence\n');
+  assert.equal(da.db.prepare('SELECT record FROM cp_developer_autonomy_workspaces WHERE workspace_id=?').get(ws.workspace_id).record,before);
+  assert.ok(!f.bridge.projects.getProject(policy.project_id).repositories.includes(ws.path));
+  assert.ok(f.bridge.projects.getProject(policy.project_id).repositories.includes(f.repo));
+});
+
+test('repository preflight fails before clone when every binding is protected or unknown', async t => {
+  const f=await setup(t),da=f.bridge.developerAutonomy,policy=da.enroll(f.enrollInput,'operator');
+  const repos=[f.repo,...Array.from({length:23},(_,i)=>path.join(f.root,'owner-repo-'+i))];
+  f.bridge.projects.updateProject(policy.project_id,{repositories:repos});
+  const trees=path.join(da.dataRoot(policy.repository),'worktrees'),before=fs.readdirSync(trees);
+  await assert.rejects(da.prepareWorkspaceAsync({policy_id:policy.policy_id,request_id:randomUUID()},'operator'),e=>{
+    assert.equal(e.code,'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED');assert.equal(e.diagnosis.limit,24);return true;
+  });
+  assert.deepEqual(fs.readdirSync(trees),before);assert.deepEqual(f.bridge.projects.getProject(policy.project_id).repositories,repos);
+});
+
+test('repository retirement preserves planning, unsettled, quarantined and changed-identity bindings', async t => {
+  const f=await setup(t),da=f.bridge.developerAutonomy,policy=da.enroll(f.enrollInput,'operator');
+  const ws=da.prepareWorkspace({policy_id:policy.policy_id,request_id:randomUUID(),prefer_disposable:true},'operator');
+  da.db.prepare("UPDATE cp_developer_autonomy_workspaces SET state='held' WHERE workspace_id=?").run(ws.workspace_id);
+  f.bridge.zeroSetupWork.write('fixture-planning','operator',{workspace:ws.path},'planning');
+  assert.equal(da.repositoryRegistrationPlan(policy).retired.length,0);
+  da.db.prepare("UPDATE cp_zero_setup_requests SET state='blocked' WHERE request_id='fixture-planning'").run();
+  const original=da.workspaceIdle;da.workspaceIdle=()=>false;
+  assert.equal(da.repositoryRegistrationPlan(policy).retired.length,0);da.workspaceIdle=original;
+  fs.renameSync(ws.path,ws.path+'-evidence');fs.mkdirSync(ws.path);
+  assert.equal(da.repositoryRegistrationPlan(policy).retired.length,0);
+  assert.throws(()=>da.reconcileRepositoryRegistrations(policy,'mcp:fixture'),/operator/);
+});
+
+
+test('repository slot race holds the newly created clone without registering or dispatching it', async t => {
+  const f = await setup(t), da = f.bridge.developerAutonomy, policy = da.enroll(f.enrollInput, 'operator');
+  const reconcile = da.reconcileRepositoryRegistrations.bind(da);
+  let checks = 0;
+  da.reconcileRepositoryRegistrations = (p, owner) => {
+    if (++checks === 2) f.bridge.projects.updateProject(policy.project_id, {
+      repositories: [f.repo, ...Array.from({ length: 23 }, (_, i) => path.join(f.root, 'concurrent-' + i))],
+    });
+    return reconcile(p, owner);
+  };
+  assert.throws(() => da.prepareWorkspace({ policy_id: policy.policy_id, request_id: randomUUID() }, 'operator'),
+    { code: 'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED' });
+  const rows = da.db.prepare('SELECT * FROM cp_developer_autonomy_workspaces').all();
+  assert.equal(rows.length, 1);
+  const ws = da.inspectWorkspace(rows[0].workspace_id);
+  assert.equal(ws.state, 'held');
+  assert.equal(ws.preparation_blocker, 'PROJECT_REPOSITORY_CAPACITY_EXHAUSTED');
+  assert.equal(ws.grant_id, null);
+  assert.equal(ws.mission_id, null);
+  assert.ok(fs.existsSync(ws.path));
+  assert.ok(!f.bridge.projects.getProject(policy.project_id).repositories.includes(ws.path));
+  assert.throws(() => da.bindWorkspace(ws.workspace_id, {}), /Ready task workspace required/);
 });

@@ -130,28 +130,21 @@ test('OpenCode availability is preserved so routing reports the specific provide
   assert.equal(route.rejected[0].reason, 'opencode_local_provider_timeout');
 });
 
-test('unavailable OpenCode produces no worker invocation and no repair Mission', async t => {
-  const f = await fixture(t);
-  const b = f.bridge;
+test('unavailable OpenCode planner produces no Cursor invocation or repair Mission', async t => {
+  const f = await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t, {repairs:0});
+  const b = f.bridge; f.plan = f.plan.slice(0,1);
   b.opencodeAdapter.readiness = async () => ({
-    agentId: 'opencode', implemented: true, installed: true, version: '2.0.25',
-    ready: false, available: false, availability: 'unavailable',
-    reason: 'opencode_local_provider_unavailable', capabilities: ['coding', 'bounded_file_work']
+    agentId:'opencode',implemented:true,installed:true,version:'2.0.25',
+    ready:false,available:false,availability:'unavailable',reason:'opencode_local_provider_unavailable',
+    capabilities:['coding','bounded_file_work']
   });
-  const m = f.create({
-    preferred_agent: 'opencode',
-    fallback_agents: [],
-    dispatch_policy: { privacy: 'local_only', providers: ['local'], billing_classes: ['local'], task_category: 'focused_coding' }
-  });
-  f.bridge.missions.dispatch(m.id, { request_id: 'readiness-unavailable-' + Date.now() });
-  const blocked = await f.settle(m.id, 'blocked');
-  assert.equal(blocked.reason, 'no_compatible_available_agent');
-  assert.equal(blocked.dispatches[0].route.rejected[0].reason, 'opencode_local_provider_unavailable');
-  assert.equal(f.calls(), 0);
-  assert.equal((blocked.dispatches || []).every(d => !d.run_id), true);
-  const repairs = b.controlStore.db.prepare("SELECT count(*) n FROM cp_missions WHERE json_extract(envelope,'$.repair_of')=?").get(m.id).n;
-  assert.equal(repairs, 0);
-  assert.equal(blocked.acceptance?.length || 0, 0);
+  // Exercise the real adapter readiness gate; the planning stub normally bypasses I/O.
+  b.opencodeAdapter.execute = f.worker;
+  const blocked = await f.ask({review:false});
+  assert.equal(blocked.state,'BLOCKED'); assert.equal(blocked.mission_id,null);
+  assert.equal(f.calls.length,0);
+  assert.equal(b.controlStore.db.prepare("SELECT count(*) n FROM cp_runs WHERE agent_id='cursor'").get().n,0);
+  assert.equal(b.controlStore.db.prepare('SELECT count(*) n FROM cp_missions').get().n,0);
 });
 
 test('conversation Ready does not mark OpenCode worker available for WORK', async t => {

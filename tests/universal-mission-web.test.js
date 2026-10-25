@@ -3,9 +3,9 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {randomUUID,createHash}=require('node:crypto');
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const {ResearchNetwork}=require('../src/research-network');
-const {fixture}=require('./fixtures/mission-fixture.cjs');
+const {fixture}=require('./fixtures/read-mission-fixture.cjs');
 function authority(repo){return {level:'development',expiresAt:Date.now()+600000,permissions:{repository:['read','write'],runtime:['diagnostic','test'],network:['localhost','internet'],secrets:[],data:['read','workspace_write']},filesystem:{read:[repo],write:[repo]}};}
-function native(f,extra={}){return f.create({objective:'Read https://example.com/ and change the fixture as specified.',task_type:'local_files',authority:authority(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_write',path:'fixture.txt',content:'beta\n'}]},...extra});}
+function native(f,extra={}){return f.create({objective:'Read https://example.com/ and inspect the unchanged fixture.',task_type:'local_files',criteria:[{id:'expected_file',type:'exact_file',path:'fixture.txt',content:'alpha\n'}],authority:authority(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],task_category:'deterministic_files',native_actions:[{name:'file_read',path:'fixture.txt'}]},...extra});}
 class Browser{
  constructor(o){Object.assign(this,o);fs.mkdirSync(o.evidenceDir,{recursive:true,mode:0o700});}
  async execute(a){if(a.type==='navigate'){this.url=a.url;return {state:'navigated'};}const id=randomUUID(),text='Public features and documentation.',row={id,url:this.url,title:'Public synthetic site',text,content:text,sha256:hash(text),classification:'observed',links:[{id:randomUUID(),text:'Public second source',url:'https://example.org/'}],forms:[],viewport:{width:1280,height:800},captured_at:Date.now(),authority:false,untrusted:true};if(a.type==='screenshot'){const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'),file=path.join(this.evidenceDir,id+'.png');fs.writeFileSync(file,png,{mode:0o600,flag:'wx'});row.screenshot_ref={id,path:file,sha256:hash(png),mimeType:'image/png'};}const bytes=Buffer.from(JSON.stringify(row)+'\n'),file=path.join(this.evidenceDir,id+'.json');fs.writeFileSync(file,bytes,{mode:0o600,flag:'wx'});row.evidence_ref={id,path:file,sha256:hash(bytes)};return row;}
@@ -22,7 +22,7 @@ test('public domain discovery remains bounded; redirects, mutation methods, auth
  assert.throws(()=>require('../src/mission-web-policy').validate({mission_id:randomUUID(),action:{type:'authenticate'}}));
  assert.throws(()=>require('../src/mission-web-policy').validate({mission_id:randomUUID(),action:{type:'explore',url:'https://example.com/',headers:{}}}));
 });
-test('any qualified local coding Mission uses brokered web preflight, independently verifies evidence, and requires owner Acceptance',async t=>{
+test('an authorized read-only host Mission uses brokered web preflight, independently verifies evidence, and requires owner Acceptance',async t=>{
  const f=await fixture(t);synthetic(f);const m=native(f),web=f.bridge.missions.web;
  assert.equal(m.envelope.capability_scopes.includes('web_read'),false,'No default browser grant was added');
  assert.throws(()=>web.configure(m.id,{request_id:randomUUID(),mode:'all',entries:['https://example.com/'],confirmed:true},'mcp'));
@@ -157,6 +157,9 @@ test('public source timestamps do not become card false positives and cannot exe
  }finally{web.context=original;}
 });
 
-test('qualified web-assisted OpenCode builds a real bounded input with public URL/source/link metadata',async t=>{
- const r=require('./fixtures/opencode-fixture.cjs').runtime(t);const runtimeFile=r.options.executable;fs.writeFileSync(runtimeFile,fs.readFileSync(runtimeFile,'utf8').replace("if(o.includes('alpha to beta')","if(o.includes('WEB_ROUND')&&!p.current_context.web.some(e=>e.url==='https://example.org/')){result.status='needs_web';result.web_requests=[{type:'inspect',url:'https://example.org/'}];}if(result.status!=='needs_web'&&o.includes('alpha to beta')"));const f=await fixture(t,{opencode:r.options}),b=f.bridge;require('./fixtures/opencode-fixture.cjs').qualifyCanonical(b);synthetic(f);const m=f.create({objective:'WEB_ROUND Read https://example.com/ and change alpha to beta using public documentation.',preferred_agent:'opencode',fallback_agents:[],authority:authority(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],native_actions:[]}});b.missions.web.configure(m.id,{request_id:randomUUID(),mode:'all',entries:['https://example.com/'],confirmed:true});b.missions.dispatch(m.id,{request_id:randomUUID()});const done=await f.settle(m.id);assert.equal(done.state,'awaiting_acceptance');assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'beta\n');assert.equal(b.missions.web.rows(b.controlStore.requireMission(m.id)).length,2);
+test('a web grant cannot authorize an unplanned OpenCode implementation',async t=>{
+ const r=require('./fixtures/opencode-fixture.cjs').runtime(t),f=await fixture(t,{opencode:r.options}),b=f.bridge;synthetic(f);
+ const m=f.create({objective:'Read https://example.com/ and change alpha to beta.',preferred_agent:'opencode',fallback_agents:[],authority:authority(f.repo),dispatch_policy:{privacy:'local_only',providers:['local'],billing_classes:['local'],native_actions:[]}});
+ b.missions.web.configure(m.id,{request_id:randomUUID(),mode:'all',entries:['https://example.com/'],confirmed:true});
+ assert.throws(()=>b.missions.dispatch(m.id,{request_id:randomUUID()}),/CURSOR_IMPLEMENTATION_REQUIRED/);assert.equal(b.missions.detail(m.id).runs.length,0);assert.equal(fs.readFileSync(path.join(f.repo,'fixture.txt'),'utf8'),'alpha\n');assert.equal(b.missions.web.rows(b.controlStore.requireMission(m.id)).length,0);
 });

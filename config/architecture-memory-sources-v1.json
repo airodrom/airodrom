@@ -3,13 +3,13 @@
   "sources": [
     {
       "path": "docs/harness/agent-model.md",
-      "source_hash": "625cb044099e68ffe0407bc7626e119f975c5dfbebc229a516005b69c02692a4",
+      "source_hash": "a768bbb865819dab849720efb868cca36a3881b41e09eeb5e7cf73ed63a694e8",
       "source_type": "canonical_doc",
       "trust": "canonical"
     },
     {
       "path": "docs/harness/architecture.md",
-      "source_hash": "f98877d07153071a0765c9f33c29bcbc39eb02d98688074e7687349519aed5ed",
+      "source_hash": "7cf82a052e6b6af90bcc27e2b8fd44dda1a6aa79f6ff40268350227fe5f8217a",
       "source_type": "canonical_doc",
       "trust": "canonical"
     },
@@ -116,7 +116,7 @@
       "key": "10-bounded-execution",
       "category": "agent_state",
       "source_ref": "docs/harness/architecture.md",
-      "content": "General execution uses bounded OpenCode Missions. Deterministic operations use Airodrom host capabilities; local Ollama inference is a provider capability, never a compatibility runtime.",
+      "content": "Implementation uses bounded Cursor Missions prepared and evaluated by OpenCode. Airodrom host capabilities verify and reconcile execution; local Ollama inference is a provider capability, never a compatibility runtime.",
       "tags": [
         "agents",
         "providers"
@@ -145,7 +145,7 @@
       "key": "13-cursor-limit",
       "category": "agent_state",
       "source_ref": "docs/harness/agent-model.md",
-      "content": "Cursor remains experimental; governed execution is disabled until independent qualification.",
+      "content": "Cursor is the exclusive implementation worker; governed execution still requires independent qualification and existing scoped authorization.",
       "tags": [
         "agents",
         "limitations"
@@ -165,7 +165,7 @@
       "key": "13-default-runtime",
       "category": "architecture_decision",
       "source_ref": "docs/harness/agent-model.md",
-      "content": "OpenCode is the default primary execution runtime for new bounded general Missions. Airodrom owns typed plans and independent verification; Pi is removed and cannot receive or replay context.",
+      "content": "OpenCode plans and independently evaluates; Cursor implements and corrects within sealed scope. Airodrom owns authority, verification, Acceptance and Settlement. No implementation fallback is permitted.",
       "tags": [
         "agents",
         "runtime",

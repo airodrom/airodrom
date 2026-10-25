@@ -4,7 +4,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { object, identifier, text } = require('./control-plane-store');
-const handoff = require('./mission-handoff');
 
 const PRODUCTION = /\b(production|prod\b|live\s+prod|deployed\s+prod)\b/i;
 const ALIAS = v => { if (typeof v !== 'string' || !/^[a-z][a-z0-9_-]{0,79}$/.test(v)) throw Error('Exact template alias required'); return v; };
@@ -362,7 +361,9 @@ class ZeroSetupWork {
       if (prior.principal !== principal) throw Error('Resume the original authenticated handoff session; duplicate execution denied');
       if ((prior.work_spec || prior.projectless || prior.intake_blockers) && prior.instruction !== instruction)
         throw Error('projectless_request_replay_mismatch');
-      if (principal === 'operator' && prior.developer_autonomy_policy_id && prior.state === 'awaiting_approval') return this.activateAutonomy(prior);
+      if (prior.state === 'awaiting_approval' && !prior.intake_blockers &&
+          (prior.developer_autonomy_policy_id || prior.work_spec || prior.proposal || prior.template_ready || prior.intent?.kind === 'exact_file'))
+        return this.blockUnplanned(prior);
       return this.statusView(prior);
     }
     // ask_airodrom / prepare_mission prepare WORK only. Ordinary chat and public-research
@@ -474,11 +475,7 @@ class ZeroSetupWork {
         const record = { version: 1, instruction, intent, work_spec: workSpec, projectless: true,
           project_id: null, goal_id: null, workspace: scope.workspace, authority: false, execution_enabled: false,
           presentation: require('./projectless-sandbox').workPresentation(workSpec) };
-        this.write(request_id, principal, record, 'awaiting_approval');
-        // Standing local autonomy is not external disclosure or spending consent.
-        if (workSpec.worker === 'opencode' && (principal === 'operator' || (handoff && standing)))
-          return await this.startBoundedProjectless(this.read(request_id));
-        return { ...this.statusView(this.read(request_id)), state: 'PREPARED', projectless: true };
+        return this.blockUnplanned({ ...record, request_id, principal });
       }
       if ((principal === 'operator' || (handoff && standing)) && scope.exact_fixture) return this.startProjectless(request_id, principal, instruction, intent, scope);
       const record = {
@@ -524,36 +521,26 @@ class ZeroSetupWork {
           presentation: {
             worker: 'cursor', files: files || [], measurable: false, project_name: project.name,
             workspace_label: readablePath(workspace),
-            status: 'Cursor execution disabled in Airodrom; use local OpenCode only',
+            status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
           },
         };
         this.write(request_id, principal, record, 'blocked');
         return {
           state: 'BLOCKED',
           code: 'CURSOR_EXECUTION_DISABLED',
-          message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+          message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
           blockers: ['CURSOR_EXECUTION_DISABLED'],
           authority: false,
           execution_authorized: false,
           requested_specialist: 'cursor',
           planner: 'opencode',
           evaluator: 'opencode',
-          next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+          next_action: 'enable_cursor_via_authenticated_local_api',
           presentation: record.presentation,
         };
       }
-      // Active standing enrollment is enough to auto-prepare cognitive discovery from
-      // prior same-repo enrollment files or Autopilot-admissible paths, and to attach
-      // the Cursor worker when host Cursor execution is already authorized. Autopilot MCP
-      // and the local operator share that authority; bare MCP without Autopilot does not.
-      const mayEnsureCognitive = principal === 'operator' || (autopilotOn && mcpHandoff);
-      const cognitiveMissing = !(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
-      const cursorWorkerMissing = Array.isArray(standing.workers) && standing.workers.length > 0 && !standing.workers.includes('cursor');
-      if (mayEnsureCognitive && (cognitiveMissing || cursorWorkerMissing)) {
-        try {
-          standing = this.bridge.developerAutonomy.ensureCognitiveDiscovery(standing.policy_id, 'operator') || standing;
-        } catch { /* fall through to precise cognitive / worker gates */ }
-      }
+      // Admission is read-only with respect to enrollment. Reuse an exact active
+      // policy; adding files or workers requires the existing owner control API.
       const cognitiveReady = !!(standing.cognitive && Array.isArray(standing.cognitive.files) && standing.cognitive.files.length);
       if (!cognitiveReady) {
         const record = {
@@ -599,7 +586,7 @@ class ZeroSetupWork {
         return {
           state: 'BLOCKED',
           code: 'standing_cursor_worker_not_enrolled',
-          message: 'Project ' + project.name + ' has a standing policy, but Cursor is not enrolled on that policy worker allowlist. Re-enroll Developer Autonomy with Cursor permitted, or use local OpenCode wording. Chat text cannot expand the allowlist.',
+          message: 'Project ' + project.name + ' has a standing policy, but Cursor is not enrolled on that policy worker allowlist. Use an owner-enrolled Developer Autonomy policy with Cursor permitted. Chat text cannot expand the allowlist.',
           blockers: ['standing_cursor_worker_not_enrolled'],
           authority: false,
           execution_authorized: false,
@@ -701,41 +688,7 @@ class ZeroSetupWork {
           repair_budget: standing.workflows.includes('repair') ? standing.budgets.max_repairs : 0,
           status: 'Prepared within standing enrollment' }
       };
-      this.write(request_id, principal, record, 'awaiting_approval');
-      // Authenticated owner intake always activates standing consent. Autopilot ON also
-      // activates it for authenticated MCP handoff sessions. Cursor spend stays separate.
-      const mayActivate = principal === 'operator' || (autopilotOn && mcpHandoff);
-      if (!mayActivate) return this.statusView(this.read(request_id));
-      try {
-        return this.activateAutonomy(this.read(request_id));
-      } catch (error) {
-        const live = this.read(request_id);
-        const capacity = /Concurrent Mission budget exhausted/i.test(String(error.message || ''));
-        live.intake_blockers = capacity
-          ? ['concurrent_mission_budget_exhausted']
-          : ['standing_activation_failed'];
-        live.blocker_message = String(error.message || 'standing activation failed').slice(0, 400);
-        live.presentation = {
-          ...(live.presentation || {}),
-          status: capacity
-            ? 'Standing activation blocked: concurrent Mission budget exhausted'
-            : ('Standing activation failed: ' + live.blocker_message),
-        };
-        this.write(request_id, principal, live, 'blocked');
-        return {
-          state: 'BLOCKED',
-          code: live.intake_blockers[0],
-          message: live.blocker_message,
-          blockers: live.intake_blockers,
-          authority: false,
-          execution_authorized: false,
-          requested_specialist: live.requested_specialist || 'opencode',
-          planner: live.planner || 'opencode',
-          evaluator: live.evaluator || 'opencode',
-          next_action: capacity ? 'reconcile_idle_or_settle_active_missions' : 'inspect_standing_enrollment',
-          presentation: live.presentation,
-        };
-      }
+      return this.blockUnplanned({ ...record, request_id, principal });
     }
     const existing = this.existingTemplate(workspace, project.projectId);
     const goal = existing?.template
@@ -814,9 +767,7 @@ class ZeroSetupWork {
       execution_enabled: false,
       authority: false,
     };
-    this.write(request_id, principal, record, 'awaiting_approval');
-    this.bridge.controlStore.event('zero_setup.prepared', null, { request_id, project: projectAlias, workspace_alias: workspaceAlias, authority: false });
-    return this.statusView(this.read(request_id));
+    return this.blockUnplanned({ ...record, request_id, principal });
   }
 
   statusView(record) {
@@ -879,12 +830,12 @@ class ZeroSetupWork {
       return {
         state: 'BLOCKED',
         code: 'CURSOR_EXECUTION_DISABLED',
-        message: 'Cursor execution is disabled in Airodrom. Use local OpenCode only, or re-enable Cursor from the authenticated Terminal or Control Center.',
+        message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center.',
         blockers: ['CURSOR_EXECUTION_DISABLED'],
         presentation: { ...(live.presentation || {}), worker: 'cursor', status: 'Cursor execution disabled in Airodrom' },
         authority: false,
         execution_authorized: false,
-        next_action: 'enable_cursor_via_authenticated_local_api_or_use_local_opencode',
+        next_action: 'enable_cursor_via_authenticated_local_api',
       };
     }
     // A generic task sandbox is not an executable Mission. Approval cannot supply
@@ -908,6 +859,7 @@ class ZeroSetupWork {
     }
     return {
       state: state === 'awaiting_approval' ? 'WAIT' : state.toUpperCase(),
+      ...(live.intake_blockers?.includes('CURSOR_PLANNING_REQUIRED') ? { code: 'CURSOR_PLANNING_REQUIRED' } : {}),
       message: live.intake_blockers?.includes('projectless_exact_two_file_syntax_required')
         ? 'Use Cursor only in a new disposable workspace to create exactly two files: then list each relative path and a JSON-quoted exact content string. Encode newlines as \\n. Unsupported or additional constraints require a new bounded request; approval cannot supply missing scope.'
         : live.intake_blockers?.includes('ENROLLED_WORKSPACE_REQUIRED')
@@ -938,7 +890,8 @@ class ZeroSetupWork {
       planner: live.planner || 'opencode',
       evaluator: live.evaluator || 'opencode',
       admission: { standard_approval_supported: waiting && !unboundedProjectless && !cursorApproval, authority: false },
-      next_action: live.intake_blockers || unboundedProjectless ? 'define_bounded_projectless_work'
+      next_action: live.intake_blockers?.includes('CURSOR_PLANNING_REQUIRED') ? 'prepare_planned_cursor_mission'
+        : live.intake_blockers || unboundedProjectless ? 'define_bounded_projectless_work'
         : cursorApproval && (live.blockers || live.intake_blockers || []).some(code => String(code).startsWith('STANDING_CURSOR_GRANT_'))
           ? (live.presentation?.standing_cursor_diagnosis?.next_action || 'enroll_standing_cursor_development_via_authenticated_local_api')
         : cursorApproval ? 'authorize_cursor_via_authenticated_local_api'
@@ -984,109 +937,32 @@ class ZeroSetupWork {
       });
   }
 
-  activateAutonomy(live) {
-    const da = this.bridge.developerAutonomy;
-    const policy = da.inspect(live.developer_autonomy_policy_id);
-    if (!policy || policy.state !== 'active' || policy.policy_hash !== live.developer_autonomy_policy_hash) throw Error('Standing enrollment changed; prepare a new request');
-    const objective = String(live.intent?.objective || live.instruction);
-    const repairBudget = policy.workflows.includes('repair') ? policy.budgets.max_repairs : 0;
-    const prepared = da.authorizeRoutine({
-      policy_id: policy.policy_id, request_id: 'zero-setup-da:' + live.request_id,
-      objective, allowed_files: live.allowed_files, workflow: 'routine_edit', repair_budget: repairBudget,
-      ...(live.intent?.kind === 'exact_file' ? { criteria: [{ id: 'expected-file', type: 'exact_file', path: live.intent.file, content: live.intent.to }] } : {})
-    }, 'operator');
-    const mission = this.bridge.missions.create(prepared.mission_input, 'operator');
-    if (this.bridge.globalAutopilot?.enabled?.()) {
-      this.bridge.globalAutopilot.record({
-        kind: 'mission_authorized', summary: 'Autopilot authorized standing Mission',
-        mission_id: mission.id, project_id: policy.project_id, repository: policy.repository,
-        tool: 'developer_autonomy.authorizeRoutine', actor: 'operator', request_id: live.request_id
-      });
-    }
-    const plan = this.bridge.missions.goalPlanner.create({
-      request_id: 'zero-setup-da-plan:' + live.request_id, goal_id: policy.goal_id,
-      stages: [{ id: 'work', depends_on: [], mission_id: mission.id, objective: objective.slice(0, 1000),
-        acceptance_criteria: ['Independent host verification passed', 'Owner Acceptance remains required'],
-        verification_requirements: ['registered_tests', 'git_diff_check'], human_checkpoint: false }],
-      max_runtime_hours: policy.budgets.max_runtime_hours, max_attempts: repairBudget + 1
-    }, 'operator');
-    this.bridge.autonomousExecution.authorize(plan.id, {
-      request_id: 'zero-setup-da-schedule:' + live.request_id, workers: ['opencode'],
-      max_concurrent_missions: 1, max_dispatches: repairBudget + 1, max_repairs: repairBudget, confirmed: true
-    }, 'operator');
-    Object.assign(live, { mission_id: mission.id, plan_id: plan.id, workspace: prepared.workspace.path,
-      execution_enabled: true, state: 'approved', max_repairs: repairBudget,
-      presentation: { ...live.presentation, status: 'Working within standing enrollment' } });
-    this.write(live.request_id, live.principal, live, 'approved');
-    try { this.bridge.autonomousExecution.tick(); } catch { /* scheduler records admission blockers */ }
-    return this.statusView(live);
+  blockUnplanned(live) {
+    // A one-time approval cannot manufacture a sealed OpenCode plan or expand a
+    // standing enrollment. Stop before allocating a Mission, grant, or writer.
+    const code = 'CURSOR_PLANNING_REQUIRED';
+    live.execution_enabled = false;
+    live.requested_specialist = 'cursor';
+    live.planner = live.evaluator = 'opencode';
+    live.intake_blockers = [code];
+    live.blocker_message = 'Implementation requires an OpenCode plan sealed by Airodrom for Cursor. Prepare a new request under an enrollment that covers planning and Cursor execution.';
+    live.presentation = { ...(live.presentation || {}), worker: 'cursor', status: live.blocker_message,
+      completion_policy: 'This proposal authorizes neither execution nor Acceptance.',
+      network: 'Cursor execution requires scoped external disclosure authorization' };
+    this.write(live.request_id, live.principal, live, 'blocked');
+    return this.statusView(this.read(live.request_id));
   }
+
+  activateAutonomy(live) { return this.blockUnplanned(live); }
 
   startProjectless(request_id, principal, instruction, intent, scope) {
     if (principal !== 'operator' && !/^mcp:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(principal)) throw Error('Projectless execution requires the authenticated operator');
     if (!scope?.exact_fixture || !scope.workspace) throw Error('Projectless execution requires an exact authorized file change');
-    const sandbox = require('./projectless-sandbox');
-    sandbox.seedExactFixture(scope.workspace);
-    const { randomUUID } = require('node:crypto');
-    const before = (this.bridge.projects.listProjects() || []).length;
-    const mission = this.bridge.missions.create(sandbox.exactMissionInput(scope.workspace, randomUUID()), 'operator');
-    if ((this.bridge.projects.listProjects() || []).length !== before) throw Error('Projectless execution must not register a Project');
-    this.bridge.missions.dispatch(mission.id, { request_id: randomUUID() });
-    const record = {
-      version: 1, instruction, intent, projectless: true, project_id: null, workspace: scope.workspace, mission_id: mission.id,
-      authority: false, execution_enabled: true,
-      presentation: { brand: 'AIRODROM', goal: intent?.objective || instruction, project_name: null, workspace_label: 'task sandbox', worker: 'opencode', verification: 'Independent host verification', completion_policy: 'Automatic Acceptance after verification', status: 'Projectless OpenCode mission dispatched' }
-    };
-    this.write(request_id, principal, record, 'running');
-    return { state: 'DISPATCHED', projectless: true, execution_authorized: true, mission_id: mission.id, workspace: scope.workspace, presentation: record.presentation, authority: false, message: 'Projectless mission dispatched to OpenCode. No registered Project was created.' };
+    return this.blockUnplanned({ version: 1, request_id, principal, instruction, intent,
+      projectless: true, project_id: null, workspace: scope.workspace, authority: false });
   }
 
-  async startBoundedProjectless(live, confirmation = null) {
-    const sandbox = require('./projectless-sandbox');
-    const spec = sandbox.normalizeWorkSpec(live.work_spec);
-    const external = spec.worker === 'cursor';
-    if (external && this.bridge.hostExecutionPolicy?.cursorDisabled?.()) throw Error('CURSOR_EXECUTION_DISABLED');
-    if (!external && confirmation?.subscription_execution !== undefined) throw Error('Subscription permission requires Cursor');
-    if (external && (!confirmation || confirmation.owner !== 'operator' || confirmation.confirmed !== true ||
-        !['terminal', 'control_center'].includes(confirmation.channel) || !confirmation.subscription_execution))
-      throw Error('BLOCKED_SPEND_AUTHORIZATION');
-    if (live.mission_id) return this.statusView(live);
-    const before = (this.bridge.projects.listProjects() || []).length;
-    try {
-      sandbox.seedWork(live.workspace, spec);
-      const mission = this.bridge.missions.create(sandbox.workMissionInput(live.workspace, 'work:' + live.request_id,
-        spec, { externalConfirmed: external && confirmation.confirmed === true }), 'operator');
-      // Persist the identity BEFORE any dispatch; ambiguous responses must recover
-      // this Mission rather than allocate another sandbox or worker run.
-      live.mission_id = mission.id;
-      this.write(live.request_id, live.principal, live, 'approved');
-      if (external) {
-        const approval = this.bridge.missionApprovals.issue({ request_id: 'work-approval:' + live.request_id,
-          contract: mission.envelope.contract, channel: confirmation.channel, confirmed: true,
-          subscription_execution: confirmation.subscription_execution }, 'operator');
-        this.bridge.missionApprovals.bind(approval.approval_id, mission.id, 'operator');
-        live.approval_id = approval.approval_id;
-        // Cold processes have no lastReadiness; probe before queue/assertAuthority.
-        if (this.bridge.cursorWorker) {
-          this.bridge.cursorWorker.lastReadiness = await this.bridge.cursorWorker.readiness();
-        }
-      }
-      if ((this.bridge.projects.listProjects() || []).length !== before) throw Error('Projectless execution must not register a Project');
-      live.dispatch_attempted = true;
-      this.write(live.request_id, live.principal, live, 'approved');
-      this.bridge.missions.dispatch(mission.id, { request_id: 'work-dispatch:' + live.request_id });
-      live.execution_enabled = true;
-      live.presentation = { ...sandbox.workPresentation(spec), status: 'Projectless ' + spec.worker + ' Mission dispatched' };
-      this.write(live.request_id, live.principal, live, 'running');
-      return { state: 'DISPATCHED', projectless: true, execution_authorized: true, mission_id: mission.id,
-        presentation: live.presentation, authority: false };
-    } catch (error) {
-      live.execution_enabled = false;
-      live.blocker_message = (live.dispatch_attempted ? 'Dispatch outcome requires reconciliation: ' : '') + String(error.message).slice(0, 400);
-      this.write(live.request_id, live.principal, live, 'blocked');
-      throw error;
-    }
-  }
+  async startBoundedProjectless(live) { return this.blockUnplanned(live); }
 
   async approve(input, owner = 'operator') {
     if (owner !== 'operator') throw Error('Authenticated local operator required');
@@ -1099,114 +975,9 @@ class ZeroSetupWork {
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
     if (live.cognitive) return await require('./cognitive-router').approve(this, live, { ...input, channel: input.channel || 'terminal' }, owner);
-    if (live.work_spec) return await this.startBoundedProjectless(live, { ...input, owner,
-      channel: input.channel || 'terminal' });
-    if (input.subscription_execution !== undefined) throw Error('Subscription permission requires an explicit bounded Cursor task');
-    if (live.developer_autonomy_policy_id) return this.activateAutonomy(live);
-    if (live.projectless) return this.startProjectless(live.request_id, live.principal, live.instruction, live.intent, { workspace: live.workspace, exact_fixture: /change fixture\.txt from alpha to beta/i.test(live.instruction || '') });
-    // Distinct security decisions, presented as one coherent approval experience.
-    if (!live.template_ready) {
-      if (!live.proposal) throw Error('Template proposal missing');
-      this.bridge.workTemplates.register({ ...live.proposal, confirmed: true }, 'operator');
-      live.template_ready = true;
-    }
-    const baseObjective = live.intent?.objective || live.instruction;
-    // Project mission names are unique per Goal; keep ZeroSetup retries from colliding.
-    const objective = String(baseObjective).slice(0, 160) + ' [' + String(request_id).slice(0, 8) + ']';
-    const packet = {
-      version: 2,
-      request_id: 'zero-setup:' + request_id,
-      objective,
-      mission_class: 'WORK',
-      data_class: 'public',
-      privacy: 'local_only',
-      project: live.project_alias,
-      workspace: live.workspace_alias,
-      worker: 'auto',
-      model: 'auto',
-    };
-    // One authenticated approval binds both this exact expected result and
-    // its future automatic settlement. General tasks keep owner Acceptance.
-    const registered = this.bridge.workTemplates.template(live.project_alias, live.workspace_alias);
-    const eligible = live.intent?.kind === 'exact_file' &&
-      live.intent.file === 'fixture.txt' && live.intent.from === 'alpha\n' &&
-      live.intent.to === 'beta\n' && registered?.allowed_files?.length === 1 &&
-      registered.allowed_files[0] === live.intent.file;
-    let acceptance = null;
-    if (eligible) {
-      const target = path.join(live.workspace, live.intent.file);
-      if (fs.realpathSync(target) !== target || fs.readFileSync(target, 'utf8') !== live.intent.from)
-        throw Error('Exact-file baseline changed; prepare a new bounded request');
-      acceptance = { file: live.intent.file, before: live.intent.from, after: live.intent.to };
-    }
-    const submitted = await handoff.submit(this.bridge, packet, 'operator', acceptance);
-    if (!submitted.mission_id) throw Error(submitted.reason || 'WORK handoff did not create a Mission');
-    live.mission_id = submitted.mission_id;
-    // ADR 0051: one authenticated owner approval bound to the Mission's immutable scope
-    // fingerprint, time window and repair budget. Corrective Missions reuse it in-scope.
-    const created = this.bridge.controlStore.requireMission(submitted.mission_id);
-    if (created.envelope.contract && this.bridge.missionApprovals) {
-      const approval = this.bridge.missionApprovals.issue({
-        request_id: 'zero-setup-approval:' + request_id,
-        channel: input.channel && ['terminal', 'control_center', 'fixture'].includes(input.channel) ? input.channel : 'terminal',
-        contract: created.envelope.contract,
-        goal_id: live.goal_id,
-        confirmed: true,
-        ttl_ms: 2 * 60 * 60 * 1000,
-        summary: { goal: live.intent?.objective || live.instruction },
-      }, 'operator');
-      this.bridge.missionApprovals.bind(approval.approval_id, submitted.mission_id, 'operator');
-      // Binding the trusted approval seals a new Mission envelope revision.
-      // Rebind the auto-completion fingerprint only after that host mutation.
-      // A stale hash must never be interpreted as permission.
-      if (acceptance) {
-        const bound = this.bridge.controlStore.requireMission(submitted.mission_id);
-        if (!bound.envelope.risk_auto_acceptance?.authorized)
-          throw Error('Preauthorized completion policy was not recorded');
-        this.bridge.missions.riskAcceptance.register(bound, bound.envelope.risk_auto_acceptance);
-      }
-      live.approval_id = approval.approval_id;
-      live.approval_expires_at = approval.expires_at;
-    }
-    const stages = [{
-      id: 'work',
-      depends_on: [],
-      mission_id: submitted.mission_id,
-      objective,
-      acceptance_criteria: acceptance
-        ? ['Exact-file bytes and registered host checks passed; preauthorized automatic completion']
-        : ['Independent host verification passed', 'Owner Acceptance remains required'],
-      verification_requirements: ['exact_file_or_registered_tests', 'git_diff_check'],
-      human_checkpoint: false,
-    }];
-    const plan = this.bridge.missions.goalPlanner.create({
-      request_id: 'zero-setup-plan:' + request_id,
-      goal_id: live.goal_id,
-      stages,
-      max_runtime_hours: 2,
-      max_attempts: 2,
-    }, 'operator');
-    live.plan_id = plan.id;
-    this.bridge.autonomousExecution.authorize(plan.id, {
-      request_id: 'zero-setup-auth:' + request_id,
-      workers: ['opencode'],
-      max_concurrent_missions: 1,
-      max_dispatches: 3,
-      max_repairs: 1,
-      confirmed: true,
-    }, 'operator');
-    const autonomous = this.bridge.autonomousExecution.readAutonomous(this.bridge.autonomousExecution.planRow(plan.id));
-    if (autonomous.pending_request) {
-      delete autonomous.pending_request;
-      this.bridge.autonomousExecution.writeAutonomous(plan.id, autonomous);
-    }
-    live.execution_enabled = true;
-    live.state = 'approved';
-    live.presentation = { ...live.presentation, status: 'Working' };
-    this.write(request_id, live.principal, live, 'approved');
-    this.bridge.controlStore.event('zero_setup.approved', null, { request_id, plan_id: plan.id, mission_id: submitted.mission_id, authority: false });
-    try { this.bridge.autonomousExecution.tick(); } catch { /* scheduler owns retries */ }
-    return this.statusView(live);
+    if (live.projectless && !live.work_spec && this.statusView(live).blockers?.includes('projectless_scope_required'))
+      throw Error('Projectless execution requires an exact authorized file change');
+    return this.blockUnplanned(live);
   }
 
   reject(input, owner = 'operator') {

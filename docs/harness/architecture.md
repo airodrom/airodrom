@@ -2,7 +2,7 @@
 
 Memory supplies reference context and never changes agent/provider policy, scopes or Acceptance.
 
-General execution uses bounded OpenCode Missions. Deterministic operations use Airodrom host capabilities; local Ollama inference is a provider capability, never a compatibility runtime.
+Implementation uses bounded Cursor Missions prepared and evaluated by OpenCode. Airodrom host capabilities verify and reconcile execution; local Ollama inference is a provider capability, never a compatibility runtime.
 
 DeepSeek stays disabled/auth_required.
 

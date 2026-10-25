@@ -123,7 +123,7 @@ test('governed Missions carry a contract and a bound approval; repairs reuse the
   approvals.bind(approval.approval_id, parent.id, 'operator');
   assert.equal(f.bridge.controlStore.requireMission(parent.id).envelope.approval_id, approval.approval_id);
   assert.throws(() => approvals.bind(approval.approval_id, other.id, 'operator'), /approval_scope_mismatch/);
-  f.bridge.missions.dispatch(parent.id, { request_id: randomUUID() });
+  await require('./fixtures/historical-native-fixture.cjs').completeHistoricalNative(f,parent);
   await f.settle(parent.id, 'needs_rework');
   const failed = f.bridge.missions.detail(parent.id);
   assert.ok(failed.verifications[0].evidence.some(c => c.id === 'contract_integrity' && c.status === 'passed'));
@@ -158,36 +158,13 @@ test('governed Missions carry a contract and a bound approval; repairs reuse the
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'gamma\n');
 });
 
-test('zero-setup approve issues exactly one approval bound to the Mission contract and the repair reuses it', async t => {
-  const f = await fixture(t, { opencode: require('./fixtures/opencode-fixture.cjs').runtime(t).options });
-  // This fixture explicitly authorizes automatic Acceptance; production defaults remain MANUAL.
-  f.bridge.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,sync_risk_acceptance:false,request_id:require('node:crypto').randomUUID()},'operator');
-  f.bridge.missionAuthority.initializeOperatorKey();
-  require('./fixtures/opencode-fixture.cjs').qualifyCanonical(f.bridge);
-  const project = f.bridge.projects.createProject({ name: 'Human Acceptance Exact File', repositories: [f.repo], privacyPolicy: 'local_only' });
-  f.bridge.projects.createGoal({ projectId: project.projectId, name: 'Exact-file alpha to beta' });
-  const request_id = randomUUID();
-  const prepared = await f.bridge.zeroSetupWork.ask({ instruction: 'Change the test file from alpha to beta and verify it.', request_id }, 'operator');
-  assert.equal(prepared.state, 'WAIT');
-  assert.ok(prepared.presentation.success_criteria.some(c => /626574610a/.test(c)));
-  assert.equal(prepared.presentation.measurable, true);
-  const approved = await f.bridge.zeroSetupWork.approve({ request_id, confirmed: true, channel: 'fixture' }, 'operator');
-  const mission = f.bridge.controlStore.requireMission(approved.technical.mission_id);
-  assert.ok(mission.envelope.contract);
-  assert.ok(mission.envelope.approval_id);
-  const approval = f.bridge.missionApprovals.view(mission.envelope.approval_id);
-  assert.equal(approval.channel, 'fixture');
-  assert.equal(approval.scope_fingerprint, mission.envelope.contract.scope_fingerprint);
-  assert.deepEqual(approval.bound_missions, [mission.id]);
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 1);
-  // Approving twice returns the same durable state; no second approval or Mission.
-  await f.bridge.zeroSetupWork.approve({ request_id, confirmed: true }, 'operator');
-  assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n, 1);
-  // Exact-file pilot settles under the one owner approval; no second Acceptance click.
-  await f.settle(mission.id, 'completed');
-  assert.equal(Buffer.from(fs.readFileSync(path.join(f.repo, 'fixture.txt'))).toString('hex'), '626574610a');
-  const settled = f.bridge.missions.detail(mission.id);
-  assert.equal(settled.state, 'completed');
-  assert.equal(settled.acceptance.length, 1);
-  assert.equal(settled.acceptance[0].decision, 'accept');
+test('planned Cursor correction reuses the same finite approval without another Mission or confirmation',async t=>{
+ const f=await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{standing:false,repairs:1});f.plan=f.plan.slice(0,1);f.wrongFirst=true;
+ const p=await f.ask({review:false});assert.equal(p.state,'WAIT');
+ const input={request_id:p.request_id,confirmed:true,channel:'control_center',subscription_execution:{provider:'cursor',acknowledge_unknown_cost:true,max_invocations:2,max_runtime_ms:120000}};
+ const approved=await f.bridge.zeroSetupWork.approve(input,'operator'),mission=f.bridge.controlStore.requireMission(approved.mission_id),approval=f.bridge.missionApprovals.view(mission.envelope.approval_id);
+ assert.equal(approval.scope_fingerprint,mission.envelope.contract.scope_fingerprint);assert.deepEqual(approval.bound_missions,[mission.id]);
+ const replay=await f.bridge.zeroSetupWork.approve(input,'operator');assert.equal(replay.mission_id,mission.id);
+ const done=await f.settle(mission.id,'completed');assert.equal(done.acceptance.length,1);assert.equal(done.specialists.repair_attempts,1);assert.equal(f.calls.length,2);
+ assert.equal(f.bridge.controlStore.db.prepare('SELECT count(*) n FROM cp_mission_approvals').get().n,1);assert.equal(f.bridge.controlStore.listMissions().length,1);
 });

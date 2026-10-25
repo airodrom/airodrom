@@ -1,8 +1,8 @@
 # Architecture overview
 
-Airodrom is a modular monolith with durable SQLite state machines. ChatGPT supplies strategy and outcome review; Airodrom owns operational reconciliation and typed local execution. OpenCode is the default bounded execution runtime; Pi is removed. Airodrom host primitives execute typed plans and verify evidence independently. Execution agents and reasoning providers are separate. Apps implement external protocols; the Kernel owns admission, authority and lifecycle policies.
+Airodrom is a modular monolith with durable SQLite state machines. ChatGPT supplies strategy and outcome review; Airodrom owns operational reconciliation and typed local execution. Cursor is the exclusive implementation worker; OpenCode plans and independently evaluates. Pi is removed. Airodrom host primitives execute typed plans and verify evidence independently. Execution agents and reasoning providers are separate. Apps implement external protocols; the Kernel owns admission, authority and lifecycle policies.
 
-Canonical local always-on identity: the managed supervisor (`local-service` / control plane) is Airodrom. OpenCode is the primary bounded worker. Ollama is the local inference provider when configured. ChatGPT reaches Airodrom through the MCP stdio connector and managed tunnel. The MCP service id `pi_bridge` is a stable historical alias for the Airodrom control plane (label: “Airodrom control plane”); it is not a separate Pi Bridge process. macOS login start is owned by `local.airodrom.desktop-login`; post-reboot verification uses `local.airodrom.reboot-acceptance`. Service health reports verified PIDs (`bridge.lock` + signal probe) and must not claim “running” from a stale historical PID alone.
+Canonical local always-on identity: the managed supervisor (`local-service` / control plane) is Airodrom. Cursor implements within sealed Mission scope; OpenCode prepares and evaluates the work. Ollama is the local inference provider when configured. ChatGPT reaches Airodrom through the MCP stdio connector and managed tunnel. The MCP service id `pi_bridge` is a stable historical alias for the Airodrom control plane (label: “Airodrom control plane”); it is not a separate Pi Bridge process. macOS login start is owned by `local.airodrom.desktop-login`; post-reboot verification uses `local.airodrom.reboot-acceptance`. Service health reports verified PIDs (`bridge.lock` + signal probe) and must not claim “running” from a stale historical PID alone.
 
 A Mission freezes scope, budget, runtime eligibility and verification criteria. Task/Run records capture attempts. Durable writer leases serialize workspace mutation; uncertain termination quarantines ownership. External effects use a transactional outbox with destination idempotency where supported. Unknown delivery remains pending reconciliation.
 
@@ -97,5 +97,10 @@ and [CURRENT-STATE.md](CURRENT-STATE.md).
 
 Explicit requested file operations are host constraints throughout planning, dispatch,
 recovery, verification, and acceptance. Enrollment cannot substitute a different
-file. See [ADR 0063](adr/0063-requested-file-scope.md) for the versioned request
-constraint, literal syntax, evidence, and compatibility boundary.
+file. `bindings` are the unique operation/path permission set; `stages` are the
+ordered execution graph and may repeat the same path. Descriptive prose does not
+invent targets. Authorized execution targets remain distinct from planner-forwarded
+context. See [ADR 0063](adr/0063-requested-file-scope.md) for the versioned request
+constraint, literal syntax, diagnosis codes, evidence, and compatibility boundary.
+
+Current implementation policy: [Cursor-only routine autonomy](adr/0065-cursor-only-routine-autonomy.md). Existing authorization is reused; no routine billing inspection or automatic worker fallback is added.

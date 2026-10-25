@@ -15,7 +15,7 @@ No supported production release has been published. This source candidate is for
 
 ## Local quickstart
 
-On the qualified macOS platform, use Node 22.23.3 or later in the 22.x line, Xcode command-line tools, qualified OpenCode 2.0.25 and local Ollama with qwen3-coder:30b. Read [installation](docs/INSTALLATION.md) before startup.
+On the qualified macOS platform, use Node 22.23.4 or later in the 22.x line, Xcode command-line tools, qualified OpenCode 2.0.25 and local Ollama with qwen3-coder:30b. Read [installation](docs/INSTALLATION.md) before startup.
 
 ```sh
 npm ci --ignore-scripts
@@ -50,17 +50,19 @@ These images come from actual local output with synthetic data. The [observed Mi
 | Runtime | Tier | Candidate boundary |
 | --- | --- | --- |
 | Airodrom host primitives | REQUIRED CONTROL PLANE | Typed broker operations and independent host verification; never a model runtime |
-| OpenCode | SUPPORTED / DEFAULT PRIMARY | CLI 2.0.25, macOS and local Ollama; isolated live synthetic Mission and Memory V2 qualification; bounded default route |
-| Claude Code | SUPPORTED / OPTIONAL FALLBACK | Adapter contract; operator authentication and runtime qualification required |
-| Work/Codex | OPTIONAL EXTERNAL / OPT-IN LIVE QUALIFICATION | Confined Codex 0.160.1 public proposals; host verification/Acceptance; ChatGPT connector exposure separate |
-| Cursor | EXPERIMENTAL | Observation only; governed execution denied |
+| OpenCode | PLANNING / EVALUATION | Bounded planning, read-only review and independent evaluation; current implementation policy selects Cursor |
+| Claude Code | NOT AN IMPLEMENTATION WORKER | Adapter retained; no Mission implementation selection or fallback under the current policy |
+| Work/Codex | ENGINEERING / EXTERNAL HANDOFF | Not a Mission implementation replacement or automatic fallback |
+| Cursor | EXCLUSIVE IMPLEMENTATION | Governed sandboxed implementation and correction require current qualification and exact existing authorization; this candidate has isolated lifecycle evidence |
 | Generic Cloud | UNSUPPORTED | No dispatch or context transfer |
+
+See [Cursor-only routine autonomy](docs/operations/CURSOR-ONLY-AUTONOMY.md) for standing authorization, correction, evidence and activation prerequisites.
 
 Agents perform work; reasoning providers supply inference. Model selection and agent text cannot change execution policy. DeepSeek remains disabled/auth_required. See the [runtime matrix](docs/RUNTIME-SUPPORT-MATRIX.md) and [Pi removal migration](docs/PI-REMOVAL.md).
 
 ## Source review and development validation
 
-Use a compatible Node **22.23.3 or later in the 22.x line**, with SQLite and FTS5, and npm 10.9.9. The audited host is macOS arm64; other operating systems are unqualified. Extract the source archive into an empty private directory, verify its checksum and file manifest, then run:
+Use a compatible Node **22.23.4 or later in the 22.x line**, with SQLite and FTS5, and npm 10.9.9. The audited host is macOS arm64; other operating systems are unqualified. Extract the source archive into an empty private directory, verify its checksum and file manifest, then run:
 
 ```sh
 npm ci --ignore-scripts

@@ -189,6 +189,7 @@ class MissionService {
   dispatch(id,{request_id},owner='operator'){
     const mission=this.require(id,owner);
     this.assertAuthority(mission);
+    require('./mission-worker-policy').assertImplementation(mission.envelope);
     if(!this.bridge.authorityRuntime?.routing&&mission.envelope.preferred_agent==='codex'&&mission.envelope.dispatch_policy&&!mission.envelope.worker_contract){const result=this.bridge.codexAdapter.startTask(id,request_id);this.bridge.agentDispatch.schedule();return result;}
     const result=this.store.request(owner,request_id,{op:'dispatch',id},()=>this.queue(id));this.schedule();return result;
   }
@@ -221,7 +222,7 @@ class MissionService {
     }
   }
   queue(id,decisionId=null){
-    const m=this.store.requireMission(id);this.assertAuthority(m);if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').queue(this,m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
+    const m=this.store.requireMission(id);this.assertAuthority(m);require('./mission-worker-policy').assertImplementation(m.envelope);if(require('./specialist-gateway').enabled(m))return require('./specialist-gateway').queue(this,m);if(!['ready','needs_rework','blocked','waiting_for_operator'].includes(m.state))throw Error('Mission cannot dispatch in its current state');
     if(m.envelope.worker_contract)this.bridge.workers.assertMission(m);else if(!(process.env.NODE_ENV==='test'&&this.bridge.options.allowFixtureWorker===true)&&!(m.envelope.preferred_agent==='cursor'&&m.envelope.contract)&&[m.envelope.preferred_agent,...m.envelope.fallback_agents].some(w=>['codex','claude_code','cursor'].includes(w)))throw Error('worker_execution_unqualified');
     if(m.envelope.cognitive&&this.db.prepare('SELECT 1 FROM cp_dispatches WHERE mission_id=?').get(id))throw Error('cognitive_execution_attempts_exhausted');
     if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
@@ -267,6 +268,15 @@ class MissionService {
         if(chains.some(chain=>{if(Date.now()-chain.started_at>=chain.max_runtime_ms){this.bridge.boundedNextActions.pause(chain.id,'runtime_budget');return true;}return chain.state==='paused';}))continue;
         if(m.state==='cancelled'){this.db.prepare("UPDATE cp_continuations SET state='cancelled' WHERE id=?").run(c.id);continue;}
         const answered=this.store.decision(c.decision_id);
+        try{require('./mission-worker-policy').assertImplementation(m.envelope,{worker:answered?.agent_id==='codex'?'codex':m.envelope.preferred_agent});}
+        catch(error){
+          if(!['CURSOR_IMPLEMENTATION_REQUIRED','CURSOR_PLANNING_REQUIRED'].includes(error.code))throw error;
+          transaction(this.db,()=>{
+            this.db.prepare("UPDATE cp_continuations SET state='blocked' WHERE id=? AND state='queued'").run(c.id);
+            if(require('./mission-lifecycle').TRANSITIONS[m.state]?.includes('blocked'))this.store.state(m.id,'blocked',error.code);
+            this.store.event('mission.continuation_blocked',m.id,{decision_id:c.decision_id,reason:error.code,authority:false});
+          });continue;
+        }
         if(answered?.agent_id==='codex'){
           // Human input is evidence, never proof that the previous writer stopped.
           if(this.bridge.codexAdapter.getTask(answered.run_id).state!=='settled')continue;
@@ -312,6 +322,7 @@ class MissionService {
       transaction(this.db,()=>{this.db.prepare('UPDATE cp_dispatches SET route=?,updated_at=? WHERE id=?').run(JSON.stringify(route),Date.now(),dispatch.id);this.store.event('agent.route.planned',m.id,route);});
       if(!route.selected)throw Error(route.reason);
       this.assertAuthority(m);
+      require('./mission-worker-policy').assertImplementation(m.envelope,require('./specialist-gateway').enabled(m)?{}:{worker:route.selected});
       if(require('./mission-web-policy').proposal(m.envelope.objective).needed){this.web.qualify(m);this.web.grant(m);}
       if(m.envelope.coding_plan)this.codingAdapter.assert(m);
       // ADR 0051: the governed sandboxed Cursor worker stages declared files exactly like OpenCode;
@@ -378,6 +389,7 @@ class MissionService {
     if(cursor&&!adapter)throw Error('worker_execution_unqualified');
     const specialist=require('./specialist-gateway').enabled(m)?require('./specialist-gateway').adapterScope(this.bridge,task,agentId):null;
     if(workspaceSnapshot(m.envelope.workspace).hash!==require('./specialist-gateway').baseline(this.bridge,m,task.id).hash)throw Error('opencode_workspace_changed');
+    require('./mission-worker-policy').assertImplementation(m.envelope,specialist?{}:{worker:agentId});
     this.assertAuthority(m,{repository:['read','write'],data:['workspace_write'],network:vendor||cursor?['internet']:['localhost'],filesystem:{read:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f)),write:m.envelope.allowed_files.map(f=>path.join(m.envelope.workspace,f))}});
     if(m.envelope.manifest&&!m.envelope.manifest.permissions.providers[vendor||cursor?'approved_external':'local_reasoning'])throw Error('opencode_local_reasoning_denied');
     if(cursor&&!m.envelope.contract?.permissions?.external_disclosure?.authorized)throw Error('external_disclosure_unauthorized');
@@ -435,6 +447,7 @@ class MissionService {
     }
   }
   async launchNative(dispatch,m,fallback){
+    require('./mission-worker-policy').assertImplementation(m.envelope,{worker:'host'});
     const runId=randomUUID(),task=this.bridge.tasks.get(dispatch.task_id),plan=fallback.fallback_policy.native_actions;
     if(m.envelope.cognitive)require('./cognitive-router').assertBound(this.bridge,m,{freshness:true});
     // Prior rejected agents may have written allowed_files; only protected paths block fallback.
@@ -520,7 +533,7 @@ class MissionService {
       try {
         this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id,mode:m.envelope.kind==='browser_research'?'read':'write'});
         // Disposable self-repair marker: at most one intentional exact-file mismatch before host verify.
-        try{const injected=require('./self-repair-fixture').applyControlledFailure(this.store.getMission(m.id));if(injected.applied)this.store.event('self_repair.controlled_failure',m.id,{file:injected.file,authority:false},{runId:run.id});}catch{/* marker absent or invalid */}
+        try{const injected=require('./self-repair-fixture').applyControlledFailure(this.store.getMission(m.id),{fixtureOnly:this.bridge.options.allowFixtureWorker===true});if(injected.applied)this.store.event('self_repair.controlled_failure',m.id,{file:injected.file,authority:false},{runId:run.id});}catch{/* marker absent or invalid */}
         verified=await this.verifier.verify(this.store.getMission(m.id),run);
         let evaluationFailed=false,evaluation=null;
         if(require('./opencode-gateway').enabled(m))try{evaluation=await require('./opencode-gateway').evaluate(this.bridge,this.store.getMission(m.id),run,verified);}catch{evaluationFailed=true;}

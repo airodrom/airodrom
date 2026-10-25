@@ -88,6 +88,7 @@ test('natural Cursor intake stays unexecuted, survives replay and rejects change
   assert.deepEqual(plain(first.presentation.files), ['first.txt', 'second.txt']);
   assert.equal(first.presentation.measurable, true);
   assert.equal(first.execution_authorized, false);
+  assert.equal(first.code, 'CURSOR_PLANNING_REQUIRED');
   assert.equal(f.created.length, 0); assert.equal(f.issued.length, 0); assert.equal(f.dispatched.length, 0);
   assert.deepEqual(fs.readdirSync(f.allocated[0]).sort(), ['.git', 'TASK.md']);
   const replay = await f.work.ask({ instruction, request_id }, principal);
@@ -95,7 +96,7 @@ test('natural Cursor intake stays unexecuted, survives replay and rejects change
   assert.equal(f.allocated.length, 1);
   await assert.rejects(f.work.ask({ instruction: instruction.replace('one', 'changed'), request_id }, principal), /replay_mismatch/);
   await assert.rejects(f.work.ask({ instruction, request_id }, 'mcp:' + randomUUID()), /original authenticated/);
-  await assert.rejects(f.work.approve({ request_id, confirmed: true, channel: 'control_center' }), /BLOCKED_SPEND_AUTHORIZATION/);
+  await assert.rejects(f.work.approve({ request_id, confirmed: true, channel: 'control_center' }), /not awaiting approval/);
   assert.equal(f.created.length, 0); assert.equal(f.dispatched.length, 0);
 });
 
@@ -185,15 +186,16 @@ test('Cursor contract preserves chosen worker, disclosure boundary and manual ac
   assert.equal(input.contract.budget.max_repair_attempts, 0);
 });
 
-for (const projectCount of [0, 1, 25]) test('local standing intake compiles two-file Mission with ' + projectCount + ' existing Projects', async t => {
+for (const projectCount of [0, 1, 25]) test('legacy two-file intake cannot launch an unplanned Mission with ' + projectCount + ' existing Projects', async t => {
   const f = prepared(t, projectCount), result = await ask(f);
-  assert.equal(result.state, 'DISPATCHED'); assert.equal(result.execution_authorized, true);
-  assert.equal(f.created.length, 1); assert.equal(f.dispatched.length, 1);
+  assert.equal(result.state, 'BLOCKED'); assert.equal(result.execution_authorized, false);
+  assert.equal(result.code, 'CURSOR_PLANNING_REQUIRED');
+  assert.equal(f.created.length, 0); assert.equal(f.dispatched.length, 0);
   assert.equal(f.b.projects.listProjects().length, projectCount);
-  const input = f.created[0].envelope;
-  assert.deepEqual(plain(input.allowed_files), ['first.txt', 'second.txt']);
-  assert.equal(input.projectless, true); assert.equal(input.preferred_agent, 'opencode');
-  assert.equal(f.issued.length, 0, 'local standing path does not mint subscription approvals');
+  assert.deepEqual(plain(result.presentation.files), ['first.txt', 'second.txt']);
+  assert.equal(result.requested_specialist, 'cursor'); assert.equal(result.planner, 'opencode');
+  assert.deepEqual(fs.readdirSync(f.allocated[0]).sort(), ['.git', 'TASK.md']);
+  assert.equal(f.issued.length, 0, 'unplanned intake cannot mint subscription approvals');
 });
 
 test('manual, STOP and absent policy do not dispatch a remote local-work proposal', async t => {
@@ -224,6 +226,7 @@ test('generic projectless requests explain missing scope with Autopilot and stan
   assert.deepEqual(f.b.controlStore.db.prepare('SELECT record,state,updated_at FROM cp_zero_setup_requests WHERE request_id=?').get(request_id), before);
   // Existing admission stays closed, including after an attempted owner approval.
   await assert.rejects(f.work.approve({ request_id, confirmed: true }, 'operator'), /exact authorized file change/);
+  assert.deepEqual(f.b.controlStore.db.prepare('SELECT record,state,updated_at FROM cp_zero_setup_requests WHERE request_id=?').get(request_id), before);
   assert.equal(f.created.length, 0); assert.equal(f.dispatched.length, 0); assert.equal(f.issued.length, 0);
 });
 
@@ -247,38 +250,36 @@ test('repository MCP standing proposal identifies owner intake without activatin
   assert.equal(f.dispatched.length, 0);
 });
 
-test('Cursor remains a populated proposal until explicit owner disclosure/spend confirmation', async t => {
+test('Cursor request retains exact files but spending confirmation cannot supply its missing plan', async t => {
   const f = prepared(t), request_id = randomUUID(), principal = 'mcp:' + randomUUID();
   const result = await ask(f, spec('cursor'), principal, request_id);
   assert.equal(result.execution_authorized, false); assert.equal(result.presentation.worker, 'cursor');
-  assert.equal(result.next_action, 'authorize_cursor_via_authenticated_local_api');
+  assert.equal(result.next_action, 'prepare_planned_cursor_mission');
   assert.deepEqual(plain(result.presentation.files), ['first.txt', 'second.txt']);
   assert.equal(result.presentation.success_criteria.length, 2);
   const resumed = await ask(f, spec('cursor'), principal, request_id);
   assert.equal(resumed.next_action, result.next_action);
   assert.deepEqual(plain(resumed.blockers), plain(result.blockers));
-  assert.deepEqual(plain(resumed.blockers), ['scoped_external_disclosure_required', 'BLOCKED_SPEND_AUTHORIZATION']);
+  assert.deepEqual(plain(resumed.blockers), ['CURSOR_PLANNING_REQUIRED']);
   assert.equal(resumed.admission.standard_approval_supported, false);
-  assert.match(resumed.message, /authenticated local operator API/);
+  assert.match(resumed.message, /plan/i);
   assert.equal(f.dispatched.length, 0); assert.equal(f.created.length, 0);
-  await assert.rejects(f.work.approve({ request_id, confirmed: true }), /BLOCKED_SPEND_AUTHORIZATION/);
+  await assert.rejects(f.work.approve({ request_id, confirmed: true }), /not awaiting approval/);
   await assert.rejects(f.work.approve({ request_id, confirmed: true }, 'mcp:' + randomUUID()), /Authenticated local operator/);
   const grant = { provider: 'cursor', acknowledge_unknown_cost: true, max_invocations: 1, max_runtime_ms: 10000 };
-  const accepted = await f.work.approve({ request_id, confirmed: true, channel: 'control_center', subscription_execution: grant });
-  assert.equal(accepted.state, 'DISPATCHED'); assert.equal(f.dispatched.length, 1);
-  assert.equal(f.created[0].envelope.preferred_agent, 'cursor'); assert.equal(f.created[0].envelope.risk_auto_acceptance, false);
-  assert.deepEqual(plain(f.issued[0].subscription_execution), grant);
-  assert.equal(f.bound.length, 1);
+  await assert.rejects(f.work.approve({ request_id, confirmed: true, channel: 'control_center', subscription_execution: grant }), /not awaiting approval/);
+  assert.equal(f.dispatched.length, 0); assert.equal(f.created.length, 0);
+  assert.equal(f.issued.length, 0); assert.equal(f.bound.length, 0);
 });
 
 test('same request recovers its identity, another session or changed request cannot replay', async t => {
   const f = prepared(t), principal = 'mcp:' + randomUUID(), id = randomUUID();
   await ask(f, spec('opencode'), principal, id);
   await ask(f, spec('opencode'), principal, id);
-  assert.equal(f.created.length, 1); assert.equal(f.allocated.length, 1);
+  assert.equal(f.created.length, 0); assert.equal(f.allocated.length, 1);
   await assert.rejects(ask(f, spec('opencode'), 'mcp:' + randomUUID(), id), /original authenticated handoff/);
   await assert.rejects(ask(f, spec('cursor'), principal, id), /request_replay_mismatch/);
-  assert.equal(f.dispatched.length, 1);
+  assert.equal(f.dispatched.length, 0);
 });
 
 test('operator settings stay off coding path; legacy fixture helper remains compatible', async t => {
@@ -290,13 +291,21 @@ test('operator settings stay off coding path; legacy fixture helper remains comp
 });
 
 
-test('ambiguous dispatch preserves Mission identity and never silently starts a second run', async t => {
+test('historical ambiguous dispatch preserves Mission identity and never silently starts a second run', async t => {
   const f = prepared(t), principal = 'mcp:' + randomUUID(), id = randomUUID();
+  // Explicit pre-upgrade record: current intake cannot dispatch this legacy writer.
+  const workspace = sandbox.allocate().workspace; f.allocated.push(workspace);
+  const missionId = randomUUID();
+  f.work.write(id, principal, { version: 1, instruction: instruction(spec('opencode')),
+    projectless: true, work_spec: spec('opencode'), workspace, mission_id: missionId,
+    dispatch_attempted: true, execution_enabled: false,
+    blocker_message: 'Dispatch outcome requires reconciliation: uncertain transport',
+    presentation: { files: ['first.txt', 'second.txt'] } }, 'blocked');
+  f.b.missions.require = mid => { assert.equal(mid, missionId); return { id: mid, state: 'blocked' }; };
   f.b.missions.dispatch = (mid, args) => { f.dispatched.push({mid,args}); throw Error('uncertain transport'); };
-  await assert.rejects(ask(f, spec('opencode'), principal, id), /uncertain transport/);
   const recovered = await ask(f, spec('opencode'), principal, id);
   assert.equal(recovered.state, 'BLOCKED');
-  assert.ok(recovered.technical.mission_id);
+  assert.equal(recovered.technical.mission_id, missionId);
   assert.match(recovered.technical.blocker_message, /requires reconciliation/);
-  assert.equal(f.created.length, 1); assert.equal(f.dispatched.length, 1); assert.equal(f.allocated.length, 1);
+  assert.equal(f.created.length, 0); assert.equal(f.dispatched.length, 0); assert.equal(f.allocated.length, 1);
 });

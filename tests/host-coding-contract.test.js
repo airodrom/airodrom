@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { completeHistoricalNative } = require('./fixtures/historical-native-fixture.cjs');
 const { securityScan } = require('../src/verifier-baseline');
 
 function manifest(repo, files) {
@@ -32,7 +33,7 @@ function commit(repo) {
   execFileSync('/usr/bin/git', ['-C', repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'host coding fixture'], { encoding: 'utf8' });
 }
 
-test('a new host coding Mission derives coverage before the write and keeps Acceptance pending', async t => {
+test('a historical host coding completion retains independent coverage and pending Acceptance', async t => {
   const f = await fixture(t);
   fs.writeFileSync(path.join(f.repo, 'sample.ts'), 'export const ready: number = 1; \n');
   commit(f.repo);
@@ -45,7 +46,7 @@ test('a new host coding Mission derives coverage before the write and keeps Acce
   assert.deepEqual(created.envelope.contract.verification.required_security_checks, ['protected_tests_unchanged', 'secret_scan', 'verifier_inputs_unchanged']);
   assert.equal(created.envelope.contract.audit.verifier_baseline.base_commit_sha, execFileSync('/usr/bin/git', ['-C', f.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
   assert.equal(fs.readFileSync(path.join(f.repo, 'sample.ts'), 'utf8').endsWith(' \n'), true);
-  f.bridge.missions.dispatch(created.id, { request_id: 'host-coverage' });
+  await completeHistoricalNative(f, created);
   const done = await f.settle(created.id);
   assert.equal(done.state, 'awaiting_acceptance');
   assert.equal(done.reason, 'Verification operator_review');
@@ -86,9 +87,8 @@ test('callers cannot suppress, widen, or reuse a contractless host coding Missio
   const stored = JSON.parse(f.bridge.memory.db.prepare('SELECT envelope FROM cp_missions WHERE id=?').get(legacy.id).envelope);
   delete stored.contract;
   f.bridge.memory.db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify(stored), legacy.id);
-  f.bridge.missions.dispatch(legacy.id, { request_id: 'legacy' });
-  const legacyDone = await f.settle(legacy.id, 'blocked');
-  assert.match(legacyDone.reason, /host_coding_contract_required/);
+  assert.throws(() => f.bridge.missions.dispatch(legacy.id, { request_id: 'legacy' }), /CURSOR_IMPLEMENTATION_REQUIRED/);
+  assert.throws(() => f.bridge.missions.codingAdapter.assert(f.bridge.controlStore.requireMission(legacy.id)), /host_coding_contract_required/);
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'alpha\n');
   const expired = f.create({ ...good, objective: 'Expired contract' });
   const expiring = JSON.parse(f.bridge.memory.db.prepare('SELECT envelope FROM cp_missions WHERE id=?').get(expired.id).envelope);
@@ -111,7 +111,7 @@ test('new secrets, sensitive paths, unreadable scans, and tampering fail closed 
   assert.equal(introduced.find(check => check.id === 'security:secret_scan').evidence.new_findings > 0, true);
   fs.writeFileSync(path.join(f.repo, 'fixture.txt'), 'beta\n');
   const sensitive = f.create({ objective: 'Sensitive path review', allowed_files: ['auth.txt'], criteria: [{ id: 'auth', type: 'exact_file', path: 'auth.txt', content: 'reviewed\n' }], verification: { diff_check: 'diff-check', tests: ['fixture-test'], syntax: [] }, manifest: manifest(f.repo, ['auth.txt']), coding_plan: plan(f.repo, { 'auth.txt': 'reviewed\n' }) });
-  f.bridge.missions.dispatch(sensitive.id, { request_id: 'sensitive' });
+  await completeHistoricalNative(f, sensitive);
   const sensitiveDone = await f.settle(sensitive.id);
   assert.equal(sensitiveDone.verifications[0].result, 'operator_review');
   assert.equal(sensitiveDone.verifications[0].evidence.find(check => check.id === 'security:sensitive_area').status, 'operator_review');
@@ -125,7 +125,7 @@ test('new secrets, sensitive paths, unreadable scans, and tampering fail closed 
   const envelope = JSON.parse(f.bridge.memory.db.prepare('SELECT envelope FROM cp_missions WHERE id=?').get(tamper.id).envelope);
   envelope.contract.permissions.allowed_write_paths.push('package.json');
   f.bridge.memory.db.prepare('UPDATE cp_missions SET envelope=? WHERE id=?').run(JSON.stringify(envelope), tamper.id);
-  assert.throws(() => f.bridge.missions.dispatch(tamper.id, { request_id: 'tamper' }), /altered|qualification|Immutable coding/);
+  assert.throws(() => f.bridge.missions.dispatch(tamper.id, { request_id: 'tamper' }), /CURSOR_IMPLEMENTATION_REQUIRED|altered|qualification|Immutable coding/);
   assert.equal(fs.readFileSync(path.join(f.repo, 'fixture.txt'), 'utf8'), 'beta\n');
   const weakened = f.create({ objective: 'Weakened verifier input', allowed_files: ['fixture.txt'], criteria: [{ id: 'file-0', type: 'exact_file', path: 'fixture.txt', content: 'gamma\n' }], manifest: manifest(f.repo, ['fixture.txt']), coding_plan: plan(f.repo, { 'fixture.txt': 'gamma\n' }) });
   const verify = f.bridge.missions.verifier.verify.bind(f.bridge.missions.verifier);
@@ -133,7 +133,7 @@ test('new secrets, sensitive paths, unreadable scans, and tampering fail closed 
     fs.writeFileSync(path.join(f.repo, 'tests/fixture.test.cjs'), 'assert.fail();\n');
     return verify(mission, run);
   };
-  f.bridge.missions.dispatch(weakened.id, { request_id: 'tests' });
+  await completeHistoricalNative(f, weakened);
   const weakenedDone = await f.settle(weakened.id, 'needs_rework');
   assert.equal(weakenedDone.verifications[0].evidence.find(check => check.id === 'protected_tests_unchanged').status, 'failed');
   assert.equal(weakenedDone.verifications[0].evidence.find(check => check.id === 'security:secret_scan').status, 'unavailable');
@@ -156,7 +156,7 @@ test('verification rejects a tampered or missing contract and an expired manifes
     if (mission.id === altered.id) mission.envelope.contract.permissions.allowed_write_paths.push('package.json');
     return verify(mission, runRecord);
   };
-  f.bridge.missions.dispatch(altered.id, { request_id: 'verify-altered' });
+  await completeHistoricalNative(f, altered);
   const alteredDone = await f.settle(altered.id, 'needs_rework');
   assert.equal(alteredDone.verifications[0].evidence.find(check => check.id === 'contract_integrity').status, 'failed');
   assert.match(alteredDone.verifications[0].evidence.find(check => check.id === 'contract_integrity').evidence.reason, /altered/);
@@ -169,7 +169,7 @@ test('verification rejects a tampered or missing contract and an expired manifes
     if (mission.id === legacy.id) delete mission.envelope.contract;
     return verify(mission, runRecord);
   };
-  f.bridge.missions.dispatch(legacy.id, { request_id: 'verify-legacy' });
+  await completeHistoricalNative(f, legacy);
   const legacyDone = await f.settle(legacy.id, 'needs_rework');
   assert.equal(legacyDone.verifications[0].evidence.find(check => check.id === 'contract_integrity').evidence.reason, 'host_coding_contract_required');
   assert.equal(legacyDone.verifications[0].evidence.find(check => check.id === 'security:secret_scan').status, 'unavailable');
@@ -182,7 +182,7 @@ test('verification rejects a tampered or missing contract and an expired manifes
   fs.chmodSync(blob, 0);
   let unreadableDone;
   try {
-    f.bridge.missions.dispatch(unreadable.id, { request_id: 'verify-unreadable' });
+    await completeHistoricalNative(f, unreadable);
     unreadableDone = await f.settle(unreadable.id, 'needs_rework');
   } finally { fs.chmodSync(blob, 0o644); }
   assert.equal(unreadableDone.verifications[0].evidence.find(check => check.id === 'verifier_inputs_unchanged').status, 'unavailable');
@@ -198,7 +198,7 @@ test('verification rejects a tampered or missing contract and an expired manifes
     return invoke(id, request);
   };
   const before = verifierCommands;
-  f.bridge.missions.dispatch(expiring.id, { request_id: 'verify-expired' });
+  await completeHistoricalNative(f, expiring);
   const expiredDone = await f.settle(expiring.id, 'needs_rework');
   assert.equal(verifierCommands, before);
   assert.match(expiredDone.verifications[0].evidence.find(check => check.id === 'verification_available').evidence.reason, /Mission Manifest runtime budget expired/);

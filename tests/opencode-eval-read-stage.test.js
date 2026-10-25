@@ -61,38 +61,22 @@ test('stage-confused blocked on host-verified read fails closed', () => {
 });
 
 test('read-then-edit specialist graph advances after host-verified read evaluation', async t => {
-  const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 45000 });
+  const f = await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:0});
   const b = f.bridge;
-  b.missionAuthority.initializeOperatorKey();
-  qualifyCanonical(b);
-  b.expandedAutonomy.setMode({
-    mode: 'routine_auto', confirmed: true, request_id: randomUUID(), sync_risk_acceptance: false,
-  }, 'operator');
-  const project = b.projects.listProjects({ status: 'active' })[0];
-  const goal = b.projects.summary(project.projectId).goals[0];
-  b.developerAutonomy.enroll({
-    alias: 'read-stage-fixture', repository: f.repo, project_id: project.projectId, goal_id: goal.goalId,
-    workflows: ['routine_edit', 'test'], workers: ['opencode'], duration_days: 1, confirmed: true,
-    diff_check: 'diff-check', default_tests: ['fixture-test'], budgets: { max_repairs: 0 },
-    cognitive: {
-      version: 3, files: ['fixture.txt'], delegated_callers: [], planning_attempts: 2,
-      planning_ms: 120000, execution_ms: 120000, repair_attempts: 0, max_assignments: 2, acceptance: 'automatic',
-    },
-  }, 'operator');
   f.plan = [
     {
       id: 'read-1', worker: 'opencode', role: 'analysis', operation: 'read', paths: ['fixture.txt'],
       description: 'Read fixture.txt for context', depends_on: [], verification: [],
     },
     {
-      id: 'change-1', worker: 'opencode', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
+      id: 'change-1', worker: 'cursor', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
       description: 'Change alpha to beta', depends_on: ['read-1'], verification: [],
     },
   ];
   f.evaluations = [];
   f.calls = [];
   const adapter = b.opencodeAdapter;
-  const worker = adapter.execute.bind(adapter);
+  const worker = f.worker;
   adapter.execute = async (options) => {
     if (options.planning) {
       return {
@@ -160,36 +144,20 @@ test('read-then-edit specialist graph advances after host-verified read evaluati
 });
 
 test('stage-confused evaluator response does not unlock the dependent edit', async t => {
-  const f = await fixture(t, { opencode: runtime(t).options, settleTimeoutMs: 45000 });
+  const f = await require('./fixtures/cursor-autonomy-fixture.cjs').setup(t,{repairs:0});
   const b = f.bridge;
-  b.missionAuthority.initializeOperatorKey();
-  qualifyCanonical(b);
-  b.expandedAutonomy.setMode({
-    mode: 'routine_auto', confirmed: true, request_id: randomUUID(), sync_risk_acceptance: false,
-  }, 'operator');
-  const project = b.projects.listProjects({ status: 'active' })[0];
-  const goal = b.projects.summary(project.projectId).goals[0];
-  b.developerAutonomy.enroll({
-    alias: 'read-stage-confused', repository: f.repo, project_id: project.projectId, goal_id: goal.goalId,
-    workflows: ['routine_edit', 'test'], workers: ['opencode'], duration_days: 1, confirmed: true,
-    diff_check: 'diff-check', default_tests: ['fixture-test'], budgets: { max_repairs: 0 },
-    cognitive: {
-      version: 3, files: ['fixture.txt'], delegated_callers: [], planning_attempts: 2,
-      planning_ms: 120000, execution_ms: 120000, repair_attempts: 0, max_assignments: 2, acceptance: 'automatic',
-    },
-  }, 'operator');
   f.plan = [
     {
       id: 'read-1', worker: 'opencode', role: 'analysis', operation: 'read', paths: ['fixture.txt'],
       description: 'Read fixture.txt', depends_on: [], verification: [],
     },
     {
-      id: 'change-1', worker: 'opencode', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
+      id: 'change-1', worker: 'cursor', role: 'implementation', operation: 'edit', paths: ['fixture.txt'],
       description: 'Change alpha to beta', depends_on: ['read-1'], verification: [],
     },
   ];
   const adapter = b.opencodeAdapter;
-  const worker = adapter.execute.bind(adapter);
+  const worker = f.worker;
   adapter.execute = async (options) => {
     if (options.planning) {
       return {

@@ -4,12 +4,12 @@ process.env.NODE_ENV = 'test';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { fixture } = require('./fixtures/mission-fixture.cjs');
+const { fixture, createReadMission } = require('./fixtures/read-mission-fixture.cjs');
 const { assertTransition } = require('../src/mission-lifecycle');
 
 test('bounded Mission completes with independent verification and host-owned Acceptance', async (t) => {
   const f = await fixture(t);
-  const m = f.create({
+  const m = createReadMission(f,{
     criteria: [{ id: 'design', type: 'review', description: 'Operator reviews suitability' }]
   });
   assert.equal(m.state, 'ready');
@@ -42,7 +42,7 @@ test('bounded Mission completes with independent verification and host-owned Acc
 
 test('restart recovery preserves awaiting_acceptance Mission projection', async (t) => {
   const f = await fixture(t);
-  const m = f.create({
+  const m = createReadMission(f,{
     criteria: [{ id: 'design', type: 'review', description: 'Operator reviews suitability' }]
   });
   f.bridge.missions.dispatch(m.id, { request_id: randomUUID() });

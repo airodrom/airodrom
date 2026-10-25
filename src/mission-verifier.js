@@ -133,7 +133,8 @@ class MissionVerifier {
       }
       add('workspace', 'passed',{exists:true});
       add('protected_files',protectedChanged.length||baseline.head!==snapshot.head?'failed':'passed',{changed:protectedChanged,head_unchanged:baseline.head===snapshot.head});
-      const readonly=assignmentCheck?.assignment.operation==='read'||(envelope.cognitive?.envelope.version===3&&envelope.cognitive.proposal.tasks.every(t=>t.operation==='read'));
+      const nativeReads=envelope.preferred_agent==='host'&&run.agent_id==='host'&&!envelope.cognitive&&envelope.dispatch_policy?.native_actions?.length>0&&envelope.dispatch_policy.native_actions.every(a=>a.name==='file_read');
+      const readonly=assignmentCheck?.assignment.operation==='read'||(envelope.cognitive?.envelope.version===3&&envelope.cognitive.proposal.tasks.length>0&&envelope.cognitive.proposal.tasks.every(t=>t.operation==='read'))||nativeReads;
       const expectedBaseline=assignmentCheck?mission.envelope.baseline:creation;
       add('expected_changes',readonly?!changed.length?'passed':'failed':envelope.allowed_files.some(f=>expectedBaseline.files[f]!==snapshot.files[f])?'passed':'failed',{task_owned_changes:changed.filter(f=>envelope.allowed_files.includes(f)),baseline_hash:baseline.hash,read_only:readonly});
       // ADR 0051: contract integrity and trusted verifier-input baseline. Tampered tests or

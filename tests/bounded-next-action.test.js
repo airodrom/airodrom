@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
-const {fixture}=require('./fixtures/mission-fixture.cjs');
+const {fixture}=require('./fixtures/decision-read-fixture.cjs');
 const {BoundedNextAction}=require('../src/bounded-next-action');
 function register(e,missions,extra={}){for(const m of missions)e.bridge.projects.updateProject(m.project_id,{autonomyLevel:'auto_development'});const id=randomUUID();e.register({id,mode:'auto_development',mission_ids:missions.map(m=>m.id),...extra});return id;}
 function accept(f,m){const d=f.bridge.missions.detail(m.id);return f.bridge.missions.accept(m.id,{request_id:randomUUID(),verification_id:d.verifications[0].id,decision:'accept',rationale:'Independent exact-file and registered checks passed'});}
@@ -11,7 +11,7 @@ test('execution defaults off; immutable plan and conservative coding mode fail c
  const safe=register(e,[m],{mode:'auto_safe'});assert.equal((await e.tick(safe)).reason,'coding_requires_auto_development');
 });
 test('two Mission chain dispatches once, waits for acceptance and Decision, preserves restart and stops at budget',async t=>{
- const f=await fixture(t);f.bridge.boundedNextActions.enabled=false;const a=f.create(),b=f.create({objective:'DECISION before updating the fixture.',allowed_files:['fixture.txt','strategy.txt'],criteria:[{id:'strategy',type:'exact_file',path:'strategy.txt',content:'A\n'}]});
+ const f=await fixture(t);f.bridge.boundedNextActions.enabled=false;const a=f.create(),b=f.create({objective:'DECISION before updating the fixture.',allowed_files:['fixture.txt']});
  const e=new BoundedNextAction(f.bridge,{enabled:true}),id=register(e,[a,b]);
  const first=await Promise.all([e.tick(id),e.tick(id)]);assert.equal(first.filter(v=>v.state==='dispatched').length,1);
  await f.settle(a.id);assert.equal((await e.tick(id)).state,'waiting');assert.equal(f.calls(),1);accept(f,a);
