@@ -1340,7 +1340,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/undici/-/undici-7.30.0.tgz"
+          "url": "https://registry.npmjs.org/undici/-/undici-7.30.1.tgz"
         }
       ],
       "hashes": [
@@ -1411,7 +1411,7 @@
     {
       "ref": "@slack/socket-mode@3.1.0",
       "dependsOn": [
-        "undici@7.30.0",
+        "undici@7.30.1",
         "@slack/logger@5.0.0",
         "@slack/web-api@8.2.0",
         "@types/node@26.6.3",
@@ -1595,7 +1595,7 @@
       ]
     },
     {
-      "ref": "undici@7.30.0",
+      "ref": "undici@7.30.1",
       "dependsOn": []
     },
     {
