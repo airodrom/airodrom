@@ -424,7 +424,7 @@ function diagnoseWorkspaceFile(root, relative, { planningContextAdmissible, sour
     }
     const bytes = Buffer.byteLength(text, 'utf8');
     if (typeof sourceContextSensitive === 'function' && sourceContextSensitive(text)) {
-      return { code: 'requested_file_planning_sensitive', execution_ok: true, planning_ok: false, bytes };
+      return { code: 'requested_file_planning_sensitive', execution_ok: false, planning_ok: false, bytes };
     }
     if (typeof maxDiscoveryFile === 'number' && bytes > maxDiscoveryFile) {
       return { code: 'requested_file_planning_oversized', execution_ok: true, planning_ok: false, bytes, max_discovery_file: maxDiscoveryFile };

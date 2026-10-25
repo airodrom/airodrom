@@ -1325,12 +1325,12 @@
       ]
     },
     {
-      "bom-ref": "undici@7.30.0",
+      "bom-ref": "undici@7.30.1",
       "type": "library",
       "name": "undici",
-      "version": "7.30.0",
+      "version": "7.30.1",
       "scope": "required",
-      "purl": "pkg:npm/undici@7.30.0",
+      "purl": "pkg:npm/undici@7.30.1",
       "properties": [
         {
           "name": "cdx:npm:package:path",

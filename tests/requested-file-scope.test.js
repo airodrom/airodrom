@@ -327,9 +327,12 @@ test('workspace file diagnosis distinguishes missing, oversized and sensitive pl
   assert.equal(S.diagnoseWorkspaceFile(root, 'big.txt', {
     planningContextAdmissible: () => false, sourceContextSensitive: () => false, maxDiscoveryFile: 16384,
   }).code, 'requested_file_planning_oversized');
-  assert.equal(S.diagnoseWorkspaceFile(root, 'secret.txt', {
+  const sensitive = S.diagnoseWorkspaceFile(root, 'secret.txt', {
     planningContextAdmissible: () => false, sourceContextSensitive: () => true, maxDiscoveryFile: 16384,
-  }).code, 'requested_file_planning_sensitive');
+  });
+  assert.equal(sensitive.code, 'requested_file_planning_sensitive');
+  assert.equal(sensitive.execution_ok, false);
+  assert.equal(sensitive.planning_ok, false);
   assert.equal(S.diagnoseWorkspaceFile(root, 'dir', {
     planningContextAdmissible: () => true, sourceContextSensitive: () => false, maxDiscoveryFile: 16384,
   }).code, 'requested_file_is_directory');
