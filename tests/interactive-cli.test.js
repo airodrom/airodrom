@@ -135,6 +135,33 @@ test('active authority Memory V2 preserves bounded conversation selection and er
   const gone = await f.ask(); assert.equal(gone.task.lastResult, 'unavailable');
   assert.equal(f.b.opencodeAdapter.authorizedContext({ id: gone.task.contextPackId }).records.length, 0);
 });
+test('host-bound conversation workspace UUID is a coordinate, while arbitrary paths and prose stay sensitive', async t => {
+  const f = await conversationFixture(t); qualifyCanonical(f.b);
+  const b = f.b, id = '799f6513-2807-4424-893c-c9ef84465bcf';
+  const created = b.createTask('Synthetic conversation coordinate', { requiredExecutionKind: 'reasoning' });
+  const task = b.tasks.get(created.id), old = task.id;
+  // Seed one deterministic host task whose opaque UUID happens to match Luhn.
+  fs.renameSync(path.join(b.tasks.root, old), path.join(b.tasks.root, id));
+  b.tasks.tasks.delete(old); b.tasks.saved.delete(old);
+  b.controlStore.db.prepare('DELETE FROM task_states WHERE id=?').run(old);
+  task.id = id; task.workspace = path.join(b.tasks.root, id, 'workspace');
+  task.sessionDir = path.join(b.tasks.root, id, 'sessions'); b.tasks.tasks.set(id, task); b.tasks.save(task);
+  assert.equal(require('../src/personal-memory').containsSecret(task.workspace), true);
+  const safe = require('../src/authority-store').safe;
+  assert.throws(() => safe({ workspace: task.workspace }), /Sensitive/);
+  assert.throws(() => safe({ objective: task.workspace }), /Sensitive/);
+  const m = b.missions.createConversation({ request_id: 'bound-conversation-coordinate', task_id: id, message: 'Synthetic bounded question' });
+  const store = b.authorityRuntime.store, persisted = store.getCurrentMissionProjection(m.mission_id);
+  assert.equal(persisted.revision.envelope.workspace, task.workspace);
+  const envelope = b.controlStore.getMission(m.mission_id).envelope;
+  const portable = { ...envelope, baseline: { version: 1, manifest_hash: require('../src/authority-hash').canonicalHash(envelope.baseline) } };
+  assert.throws(() => store.createMission({ id: require('node:crypto').randomUUID(), task_id: id, envelope: portable }, store.host), /Sensitive/);
+  const row = b.controlStore.db.prepare('SELECT snapshot FROM task_states WHERE id=?').get(id), changed = JSON.parse(row.snapshot);
+  changed.workspace = path.join(b.tasks.root, 'different');
+  b.controlStore.db.prepare('UPDATE task_states SET snapshot=? WHERE id=?').run(JSON.stringify(changed), id);
+  assert.throws(() => store.insertRevision(m.mission_id, 2, portable, store.host, 'exact'), /Host conversation scan binding changed/);
+  b.controlStore.db.prepare('UPDATE task_states SET snapshot=? WHERE id=?').run(row.snapshot, id);
+});
 test('managed graceful stop authenticates its owner even after a source update and preserves memory', async t => {
   const f = await conversationFixture(t);
   await local.request(f.home, '/api/interactive/remember', { content: 'My test codename is Silver Falcon.' });

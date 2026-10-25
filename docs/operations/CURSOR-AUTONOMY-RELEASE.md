@@ -15,6 +15,10 @@ ceiling. The correction rejects over-limit requests before workspace preparation
 or planning and rejects historical envelopes above enrollment before approval or
 execution. A request cannot authorize an increased budget; four original stages
 require an explicit enrollment covering four, separately from repair allowance.
+Regression also reproduced a conversation workspace UUID matching the payment-card
+detector. Its scan-only coordinate view requires an exact canonical Mission,
+durable task binding and real host-owned workspace path. It masks only the generated
+UUID segment, retaining parent-path and prose scanning and original persisted bytes.
 
 Remote main and the installed source remain `1a3a12e`. Hosted candidate CI is
 manually disabled and the remote branch currently requires no checks or reviews;

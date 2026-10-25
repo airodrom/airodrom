@@ -14,6 +14,10 @@ The request-derived assignment count also previously enlarged the enrolled
 budget. Admission now rejects excess stages before workspace preparation or
 planning, seals only the enrolled ceiling, and refuses historical envelopes
 above that ceiling. Four stages require an explicitly enrolled limit of four.
+Full regression also exposed a generated conversation workspace UUID that matched
+the payment-card detector. The host now recognizes only the exact UUID segment
+bound to the durable conversation/task and canonical private workspace. Parent
+paths, arbitrary paths and free text remain scanned; persisted scope is unchanged.
 
 Production preflight found a healthy, idle managed controller with no unresolved
 run blockers or held/quarantined leases. It still uses the old Node process image;
