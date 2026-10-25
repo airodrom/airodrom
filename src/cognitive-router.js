@@ -476,6 +476,8 @@ function assertDelegation(bridge, record) {
     if (!(autopilot && handoff)) C.fail('cognitive_caller_delegation_required');
   }
   bridge.developerAutonomy.assertPolicyBoundaries(p);
+  // Historical envelopes must not preserve a request-derived budget expansion.
+  if (p.cognitive.version === 3 && record.cognitive?.envelope?.limits.execution_attempts > p.cognitive.max_assignments) C.fail('cognitive_assignment_limit');
   if (record.cognitive?.envelope && record.cognitive.envelope.expires_at <= Date.now()) C.fail('cognitive_envelope_expired');
   return p;
 }
@@ -694,6 +696,7 @@ async function executeReserved(zero, record, p, instruction) {
     const requestConstraint = requestedScope.extract(instruction);
     record.cognitive.requested_scope = requestConstraint;
     requestedScope.assertEnrollment(requestConstraint, p.cognitive.files);
+    if (p.cognitive.version === 3 && requestedScope.stages(requestConstraint).length > p.cognitive.max_assignments) C.fail('cognitive_assignment_limit');
     b.lifecycle?.assertOpen();
     // Non-blocking clone/materialize so MCP get_ask_status / agent_status remain
     // responsive during multi-GB disposable workspace preparation.
@@ -755,7 +758,7 @@ async function executeReserved(zero, record, p, instruction) {
       permitted_paths: permittedPaths, denied_paths: [...DEFAULT_DENIED_PATHS], operations: sealedOperations(instruction, requested),
       eligible_workers: ['host', ...enrolledWorkers],
       verification: [p.verification_defaults.diff_check, ...p.verification_defaults.tests].sort(),
-      limits: { planning_attempts: p.cognitive.planning_attempts, execution_attempts: p.cognitive.version === 3 ? Math.max(p.cognitive.max_assignments || 1, requestedScope.stages(requestConstraint).length || 1) : 1, repair_attempts: p.cognitive.repair_attempts || 0, planning_ms: p.cognitive.planning_ms, execution_ms: p.cognitive.execution_ms },
+      limits: { planning_attempts: p.cognitive.planning_attempts, execution_attempts: p.cognitive.version === 3 ? p.cognitive.max_assignments : 1, repair_attempts: p.cognitive.repair_attempts || 0, planning_ms: p.cognitive.planning_ms, execution_ms: p.cognitive.execution_ms },
       requested_scope: requestConstraint, requested_worker: requested, instruction_hash: canonicalHash(instruction), expires_at: Math.min(p.expires_at, Date.now() + p.budgets.grant_ttl_minutes * 60000) }));
     record.cognitive.envelope = envelope; record.cognitive.workspace_identity = captured.workspace_identity;
     // Bind enrolled repository identity into the ask record before planning completes.

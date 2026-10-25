@@ -10,6 +10,10 @@ scope, structured stages could be reordered, and explicit retargets could be
 duplicated. The follow-up preserves negation, source order and distinct stage
 identity, and refuses to infer an earlier mutation from a later read. Previously
 sealed requests are never rewritten to adopt the corrected interpretation.
+The request-derived assignment count also previously enlarged the enrolled
+budget. Admission now rejects excess stages before workspace preparation or
+planning, seals only the enrolled ceiling, and refuses historical envelopes
+above that ceiling. Four stages require an explicitly enrolled limit of four.
 
 Production preflight found a healthy, idle managed controller with no unresolved
 run blockers or held/quarantined leases. It still uses the old Node process image;

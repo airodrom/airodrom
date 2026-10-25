@@ -3,14 +3,14 @@ const assert=require('node:assert/strict'),path=require('node:path');
 const {randomUUID}=require('node:crypto');
 const {fixture}=require('./mission-fixture.cjs');
 const {runtime,qualifyCanonical}=require('./opencode-fixture.cjs');
-async function setup(t,{cursor=true,repairs=2,manual=false,standing=true,caller='operator'}={}) {
+async function setup(t,{cursor=true,repairs=2,manual=false,standing=true,caller='operator',assignments=3}={}) {
  const f=await fixture(t,{opencode:runtime(t).options,settleTimeoutMs:60000}),b=f.bridge;
  b.missionAuthority.initializeOperatorKey();qualifyCanonical(b);
  if(!manual)b.expandedAutonomy.setMode({mode:'routine_auto',confirmed:true,request_id:randomUUID(),sync_risk_acceptance:false},'operator');
  if(cursor)b.hostExecutionPolicy.enableCursor({confirmed:true,request_id:randomUUID()},'operator');
  if(cursor)b.cursorWorker=new(require('../../src/cursor-worker').CursorWorker)(b,{fixtureExecutable:path.join(__dirname,'cursor-agent-fixture.cjs')});
  const p=b.projects.listProjects({status:'active'})[0],g=b.projects.summary(p.projectId).goals[0];
- f.policy=b.developerAutonomy.enroll({alias:'specialist-fixture',repository:f.repo,project_id:p.projectId,goal_id:g.goalId,workflows:['routine_edit','test','repair'],workers:cursor?['opencode','cursor']:['opencode'],duration_days:1,confirmed:true,diff_check:'diff-check',default_tests:['fixture-test'],budgets:{max_repairs:repairs},cognitive:{version:3,files:['fixture.txt'],delegated_callers:caller==='operator'?[]:[caller],planning_attempts:2,planning_ms:120000,execution_ms:120000,repair_attempts:repairs,max_assignments:3,acceptance:'automatic'}},'operator');
+ f.policy=b.developerAutonomy.enroll({alias:'specialist-fixture',repository:f.repo,project_id:p.projectId,goal_id:g.goalId,workflows:['routine_edit','test','repair'],workers:cursor?['opencode','cursor']:['opencode'],duration_days:1,confirmed:true,diff_check:'diff-check',default_tests:['fixture-test'],budgets:{max_repairs:repairs},cognitive:{version:3,files:['fixture.txt'],delegated_callers:caller==='operator'?[]:[caller],planning_attempts:2,planning_ms:120000,execution_ms:120000,repair_attempts:repairs,max_assignments:assignments,acceptance:'automatic'}},'operator');
  if(standing)f.grant=b.hostExecutionPolicy.enrollStandingCursorDevelopment({request_id:randomUUID(),confirmed:true,repository:f.repo,policy_id:f.policy.policy_id,acknowledge_unknown_cost:true,max_invocations_per_mission:1+repairs,max_runtime_ms:120000,max_missions:10,path_allowlist:['fixture.txt']},'operator').standing_cursor_development_active;
  f.plan=[{id:'implement',worker:cursor?'cursor':'opencode',role:'implementation',operation:'edit',paths:['fixture.txt'],description:'Change alpha to beta',depends_on:[],verification:[]},{id:'review',worker:'opencode',role:'review',operation:'read',paths:['fixture.txt'],description:'Review the implementation without modifying files',depends_on:['implement'],verification:[]}];
  f.calls=[];f.evaluations=[];

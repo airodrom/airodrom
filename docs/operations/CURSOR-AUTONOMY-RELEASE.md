@@ -10,6 +10,11 @@ structured-negation, stage-order and duplicate-retarget defects. The corrective
 source must have its own fixed-revision qualification; the earlier result does
 not qualify those new bytes. Keep the exact revision, source fingerprint, runtime,
 skip list and exit status with the PR evidence.
+Review also found that requested stages could enlarge the enrolled assignment
+ceiling. The correction rejects over-limit requests before workspace preparation
+or planning and rejects historical envelopes above enrollment before approval or
+execution. A request cannot authorize an increased budget; four original stages
+require an explicit enrollment covering four, separately from repair allowance.
 
 Remote main and the installed source remain `1a3a12e`. Hosted candidate CI is
 manually disabled and the remote branch currently requires no checks or reviews;

@@ -660,6 +660,7 @@
   "tests/codex-live-qualification.test.js",
   "tests/codex-memory-context.test.js",
   "tests/codex-subscription-provider.test.js",
+  "tests/cognitive-assignment-ceiling.test.js",
   "tests/cognitive-gateway.test.js",
   "tests/cognitive-mission-name.test.js",
   "tests/cognitive-router-browser.cjs",
