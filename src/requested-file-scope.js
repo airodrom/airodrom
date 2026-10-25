@@ -11,10 +11,12 @@ const C = require('./cognitive-contracts');
 const { canonicalHash } = require('./authority-hash');
 const unique = values => [...new Set(values)].sort();
 
-const VERBS = String.raw`reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create`;
+const VERBS = String.raw`reads?|inspect|review|edits?|modify|change|update|rewrite|append(?:\s+to)?|write(?:\s+to)?|create|fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?`;
 const LITERAL = /`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s,;:!?()]+/.source;
-const CONTENT = String.raw`(?:(?:the|its|their)\s+)?(?:documentation|docs|examples?|content|text|wording|headings?|paragraphs?|sections?|instructions?|links?|references?|descriptions?|comments?|formatting|tables?|notes?)`;
+const CONTENT = String.raw`(?:(?:the|its|their)\s+)?(?:documentation|docs|examples?|content|text|wording|headings?|paragraphs?|sections?|instructions?|links?|references?|descriptions?|comments?|formatting|tables?|notes?|typos?|corrections?)`;
 const STOP_TOKENS = /^(?:and|or|then|to|in|of|for|with|from|into|onto|over|after|before|only|ready|blocked|operations?|recommendation|result|results|policies|grants|settings|ci)$/i;
+const MUTATION_REFINE = /\b(?:fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b/i;
+const CONDITIONAL_MUTATION = /\b(?:fix|patch|implement)\s+only\s+if\b/i;
 
 function normalize(value) {
   if (typeof value !== 'string' || /[\\\x00-\x1f]/.test(value) || path.posix.isAbsolute(value)
@@ -133,6 +135,36 @@ function extractStructuredPhrases(text, stages, bindings, literalRanges) {
   }
 }
 
+
+/** Refine pathless fix/patch/implement onto a unique prior exact path only. */
+function refineImplicitMutation(text, stages, bindings, literalRanges) {
+  if (!MUTATION_REFINE.test(text) || CONDITIONAL_MUTATION.test(text)) return false;
+  if (/\b(?:do\s+not|don't|never|without)\s+(?:fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b/i.test(text)) return false;
+  if (/\b(?:fix|patch|implement)\s+nothing\b/i.test(text)) return false;
+  if (/\bread[- ]only\b/i.test(text) && MUTATION_REFINE.test(text) && !/\b(?:and|then)\s+(?:fix|patch|implement)\b/i.test(text)) return false;
+  // Explicit retarget: "fix typos in PATH" / "implement the corrections in PATH".
+  const retarget = new RegExp(String.raw`\b(?:fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b(?:(?!\b(?:fix|patch|implement)\b)[\s\S]){0,96}?\b(?:in|within|of)\s+(` + LITERAL + `)`, 'i');
+  const m = text.match(retarget);
+  if (m) {
+    const { quoted, token } = unwrapLiteral(m[1]);
+    if (isPathToken(quoted, token)) {
+      const file = normalize(token);
+      const start = m.index + m[0].lastIndexOf(m[1]);
+      pushStage(stages, bindings, 'edit', file, literalRanges, { start, end: start + m[1].length });
+      return false;
+    }
+  }
+  if (bindings.some(b => b.operation === 'edit') || stages.some(s => s.operation === 'edit')) return false;
+  const readPaths = [...new Set(stages.filter(s => s.operation === 'read').map(s => s.path))];
+  if (readPaths.length === 1) {
+    pushStage(stages, bindings, 'edit', readPaths[0], literalRanges, null);
+    return false;
+  }
+  if (readPaths.length > 1) return true;
+  if (!stages.length && MUTATION_REFINE.test(text)) return true;
+  return false;
+}
+
 function extract(instruction) {
   const text = String(instruction);
   const stages = [], bindings = [], literalRanges = [];
@@ -162,6 +194,8 @@ function extract(instruction) {
       }
       if (!fileKeyword) {
         if (descriptiveProse(text, m.index, verb, token, m[0])) { anchor = null; continue; }
+        // Pathless fix/patch/implement ("fix typos") — bind later via unique prior path.
+        if (MUTATION_REFINE.test(verb)) { anchor = null; continue; }
         const rest = text.slice(m.index + m[1].length), phrase = refinement.exec(rest);
         const gap = anchor ? text.slice(anchor.end, m.index) : '';
         if (operation === 'edit' && anchor?.operation === 'edit' && phrase
@@ -210,6 +244,9 @@ function extract(instruction) {
     if (!/^\s*(?:`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|(?:\.\/)?[A-Za-z0-9_][\w.-]*(?:\/[\w.-]+)*)/.test(rest)) unresolvedOperation = true;
   }
   if (unresolvedOperation) C.fail('requested_file_operation_required');
+  if (refineImplicitMutation(text, stages, bindings, literalRanges)) {
+    C.fail('requested_file_operation_required');
+  }
 
   for (const m of text.matchAll(/(?:^|[\s`"'(])((?:\.\/)?[\w.-]+(?:\/[\w.-]+)*\.[a-z][a-z0-9_-]*)(?=\.(?:\s|$)|[\s`"'),;:!?]|$)/gi)) {
     const file = normalize(m[1].replace(/\.$/, ''));

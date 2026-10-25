@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Implicit mutation verbs (`fix`/`patch`/`implement`) refine onto a unique prior exact path or an explicit `in PATH` retarget; ambiguous multi-path and pathless mutations stay fail-closed ([ADR 0063](docs/adr/0063-requested-file-scope.md)).
 - Natural-language Mission admission no longer invents file targets from descriptive prose (`for read and edit operations`, `review the result`, evaluation recommendation markers); ordered `stages` stay distinct from unique `bindings` so collapsed multi-stage plans fail as `requested_file_stage_mismatch`; workspace diagnosis returns precise absence/oversized/sensitive codes with one bounded rematerialization, and execution targets remain permitted when planner bytes are withheld ([ADR 0063](docs/adr/0063-requested-file-scope.md)).
 - Treat the host verifier's typed repository Git revision as an opaque coordinate, preventing intermittent payment-card false positives while continuing to screen arbitrary evidence text and malformed coordinates.
 - Separate Cursor Mission authorization from cached runtime readiness at dependent dispatch; share authority checks with fresh launch decisions and bound transient retries to the current never-started assignment ([details](docs/CURSOR-EXECUTION-DECISION-V1.md), ADR 0062).

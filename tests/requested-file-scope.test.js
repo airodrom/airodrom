@@ -349,3 +349,51 @@ test('historical 2026-10-24 v2 instruction parses without false READY/and target
   assert.deepEqual(s.stages.map(x => x.operation), ['read', 'read', 'edit', 'read']);
   assert.ok(!s.bindings.some(b => /^(READY|and|ONLY)$/i.test(b.path)));
 });
+
+
+test('implicit mutation verbs bind unique prior path (fix/patch/implement)', () => {
+  for (const text of [
+    'Inspect README.md and fix typos.',
+    'Read README.md and patch the wording.',
+    'Inspect README.md and implement the corrections.',
+  ]) {
+    const s = S.extract(text);
+    assert.deepEqual(s.bindings, [
+      { operation: 'read', path: 'README.md' },
+      { operation: 'edit', path: 'README.md' },
+    ]);
+    assert.deepEqual(s.stages, s.bindings);
+  }
+  assert.deepEqual(S.extract('Fix typos in README.md.').bindings, [
+    { operation: 'edit', path: 'README.md' },
+  ]);
+  assert.deepEqual(S.extract('Inspect README.md and fix typos in docs/guide.md.').bindings, [
+    { operation: 'read', path: 'README.md' },
+    { operation: 'edit', path: 'docs/guide.md' },
+  ]);
+});
+
+test('implicit mutation negatives stay fail-closed or read-only', () => {
+  assert.deepEqual(S.extract('Inspect README.md but do not fix typos.').bindings, [
+    { operation: 'read', path: 'README.md' },
+  ]);
+  assert.throws(() => S.extract('Inspect README.md and CHANGELOG.md, then fix typos.'), /requested_file_operation_required/);
+  assert.throws(() => S.extract('Implement the solution'), /requested_file_operation_required/);
+  assert.throws(() => S.extract('Patch the system'), /requested_file_operation_required/);
+  assert.deepEqual(S.extract('Review the implementation').bindings, []);
+  assert.deepEqual(S.extract('Fix only if verification fails').bindings, []);
+  assert.deepEqual(S.extract('Do not modify AGENTS.md').bindings, []);
+});
+
+test('negated and empty mutation phrases do not refine edits', () => {
+  assert.deepEqual(S.extract('Inspect README.md without fixing typos.').bindings, [
+    { operation: 'read', path: 'README.md' },
+  ]);
+  assert.deepEqual(S.extract('Inspect README.md and fix nothing.').bindings, [
+    { operation: 'read', path: 'README.md' },
+  ]);
+  assert.deepEqual(S.extract('Read README.md. Implement nothing.').bindings, [
+    { operation: 'read', path: 'README.md' },
+  ]);
+});
+

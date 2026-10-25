@@ -37,6 +37,16 @@ paths, backslashes, noncanonical Unicode, and ambiguous path components are
 rejected. Case and directory components are preserved. No basename matching,
 file aliases, enrollment-default substitution, or report coercion is permitted.
 
+### Implicit mutation refine (`fix` / `patch` / `implement`)
+
+When a mutation verb lacks its own literal path but exactly one prior explicit
+read path was established in the same request, the host appends an edit stage
+for that same path (e.g. `Inspect README.md and fix typos`). Retargeted forms
+(`fix typos in docs/guide.md`) bind the named path. Ambiguous multi-path
+contexts, negated mutations (`do not fix`), conditional forms (`fix only if`),
+and pathless `implement the solution` / `patch the system` fail closed or stay
+read-only. Parsing still never grants enrollment.
+
 ### Planning context versus execution scope
 
 Authorized execution targets must be present as regular files in the prepared

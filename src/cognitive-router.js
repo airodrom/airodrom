@@ -150,9 +150,11 @@ function sealedOperations(instruction, requested) {
   const text = String(instruction || '');
   const readOnlyCue = /\bread[- ]only\b|\bdo not (?:edit|modify|write)\b|\b(?:read|inspect|review)\b/i.test(text);
   const positive = text
-    .replace(/\bdo not (?:edit|modify|write|change)(?:\s*,\s*(?:or\s+)?(?:edit|modify|write|change))*/gi, ' ')
+    .replace(/\bdo not (?:edit|modify|write|change|fix|patch|implement)(?:\s*,\s*(?:or\s+)?(?:edit|modify|write|change|fix|patch|implement))*/gi, ' ')
+    .replace(/\b(?:don't|never|without)\s+(?:edit|modify|write|change|fix(?:es|ing)?|patch(?:es|ing)?|implement(?:s|ing)?)\b/gi, ' ')
+    .replace(/\b(?:fix|patch|implement)\s+nothing\b/gi, ' ')
     .replace(/\bread[- ]only\b/gi, ' ');
-  const mutationCue = /\b(?:edit|change|modify|write|append|replace|update|rewrite)\b/i.test(positive);
+  const mutationCue = /\b(?:edit|change|modify|write|append|replace|update|rewrite|fix|patch|implement)\b/i.test(positive);
   return readOnlyCue && !mutationCue ? ['read'] : ['read', 'edit'];
 }
 
