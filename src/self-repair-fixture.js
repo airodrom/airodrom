@@ -23,7 +23,10 @@ function readMarker(workspace) {
   const markerPath = path.join(workspace, MARKER);
   if (!fs.existsSync(markerPath)) return null;
   let marker;
-  try { marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch { return null; }
+  try {
+    if (fs.lstatSync(path.dirname(markerPath)).isSymbolicLink()) return null;
+    marker = require('./private-json').readPrivateJSON(markerPath);
+  } catch { return null; }
   if (!marker || marker.version !== 1 || marker.mode !== 'exact_file_once') return null;
   if (marker.file !== 'fixture.txt') return null;
   if (marker.wrong_content !== 'gamma\n' || marker.expected_content !== 'beta\n') return null;
@@ -31,11 +34,18 @@ function readMarker(workspace) {
   return { marker, markerPath };
 }
 
-function applyControlledFailure(mission) {
+function applyControlledFailure(mission, { fixtureOnly = false } = {}) {
+  // Repository contents are never authority to mutate a real Mission. This
+  // legacy helper exists only for explicit, isolated historical recovery tests.
+  if (process.env.NODE_ENV !== 'test' || fixtureOnly !== true) return { applied: false, reason: 'fixture_only' };
   if (!mission?.envelope || mission.envelope.repair_of) return { applied: false, reason: 'not_original_mission' };
   if (mission.envelope.kind === 'conversation' || mission.envelope.kind === 'browser_research') {
     return { applied: false, reason: 'unsupported_kind' };
   }
+  const actions = mission.envelope.dispatch_policy?.native_actions || [];
+  const tasks = mission.envelope.cognitive?.proposal?.tasks || [];
+  if ((actions.length && actions.every(a => a.name === 'file_read')) || (tasks.length && tasks.every(t => t.operation === 'read')))
+    return { applied: false, reason: 'read_only_mission' };
   const found = readMarker(mission.envelope.workspace);
   if (!found) return { applied: false, reason: 'no_marker' };
   const { marker, markerPath } = found;
@@ -47,20 +57,35 @@ function applyControlledFailure(mission) {
   if (realTarget !== realWorkspace && !realTarget.startsWith(realWorkspace + path.sep)) {
     return { applied: false, reason: 'path_escape' };
   }
-  // Persist applied receipt outside the disposable workspace so git verification stays clean.
-  fs.mkdirSync(receiptDir(), { recursive: true, mode: 0o700 });
-  const record = {
-    ...marker,
-    applied_at: Date.now(),
-    mission_id: mission.id,
-    workspace: realWorkspace,
-    authority: false,
-  };
-  const applied = receiptPath(realWorkspace);
-  fs.writeFileSync(applied, JSON.stringify(record, null, 2) + '\n', { mode: 0o600 });
-  fs.unlinkSync(markerPath);
-  fs.writeFileSync(target, marker.wrong_content, { mode: 0o600 });
-  return { applied: true, file: marker.file, wrong_content: marker.wrong_content, receipt: applied };
+  let fd;
+  try {
+    fd = fs.openSync(target, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW);
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1) throw Error('unsafe_target');
+    if (fs.readFileSync(fd, 'utf8') !== marker.expected_content) {
+      fs.closeSync(fd); return { applied: false, reason: 'unexpected_baseline' };
+    }
+  } catch {
+    if (fd !== undefined) fs.closeSync(fd);
+    return { applied: false, reason: 'unsafe_target' };
+  }
+  try {
+    // Persist applied receipt outside the disposable workspace so git verification stays clean.
+    fs.mkdirSync(receiptDir(), { recursive: true, mode: 0o700 });
+    const record = {
+      ...marker,
+      applied_at: Date.now(),
+      mission_id: mission.id,
+      workspace: realWorkspace,
+      authority: false,
+    };
+    const applied = receiptPath(realWorkspace);
+    fs.writeFileSync(applied, JSON.stringify(record, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    fs.unlinkSync(markerPath);
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, marker.wrong_content, 0, 'utf8');
+    return { applied: true, file: marker.file, wrong_content: marker.wrong_content, receipt: applied };
+  } finally { fs.closeSync(fd); }
 }
 
 function markerPresent(workspace) {

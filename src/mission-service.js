@@ -533,7 +533,7 @@ class MissionService {
       try {
         this.store.acquireLease({resource:m.envelope.workspace,runId:verifyId,missionId:m.id,mode:m.envelope.kind==='browser_research'?'read':'write'});
         // Disposable self-repair marker: at most one intentional exact-file mismatch before host verify.
-        try{const injected=require('./self-repair-fixture').applyControlledFailure(this.store.getMission(m.id));if(injected.applied)this.store.event('self_repair.controlled_failure',m.id,{file:injected.file,authority:false},{runId:run.id});}catch{/* marker absent or invalid */}
+        try{const injected=require('./self-repair-fixture').applyControlledFailure(this.store.getMission(m.id),{fixtureOnly:this.bridge.options.allowFixtureWorker===true});if(injected.applied)this.store.event('self_repair.controlled_failure',m.id,{file:injected.file,authority:false},{runId:run.id});}catch{/* marker absent or invalid */}
         verified=await this.verifier.verify(this.store.getMission(m.id),run);
         let evaluationFailed=false,evaluation=null;
         if(require('./opencode-gateway').enabled(m))try{evaluation=await require('./opencode-gateway').evaluate(this.bridge,this.store.getMission(m.id),run,verified);}catch{evaluationFailed=true;}

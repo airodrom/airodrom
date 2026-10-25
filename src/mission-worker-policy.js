@@ -7,7 +7,7 @@ function assertImplementation(envelope, { worker = envelope?.preferred_agent } =
   const proposal = envelope.cognitive?.proposal;
   const tasks = proposal?.tasks || [];
   const native = envelope.dispatch_policy?.native_actions || [];
-  const readonly = tasks.length ? tasks.every(t => t.operation === 'read')
+  const readonly = tasks.length ? tasks.every(t => t.operation === 'read') && native.every(a => a.name === 'file_read')
     : envelope.preferred_agent === 'host' && native.length && native.every(a => a.name === 'file_read');
   // A direct handoff must bind the actual receiving worker, not a caller's label.
   if (readonly && !(envelope.fallback_agents || []).length && worker === envelope.preferred_agent && ['host','opencode','cursor'].includes(worker)) return;

@@ -36,6 +36,8 @@ Intake uses `planning`; Mission progression uses `ready → dispatching → runn
 
 In isolated qualification, reuse the existing controlled Cursor fixture: initial `alpha` plus LF, first result `gamma` plus LF, separate corrective Cursor run yielding `beta` plus LF. Retain the initial failed host checks, distinct Cursor IDs, planner/evaluator IDs, current verification, Acceptance, settlement, verified termination, and zero held/quarantined leases. An evaluator retry reuses a completed Cursor result and must never be reported as implementation correction. Duplicate requests and interruption/reopen must preserve identity and avoid duplicate workers. Invalid scope, verifier tampering, revoked authority, unknown failures and unverified termination remain denials.
 
+The legacy `.airodrom/controlled-verify-fail-once.json` marker is not execution authority. Its host mutation helper requires both test mode and the explicit fixture-worker option; it rejects read-only Missions, symlink/hard-link targets and unexpected baseline bytes. A repository marker cannot enable production injection. The old `live-self-repair-proof.cjs` OpenCode implementation route is historical and cannot qualify the current Cursor architecture. A real canary requires an authorized controlled Cursor assignment and must retain that worker's incorrect first result before correction.
+
 ## Staging, cutover and rollback
 
 1. Reconcile current remote main, reviewed candidate and installed source SHA. Preserve dirty, unique, active, unmerged and rollback worktrees. Source, isolated proof, PR readiness, merge, installation and live canary are separate claims.
