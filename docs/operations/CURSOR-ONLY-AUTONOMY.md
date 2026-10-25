@@ -24,7 +24,7 @@ The existing fixture Cursor CLI can intentionally write `gamma` plus LF on its f
 - `CURSOR_PLANNING_REQUIRED`: a legacy direct coding route lacks a sealed OpenCode planning contract. Submit through cognitive intake with current enrollment.
 - `STANDING_CURSOR_GRANT_MISSING` and scoped-disclosure/spend gates: reuse a matching current grant when present. A grant for a different repository or policy cannot be transferred.
 - `cognitive_explicit_worker_syntax_required`: retained for historical diagnostics; ordinary implementation requests no longer require special worker-selection syntax.
-- `requested_file_operation_required`: clarify an unresolved literal operation. `ONLY` before a path is an adverb; bare `READY` and `BLOCKED` are not implicit filenames. Quoted extensionless paths remain explicit and require enrollment.
+- `requested_file_operation_required`: clarify an unresolved literal operation. `ONLY` before a path is an adverb; bare `READY` and `BLOCKED` are not implicit filenames. Quoted extensionless paths remain explicit and require enrollment. Descriptive phrases (`for read and edit operations`, `review the result`, evaluation recommendation prose) are not filenames. Ordered `stages` may repeat a path; a collapsed proposal is `requested_file_stage_mismatch`. Workspace diagnosis distinguishes absence, symlink, directory, oversized planner context, and sensitive content rather than a single generic inadmissible code.
 - Runtime, evaluator, lease and capacity diagnostics retain the existing fail-closed registry and bounded recovery rules.
 
 ## Rollout and rollback

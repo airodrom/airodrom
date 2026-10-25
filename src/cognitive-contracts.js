@@ -28,7 +28,7 @@ function choice(v, values) { if (!values.includes(v)) fail('cognitive_enum_inval
 function relative(v) { safePath(v); if (/[:*?\[\]{}]/.test(v)) fail('cognitive_path_invalid'); return v; }
 function limits(v, version = 1) {
   object(v, ['planning_attempts', 'execution_attempts', 'repair_attempts', 'planning_ms', 'execution_ms']);
-  integer(v.planning_attempts, 1, 2); integer(v.execution_attempts, 1, version === 3 ? 3 : 1); integer(v.repair_attempts, 0, version >= 2 ? 2 : 0);
+  integer(v.planning_attempts, 1, 2); integer(v.execution_attempts, 1, version === 3 ? 8 : 1); integer(v.repair_attempts, 0, version >= 2 ? 2 : 0);
   integer(v.planning_ms, 1000, 120000); integer(v.execution_ms, 1000, 120000);
 }
 function integrity(v) {
@@ -70,7 +70,7 @@ function parse(kind, data) {
         list(task.verification, string, 5, 0);
         if (task.role !== 'implementation' && task.operation !== 'read') fail('cognitive_review_read_only');
       }
-    }, data.version === 3 ? 3 : 12);
+    }, data.version === 3 ? 8 : 12);
     const tasks = new Map(data.tasks.map(t => [t.id, t]));
     if (tasks.size !== data.tasks.length) fail('cognitive_duplicate_task');
     const visited = new Set(), visiting = new Set();

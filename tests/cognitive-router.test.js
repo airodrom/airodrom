@@ -452,7 +452,7 @@ test('missing explicitly requested file fails before planning instead of selecti
     const ws = await original(...args); fs.unlinkSync(path.join(ws.path, 'fixture.txt')); return ws;
   };
   const p = await f.ask();
-  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_missing_or_inadmissible']);
+  assert.equal(p.state, 'BLOCKED'); assert.deepEqual(p.blockers, ['requested_file_absent_from_workspace']);
   assert.equal(f.plannerCalls, 0);
 });
 

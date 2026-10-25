@@ -13,7 +13,11 @@ function proposal(paths = [requested]) { return { files: paths, tasks: [
 function mission() { return { envelope: { cognitive: { envelope: { requested_scope: scope() }, proposal: proposal() },
   allowed_files: [requested], baseline: { files: { [requested]: 'before', 'AGENTS.md': 'original' } } } }; }
 test('explicit recovery-proof path is preserved as literal read and edit constraints', () => {
-  assert.deepEqual(scope(), { version: 1, bindings: [{ operation: 'read', path: requested }, { operation: 'edit', path: requested }] });
+  assert.deepEqual(scope(), {
+    version: 1,
+    bindings: [{ operation: 'read', path: requested }, { operation: 'edit', path: requested }],
+    stages: [{ operation: 'read', path: requested }, { operation: 'edit', path: requested }],
+  });
   assert.equal(S.normalize('./docs/proof.txt'), 'docs/proof.txt');
   assert.equal(S.normalize('Proof.txt'), 'Proof.txt');
   for (const p of ['../proof.txt', 'docs/../proof.txt', '/proof.txt', 'x//proof.txt', 'x\\proof.txt', 'x/./proof.txt', '.git/config']) assert.throws(() => S.normalize(p));
@@ -201,7 +205,7 @@ test('explicit content targets are never swallowed as refinements of a different
   assert.throws(() => S.assertProposal(s, { files: ['examples.md', 'README.md'], tasks: [
     { id: 'r', operation: 'read', paths: ['examples.md'], depends_on: [] },
     { id: 'w', operation: 'edit', paths: ['README.md'], depends_on: ['r'] }
-  ] }), /plan_mismatch/);
+  ] }), /stage_mismatch|plan_mismatch/);
   assert.deepEqual(S.extract('Edit README.md and update the examples in `private name`.').bindings,
     [{ operation: 'edit', path: 'README.md' }, { operation: 'edit', path: 'private name' }]);
 });
@@ -237,4 +241,111 @@ test('ONLY is an adverb and status words are not implicit filenames',()=>{
  for(const marker of ['READY','BLOCKED'])assert.deepEqual(S.extract('Edit ONLY fixture.txt and report '+marker+'.').bindings,[{operation:'edit',path:'fixture.txt'}]);
  for(const word of ['READY','ONLY','BLOCKED'])assert.throws(()=>S.extract('Edit file '+word+'.'),/requested_file_operation_required/);
  assert.deepEqual(S.extract('Edit `READY`.').bindings,[{operation:'edit',path:'READY'}]);
+});
+
+test('ordinary English prose does not invent file targets (2026-10-24 patterns)', () => {
+  assert.deepEqual(S.extract('Edit only README.md').bindings, [{ operation: 'edit', path: 'README.md' }]);
+  assert.deepEqual(S.extract('Make changes only to README.md').bindings, [{ operation: 'edit', path: 'README.md' }]);
+  assert.deepEqual(S.extract('Use README.md for read and edit operations').bindings, [
+    { operation: 'read', path: 'README.md' }, { operation: 'edit', path: 'README.md' },
+  ]);
+  assert.deepEqual(S.extract('Review the result after editing README.md').bindings, [{ operation: 'edit', path: 'README.md' }]);
+  assert.deepEqual(S.extract('Expected evaluation recommendation: READY').bindings, []);
+  assert.deepEqual(S.extract('do not edit other files besides README.md').bindings, []);
+  assert.throws(() => S.extract('Edit the file'), /requested_file_operation_required/);
+  assert.deepEqual(S.extract('Do not change policies, merge, or enable CI.').bindings, []);
+  // Descriptive "PATH for read and edit" binds the path without inventing "and".
+  const scoped = S.extract('Only two permitted file targets: src/a.js for read, tests/b.js for read and edit.');
+  assert.deepEqual(scoped.bindings, [
+    { operation: 'read', path: 'src/a.js' },
+    { operation: 'read', path: 'tests/b.js' },
+    { operation: 'edit', path: 'tests/b.js' },
+  ]);
+});
+
+test('ordered stages preserve repeated read→edit→read and reject collapsed proposals', () => {
+  const text = 'Task A: Cursor read recovery-proof.txt.\nTask B: Cursor edit recovery-proof.txt to exactly PASS.\nTask C: Cursor read recovery-proof.txt.';
+  const s = S.extract(text);
+  assert.deepEqual(s.bindings, [
+    { operation: 'read', path: 'recovery-proof.txt' },
+    { operation: 'edit', path: 'recovery-proof.txt' },
+  ]);
+  assert.deepEqual(s.stages, [
+    { operation: 'read', path: 'recovery-proof.txt' },
+    { operation: 'edit', path: 'recovery-proof.txt' },
+    { operation: 'read', path: 'recovery-proof.txt' },
+  ]);
+  assert.deepEqual(S.seedTasks(s).map(t => t.operation), ['read', 'edit', 'read']);
+  assert.throws(() => S.assertProposal(s, {
+    files: ['recovery-proof.txt'],
+    tasks: [
+      { id: 'request_1', operation: 'read', paths: ['recovery-proof.txt'], depends_on: [] },
+      { id: 'request_2', operation: 'edit', paths: ['recovery-proof.txt'], depends_on: ['request_1'] },
+    ],
+  }), /requested_file_stage_mismatch/);
+  S.assertProposal(s, {
+    files: ['recovery-proof.txt'],
+    tasks: [
+      { id: 'request_1', operation: 'read', paths: ['recovery-proof.txt'], depends_on: [] },
+      { id: 'request_2', operation: 'edit', paths: ['recovery-proof.txt'], depends_on: ['request_1'] },
+      { id: 'request_3', operation: 'read', paths: ['recovery-proof.txt'], depends_on: ['request_2'] },
+    ],
+  });
+});
+
+test('four-stage read→read→edit→edit remains four stages', () => {
+  const text = 'Task A: Cursor read a.txt.\nTask B: Cursor read b.txt.\nTask C: Cursor edit b.txt.\nTask D: Cursor edit a.txt.';
+  const s = S.extract(text);
+  assert.equal(s.stages.length, 4);
+  assert.deepEqual(S.seedTasks(s).map(t => t.operation + ':' + t.paths[0]), [
+    'read:a.txt', 'read:b.txt', 'edit:b.txt', 'edit:a.txt',
+  ]);
+  assert.throws(() => S.assertProposal(s, {
+    files: ['a.txt', 'b.txt'],
+    tasks: [
+      { id: 'request_1', operation: 'read', paths: ['a.txt'], depends_on: [] },
+      { id: 'request_2', operation: 'edit', paths: ['b.txt'], depends_on: ['request_1'] },
+    ],
+  }), /requested_file_stage_mismatch/);
+});
+
+test('workspace file diagnosis distinguishes missing, oversized and sensitive planner context', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'airodrom-scope-'));
+  fs.writeFileSync(path.join(root, 'ok.txt'), 'hello\n');
+  fs.writeFileSync(path.join(root, 'big.txt'), 'x'.repeat(20000));
+  fs.writeFileSync(path.join(root, 'secret.txt'), 'OPENAI_API_KEY=sk-test\n');
+  fs.mkdirSync(path.join(root, 'dir'));
+  assert.equal(S.diagnoseWorkspaceFile(root, 'ok.txt', {
+    planningContextAdmissible: () => true, sourceContextSensitive: () => false, maxDiscoveryFile: 16384,
+  }).code, null);
+  assert.equal(S.diagnoseWorkspaceFile(root, 'missing.txt', {
+    planningContextAdmissible: () => true, sourceContextSensitive: () => false, maxDiscoveryFile: 16384,
+  }).code, 'requested_file_absent_from_workspace');
+  assert.equal(S.diagnoseWorkspaceFile(root, 'big.txt', {
+    planningContextAdmissible: () => false, sourceContextSensitive: () => false, maxDiscoveryFile: 16384,
+  }).code, 'requested_file_planning_oversized');
+  assert.equal(S.diagnoseWorkspaceFile(root, 'secret.txt', {
+    planningContextAdmissible: () => false, sourceContextSensitive: () => true, maxDiscoveryFile: 16384,
+  }).code, 'requested_file_planning_sensitive');
+  assert.equal(S.diagnoseWorkspaceFile(root, 'dir', {
+    planningContextAdmissible: () => true, sourceContextSensitive: () => false, maxDiscoveryFile: 16384,
+  }).code, 'requested_file_is_directory');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('historical 2026-10-24 v2 instruction parses without false READY/and targets', () => {
+  const text = 'Repository: Airodrom Source.\nOpenCode is planner and evaluator.\nCursor is implementation specialist.\n\n'
+    + 'Task A: Cursor read src/requested-file-scope.js.\n'
+    + 'Task B: Cursor read tests/requested-file-scope.test.js.\n'
+    + 'Task C: Cursor edit tests/requested-file-scope.test.js to add regression assertions.\n'
+    + 'Task D: Cursor read tests/requested-file-scope.test.js.\n\n'
+    + 'Expected evaluation recommendation: READY.\n'
+    + 'Only two permitted file targets: src/requested-file-scope.js for read, tests/requested-file-scope.test.js for read and edit.';
+  const s = S.extract(text);
+  assert.equal(s.stages.length, 4);
+  assert.deepEqual(s.stages.map(x => x.operation), ['read', 'read', 'edit', 'read']);
+  assert.ok(!s.bindings.some(b => /^(READY|and|ONLY)$/i.test(b.path)));
 });

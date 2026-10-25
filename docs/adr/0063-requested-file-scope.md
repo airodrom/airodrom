@@ -15,18 +15,39 @@ Consequently, correct checks on the wrong file could lead to automatic acceptanc
 ## Decision
 
 The host captures `requested_scope` version 1 inside each new hashed RequestEnvelope.
-Its bindings contain exact repository-relative paths and operations. They narrow
-existing enrollment and do not create authority. The host parses literal operation
-clauses (`read`, `inspect`, `review`, `edit`, `modify`, `change`, `update`, `rewrite`,
-`append to`, `write to`, or `create`, followed by a literal path). Quote paths with
-spaces or without a dot or slash, or use `read file LICENSE` for an extensionless
-path. An operation without a literal target normally requires clarification. Comma/and lists
-retain every literal. Other bare
-dotted file references require an explicit operation; no model extracts authority.
-Negated operations do not grant scope. A leading `./` is normalized, while traversal,
-absolute paths, backslashes, noncanonical Unicode, and ambiguous path components
-are rejected. Case and directory components are preserved. No basename matching,
+Its `bindings` are the unique operation/path permission set. Its `stages` are the
+ordered execution graph and may repeat the same binding (read → edit → read). These
+layers are not equivalent: collapsing stages to unique bindings is a planning
+mismatch (`requested_file_stage_mismatch`), not fulfillment. They narrow existing
+enrollment and do not create authority.
+
+The host parses literal operation clauses (`read`, `inspect`, `review`, `edit`,
+`modify`, `change`, `update`, `rewrite`, `append to`, `write to`, or `create`,
+followed by a literal path), plus bounded structured phrases such as
+`Make changes only to PATH`, `Use PATH for read and edit`, and
+`after editing PATH`. Quote paths with spaces or without a dot or slash, or use
+`read file LICENSE` for an extensionless path. An operation without a literal
+target normally requires clarification. Comma/and lists retain every literal.
+Other bare dotted file references require an explicit operation; no model
+extracts authority. Negated operations, descriptive prose (`for read and edit
+operations`, `review the result`, `Expected evaluation recommendation: READY`,
+`do not edit other files`), and status words (`ONLY`, `READY`, `BLOCKED`) do not
+invent file targets. A leading `./` is normalized, while traversal, absolute
+paths, backslashes, noncanonical Unicode, and ambiguous path components are
+rejected. Case and directory components are preserved. No basename matching,
 file aliases, enrollment-default substitution, or report coercion is permitted.
+
+### Planning context versus execution scope
+
+Authorized execution targets must be present as regular files in the prepared
+workspace and remain in `permitted_paths` once diagnosis reports `execution_ok`.
+Planner-readable context is a separate filter: oversized, sensitive, or otherwise
+non-forwardable enrolled documents produce precise codes such as
+`requested_file_planning_oversized` or `requested_file_planning_sensitive` and
+host planning notes, without inventing a generic `requested_file_missing_or_inadmissible`
+denial. Absent disposable clones of enrolled files rematerialize once; genuine
+unenrollment, symlinks, directories, path-boundary violations, and creation
+requests stay fail-closed with distinct codes.
 
 Literal `reads` and `edits` clauses normalize to the same read/edit operations.
 An explicit `AGENTS.md substitution must be rejected` clause excludes that

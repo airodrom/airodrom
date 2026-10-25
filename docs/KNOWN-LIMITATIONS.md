@@ -1,5 +1,12 @@
 # Known limitations
 
+## Mission admission language (2026-10-24)
+
+- Source fixes for false `requested_file_operation_required`, precise workspace diagnosis (replacing generic `requested_file_missing_or_inadmissible` for recoverable absence), and ordered stage fidelity are not an installed runtime until an authorized release cutover. Passing source tests do not prove the live install.
+- Ambiguous operations (`Edit the file` without a literal path), unenrolled paths, protected symlinks, creation requests, and path traversal remain fail-closed.
+- Planner context may omit oversized or sensitive enrolled documents while keeping them as authorized execution targets; full-content planning still requires admissible bytes.
+- Live ChatGPT-origin three- and four-stage Cursor Missions remain a post-install external qualification gate.
+
 ## Cursor execution decision (2026-10-23)
 
 - Historical Mission `63385742…` remains `blocked` / `cognitive_worker_unqualified:cursor` with zero runs; evidence preserved; deadline not extended.

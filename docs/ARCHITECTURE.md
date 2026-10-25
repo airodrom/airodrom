@@ -97,7 +97,10 @@ and [CURRENT-STATE.md](CURRENT-STATE.md).
 
 Explicit requested file operations are host constraints throughout planning, dispatch,
 recovery, verification, and acceptance. Enrollment cannot substitute a different
-file. See [ADR 0063](adr/0063-requested-file-scope.md) for the versioned request
-constraint, literal syntax, evidence, and compatibility boundary.
+file. `bindings` are the unique operation/path permission set; `stages` are the
+ordered execution graph and may repeat the same path. Descriptive prose does not
+invent targets. Authorized execution targets remain distinct from planner-forwarded
+context. See [ADR 0063](adr/0063-requested-file-scope.md) for the versioned request
+constraint, literal syntax, diagnosis codes, evidence, and compatibility boundary.
 
 Current implementation policy: [Cursor-only routine autonomy](adr/0065-cursor-only-routine-autonomy.md). Existing authorization is reused; no routine billing inspection or automatic worker fallback is added.
