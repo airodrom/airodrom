@@ -30,6 +30,8 @@ The Terminal recognizes the cognitive views `ACCEPTED`, `CANCELLED`, and final V
 
 Legacy corrective Mission creation preserves typed Cursor implementation/planning denials as permanent policy blockers. They must not become generic transient spawn failures that repeatedly retry a forbidden route.
 
+An approval attempt cannot supply missing projectless file scope or verification. The host rejects it without rewriting the existing scope diagnosis or request identity. Historical ambiguous dispatch records retain their Mission identity without creating a new worker.
+
 ## Canonical lifecycle and correction evidence
 
 Intake uses `planning`; Mission progression uses `ready → dispatching → running → verifying → awaiting_acceptance → completed`. A repairable result follows `verifying → needs_rework → ready` with a new specialist attempt. An evaluator failure can use `blocked`, then return to `ready` only under the existing recovery checks. Automatic Acceptance is an accepted record, and Settlement is a separate settled execution/program record. `CORRECTING` and `AUTOMATICALLY_ACCEPTED` are descriptions, not new persisted Mission states.

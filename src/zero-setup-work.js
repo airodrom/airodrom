@@ -975,6 +975,8 @@ class ZeroSetupWork {
     if (['approved', 'running', 'verifying', 'awaiting_acceptance', 'verified'].includes(live.state)) return this.statusView(live);
     if (live.state !== 'awaiting_approval') throw Error('Prepared task is not awaiting approval');
     if (live.cognitive) return await require('./cognitive-router').approve(this, live, { ...input, channel: input.channel || 'terminal' }, owner);
+    if (live.projectless && !live.work_spec && this.statusView(live).blockers?.includes('projectless_scope_required'))
+      throw Error('Projectless execution requires an exact authorized file change');
     return this.blockUnplanned(live);
   }
 
