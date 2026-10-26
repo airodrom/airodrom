@@ -115,6 +115,7 @@ async function submit(server,input){
   destructive:parsed.destructive===true,
   // ack_uncertain is carried on parsed and read inside gmail-write-service
  });
+ if(parsed.kind==='host_fact')return require('./host-fact-service').run(server,parsed);
  if(parsed.kind==='personal_ops'){
   const plan=require('./personal-ops').plan(server,parsed.message);
   return {...plan,kind:'personal_ops',route:'PERSONAL_OPS',authority:false};

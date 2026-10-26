@@ -120,6 +120,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  // Generic "show more"/"cancel that" only when this conversation has an active Calendar session.
  const calendarIntent=require('./calendar-intent').parse(request,{activeCalendarSession:activeCalendarSession===true});
  if(calendarIntent)return route('CALENDAR',calendarIntent);
+ // Host-fact rail: date/time, ports, Airodrom services, health — never model clock/status guesses.
+ const hostFact=require('./host-fact-intent').parse(request);
+ if(hostFact)return route('HOST_FACT',hostFact);
  // Personal ops / job search — host capability plan before model denial.
  const personalOps=require('./personal-ops');
  if(personalOps.isPersonalOpsRequest(request))return route('PERSONAL_OPS',{kind:'personal_ops',message:request});
