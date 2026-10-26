@@ -41,11 +41,17 @@ class ControlServer {
       // Optional clientSecretReference is retained for older local Gmail installs; unknown keys still fail closed.
       const gmailKeys=['clientId','reference'].concat(Object.prototype.hasOwnProperty.call(config,'clientSecretReference')?['clientSecretReference']:[]);
       require('./control-plane-store').object(config,gmailKeys);
-      this.gmailOAuth=new(require('./gmail-oauth').GmailOAuth)({clientId:config.clientId,reference:config.reference||null,vault:new(require('./secret-vault').SecretVault)(bridge.dataDir),onReference:reference=>{
-        const next={clientId:config.clientId,reference};
-        if(config.clientSecretReference)next.clientSecretReference=config.clientSecretReference;
-        require('./local-bootstrap').writePrivate(gmailFile,next);this.#wireAssistantConnectors();
-      }});
+      this.gmailOAuth=new(require('./gmail-oauth').GmailOAuth)({
+        clientId:config.clientId,
+        reference:config.reference||null,
+        clientSecretReference:config.clientSecretReference||null,
+        vault:new(require('./secret-vault').SecretVault)(bridge.dataDir),
+        onReference:reference=>{
+          const next={clientId:config.clientId,reference};
+          if(config.clientSecretReference)next.clientSecretReference=config.clientSecretReference;
+          require('./local-bootstrap').writePrivate(gmailFile,next);this.#wireAssistantConnectors();
+        }
+      });
       if(config.reference)this.#wireAssistantConnectors();
     }
     this.#wirePersonalOps();
@@ -98,7 +104,8 @@ class ControlServer {
     this.bridge.assistantConnectors = new (require('./assistant-connectors').AssistantConnectors)({
       gmail: this.gmailOAuth.configuration(),
       secrets: { resolve: () => this.gmailOAuth.resolve() },
-      connected: () => !!this.gmailOAuth.status().configured,
+      // token_present alone is not live access; connected excludes known-unusable grants.
+      connected: () => !!this.gmailOAuth.status().connected,
       ...whatsappSource(this.bridge)
     });
   }
@@ -227,8 +234,18 @@ class ControlServer {
       const url = new URL(req.url, this.origin);
       if(url.pathname==='/oauth/gmail/callback'){
         if(req.method!=='GET'||!this.gmailOAuth)throw Error('OAuth callback unavailable');
-        await this.gmailOAuth.complete({state:url.searchParams.get('state'),code:url.searchParams.get('code')});
-        res.setHeader('Content-Type','text/plain; charset=utf-8');res.end('Gmail read-only authorization completed. Close this tab and return to Airodrom.');return;
+        res.setHeader('Content-Type','text/plain; charset=utf-8');
+        try{
+          await this.gmailOAuth.complete({state:url.searchParams.get('state'),code:url.searchParams.get('code')});
+          res.end('Gmail read-only authorization completed. Close this tab and return to Airodrom.');
+        }catch(error){
+          // Categorical operator guidance only — never echo codes, tokens, or provider bodies.
+          const message=error?.safe_error_class&&typeof error.message==='string'
+            ?error.message
+            :'Gmail authorization could not be completed. Return to Airodrom and run /connect gmail fresh.';
+          res.statusCode=400;res.end(message);
+        }
+        return;
       }
       if(whatsappWebhook){
         const inbound=this.bridge.whatsappInbound;if(!inbound)throw Error('WhatsApp inbound unavailable');
@@ -369,9 +386,19 @@ class ControlServer {
           const oauth=this.gmailOAuth.status();
           const gmail=status.items.find(i=>i.id==='gmail');
           if(gmail){
+            gmail.token_present=!!oauth.token_present;
+            gmail.client_secret_configured=!!oauth.client_secret_configured;
             gmail.last_safe_error_class=oauth.last_safe_error_class||null;
             gmail.last_failure_phase=oauth.last_failure_phase||null;
+            gmail.last_provider_error=oauth.last_provider_error||null;
             gmail.oauth_connected=!!oauth.connected;
+            // Presence of a vault reference is not live Gmail access.
+            if(gmail.token_present&&!gmail.live_qualified&&gmail.last_safe_error_class){
+              gmail.setup='Saved Gmail credentials are present but not live-qualified. '+
+                (gmail.last_failure_phase==='authorization_code'
+                  ?'Complete a successful /connect gmail fresh consent, then run a bounded /gmail recent read.'
+                  :'Re-authorize with /connect gmail fresh if needed, then run a bounded /gmail recent read.');
+            }
           }
         }
         return this.json(res,200,status);
