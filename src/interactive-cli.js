@@ -37,7 +37,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail [retry-open|show-local|fresh] · /connect whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail [send|manage|retry-open|show-local|fresh] · /connect calendar [manage|fresh] · /connect whatsapp · /gmail status|unread|recent|search|read|thread|approve|confirm · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 // Operator-local only: last Gmail authorization URL for LaunchServices retry / local show.
 // Never written to Mission evidence, telemetry, or ChatGPT surfaces.
@@ -546,7 +546,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if(command==='connect') {
           const [connector,...connectParts]=String(arg||'').trim().split(/\s+/).filter(Boolean);
           const connectAction=(connectParts[0]||'').toLowerCase();
-          if(!['gmail','google','whatsapp','calendar'].includes(connector))throw Error('Use /connect gmail, /connect calendar, /connect calendar manage, or /connect whatsapp');
+          if(!['gmail','google','whatsapp','calendar'].includes(connector))throw Error('Use /connect gmail, /connect gmail send, /connect gmail manage, /connect calendar, /connect calendar manage, or /connect whatsapp');
           if(connector==='google')throw Error('Use /connect gmail for mail or /connect calendar for Google Calendar. They are separate consents.');
           if(connector==='whatsapp'){
             active=new AbortController();
@@ -588,15 +588,29 @@ async function interactive(home, { input = process.stdin, output = process.stdou
             }
             continue;
           }
-          if(connectAction&&connectAction!=='fresh'){
-            throw Error('Use /connect gmail, /connect gmail retry-open, /connect gmail show-local, or /connect gmail fresh.');
+          if(connectAction&&!['fresh','send','manage','modify','write','retry-open','show-local',''].includes(connectAction)){
+            throw Error('Use /connect gmail, /connect gmail send, /connect gmail manage, /connect gmail retry-open, /connect gmail show-local, or /connect gmail fresh.');
           }
           const connectBody={connector:'gmail'};
           if(connectAction==='fresh')connectBody.force_new=true;
+          if(connectAction==='send')connectBody.mode='send';
+          if(connectAction==='manage'||connectAction==='modify'||connectAction==='write')connectBody.mode='manage';
           const result=await local.request(home,'/api/assistant/connect',connectBody);
           if(result.authorization_url){
             rememberGmailAuthorization(result);
-            if(result.reused)output.write('Reusing the still-active read-only Gmail authorization session.\n');
+            if(result.reused){
+              output.write(connectBody.mode==='manage'
+                ?'Reusing the still-active Gmail manage authorization session.\n'
+                :connectBody.mode==='send'
+                  ?'Reusing the still-active Gmail send authorization session.\n'
+                  :'Reusing the still-active read-only Gmail authorization session.\n');
+            }else if(connectBody.mode==='manage'){
+              output.write('Starting Gmail manage consent (gmail.modify + gmail.send). Separate from read-only and from Calendar.\n');
+            }else if(connectBody.mode==='send'){
+              output.write('Starting Gmail send consent (gmail.readonly + gmail.send). Does not grant mailbox modify.\n');
+            }else{
+              output.write('Starting read-only Gmail consent (gmail.readonly).\n');
+            }
             await openGmailAuthorization(output, result.authorization_url);
           }else{
             clearPendingGmailAuthorization();
@@ -625,7 +639,31 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           }
         }
         else if(command==='gmail'||command==='whatsapp') {
-          const [actionArg='status',...parts]=arg.split(/\s+/),action=actionArg==='draft-reply'?'draft_reply':actionArg,query=parts.join(' '),selected=['read','thread','summarize','draft_reply'].includes(action);
+          if(command==='gmail'){
+            const gmailParts=String(arg||'').trim().split(/\s+/).filter(Boolean);
+            const gmailAction=(gmailParts[0]||'status').toLowerCase();
+            if(gmailAction==='approve'){
+              const id=gmailParts[1];
+              if(!id)throw Error('Use /gmail approve <approval-id>');
+              const result=await local.request(home,'/api/assistant/input',{message:`/gmail approve ${id}`,request_id:randomUUID()});
+              await handleReceipt(result,json);
+              readerLocked=false;showPrompt();continue;
+            }
+            if(gmailAction==='confirm'){
+              const id=gmailParts[1];
+              const destructive=gmailParts.includes('--destructive');
+              if(!id)throw Error('Use /gmail confirm <preview-id> [--destructive]');
+              const result=await local.request(home,'/api/assistant/input',{message:`/gmail confirm ${id}${destructive?' --destructive':''}`,request_id:randomUUID()});
+              await handleReceipt(result,json);
+              readerLocked=false;showPrompt();continue;
+            }
+            if(gmailAction==='help'&&gmailParts.length<=1){
+              const result=await local.request(home,'/api/assistant/input',{message:'help me control gmail writes',request_id:randomUUID()});
+              await handleReceipt(result,json);
+              readerLocked=false;showPrompt();continue;
+            }
+          }
+          const [actionArg='status',...parts]=String(arg||'').split(/\s+/),action=actionArg==='draft-reply'?'draft_reply':actionArg,query=parts.join(' '),selected=['read','thread','summarize','draft_reply'].includes(action);
           if(command==='whatsapp'&&['bind','onboard','discover','prepare-callback','rotate-verify-token','commit-verify-token','rollback-verify-token'].includes(action)){
             active=new AbortController();
             try{

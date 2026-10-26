@@ -104,6 +104,12 @@ async function submit(server,input){
   confirmed:parsed.confirmed===true,
   destructive:parsed.destructive===true,
  });
+ if(parsed.kind==='gmail_write')return require('./gmail-write-service').run(server,parsed,{
+  conversation_id:input.conversation_id||null,
+  confirm_id:parsed.preview_id||null,
+  confirmed:parsed.confirmed===true,
+  destructive:parsed.destructive===true,
+ });
  if(parsed.kind==='personal_ops'){
   const plan=require('./personal-ops').plan(server,parsed.message);
   return {...plan,kind:'personal_ops',route:'PERSONAL_OPS',authority:false};
@@ -128,7 +134,7 @@ async function submit(server,input){
 }
 function authorizationOffer(server,connector){
  if(connector==='calendar')return require('./calendar-service').authorizationOffer(server);
- return {kind:'connect_required',route:'CONNECTOR',connector,can_start_oauth:connector==='gmail'&&!!server.gmailOAuth,message:connector==='gmail'?'Gmail needs authorization. Start the existing Gmail OAuth flow to authorize read-only access. A “configured” indicator only means the OAuth client is present — it is not live read access.':'The official WhatsApp inbound connector is unavailable. Configure its authorized host transport; personal WhatsApp history is not supported.',authorized:false,authority:false};
+ return {kind:'connect_required',route:'CONNECTOR',connector,can_start_oauth:connector==='gmail'&&!!server.gmailOAuth,message:connector==='gmail'?'Gmail needs authorization. Run /connect gmail for read-only, /connect gmail send for outbound send, or /connect gmail manage for mailbox writes. A “configured” indicator only means the OAuth client is present — it is not live access.':'The official WhatsApp inbound connector is unavailable. Configure its authorized host transport; personal WhatsApp history is not supported.',authorized:false,authority:false};
 }
 function jobSearchManager(server){
  const bridge=server.bridge;
@@ -307,12 +313,18 @@ async function connectorInput(server,{connector,action,input={},conversation_id,
   // Never project Gmail provider page tokens onto operator/API receipts.
   const {_provider_next_page_token,...safe}=data||{};
   void _provider_next_page_token;
+  if(connector==='gmail'&&conversation_id&&Array.isArray(data?.items)&&data.items.length){
+   try{gmailSearchSessions(server).rememberResults({items:data.items,conversation_id,operator:'operator'});}catch{/* */}
+  }
   return {kind:'connector',route:'CONNECTOR',...safe,model_invoked:false,host_verified:host_verified||data.host_verified===true};
  }
  const data=await read(action==='draft_reply'?(input.id?'read':'search'):action);
  if(data.kind==='connect_required')return data;
  if(!data.items.length)return {kind:'connector',message:'No current selected messages.',model_invoked:false,host_verified:true};
  if(action==='draft_reply'&&data.items.length!==1)return {kind:'clarify',message:'Choose one message ID to draft a reply.',choices:data.items.map(m=>({id:m.id,subject:m.subject}))};
+ if(connector==='gmail'&&conversation_id&&data.items.length){
+  try{gmailSearchSessions(server).rememberResults({items:data.items,conversation_id,operator:'operator'});}catch{/* */}
+ }
  const selected=data.items.slice(0,3).map(m=>({id:m.id,subject:m.subject.slice(0,200),content:m.content.slice(0,700),untrusted:true}));
  const instruction=action==='draft_reply'?'Draft a reply for operator review. Do not send.':action==='attention'?'Summarize selected messages and explain which may need attention based only on these excerpts; identify uncertainty.':'Summarize only the selected message text; identify incomplete context.';
  // Connector previews get a fresh session, avoiding disclosure of unrelated

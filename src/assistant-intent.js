@@ -101,6 +101,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  if(/^(?:check|read|show|open)\s+(?:my\s+)?gmail$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'recent'});
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
+ // Deterministic Gmail writes — host preview/confirm only; never OpenCode and never body-as-authority.
+ const gmailWrite=require('./gmail-write-intent').parse(request);
+ if(gmailWrite)return route('GMAIL_WRITE',gmailWrite);
  // Deterministic sender/search Gmail retrieval — host connector only, never OpenCode.
  // Generic "show more" only when this conversation has an active Gmail search.
  const gmailSearch=require('./gmail-search-intent').parse(request,{activeGmailSearch:activeGmailSearch===true});

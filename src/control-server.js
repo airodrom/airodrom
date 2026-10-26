@@ -39,16 +39,22 @@ class ControlServer {
     if(gmailFile&&require('./private-json').privateFileExists(gmailFile)){
       const config=require('./private-json').readPrivateJSON(gmailFile);
       // Optional clientSecretReference is retained for older local Gmail installs; unknown keys still fail closed.
-      const gmailKeys=['clientId','reference'].concat(Object.prototype.hasOwnProperty.call(config,'clientSecretReference')?['clientSecretReference']:[]);
+      const gmailKeys=['clientId','reference']
+        .concat(Object.prototype.hasOwnProperty.call(config,'clientSecretReference')?['clientSecretReference']:[])
+        .concat(Object.prototype.hasOwnProperty.call(config,'mode')?['mode']:[]);
       require('./control-plane-store').object(config,gmailKeys);
+      const gmailMode=config.mode==='send'||config.mode==='manage'?config.mode:'readonly';
       this.gmailOAuth=new(require('./gmail-oauth').GmailOAuth)({
         clientId:config.clientId,
         reference:config.reference||null,
         clientSecretReference:config.clientSecretReference||null,
+        mode:gmailMode,
         vault:new(require('./secret-vault').SecretVault)(bridge.dataDir),
-        onReference:reference=>{
+        onReference:(reference,meta={})=>{
           const next={clientId:config.clientId,reference};
           if(config.clientSecretReference)next.clientSecretReference=config.clientSecretReference;
+          const mode=meta.mode||this.gmailOAuth?.status?.().mode||gmailMode;
+          if(mode==='send'||mode==='manage')next.mode=mode;
           require('./local-bootstrap').writePrivate(gmailFile,next);this.#wireAssistantConnectors();
         }
       });
@@ -107,6 +113,17 @@ class ControlServer {
       secrets: { resolve: () => this.gmailOAuth.resolve() },
       // token_present alone is not live access; connected excludes known-unusable grants.
       connected: () => !!this.gmailOAuth.status().connected,
+      capabilities: () => {
+        const st = this.gmailOAuth.status();
+        return {
+          scope: st.scope,
+          mode: st.mode,
+          can_send: !!st.can_send,
+          can_modify: !!st.can_modify,
+          can_write: !!st.can_write,
+          read_only: !!st.read_only,
+        };
+      },
       ...whatsappSource(this.bridge)
     });
   }
@@ -682,8 +699,10 @@ class ControlServer {
         if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport. Use /connect calendar for Google Calendar.'});
         // Default reuses an unexpired pending PKCE session so browser-launch retries
         // do not invalidate consent still in flight. force_new starts a fresh session.
+        // mode: readonly (default) | send | manage — incremental consent; never mail.google.com.
         // Use jsonConnectOffer: plain json()/safeValue would omit or redact authorization_url.
-        return this.jsonConnectOffer(res,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback',{forceNew:body.force_new===true}));
+        const gmailMode=body.mode==='send'||body.mode==='manage'?body.mode:'readonly';
+        return this.jsonConnectOffer(res,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback',{forceNew:body.force_new===true,mode:gmailMode}));
       }
       if(url.pathname==='/api/assistant/disconnect'){
         require('./control-plane-store').object(body,['connector','confirmed']);

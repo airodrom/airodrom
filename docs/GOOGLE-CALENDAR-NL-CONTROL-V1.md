@@ -18,7 +18,7 @@ Phrases such as **“yes i want you help me to control calendar”** previously 
 | Callback | `http://127.0.0.1:<port>/oauth/calendar/callback` |
 | Desktop client | Same owner Google desktop client as `airodrom gmail setup` (client secret may resolve from the Gmail vault purpose) |
 
-**Gmail `gmail.readonly` does not grant Calendar.** Broader historical workspace grants are not reused for Gmail; Calendar enrolls independently with operator consent.
+**Gmail `gmail.readonly` does not grant Calendar.** Broader historical workspace grants are not reused for Gmail; Calendar enrolls independently with operator consent. Stage A Gmail write consent (`/connect gmail send|manage`) is likewise separate from Calendar manage — see `docs/GOOGLE-WORKSPACE-STAGE-A-V1.md`.
 
 ### Status vocabulary
 

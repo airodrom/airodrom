@@ -29,22 +29,39 @@ function gmailState(server) {
   const connected = item ? !!item.connected : !!st.configured;
   const live = item?.live_qualified === true;
   const oauthClientPresent = !!(oauth || item?.configured);
+  const canSend = !!(item?.can_send || st.can_send);
+  const canModify = !!(item?.can_modify || st.can_modify);
+  const writes = [];
+  if (canSend) writes.push('send_preview', 'reply_preview', 'forward_preview', 'draft_via_api');
+  if (canModify) writes.push('archive', 'restore', 'label', 'mark_read', 'trash_with_approval');
   return {
     id: 'gmail', label: 'Gmail',
     availability: live ? 'AVAILABLE' : 'AUTH_REQUIRED',
     auth: connected ? (live ? 'connected_live' : 'connected_unverified') : (oauthClientPresent ? 'oauth_required' : 'unavailable'),
     live_qualified: live,
+    write_qualified: false,
+    mode: item?.mode || st.mode || 'readonly',
     config_indicator: 'configured_means_oauth_client_present_not_live_access',
     reads: ['list', 'search', 'read', 'thread', 'job_categorize'],
-    writes: [],
+    writes,
     note: connected
       ? (live
-        ? 'Read-only Gmail is live-qualified. Search/read/job categorize are host-routed. Send/archive/label remain unavailable.'
+        ? (canModify
+          ? 'Gmail reads are live-qualified; manage consent present. Writes use host preview + /gmail confirm (approve for trash/forward/bulk). write_qualified stays false until a provider-confirmed write receipt.'
+          : (canSend
+            ? 'Gmail reads are live-qualified; send consent present. Outbound send uses preview + /gmail confirm. Mailbox modify needs /connect gmail manage.'
+            : 'Read-only Gmail is live-qualified. Search/read/job categorize are host-routed. Send/archive/label need /connect gmail send or manage.'))
         : 'OAuth token is present but live read qualification has not succeeded. Use /gmail status or authorize a fresh /connect gmail, then run a bounded search.')
       : (oauthClientPresent
-        ? 'OAuth client is configured. Account consent is still required via /connect gmail. “Configured” is not live access.'
+        ? 'OAuth client is configured. Account consent is still required via /connect gmail [send|manage]. “Configured” is not live access.'
         : 'Gmail OAuth client is not configured.'),
-    next: connected ? (live ? '/gmail search newer_than:14d subject:(application OR interview OR recruiter)' : 'Bounded Gmail search to live-qualify') : '/connect gmail'
+    next: connected
+      ? (live
+        ? (canSend || canModify
+          ? 'Ask to send/reply with exact recipients, or /connect gmail manage if mailbox writes are missing'
+          : '/connect gmail send or /connect gmail manage for writes; or /gmail search …')
+        : 'Bounded Gmail search to live-qualify')
+      : '/connect gmail'
   };
 }
 
