@@ -43,9 +43,27 @@ function researchReport(data) {
   .replace(/(?<!\\)\*\*(.*?)(?<!\\)\*\*/g,'$1')
   .replace(/\\([\\`*_{}\[\]<>|])/g,'$1');
 }
+function gmailSearchItems(items){
+ return (items||[]).map(m=>{
+  const lines=[
+   m.from?('From: '+clean(m.from)):null,
+   m.subject?('Subject: '+clean(m.subject)):null,
+   m.date?('Date: '+clean(m.date)):null,
+   m.id?('Ref: '+clean(m.id)):null,
+   m.snippet?clean(m.snippet):null
+  ].filter(Boolean);
+  return lines.join('\n');
+ }).join('\n\n')+(items?.length?'\n':'');
+}
 function receipt(data) {
  if(data.kind==='memory')return memories(data);
- if(data.message)return clean(data.message)+'\n'+(data.choices?.length?data.choices.map(m=>row(m.subject||'Memory ID',m.memoryId)).join(''):'');
+ // Host-verified Gmail search: summary + bounded list (never raw API / page tokens).
+ if(data.kind==='connector'&&data.action==='search'&&data.host_verified){
+  return clean(data.message||'Gmail search results.')+'\n'
+   +(data.items?.length?('\n'+gmailSearchItems(data.items)):'')
+   +(data.has_more?'\nContinuation available in this Terminal session.\n':'');
+ }
+ if(data.message)return clean(data.message)+'\n'+(data.choices?.length?data.choices.map(m=>row(m.subject||'Memory ID',m.memoryId)).join(''):'')+(data.items?.length&&data.kind==='connector'?'\n'+gmailSearchItems(data.items):'');
  if(data.items)return data.items.length?data.items.map(m=>[m.subject,m.from,m.snippet,m.text,m.content,m.id].filter(v=>typeof v==='string').map(clean).join('\n')).join('\n\n')+'\n':'No matching items.\n';
  if(data.state||data.status)return row('Status',name(data.state||data.status));
  return 'Request handled.\n';

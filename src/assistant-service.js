@@ -79,7 +79,23 @@ async function submit(server,input){
  if(parsed.kind==='sensitive')return {kind:'clarify',message:'Use /remember-sensitive to explicitly save this as operator-only Sensitive Memory.'};
  if(parsed.kind==='forget')return forget(server,parsed.selection);
  if(parsed.kind==='recall')return require('./memory-recall').recall(server,parsed.query);
- if(parsed.kind==='connector')return connectorInput(server,{connector:parsed.connector,action:parsed.action,input:parsed.query?{query:parsed.query}:{},conversation_id:input.conversation_id,model:/^(?:codex|claude_code):/.test(input.model||'')?'auto':input.model});
+ if(parsed.kind==='connector'){
+  const connectorBody={};
+  if(parsed.query)connectorBody.query=parsed.query;
+  if(parsed.page_size)connectorBody.limit=parsed.page_size;
+  if(parsed.continuation)connectorBody.continuation=true;
+  if(parsed.label)connectorBody.label=parsed.label;
+  if(parsed.match)connectorBody.match=parsed.match;
+  if(parsed.continuation_id)connectorBody.continuation_id=parsed.continuation_id;
+  return connectorInput(server,{
+   connector:parsed.connector,
+   action:parsed.action,
+   input:connectorBody,
+   conversation_id:input.conversation_id,
+   model:/^(?:codex|claude_code):/.test(input.model||'')?'auto':input.model,
+   host_verified:parsed.host_verified===true
+  });
+ }
  if(parsed.kind==='personal_ops'){
   const plan=require('./personal-ops').plan(server,parsed.message);
   return {...plan,kind:'personal_ops',route:'PERSONAL_OPS',authority:false};
@@ -136,25 +152,138 @@ function jobSearchInput(server,parsed){
  }
  return {kind:'clarify',route:'JOB_SEARCH',message:'Supported job-search actions: create tracker, list applications, daily digest, or personal-ops capability plan.',authority:false};
 }
-async function connectorInput(server,{connector,action,input={},conversation_id,model}){
+function gmailSearchSessions(server){
+ if(!server.gmailSearchSessions)server.gmailSearchSessions=new(require('./gmail-search-session').GmailSearchSessions)();
+ return server.gmailSearchSessions;
+}
+function formatGmailSearchReceipt({items,label,page,has_more,exhausted,limit_reached,total_returned,continuation_id,result_size_estimate,match}){
+ const who=label||'matching';
+ const count=items.length;
+ let message;
+ if(!count&&page<=1)message=`No ${who}-related emails matched this read-only Gmail search.`;
+ else if(!count)message=`No further ${who}-related emails on this page.`;
+ else if(exhausted&&page<=1)message=`Found ${who}-related emails. Showing ${count} matching message${count===1?'':'s'} (search complete for this query).`;
+ else if(exhausted)message=`Showing ${count} more ${who}-related email${count===1?'':'s'} (search complete for this query).`;
+ else if(limit_reached)message=`Found ${who}-related emails. Showing ${count} on this page (${total_returned} so far). Host safety limit reached — results are partial, not complete.`;
+ else message=`Found ${who}-related emails. Showing ${count} matching message${count===1?'':'s'} (page ${page}${result_size_estimate!=null?`; provider estimate ${result_size_estimate}`:''}).`;
+ if(has_more&&continuation_id)message+='\nSay “show more” or “show the next page” for the next bounded page.';
+ if(match==='display_name')message+='\nNote: a display-name match is not proof of authentic domain origin; inspect the From field.';
+ return message;
+}
+async function gmailSearchPage(server,{input={},conversation_id=null}){
+ const sessions=gmailSearchSessions(server);
+ const adapter=connectors(server.bridge);
+ let sessionId=input.continuation_id||null;
+ let pageToken=null;
+ let label=input.label||null;
+ let match=input.match||null;
+ let query=input.query||null;
+ const limit=input.limit||require('./gmail-search-intent').PAGE_SIZE_DEFAULT;
+ if(input.continuation===true){
+  const active=server.gmailSearchActive;
+  if(!active?.continuation_id){
+   return {kind:'clarify',route:'CONNECTOR',message:'No active Gmail search to continue. Try: Find all mails from GitHub.',authority:false,host_verified:true,model_invoked:false};
+  }
+  sessionId=active.continuation_id;
+ }
+ if(sessionId){
+  const row=sessions.require(sessionId,{conversation_id,operator:'operator',expected_query:query||undefined});
+  query=row.query;label=row.label;match=row.match;
+  pageToken=sessions.peekToken(sessionId,{conversation_id,operator:'operator'});
+  if(!pageToken&&row.exhausted){
+   return {kind:'connector',route:'CONNECTOR',connector:'gmail',action:'search',items:[],message:'No further matching emails. This search is complete.',has_more:false,exhausted:true,host_verified:true,model_invoked:false,live_qualified:true,authority:false,worker_context:false};
+  }
+ }else{
+  if(typeof query!=='string'||!query.trim())throw Error('Gmail search query required');
+  sessionId=sessions.begin({query,label,match,conversation_id,operator:'operator',page_size:limit});
+ }
+ let raw;
+ try{
+  raw=await adapter.read('gmail','search',{query,limit,page_token:pageToken||undefined});
+ }catch(error){
+  if(error?.safe_error_class||['Gmail OAuth authorization required','Gmail OAuth renewal requires operator authorization','Secret reference is invalid or revoked','Current secret disposition unavailable','Secret reference revoked'].includes(error?.message)||/^gmail_oauth_/.test(error?.code||'')){
+   const offer=authorizationOffer(server,'gmail');
+   if(error?.safe_error_class||error?.code)offer.safe_error_class=error.safe_error_class||error.code;
+   if(error?.message&&!/token|Bearer|refresh_token|access_token|pageToken|page_token/i.test(error.message))offer.failure_message=error.message;
+   offer.host_verified=true;offer.model_invoked=false;
+   return offer;
+  }
+  const err=Error(error?.message&&!/token|Bearer|pageToken/i.test(error.message)?error.message:'Gmail search unavailable; provider diagnostics withheld.');
+  err.code=error?.code||'gmail_search_failed';
+  err.safe_error_class=error?.safe_error_class||err.code;
+  throw err;
+ }
+ let recorded;
+ try{
+  recorded=sessions.recordPage(sessionId,{messages:raw.items||[],next_page_token:raw._provider_next_page_token||null});
+ }catch(error){
+  if(error?.code==='gmail_search_limit'){
+   const items=raw.items||[];
+   server.gmailSearchActive={continuation_id:null,query,label};
+   return {
+    kind:'connector',route:'CONNECTOR',connector:'gmail',action:'search',items,
+    message:formatGmailSearchReceipt({items,label,page:1,has_more:false,exhausted:false,limit_reached:true,total_returned:items.length,continuation_id:null,result_size_estimate:raw.result_size_estimate,match}),
+    has_more:false,exhausted:false,limit_reached:true,partial:true,host_verified:true,model_invoked:false,
+    live_qualified:true,authority:false,worker_context:false,untrusted:true
+   };
+  }
+  throw error;
+ }
+ // Never project provider page tokens on the operator receipt.
+ const items=recorded.items.map(m=>({id:m.id,from:m.from,subject:m.subject,date:m.date,snippet:typeof m.content==='string'?m.content.slice(0,240):'',untrusted:true,authority:false}));
+ server.gmailSearchActive=recorded.has_more&&recorded.continuation_id
+  ?{continuation_id:recorded.continuation_id,query:recorded.query,label:recorded.label,conversation_id:conversation_id||null}
+  :null;
+ return {
+  kind:'connector',
+  route:'CONNECTOR',
+  connector:'gmail',
+  action:'search',
+  items,
+  message:formatGmailSearchReceipt({
+   items,label:recorded.label,page:recorded.page,has_more:recorded.has_more,exhausted:recorded.exhausted,
+   limit_reached:recorded.limit_reached,total_returned:recorded.total_returned,continuation_id:recorded.continuation_id,
+   result_size_estimate:raw.result_size_estimate,match:recorded.match
+  }),
+  continuation_id:recorded.continuation_id,
+  has_more:recorded.has_more,
+  exhausted:recorded.exhausted,
+  page:recorded.page,
+  total_returned:recorded.total_returned,
+  query_label:recorded.label,
+  match:recorded.match,
+  host_verified:true,
+  model_invoked:false,
+  live_qualified:true,
+  authority:false,
+  worker_context:false,
+  untrusted:true
+ };
+}
+async function connectorInput(server,{connector,action,input={},conversation_id,model,host_verified=false}){
  const adapter=connectors(server.bridge),current=adapter.status().items.find(item=>item.id===connector);
  if(!current)throw Error('Unknown connector');
  // configured = OAuth client present; connected = token; live_qualified = successful read.
  if(!['configured','connected','live_qualified'].includes(current.state)&&action!=='status'&&action!=='draft')return authorizationOffer(server,connector);
  if(current.state==='configured'&&!current.connected&&action!=='status'&&action!=='draft')return authorizationOffer(server,connector);
+ if(connector==='gmail'&&action==='search')return gmailSearchPage(server,{input,conversation_id});
  const read=async(readAction)=>{try{return await adapter.read(connector,readAction,input);}catch(error){
   if(connector==='gmail'&&(error?.safe_error_class||['Gmail OAuth authorization required','Gmail OAuth renewal requires operator authorization','Secret reference is invalid or revoked','Current secret disposition unavailable','Secret reference revoked'].includes(error?.message)||/^gmail_oauth_/.test(error?.code||''))){
    const offer=authorizationOffer(server,connector);
    if(error?.safe_error_class||error?.code)offer.safe_error_class=error.safe_error_class||error.code;
    if(error?.message&&!/token|Bearer|refresh_token|access_token/i.test(error.message))offer.failure_message=error.message;
+   offer.model_invoked=false;offer.host_verified=true;
    return offer;
   }
   throw error;
  }};
- if(!['summarize','attention','draft_reply'].includes(action))return {kind:'connector',route:'CONNECTOR',...await read(action)};
+ if(!['summarize','attention','draft_reply'].includes(action)){
+  const data=await read(action);
+  return {kind:'connector',route:'CONNECTOR',...data,model_invoked:false,host_verified:host_verified||data.host_verified===true};
+ }
  const data=await read(action==='draft_reply'?(input.id?'read':'search'):action);
  if(data.kind==='connect_required')return data;
- if(!data.items.length)return {kind:'connector',message:'No current selected messages.'};
+ if(!data.items.length)return {kind:'connector',message:'No current selected messages.',model_invoked:false,host_verified:true};
  if(action==='draft_reply'&&data.items.length!==1)return {kind:'clarify',message:'Choose one message ID to draft a reply.',choices:data.items.map(m=>({id:m.id,subject:m.subject}))};
  const selected=data.items.slice(0,3).map(m=>({id:m.id,subject:m.subject.slice(0,200),content:m.content.slice(0,700),untrusted:true}));
  const instruction=action==='draft_reply'?'Draft a reply for operator review. Do not send.':action==='attention'?'Summarize selected messages and explain which may need attention based only on these excerpts; identify uncertainty.':'Summarize only the selected message text; identify incomplete context.';

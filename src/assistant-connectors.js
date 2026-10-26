@@ -65,15 +65,40 @@ class AssistantConnectors {
    throw Error('Gmail read unavailable; credentials and provider diagnostics withheld.');
   }
  }
+ async #listMessages({q,limit,pageToken=null}) {
+  const params={maxResults:limit,q};
+  if(pageToken){
+   if(typeof pageToken!=='string'||!pageToken||pageToken.length>2048||/[\r\n\0]/.test(pageToken))throw Error('Invalid Gmail page token');
+   params.pageToken=pageToken;
+  }
+  const list=await this.#get('messages',params);
+  const items=[];
+  for(const m of (list.messages||[]).slice(0,limit)){
+   if(!ID.test(m.id))throw Error('Invalid Gmail reference');
+   // Metadata only — no full bodies on list/search pages.
+   items.push(this.#mail(await this.#get('messages/'+encodeURIComponent(m.id),{format:'metadata',metadataHeaders:['From','Subject','Date']})));
+  }
+  return {
+   items,
+   next_page_token:typeof list.nextPageToken==='string'&&list.nextPageToken?list.nextPageToken:null,
+   result_size_estimate:Number.isFinite(list.resultSizeEstimate)?list.resultSizeEstimate:null,
+   provider_exhausted:!list.nextPageToken
+  };
+ }
  async read(connector,action,input={}) {
   if(!['gmail','whatsapp'].includes(connector))throw Error('Unknown connector');
-  object(input,['query','id','limit','body']);
+  object(input,['query','id','limit','body','page_token']);
   if(action==='status')return this.status().items.find(m=>m.id===connector);
   if(action==='draft') {text(input.body,'draft body',4000);if(secret(input.body))throw Error('Secret-like draft refused.');return {draft:clean(input.body),local_only:true,sent:false,untrusted:true,authority:false};}
   if(!['unread','recent','search','read','thread','attention','summarize','job_categorize'].includes(action))throw Error('Mutation unavailable; an independently governed capability is required.');
   const limit=input.limit??10;if(!Number.isInteger(limit)||limit<1||limit>20)throw Error('Bounded connector limit required.');
-  if(input.query!==undefined){text(input.query,'query',1000);if(secret(input.query))throw Error('Secret query refused.');}
+  if(input.query!==undefined){
+   text(input.query,'query',1000);
+   // Host NL Gmail search queries use from:domain atoms that trip chat secret heuristics.
+   if(!require('./gmail-search-intent').isHostSearchQuery(input.query)&&secret(input.query))throw Error('Secret query refused.');
+  }
   let items;
+  let pageMeta=null;
   if(connector==='gmail') {
    const selected=['read','thread','summarize'].includes(action);
    if(selected&&(!ID.test(input.id||'')))throw Error('Explicit message or thread ID required.');
@@ -83,12 +108,8 @@ class AssistantConnectors {
     const q=action==='job_categorize'
      ?(input.query||'newer_than:30d (subject:(application OR interview OR recruiter OR hiring OR opportunity) OR from:(recruiter OR talent OR careers))')
      :(['unread','attention'].includes(action)?'is:unread':action==='search'?input.query||'': 'newer_than:7d');
-    const list=await this.#get('messages',{maxResults:limit,q});
-    items=[];
-    for(const m of (list.messages||[]).slice(0,limit)){
-     if(!ID.test(m.id))throw Error('Invalid Gmail reference');
-     items.push(this.#mail(await this.#get('messages/'+encodeURIComponent(m.id),{format:'metadata',metadataHeaders:['From','Subject','Date']})));
-    }
+    pageMeta=await this.#listMessages({q,limit,pageToken:input.page_token||null});
+    items=pageMeta.items;
    }
    this.#liveGmail=true;
   }else {
@@ -96,7 +117,13 @@ class AssistantConnectors {
    const rows=await this.#whatsapp.read({id:input.id,query:input.query,limit});if(!Array.isArray(rows)||rows.length>limit)throw Error('Invalid bounded inbound data');
    items=rows.map(m=>({id:ID.test(m.id||'')?m.id:null,subject:'Official inbound WhatsApp text',content:clean(m.text),untrusted:true,authority:false}));
   }
-  const base={items,analysis:['attention','summarize'].includes(action)?items.map(m=>({id:m.id,summary:m.content.slice(0,300),basis:'Bounded selected text excerpt; importance and factual accuracy need operator review.'})):[],untrusted:true,authority:false,worker_context:false};
+  const base={items,analysis:['attention','summarize'].includes(action)?items.map(m=>({id:m.id,summary:m.content.slice(0,300),basis:'Bounded selected text excerpt; importance and factual accuracy need operator review.'})):[],untrusted:true,authority:false,worker_context:false,host_verified:true,live_qualified:this.#liveGmail};
+  if(pageMeta){
+   // Raw provider page tokens stay off the public receipt; sessions wrap them.
+   base._provider_next_page_token=pageMeta.next_page_token;
+   base.provider_exhausted=pageMeta.provider_exhausted;
+   base.result_size_estimate=pageMeta.result_size_estimate;
+  }
   if(action==='job_categorize'&&connector==='gmail'){
    const categorized=require('./job-search-manager').categorizeRecruiters(items.map(m=>({
     id:m.id,from:m.from,subject:m.subject,snippet:m.content,thread_id:m.thread_id

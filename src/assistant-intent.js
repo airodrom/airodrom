@@ -96,6 +96,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(/^(?:check|read|show|open)\s+(?:my\s+)?gmail$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'recent'});
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
+ // Deterministic sender/search Gmail retrieval — host connector only, never OpenCode.
+ const gmailSearch=require('./gmail-search-intent').parse(request);
+ if(gmailSearch)return gmailSearch;
  if(/^(?:show|check|read)\s+(?:my\s+)?whatsapp(?: messages(?: needing attention)?)?$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'whatsapp',action:'attention'});
  // Personal ops / job search — host capability plan before model denial.
  const personalOps=require('./personal-ops');
