@@ -387,7 +387,7 @@ class ControlServer {
           const gmail=status.items.find(i=>i.id==='gmail');
           if(gmail){
             gmail.token_present=!!oauth.token_present;
-            gmail.client_secret_configured=!!oauth.client_secret_configured;
+            gmail.client_secret_bound=!!oauth.client_secret_bound;
             gmail.last_safe_error_class=oauth.last_safe_error_class||null;
             gmail.last_failure_phase=oauth.last_failure_phase||null;
             gmail.last_provider_error=oauth.last_provider_error||null;

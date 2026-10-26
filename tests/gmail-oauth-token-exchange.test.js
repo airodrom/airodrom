@@ -89,7 +89,7 @@ test('authorization_code exchange includes vault client_secret when configured',
   assert.equal(oauth.status().token_present, true);
   assert.equal(oauth.status().connected, true);
   assert.equal(oauth.status().live_qualified, false);
-  assert.equal(oauth.status().client_secret_configured, true);
+  assert.equal(oauth.status().client_secret_bound, true);
   assert.equal(oauth.status().last_safe_error_class, null);
 });
 
