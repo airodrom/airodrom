@@ -71,14 +71,42 @@ private struct Configuration {
     let localHome: String?
     init() throws {
         let info = Bundle.main.infoDictionary ?? [:]
-        guard let node = info["AirodromNode"] as? String,
-              let control = info["AirodromControl"] as? String,
-              let directory = info["AirodromDataDir"] as? String,
+        let home = info["AirodromHome"] as? String
+        var node = info["AirodromNode"] as? String
+        var control = info["AirodromControl"] as? String
+        let directory = info["AirodromDataDir"] as? String
+        // Stale running menus may retain a deleted Node pin after managed install
+        // cutover. Prefer the current prepared app under the owner home without
+        // accepting untrusted endpoints or changing the service.
+        if let home, home.hasPrefix("/"),
+           let refreshed = Self.readPreparedPins(home: home) {
+            let nodeMissing = !(node.map { FileManager.default.isExecutableFile(atPath: $0) } ?? false)
+            let controlMissing = !(control.map { FileManager.default.isReadableFile(atPath: $0) } ?? false)
+            if nodeMissing || controlMissing {
+                node = refreshed.node
+                control = refreshed.control
+            }
+        }
+        guard let node, let control, let directory,
               [node, control, directory].allSatisfy({ $0.hasPrefix("/") }),
               FileManager.default.isExecutableFile(atPath: node),
               FileManager.default.isReadableFile(atPath: control) else { throw HelperError.configuration }
         self.node = node; self.control = control; self.dataDirectory = directory
-        self.localHome = info["AirodromHome"] as? String
+        self.localHome = home
+    }
+    private static func readPreparedPins(home: String) -> (node: String, control: String)? {
+        let plistPath = (home as NSString).appendingPathComponent("menu/Airodrom.app/Contents/Info.plist")
+        guard FileManager.default.isReadableFile(atPath: plistPath),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: plistPath)),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+              let node = plist["AirodromNode"] as? String,
+              let control = plist["AirodromControl"] as? String,
+              node.hasPrefix("/"), control.hasPrefix("/"),
+              FileManager.default.isExecutableFile(atPath: node),
+              FileManager.default.isReadableFile(atPath: control) else { return nil }
+        // Require the prepared control path to remain under the same owner home.
+        guard control.hasPrefix(home + "/") || control.contains("/airodrom") else { return nil }
+        return (node, control)
     }
 }
 private final class Invocation: @unchecked Sendable {
@@ -269,6 +297,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
     private var animationState = "idle"
     private var timer: Timer?, status: BridgeStatus?, currentAction: ControlAction?
     private var checkedAt: Date?, lastError: String?, failures = 0
+    /// True when `status` is retained after a transport failure (stale last-good).
+    private var statusStale = false
     private var quitAfterAction = false
     private var pendingAction: (action: ControlAction, missionId: String?)?
     init(controller: Controller, helperLock: Int32) { self.controller = controller; self.helperLock = helperLock; super.init() }
@@ -403,8 +433,13 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 guard let self else { return }; self.currentAction = nil; self.checkedAt = Date()
                 switch result {
-                case .success(let value): self.status = value; self.lastError = nil; self.failures = 0
-                case .failure(let error): self.status = nil; self.lastError = error.message; self.failures += 1
+                case .success(let value):
+                    self.status = value; self.statusStale = false; self.lastError = nil; self.failures = 0
+                case .failure(let error):
+                    // Keep last-good component observations; transport failure ≠ all Unavailable.
+                    self.statusStale = self.status != nil
+                    self.lastError = error.message + (self.statusStale ? " · showing last-good observations (stale)" : " · components not checked")
+                    self.failures += 1
                 }
                 if self.quitAfterAction { NSApp.terminate(nil); return }
                 if let pending = self.pendingAction {
@@ -423,7 +458,8 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         let visible = primaryStatusLabel(changing: changing, tone: tone, product: p)
         updateAnimation(changing: changing)
         stateRow.title = "SYSTEM STATUS  " + visible
-        detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Last check · just now" + (status?.endpoint.map { " · \($0)" } ?? ""))
+        let staleNote = statusStale ? " · stale" : ""
+        detailRow.title = lastError ?? (checkedAt == nil ? "Checking local observations…" : "Last check · just now" + staleNote + (status?.endpoint.map { " · \($0)" } ?? ""))
         if let conversation = p?.conversation {
             let nick = conversation.nickname ?? "Airo"
             let model = conversation.model ?? "Unavailable"
@@ -432,16 +468,17 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
             conversationRow.title = "CONVERSATION  local · separate from Missions"
         }
         applyMissionRows(product: p)
-        workersRow.title = "WORKERS  " + (p?.workers ?? ("OpenCode " + (p?.runtime ?? "Unavailable")))
-        runtimeRow.title = "OpenCode  " + (p?.runtime ?? "Unavailable")
+        let missing = "Not checked"
+        workersRow.title = "WORKERS  " + (p?.workers ?? ("OpenCode " + (p?.runtime ?? missing)))
+        runtimeRow.title = "OpenCode  " + (p?.runtime ?? missing)
         if p?.runtimeReason == "opencode_runtime_pins_changed" { runtimeRow.title += " · Requalification required" }
-        providerRow.title = "Provider  " + (p?.provider ?? "Unavailable")
-        memoryRow.title = "MEMORY  Memory V2  " + (p?.memory ?? "Unavailable")
+        providerRow.title = "Provider  " + (p?.provider ?? missing)
+        memoryRow.title = "MEMORY  Memory V2  " + (p?.memory ?? missing)
         mcpRow.title = "MCP  " + (status?.mcp.ready == true ? "Connected" : "Not checked / unavailable")
-        approvalsRow.title = p?.approvals.map { "Approvals  \($0) waiting" } ?? "Approvals  unavailable"
+        approvalsRow.title = p?.approvals.map { "Approvals  \($0) waiting" } ?? "Approvals  not checked"
         errorsRow.title = "Recent failures  " + String(p?.failed_missions ?? 0) + " · review " + String(p?.review_missions ?? 0)
-        modelRow.title = "Model  " + (p?.model ?? "Unavailable") + " · " + (p?.routing ?? "Unavailable")
-        connectorsRow.title = "Connectors  " + (p?.connectors ?? "Unavailable")
+        modelRow.title = "Model  " + (p?.model ?? missing) + " · " + (p?.routing ?? missing)
+        connectorsRow.title = "Connectors  " + (p?.connectors ?? missing)
         // Compact bar: pending Approvals badge only — historical review backlog stays in menu text, not gold icon.
         let actionCount = p?.approvals ?? 0
         statusItem.button?.title = actionCount > 0 ? String(actionCount) : tone == "disconnected" || tone == "degraded" ? "!" : tone == "reconnecting" ? "…" : ""
@@ -468,7 +505,10 @@ private final class MenuApplication: NSObject, NSApplicationDelegate {
         cancelMissionItem.isEnabled = openMissionItem.isEnabled
         if let health = menu.items.first(where: { $0.title == "System Health" })?.submenu {
             let values = [p?.control, p?.runtime, p?.memory, p?.provider]
-            for (index, item) in health.items.enumerated() where index < 4 { item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + (values[index] ?? "Unavailable") }
+            for (index, item) in health.items.enumerated() where index < 4 {
+                let label = values[index] ?? (statusStale ? "Not checked" : "Not checked")
+                item.title = ["Control Plane", "OpenCode", "Memory V2", "Local provider"][index] + ": " + label + (statusStale && values[index] != nil ? " (stale)" : "")
+            }
         }
     }
 

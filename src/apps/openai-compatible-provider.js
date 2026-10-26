@@ -58,7 +58,8 @@ class OpenAICompatibleProvider {
       if(!raw||!Array.isArray(raw.choices)||raw.choices.length!==1)fail('invalid_response');
       const choice=raw.choices[0],message=choice.message;
       if(!message||message.role&&message.role!=='assistant'||message.content!=null&&typeof message.content!=='string')fail('invalid_response');
-      if(contentSecret(message.content,input.privacy)||contentSecret(message.reasoning_content,input.privacy))fail('invalid_response');
+      // Output screening is conversation policy, not transport failure.
+      if(contentSecret(message.content,input.privacy)||contentSecret(message.reasoning_content,input.privacy))fail('policy_reject');
       if(choice.finish_reason==='content_filter')fail('policy_reject');
       if(!['stop','tool_calls'].includes(choice.finish_reason))fail('invalid_response');
       const tools=normalizeTools(message.tool_calls||[],input.tools||[]);

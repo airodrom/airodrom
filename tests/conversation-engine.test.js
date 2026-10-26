@@ -131,3 +131,50 @@ test('history-only personal fact cannot survive explicit conversational forget',
  assert.doesNotMatch(JSON.stringify(f.packets.at(-1).messages),/SyntheticOrbitRover/);
  assert.match(JSON.stringify(f.packets.at(-1).messages),/no current ordinary Memory V2|do not invent personal facts/i);
 });
+
+test('SAVE_CLAIM allows discussion language and rejects asserted save success', () => {
+  const engineSrc = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/conversation-engine.js'), 'utf8');
+  const match = /const SAVE_CLAIM=(.+);/.exec(engineSrc);
+  assert.ok(match);
+  // Evaluate the regex literal from source.
+  const SAVE_CLAIM = eval(match[1]); // eslint-disable-line no-eval
+  assert.equal(SAVE_CLAIM.test('I have saved your address.'), true);
+  assert.equal(SAVE_CLAIM.test('I saved your address.'), true);
+  assert.equal(SAVE_CLAIM.test('I cannot save information without your explicit permission.'), false);
+  assert.equal(SAVE_CLAIM.test('If I saved an address, it would remain local.'), false);
+});
+
+test('output policy rejection surfaces as content_policy', async t => {
+  const { OpenAICompatibleProvider } = require('../src/apps/openai-compatible-provider');
+  const profile = require('../src/provider-profiles').initialProfiles().find((p) => p.id === 'ollama');
+  const model = profile.models[0];
+  const provider = new OpenAICompatibleProvider({
+    profile,
+    baseUrl: 'http://127.0.0.1:11434/v1',
+    request: async () => new Response(JSON.stringify({
+      choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'Your password is synthetic-secret-value' } }],
+    })),
+  });
+  const result = await provider.execute({
+    request_id: randomUUID(),
+    run_id: randomUUID(),
+    messages: [{ role: 'user', content: 'Hi' }],
+    tool_choice: 'none',
+    stream: false,
+    max_output: 64,
+    data_class: 'private',
+    privacy: 'local_only',
+    project_policy: { local_only: true },
+  }, model);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error_class, 'policy_reject');
+
+  const f = await setup(t, false, async () => new Response(JSON.stringify({
+    choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'Your password is synthetic-secret-value' } }],
+  })));
+  const turn = await f.start('Hi');
+  const settled = await f.settle(turn);
+  assert.equal(settled.state, 'failed');
+  assert.equal(settled.safe_error_class, 'content_policy');
+  assert.match(settled.reason || '', /policy|withheld/i);
+});
