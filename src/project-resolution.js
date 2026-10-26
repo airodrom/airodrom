@@ -321,6 +321,440 @@ function findEnrolledAreciboCore(projects, options = {}) {
   return findEnrolledTarget(target, projects, options);
 }
 
+/** Strip trailing punctuation ChatGPT often appends to absolute paths. */
+function normalizeAbsolutePathCandidate(raw) {
+  let value = String(raw || '').trim();
+  // Drop wrapping backticks/quotes first, then trailing sentence punctuation.
+  value = value.replace(/^[`'"]+/, '').replace(/[`'"]+$/, '');
+  value = value.replace(/[.,;:)\]]+$/g, '');
+  return value;
+}
+
+/**
+ * Absolute filesystem paths named in the instruction.
+ * Text is untrusted selection only; host registry still grants authority.
+ */
+function extractAbsolutePaths(instruction) {
+  const paths = String(instruction || '').match(/\/(?:Users|private|tmp|var|opt|home)\/[^\s'"`]+/g) || [];
+  const out = [];
+  for (const raw of paths) {
+    const candidate = normalizeAbsolutePathCandidate(raw);
+    if (!candidate.startsWith('/')) continue;
+    out.push(candidate);
+  }
+  return [...new Set(out)];
+}
+
+function realpathOrNull(value) {
+  try { return fs.realpathSync(value); } catch { return null; }
+}
+
+/**
+ * Shared enrolled-scope resolution for Zero Setup and Cognitive Router.
+ * Precedence (host registry is still the only authority):
+ *   1. Exact absolute path → enrolled policy/project
+ *   2. Exact policy alias
+ *   3. Exact project full name
+ *   4. Authoritative development targets (Airodrom Source / Arecibo / …)
+ *   5. Fuzzy name/alias tokens (never alone against an explicit selector)
+ * Explicit selectors that do not resolve fail closed — never projectless fallback.
+ * Authoritative product prose never overrides a uniquely resolved enrolled selector.
+ *
+ * @returns {{ok, projectless?, code?, message?, choices?, selector_kind?,
+ *   project?, workspace?, policy?, policies?, authoritative?}}
+ */
+function resolveEnrolledScope(instruction, {
+  projects = [],
+  policies = [],
+  activeRepositories = new Set(),
+  defaultProjectIds = new Set(),
+} = {}) {
+  const liveProjects = (projects || []).map(p => ({
+    ...p,
+    repositories: (p.repositories || []).map(realpathOrNull).filter(Boolean),
+  })).filter(p => p.repositories.length);
+  const activePolicies = (policies || []).filter(p => p && p.state === 'active'
+    && (!p.expires_at || p.expires_at > Date.now()));
+  const cognitivePolicies = activePolicies.filter(p => p.cognitive);
+
+  function policyForWorkspace(workspace, projectId = null) {
+    return cognitivePolicies.filter(p => {
+      const root = realpathOrNull(p.repository);
+      if (!root || root !== workspace) return false;
+      // Same repo enrolled under multiple projects: bind by project_id when known.
+      if (projectId && p.project_id && p.project_id !== projectId) return false;
+      return true;
+    });
+  }
+
+  function projectsForWorkspace(workspace) {
+    return liveProjects.filter(p => (p.repositories || []).includes(workspace));
+  }
+
+  function projectForWorkspace(workspace, preferredId = null) {
+    const hits = projectsForWorkspace(workspace);
+    if (preferredId) {
+      const preferred = hits.find(p => (p.projectId || p.project_id) === preferredId);
+      if (preferred) return preferred;
+    }
+    if (hits.length > 1) return null; // shared root → caller must fail closed
+    return hits[0] || null;
+  }
+
+  function projectIdOf(project) {
+    return project?.projectId || project?.project_id || null;
+  }
+
+  function mentionedPolicyAliases() {
+    return cognitivePolicies.filter(p => {
+      const alias = String(p.alias || '').toLowerCase().trim();
+      return alias && instructionMentions(instruction, '', p.alias)?.kind === 'alias';
+    });
+  }
+
+  const absolutePaths = extractAbsolutePaths(instruction);
+  const resolvedPaths = [];
+  const unresolvedPaths = [];
+  for (const candidate of absolutePaths) {
+    const root = realpathOrNull(candidate);
+    if (!root) { unresolvedPaths.push(candidate); continue; }
+    resolvedPaths.push(root);
+  }
+
+  // 1) Exact absolute path(s)
+  if (resolvedPaths.length || unresolvedPaths.length) {
+    // Any unresolved or unenrolled absolute path claim fails closed — never
+    // silently keep only the enrolled subset.
+    if (unresolvedPaths.length) {
+      return {
+        ok: false, projectless: false, code: 'ENROLLED_WORKSPACE_REQUIRED',
+        selector_kind: 'absolute_path',
+        message: 'That repository path could not be resolved on this host. No files were opened.',
+        choices: [],
+      };
+    }
+    const enrolledHits = [];
+    const unenrolledRoots = [];
+    for (const root of resolvedPaths) {
+      const owners = projectsForWorkspace(root);
+      if (owners.length > 1) {
+        return {
+          ok: false, projectless: false, code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+          selector_kind: 'absolute_path',
+          message: 'Multiple enrolled projects share that repository path. Name the exact project or policy alias.',
+          choices: owners.map(p => ({ project_name: p.name, workspace_label: root })),
+        };
+      }
+      const project = owners[0] || null;
+      const matchedPolicies = policyForWorkspace(root, projectIdOf(project));
+      if (project || matchedPolicies.length) {
+        enrolledHits.push({ workspace: root, project, policies: matchedPolicies });
+      } else {
+        unenrolledRoots.push(root);
+      }
+    }
+    if (unenrolledRoots.length) {
+      return {
+        ok: false, projectless: false, code: 'ENROLLED_WORKSPACE_REQUIRED',
+        selector_kind: 'absolute_path',
+        message: 'That repository is not authorized. No files were opened.',
+        choices: [],
+      };
+    }
+    if (enrolledHits.length === 1) {
+      const hit = enrolledHits[0];
+      const scopedPolicies = policyForWorkspace(hit.workspace, projectIdOf(hit.project));
+      if (scopedPolicies.length > 1) {
+        return {
+          ok: false, projectless: false, code: 'ENROLLED_POLICY_AMBIGUOUS',
+          selector_kind: 'absolute_path',
+          message: 'Multiple active Developer Autonomy policies cover that repository. Name the exact policy alias.',
+          choices: scopedPolicies.map(p => ({ alias: p.alias, policy_id: p.policy_id, workspace_label: path.basename(hit.workspace) })),
+          project: hit.project, workspace: hit.workspace, policies: scopedPolicies,
+        };
+      }
+      // Path named a registered project root but no cognitive DA policy.
+      if (!scopedPolicies.length) {
+        return {
+          ok: false, projectless: false, code: 'STANDING_ENROLLMENT_REQUIRED',
+          selector_kind: 'absolute_path',
+          message: 'That repository is registered, but there is no active cognitive Developer Autonomy policy for it. Enroll once, then retry. Do not use projectless two-file syntax for enrolled work.',
+          choices: [], project: hit.project, workspace: hit.workspace, policies: [],
+        };
+      }
+      const aliasMentions = mentionedPolicyAliases();
+      if (aliasMentions.length === 1 && aliasMentions[0].policy_id !== scopedPolicies[0].policy_id) {
+        return {
+          ok: false, projectless: false, code: 'ENROLLED_POLICY_MISMATCH',
+          selector_kind: 'absolute_path',
+          message: 'Named repository path and policy alias belong to different enrollments. Correct the path or the policy, then retry.',
+          choices: [
+            { alias: scopedPolicies[0].alias, policy_id: scopedPolicies[0].policy_id, workspace_label: path.basename(hit.workspace) },
+            { alias: aliasMentions[0].alias, policy_id: aliasMentions[0].policy_id, workspace_label: path.basename(aliasMentions[0].repository || '') },
+          ],
+          project: hit.project, workspace: hit.workspace, policies: [scopedPolicies[0], aliasMentions[0]],
+        };
+      }
+      if (aliasMentions.length > 1) {
+        return {
+          ok: false, projectless: false, code: 'ENROLLED_POLICY_AMBIGUOUS',
+          selector_kind: 'absolute_path',
+          message: 'Multiple policy aliases were named with that repository path. Keep one policy alias.',
+          choices: aliasMentions.map(p => ({ alias: p.alias, policy_id: p.policy_id })),
+          project: hit.project, workspace: hit.workspace, policies: aliasMentions,
+        };
+      }
+      // Explicit enrolled path always outranks product-name heuristics.
+      return {
+        ok: true, projectless: false, selector_kind: 'absolute_path',
+        project: hit.project || projectForWorkspace(hit.workspace, scopedPolicies[0].project_id),
+        workspace: hit.workspace,
+        policy: scopedPolicies[0], policies: scopedPolicies,
+      };
+    }
+    if (enrolledHits.length > 1) {
+      return {
+        ok: false, projectless: false, code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+        selector_kind: 'absolute_path',
+        message: 'Multiple enrolled repositories were named. Pick one absolute path.',
+        choices: enrolledHits.map(h => ({
+          project_name: h.project?.name || null,
+          workspace_label: h.workspace,
+        })),
+      };
+    }
+    // Explicit path present but not enrolled / not resolvable — fail closed.
+    return {
+      ok: false, projectless: false, code: 'ENROLLED_WORKSPACE_REQUIRED',
+      selector_kind: 'absolute_path',
+      message: 'That repository is not authorized. No files were opened.',
+      choices: [],
+    };
+  }
+
+  // 2) Exact policy alias
+  const aliasHits = mentionedPolicyAliases();
+  if (aliasHits.length === 1) {
+    const policy = aliasHits[0];
+    const workspace = realpathOrNull(policy.repository);
+    if (!workspace) {
+      return {
+        ok: false, projectless: false, code: 'ENROLLED_WORKSPACE_REQUIRED',
+        selector_kind: 'policy_alias',
+        message: 'Named policy repository is not available on this host.',
+        choices: [], policy,
+      };
+    }
+    const project = projectForWorkspace(workspace, policy.project_id)
+      || liveProjects.find(p => (p.projectId || p.project_id) === policy.project_id)
+      || null;
+    if (!project && projectsForWorkspace(workspace).length > 1) {
+      return {
+        ok: false, projectless: false, code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+        selector_kind: 'policy_alias',
+        message: 'Named policy repository is shared by multiple projects. Name the exact project.',
+        choices: projectsForWorkspace(workspace).map(p => ({ project_name: p.name, workspace_label: workspace })),
+        policy, policies: [policy],
+      };
+    }
+    return {
+      ok: true, projectless: false, selector_kind: 'policy_alias',
+      project, workspace, policy, policies: [policy],
+    };
+  }
+  if (aliasHits.length > 1) {
+    return {
+      ok: false, projectless: false, code: 'ENROLLED_POLICY_AMBIGUOUS',
+      selector_kind: 'policy_alias',
+      message: 'Multiple enrolled policies match that alias mention.',
+      choices: aliasHits.map(p => ({ alias: p.alias, policy_id: p.policy_id })),
+      policies: aliasHits,
+    };
+  }
+
+  // 3) Exact project full name
+  const namedExact = matchNamedProjects(instruction, liveProjects)
+    .filter(hit => hit.mention?.kind === 'full_name');
+  // Distinct exact project names in one instruction are ambiguous — do not
+  // break ties by name length (that helper is for nested Arecibo-style names).
+  const distinctExactIds = new Set(namedExact.map(h => h.project.projectId || h.project.project_id));
+  if (distinctExactIds.size > 1) {
+    return {
+      ok: false, projectless: false, code: 'cognitive_repository_ambiguous',
+      selector_kind: 'project_name',
+      message: 'Multiple enrolled projects were named. Pick one repository or policy alias.',
+      choices: namedExact.map(h => ({
+        project_name: h.project.name,
+        workspace_label: path.basename((h.repositories || h.project.repositories || [])[0] || ''),
+      })),
+      policies: cognitivePolicies.filter(p => distinctExactIds.has(p.project_id)),
+    };
+  }
+  const namedChoice = preferUniqueProject(namedExact, { activeRepositories, defaultProjectIds });
+  if (namedChoice.ok) {
+    const repos = namedChoice.project.repositories || [];
+    if (repos.length === 1) {
+      const workspace = repos[0];
+      const matchedPolicies = policyForWorkspace(workspace, projectIdOf(namedChoice.project));
+      if (matchedPolicies.length === 1) {
+        return {
+          ok: true, projectless: false, selector_kind: 'project_name',
+          project: namedChoice.project, workspace,
+          policy: matchedPolicies[0], policies: matchedPolicies,
+        };
+      }
+      if (matchedPolicies.length > 1) {
+        return {
+          ok: false, projectless: false, code: 'ENROLLED_POLICY_AMBIGUOUS',
+          selector_kind: 'project_name',
+          message: 'Multiple active policies cover that project repository. Name the policy alias.',
+          choices: matchedPolicies.map(p => ({ alias: p.alias, policy_id: p.policy_id })),
+          project: namedChoice.project, workspace, policies: matchedPolicies,
+        };
+      }
+      return {
+        ok: false, projectless: false, code: 'ENROLLED_WORKSPACE_REQUIRED',
+        selector_kind: 'project_name',
+        message: 'Project was recognized, but standing cognitive enrollment is required before Mission preparation. Do not use the projectless two-file fixture syntax for enrolled work.',
+        choices: [], project: namedChoice.project, workspace, policies: [],
+      };
+    }
+    // Exact project name with multiple repositories must not fall through to
+    // authoritative/Source heuristics.
+    return {
+      ok: false, projectless: false, code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+      selector_kind: 'project_name',
+      message: 'That project has more than one enrolled repository. Name the exact absolute path or policy alias.',
+      choices: repos.map(workspace => ({
+        project_name: namedChoice.project.name,
+        workspace_label: path.basename(workspace),
+      })),
+      project: namedChoice.project, policies: [],
+    };
+  }
+  if (namedChoice.clarify) {
+    return {
+      ok: false, projectless: false, code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+      selector_kind: 'project_name',
+      message: 'Which authorized repository should I use?',
+      choices: namedChoice.matches.flatMap(hit => (hit.project.repositories || []).map(workspace => ({
+        project_name: hit.project.name, workspace_label: path.basename(workspace),
+      }))),
+    };
+  }
+
+  // 4) Authoritative development targets — only when no explicit enrolled selector.
+  const authoritative = resolveAuthoritativeDevelopment(instruction, liveProjects, { activeRepositories });
+  if (authoritative.matched) {
+    if (!authoritative.ok) {
+      return { ...authoritative, projectless: false, selector_kind: 'authoritative_target' };
+    }
+    const matchedPolicies = policyForWorkspace(authoritative.workspace, projectIdOf(authoritative.project));
+    if (matchedPolicies.length === 1) {
+      return {
+        ok: true, projectless: false, selector_kind: 'authoritative_target',
+        project: authoritative.project, workspace: authoritative.workspace,
+        policy: matchedPolicies[0], policies: matchedPolicies,
+        authoritative,
+      };
+    }
+    if (matchedPolicies.length > 1) {
+      return {
+        ok: false, projectless: false, code: 'ENROLLED_POLICY_AMBIGUOUS',
+        selector_kind: 'authoritative_target',
+        message: 'Multiple active policies cover the selected product repository. Name the policy alias.',
+        choices: matchedPolicies.map(p => ({ alias: p.alias, policy_id: p.policy_id })),
+        project: authoritative.project, workspace: authoritative.workspace,
+        policies: matchedPolicies, authoritative,
+      };
+    }
+    return {
+      ...authoritative,
+      ok: false,
+      projectless: false,
+      selector_kind: 'authoritative_target',
+      code: authoritative.code || 'SOURCE_REPOSITORY_NOT_ENROLLED',
+      policies: [],
+    };
+  }
+
+  // 5) Fuzzy project / alias tokens among cognitive policies
+  const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
+  const fuzzy = [];
+  for (const policy of cognitivePolicies) {
+    if (excludeFixtures && isFixtureOrHandoffPath(policy.repository)) continue;
+    const workspace = realpathOrNull(policy.repository);
+    if (!workspace) continue;
+    const project = projectForWorkspace(workspace, policy.project_id)
+      || liveProjects.find(p => (p.projectId || p.project_id) === policy.project_id)
+      || null;
+    if (!project) continue;
+    if (excludeFixtures && isFixtureOrHandoffPath(project.name)) continue;
+    const mention = instructionMentions(instruction, project.name, policy.alias);
+    if (!mention) continue;
+    fuzzy.push({ policy, project, workspace, mention });
+  }
+  if (fuzzy.length === 1) {
+    return {
+      ok: true, projectless: false, selector_kind: 'fuzzy',
+      project: fuzzy[0].project, workspace: fuzzy[0].workspace,
+      policy: fuzzy[0].policy, policies: [fuzzy[0].policy],
+    };
+  }
+  if (fuzzy.length > 1) {
+    const exact = fuzzy.filter(h => h.mention.kind === 'alias' || h.mention.kind === 'full_name');
+    const pool = exact.length ? exact : fuzzy;
+    if (pool.length === 1) {
+      return {
+        ok: true, projectless: false, selector_kind: 'fuzzy',
+        project: pool[0].project, workspace: pool[0].workspace,
+        policy: pool[0].policy, policies: [pool[0].policy],
+      };
+    }
+    return {
+      ok: false, projectless: false, code: 'cognitive_repository_ambiguous',
+      selector_kind: 'fuzzy',
+      message: 'Multiple enrolled repositories match that request. Name the exact repository path or policy alias.',
+      choices: pool.map(h => ({
+        alias: h.policy.alias, project_name: h.project.name, workspace_label: path.basename(h.workspace),
+      })),
+      policies: pool.map(h => h.policy),
+    };
+  }
+
+  // 6) Named registered projects without a cognitive DA policy still fail closed —
+  // never fall through to projectless two-file syntax for recognized enrollments.
+  let namedHits = matchNamedProjects(instruction, liveProjects);
+  if (excludeFixtures) {
+    namedHits = namedHits.filter(hit => !isFixtureOrHandoffPath(hit.project.name)
+      && !(hit.repositories || []).some(isFixtureOrHandoffPath));
+  }
+  const namedOnly = preferUniqueProject(namedHits, { activeRepositories, defaultProjectIds });
+  if (namedOnly.ok) {
+    const repos = namedOnly.project.repositories || [];
+    const workspace = repos.length === 1 ? repos[0] : null;
+    return {
+      ok: false, projectless: false, code: 'ENROLLED_WORKSPACE_REQUIRED',
+      selector_kind: 'project_name',
+      message: 'Project was recognized, but standing cognitive enrollment is required before Mission preparation. Do not use the projectless two-file fixture syntax for enrolled work.',
+      choices: [], project: namedOnly.project, workspace, policies: [],
+    };
+  }
+  if (namedOnly.clarify) {
+    return {
+      ok: false, projectless: false, code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+      selector_kind: 'project_name',
+      message: 'Which authorized repository should I use?',
+      choices: namedOnly.matches.flatMap(hit => (hit.repositories || hit.project.repositories || []).map(workspace => ({
+        project_name: hit.project.name, workspace_label: path.basename(workspace),
+      }))),
+    };
+  }
+
+  // No registered match and no explicit enrolled-target claim → projectless allowed.
+  return { ok: true, projectless: true, project: null, workspace: null, policy: null, policies: [], selector_kind: 'none' };
+}
+
 module.exports = {
   STOP,
   significantTokens,
@@ -339,4 +773,7 @@ module.exports = {
   resolveAuthoritativeDevelopment,
   findEnrolledTarget,
   pathMatchesTarget,
+  normalizeAbsolutePathCandidate,
+  extractAbsolutePaths,
+  resolveEnrolledScope,
 };

@@ -35,10 +35,11 @@ function readablePath(workspace) {
   try { return path.basename(workspace); } catch { return 'selected workspace'; }
 }
 function explicitAuthorizedRepository(instruction, projects) {
-  const paths = String(instruction || '').match(/\/(?:Users|private|tmp|var|opt|home)\/[^\s'"]+/g) || [];
+  const { extractAbsolutePaths, normalizeAbsolutePathCandidate } = require('./project-resolution');
+  const paths = extractAbsolutePaths(instruction);
   for (const candidate of paths) {
     let root;
-    try { root = fs.realpathSync(candidate); } catch { continue; }
+    try { root = fs.realpathSync(normalizeAbsolutePathCandidate(candidate)); } catch { continue; }
     for (const project of projects) for (const workspace of project.repositories || []) {
       try { if (fs.realpathSync(workspace) === root) return { project, workspace: root }; } catch { /* absent */ }
     }
@@ -46,17 +47,21 @@ function explicitAuthorizedRepository(instruction, projects) {
   return null;
 }
 function explicitUnauthorizedPath(instruction, projects) {
-  const paths = String(instruction || '').match(/\/(?:Users|private|tmp|var|opt|home)\/[^\s'"]+/g) || [];
+  const { extractAbsolutePaths, normalizeAbsolutePathCandidate } = require('./project-resolution');
+  const paths = extractAbsolutePaths(instruction);
   const allowed = new Set();
   for (const project of projects) for (const workspace of project.repositories || []) {
     try { allowed.add(fs.realpathSync(workspace)); } catch { /* absent enrollment */ }
   }
+  let sawResolvable = false;
   for (const candidate of paths) {
     let root;
-    try { root = fs.realpathSync(candidate); } catch { continue; }
+    try { root = fs.realpathSync(normalizeAbsolutePathCandidate(candidate)); } catch { continue; }
+    sawResolvable = true;
     if (!allowed.has(root)) return true;
   }
-  return false;
+  // Explicit path text that cannot be resolved still counts as an unauthorized claim.
+  return !sawResolvable && paths.length > 0;
 }
 
 class ZeroSetupWork {
@@ -123,91 +128,65 @@ class ZeroSetupWork {
   // Discover an enrolled Project without allocating a projectless sandbox.
   resolveEnrolledProject(instruction) {
     const projects = this.activeProjects();
-    const {
-      matchNamedProjects, preferUniqueProject, isFixtureOrHandoffPath,
-      resolveAuthoritativeDevelopment,
-    } = require('./project-resolution');
+    const { resolveEnrolledScope, isFixtureOrHandoffPath } = require('./project-resolution');
     const { liveRepositories } = require('./project-defaults');
     const activeRepositories = new Set();
     const defaultProjectIds = new Set();
+    let policies = [];
     try {
-      for (const policy of this.bridge.developerAutonomy?.list?.('operator') || []) {
+      policies = this.bridge.developerAutonomy?.list?.('operator') || [];
+      for (const policy of policies) {
         if (policy.state === 'active' && policy.repository) activeRepositories.add(policy.repository);
       }
       for (const item of this.bridge.projectDefaults?.list?.() || []) {
         if (item?.project_id && item?.repository) defaultProjectIds.add(item.project_id);
       }
     } catch { /* enrollment store unavailable */ }
-    // Authoritative product targets (Airodrom / Arecibo / future catalog entries)
-    // bind before opportunistic named matches. Negation and missing DA fail closed.
     const mapped = projects.map(p => ({ ...p, repositories: liveRepositories(p) }));
-    const authoritative = resolveAuthoritativeDevelopment(instruction, mapped, { activeRepositories });
-    if (authoritative.matched) {
-      if (authoritative.ok) {
-        return {
-          ok: true,
-          project: authoritative.project,
-          workspace: authoritative.workspace,
-          projectless: false,
-          source_bound: true,
-          target_id: authoritative.target_id,
-          repository_id: authoritative.repository_id,
-          repository_binding: authoritative.repository_binding,
-        };
-      }
-      return { ...authoritative, projectless: false };
+    const resolved = resolveEnrolledScope(instruction, {
+      projects: mapped,
+      policies,
+      activeRepositories,
+      defaultProjectIds,
+    });
+    if (resolved.projectless) {
+      return { ok: true, projectless: true, project: null, workspace: null };
     }
-    const namedHits = matchNamedProjects(instruction, projects).map(hit => ({
-      ...hit,
-      repositories: liveRepositories(hit.project),
-    }));
-    // Drop fixture/handoff hits when the instruction explicitly excludes them.
-    const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
-    const filteredHits = excludeFixtures
-      ? namedHits.filter(hit => !isFixtureOrHandoffPath(hit.project.name)
-        && !(hit.repositories || []).some(isFixtureOrHandoffPath))
-      : namedHits;
-    const namedChoice = preferUniqueProject(filteredHits, { activeRepositories, defaultProjectIds });
-    if (namedChoice.ok) {
-      if (excludeFixtures && isFixtureOrHandoffPath(namedChoice.project.name)) {
-        return {
-          ok: false, clarify: true, projectless: false,
-          code: 'CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED',
-          message: 'That request excluded fixture/handoff projects. Name an enrolled non-fixture repository, or enroll airodrom/airodrom for source work.',
-          choices: [],
-        };
-      }
-      const selected = this.bridge.projectDefaults.selectRepository(namedChoice.project, { instruction });
-      if (selected.ok) return { ok: true, project: selected.project, workspace: selected.workspace, projectless: false, defaulted: !!selected.defaulted };
-      return { ...selected, projectless: false };
-    }
-    if (namedChoice.clarify) {
+    if (!resolved.ok) {
       return {
-        ok: false, clarify: true, projectless: false,
-        message: 'Which authorized repository should I use?',
-        choices: namedChoice.matches.flatMap(hit => liveRepositories(hit.project).map(workspace => ({
-          project_name: hit.project.name,
-          workspace_label: readablePath(workspace),
-        }))),
-        code: 'ENROLLED_REPOSITORY_AMBIGUOUS',
+        ok: false,
+        clarify: true,
+        projectless: false,
+        code: resolved.code || 'ENROLLED_WORKSPACE_REQUIRED',
+        message: resolved.message || 'That repository is not authorized. No files were opened.',
+        choices: resolved.choices || [],
+        selector_kind: resolved.selector_kind || null,
+        project: resolved.project || null,
+        workspace: resolved.workspace || null,
+        policy: resolved.policy || null,
       };
     }
-    const authorized = explicitAuthorizedRepository(instruction, projects);
-    if (authorized) {
-      if (excludeFixtures && isFixtureOrHandoffPath(authorized.workspace)) {
-        return {
-          ok: false, clarify: true, projectless: false,
-          code: 'CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED',
-          message: 'Fixture/handoff repository path rejected for this request.',
-          choices: [],
-        };
-      }
-      return { ok: true, project: authorized.project, workspace: authorized.workspace, projectless: false };
+    const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
+    if (excludeFixtures && (isFixtureOrHandoffPath(resolved.workspace) || isFixtureOrHandoffPath(resolved.project?.name))) {
+      return {
+        ok: false, clarify: true, projectless: false,
+        code: 'CROSS_PROJECT_FIXTURE_FALLBACK_REJECTED',
+        message: 'That request excluded fixture/handoff projects. Name an enrolled non-fixture repository, or enroll airodrom/airodrom for source work.',
+        choices: [],
+      };
     }
-    if (explicitUnauthorizedPath(instruction, projects)) {
-      return { ok: false, clarify: true, projectless: false, message: 'That repository is not authorized. No files were opened.', choices: [] };
-    }
-    return { ok: true, projectless: true, project: null, workspace: null };
+    return {
+      ok: true,
+      project: resolved.project,
+      workspace: resolved.workspace,
+      projectless: false,
+      policy: resolved.policy || null,
+      selector_kind: resolved.selector_kind || null,
+      source_bound: resolved.selector_kind === 'authoritative_target',
+      target_id: resolved.authoritative?.target_id,
+      repository_id: resolved.authoritative?.repository_id,
+      repository_binding: resolved.authoritative?.repository_binding,
+    };
   }
 
   resolveScope(instruction, intent) {
@@ -238,7 +217,15 @@ class ZeroSetupWork {
     // A named active Project wins over unrelated self-repair fixture heuristics.
     const enrolled = this.resolveEnrolledProject(instruction);
     if (!enrolled.projectless) {
-      if (!enrolled.ok) return enrolled;
+      if (!enrolled.ok) {
+        // Named registered project without standing DA still binds the project for
+        // ordinary (non-Cursor) scope. Cursor intake keeps the fail-closed code.
+        if (enrolled.project && enrolled.workspace
+            && (enrolled.code === 'ENROLLED_WORKSPACE_REQUIRED' || enrolled.code === 'STANDING_ENROLLMENT_REQUIRED')) {
+          return { ok: true, project: enrolled.project, workspace: enrolled.workspace };
+        }
+        return enrolled;
+      }
       return { ok: true, project: enrolled.project, workspace: enrolled.workspace };
     }
     // Ordinary work does not require a registered Project. An enrolled repository

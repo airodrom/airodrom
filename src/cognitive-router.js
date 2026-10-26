@@ -432,36 +432,26 @@ function policyFor(bridge, instruction) {
   const candidates = (bridge.developerAutonomy?.list?.('operator') || []).filter(p => p.state === 'active' && p.cognitive && p.expires_at > Date.now());
   if (!candidates.length) return [];
   const projects = bridge.projects.listProjects({ status: 'active' });
-  const {
-    instructionMentions, isFixtureOrHandoffPath, resolveAuthoritativeDevelopment,
-  } = require('./project-resolution');
-  // Authoritative product requests never bind fixture/handoff cognitive policies.
-  const authoritative = resolveAuthoritativeDevelopment(instruction, projects, {
+  const { resolveEnrolledScope } = require('./project-resolution');
+  const resolved = resolveEnrolledScope(instruction, {
+    projects,
+    policies: candidates,
     activeRepositories: new Set(candidates.map(p => p.repository)),
   });
-  if (authoritative.matched) {
-    if (!authoritative.ok) return [];
-    return candidates.filter(p => p.repository === authoritative.workspace
-      && p.project_id === (authoritative.project.projectId || authoritative.project.project_id));
+  // Fail-closed explicit selectors never substitute Source/fixture silently.
+  // Only genuine multi-policy ambiguity is returned as a match list so prepare()
+  // can throw cognitive_repository_ambiguous; a single leftover policy must not
+  // proceed as if uniquely resolved.
+  if (!resolved.ok) {
+    if (Array.isArray(resolved.policies) && resolved.policies.length > 1) return resolved.policies;
+    const err = new Error(resolved.message || resolved.code || 'enrolled_scope_unresolved');
+    err.code = resolved.code || 'ENROLLED_WORKSPACE_REQUIRED';
+    err.enrolled_scope = resolved;
+    throw err;
   }
-  const excludeFixtures = /\b(?:not|neither|except|excluding)\b[\s\w,/.'"-]{0,120}\b(?:chatgpt-handoff|recovery[- ]proof|fixture)\b/i.test(instruction);
-  const matches = candidates.filter(p => {
-    if (excludeFixtures && isFixtureOrHandoffPath(p.repository)) return false;
-    const project = projects.find(project => project.projectId === p.project_id && project.repositories?.includes(p.repository));
-    if (!project) return false;
-    if (excludeFixtures && isFixtureOrHandoffPath(project.name)) return false;
-    if (instruction.includes(p.repository)) return true;
-    return !!instructionMentions(instruction, project.name, p.alias);
-  });
-  // An explicit enrolled alias outranks shared project/alias words. Ambiguous
-  // exact aliases still fail closed; ranking never changes enrollment authority.
-  const exact = matches.filter(p => instructionMentions(instruction, '', p.alias)?.kind === 'alias');
-  if (exact.length) return exact;
-  // A named enrolled project or repository must not compete with incidental
-  // words in another project's name. Do not break ties among exact matches.
-  const named = matches.filter(p => instruction.includes(p.repository)
-    || instructionMentions(instruction, projects.find(project => project.projectId === p.project_id)?.name)?.kind === 'full_name');
-  return named.length ? named : matches;
+  if (resolved.projectless) return [];
+  if (resolved.policy) return [resolved.policy];
+  return resolved.policies || [];
 }
 
 function assertDelegation(bridge, record) {
@@ -578,7 +568,32 @@ async function prepare(zero, { instruction, request_id }, principal) {
     // A disconnect during planning is uncertain. Never recursively resume a worker.
     return view(prior, b);
   }
-  const matches = policyFor(b, instruction);
+  let matches;
+  try {
+    matches = policyFor(b, instruction);
+  } catch (error) {
+    if (error?.enrolled_scope) {
+      const scope = error.enrolled_scope;
+      const blocked = {
+        version: 1, request_id, principal, instruction, state: 'blocked',
+        mission_id: null, planner: 'opencode', evaluator: 'opencode',
+        blockers: [scope.code || error.code || 'ENROLLED_WORKSPACE_REQUIRED'], authority: false,
+        presentation: {
+          worker: 'cursor', files: [], measurable: false,
+          status: scope.message || 'Enrolled repository could not be resolved',
+        },
+        repository_binding: {
+          workspace: scope.workspace || null,
+          project_id: scope.project?.projectId || scope.project?.project_id || null,
+          selector_kind: scope.selector_kind || null,
+          authority: false,
+        },
+      };
+      zero.write(request_id, principal, blocked, 'blocked');
+      return view(blocked, b);
+    }
+    throw error;
+  }
   if (!matches.length) {
     const { resolveAuthoritativeDevelopment } = require('./project-resolution');
     const projects = b.projects.listProjects({ status: 'active' });
@@ -1102,4 +1117,4 @@ function evidence(bridge, mission, detail, verification, changes) {
     references: ['mission:' + mission.id, 'request:' + c.envelope.request_id, ...(c.planner_run_ids || []).map(id => 'run:' + id), ...(verification ? ['verification:' + verification.id] : [])],
     counts: { planning: c.planning_attempts, execution: runs.length, repair: c.envelope.version === 3 ? require('./specialist-gateway').repairCount(bridge, mission) : c.envelope.version === 2 ? require('./mission-evidence').lineageFor(bridge, mission).filter(m => m.repair_of).length : 0 } });
 }
-module.exports = { enrollment, requestedWorker, resolveWorkerRoles, coercePlanningProposal, coerceAutopilotDeliverable, validateProposal, planScopeDetails, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs };
+module.exports = { enrollment, requestedWorker, resolveWorkerRoles, coercePlanningProposal, coerceAutopilotDeliverable, validateProposal, planScopeDetails, route, prepare, approve, bind, assertBound, evidence, view, readScope, specialistWallClockMs, policyFor };
