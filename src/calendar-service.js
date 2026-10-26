@@ -92,7 +92,7 @@ function helpMessage(server) {
   return lines.join('\n');
 }
 
-async function run(server, parsed, { conversation_id = null, confirm_id = null, confirmed = false } = {}) {
+async function run(server, parsed, { conversation_id = null, confirm_id = null, confirmed = false, destructive = false } = {}) {
   const model_invoked = false;
   const host_verified = true;
   if (parsed.action === 'help') {
@@ -337,7 +337,8 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     if (parsed.action === 'confirm' || confirm_id) {
       const id = confirm_id || parsed.preview_id;
       const row = sessions(server).takeWrite(id, { confirm: false });
-      if (row.destructive && !(confirmed === true || parsed.destructive === true)) {
+      const destructiveOk = destructive === true || parsed.destructive === true;
+      if (row.destructive && !destructiveOk) {
         return { kind: 'clarify', route: 'CALENDAR', message: 'Destructive calendar cancel requires /calendar confirm <id> --destructive.', host_verified, model_invoked, authority: false };
       }
       if (!row.destructive && confirmed !== true && parsed.confirmed !== true) {

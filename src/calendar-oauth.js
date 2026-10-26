@@ -249,12 +249,15 @@ class CalendarOAuth {
       if (typeof value.access_token !== 'string' || !value.access_token || !Number.isInteger(value.expires_in) || value.expires_in < 1) {
         throw exchangeError(FAIL.schema, 'Calendar OAuth response schema invalid');
       }
-      if (value.scope && !scopesEqual(value.scope, expectedScope) && !hasReadCapability(value.scope)) {
-        throw exchangeError(FAIL.scope, 'Calendar OAuth scope mismatch');
-      }
-      // Fail closed if Google returns unrelated scopes (e.g. gmail).
-      if (value.scope && /gmail|drive/i.test(value.scope) && !hasReadCapability(value.scope)) {
-        throw exchangeError(FAIL.scope, 'Calendar OAuth scope mismatch');
+      if (value.scope) {
+        const granted = parseScopes(value.scope);
+        const expected = parseScopes(expectedScope);
+        // Exact scope set only — refuse Gmail/Drive extras and refuse write when readonly was requested.
+        if (!scopesEqual(value.scope, expectedScope)) {
+          const onlyExpected = granted.length === expected.length && expected.every((s) => granted.includes(s));
+          if (!onlyExpected) throw exchangeError(FAIL.scope, 'Calendar OAuth scope mismatch');
+        }
+        if (/gmail|drive/i.test(value.scope)) throw exchangeError(FAIL.scope, 'Calendar OAuth scope mismatch');
       }
       this.#lastFailure = null;
       return value;
@@ -282,9 +285,13 @@ class CalendarOAuth {
       this.#recordFailure(FAIL.schema, 'resolve', null);
       throw exchangeError(FAIL.schema, 'Calendar authorization unavailable');
     }
-    if (token.scope && !hasReadCapability(token.scope)) {
-      this.#recordFailure(FAIL.scope, 'resolve', null);
-      throw exchangeError(FAIL.scope, 'Calendar OAuth scope mismatch. Re-authorize with /connect calendar. Gmail consent does not grant Calendar.');
+    if (token.scope) {
+      const granted = parseScopes(token.scope);
+      const allowed = new Set([READ_SCOPE, WRITE_SCOPE]);
+      if (!granted.length || granted.some((s) => !allowed.has(s)) || /gmail|drive/i.test(token.scope)) {
+        this.#recordFailure(FAIL.scope, 'resolve', null);
+        throw exchangeError(FAIL.scope, 'Calendar OAuth scope mismatch. Re-authorize with /connect calendar. Gmail consent does not grant Calendar.');
+      }
     }
     return token;
   }

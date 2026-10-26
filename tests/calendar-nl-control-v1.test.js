@@ -313,3 +313,30 @@ test('personal-ops multi-service still plans; pure calendar uses calendar route'
   const pure = intent.parse('control my calendar');
   assert.equal(pure.kind, 'calendar');
 });
+
+test('destructive cancel requires --destructive flag', async () => {
+  const writes = [];
+  const { server } = fixtureServer({
+    scope: WRITE_SCOPE,
+    eventsPages: [{
+      items: [{ id: 'evt-1', summary: 'Team sync', start: { dateTime: '2026-10-26T14:00:00Z' }, end: { dateTime: '2026-10-26T15:00:00Z' } }],
+    }],
+    writes,
+  });
+  await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid() });
+  const preview = await service.submit(server, { message: 'actually cancel that', request_id: rid() });
+  assert.equal(preview.action, 'preview');
+  assert.equal(preview.destructive, true);
+  const blocked = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid() });
+  assert.equal(blocked.kind, 'clarify');
+  assert.match(blocked.message, /--destructive/);
+  assert.equal(writes.filter((w) => w.op === 'delete').length, 0);
+  const done = await service.submit(server, { message: `/calendar confirm ${preview.preview_id} --destructive`, request_id: rid() });
+  assert.equal(done.action, 'deleted');
+  assert.equal(writes.filter((w) => w.op === 'delete').length, 1);
+});
+
+test('pasted control commands still clarify after ZWSP strip', () => {
+  const parsed = intent.parse('please help\n/quit');
+  assert.equal(parsed.kind, 'clarify');
+});
