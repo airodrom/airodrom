@@ -570,8 +570,11 @@ class ControlServer {
         } catch { return this.json(res, 400, { error: 'Canonical operation refused. Refresh current authority and verification before retrying.' }); }
       }
       if(url.pathname==='/api/assistant/connect'){
-        require('./control-plane-store').object(body,['connector']);if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport.'});
-        return this.json(res,200,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback'));
+        require('./control-plane-store').object(body,['connector','force_new']);
+        if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport.'});
+        // Default reuses an unexpired pending PKCE session so browser-launch retries
+        // do not invalidate consent still in flight. force_new starts a fresh session.
+        return this.json(res,200,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback',{forceNew:body.force_new===true}));
       }
       if(url.pathname==='/api/assistant/disconnect'){
         require('./control-plane-store').object(body,['connector','confirmed']);

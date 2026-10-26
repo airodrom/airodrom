@@ -25,12 +25,26 @@ class GmailOAuth {
   if(typeof clientId!=='string'||!clientId.endsWith('.apps.googleusercontent.com')||clientId.length>200||!vault)throw Error('Owner-configured Google desktop OAuth client required');
   this.#vault=vault;this.#request=request;this.#client=clientId;this.#reference=reference;this.onReference=onReference;
  }
- start(redirect){
+ #authorizationFromPending(){
+  const p=this.#pending;if(!p)throw Error('OAuth session is not pending');
+  const url=new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  for(const [k,v]of Object.entries({
+   client_id:this.#client,redirect_uri:p.redirect,response_type:'code',scope:SCOPE,state:p.state,
+   code_challenge:crypto.createHash('sha256').update(p.verifier).digest('base64url'),
+   code_challenge_method:'S256',access_type:'offline',prompt:'consent',
+  }))url.searchParams.set(k,v);
+  return {authorization_url:String(url),read_only:true,expires_at:p.expires,reused:true};
+ }
+ start(redirect,{forceNew=false}={}){
   const u=new URL(redirect);if(u.protocol!=='http:'||u.hostname!=='127.0.0.1'||u.pathname!=='/oauth/gmail/callback')throw Error('Pinned loopback callback required');
+  // Reuse an unexpired pending PKCE session so browser-launch retries do not
+  // invalidate a still-active authorization that the operator may complete.
+  if(!forceNew&&this.#pending&&this.#pending.expires>Date.now()&&this.#pending.redirect===redirect){
+   return this.#authorizationFromPending();
+  }
   const state=crypto.randomBytes(32).toString('base64url'),verifier=crypto.randomBytes(32).toString('base64url');
   this.#pending={state,verifier,redirect,expires:Date.now()+300000};
-  const url=new URL('https://accounts.google.com/o/oauth2/v2/auth');for(const [k,v]of Object.entries({client_id:this.#client,redirect_uri:redirect,response_type:'code',scope:SCOPE,state,code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256',access_type:'offline',prompt:'consent'}))url.searchParams.set(k,v);
-  return {authorization_url:String(url),read_only:true,expires_at:this.#pending.expires};
+  return {...this.#authorizationFromPending(),reused:false};
  }
  async #exchange(form){
   let response;
