@@ -94,11 +94,19 @@ function continuation(request, { activeGmailSearch = false } = {}) {
 
 function refuseMutations(request) {
   // Caller must already have established mail-related intent.
-  if (/\b(?:send|archive|delete|trash|label|mark\s+as\s+read|mark\s+read|forward|reply|draft)\b/i.test(request)) {
+  // Local "draft/compose an email" is handled by email-compose-intent (no Gmail write).
+  // Do not conflate local composition with send / Gmail Drafts / mailbox mutations.
+  if (/\b(?:draft|write|compose)\s+(?:an?\s+)?(?:email|mail|message|reply)\b/i.test(request)) {
+    return null;
+  }
+  if (/\b(?:send|archive|delete|trash|label|mark\s+as\s+read|mark\s+read|forward)\b/i.test(request)
+    || /\breply\b/i.test(request)
+    || /\bsave\s+(?:to\s+)?(?:gmail\s+)?drafts?\b/i.test(request)
+    || /\bsave\s+(?:this\s+)?(?:email|mail|message)\s+to\s+(?:gmail\s+)?drafts?\b/i.test(request)) {
     return {
       kind: 'clarify',
       route: 'CONNECTOR',
-      message: 'Gmail search is read-only. Sending, archiving, deleting, labeling, or drafting requires a separately governed capability.',
+      message: 'Gmail search is read-only. Sending, archiving, deleting, labeling, forwarding, or saving a Gmail Draft requires a separately governed Gmail write capability. Local email composition does not.',
     };
   }
   return null;

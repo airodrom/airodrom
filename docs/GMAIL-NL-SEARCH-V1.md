@@ -21,7 +21,7 @@ Examples (case/whitespace insensitive):
 - Show more / Show the next page (only when this authenticated Terminal conversation has an active Gmail search)
 - Show more GitHub emails (mail-explicit continuation; still requires a bound active search)
 
-Ambiguous “find all emails from …” asks for one clarification. Mutation verbs (send, archive, delete, label, …) are refused as read-only **only after** mail-related intent is established — ordinary WORK (“send the patch”, “delete the file”) is not hijacked.
+Ambiguous “find all emails from …” asks for one clarification. Mutation verbs (send, archive, delete, label, save to Gmail Drafts, …) are refused as read-only **only after** mail-related intent is established — ordinary WORK (“send the patch”, “delete the file”) is not hijacked. Local “draft/compose an email …” is **not** a Gmail mutation refusal; it routes to host [Memory-Grounded Email Composition](MEMORY-GROUNDED-EMAIL-COMPOSE-V1.md).
 
 Unrelated GitHub/repo discussion without mail language stays conversation/work routing. Generic “show more” without an active search in the current conversation stays conversation.
 
