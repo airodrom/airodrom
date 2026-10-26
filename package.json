@@ -313,6 +313,7 @@
     "src/apps/work-execution-adapter.js",
     "src/architecture-memory.js",
     "src/assistant-connectors.js",
+    "src/assistant-intent-text.js",
     "src/assistant-intent.js",
     "src/assistant-missions.js",
     "src/assistant-render.js",
