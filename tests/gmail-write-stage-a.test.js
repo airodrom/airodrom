@@ -275,3 +275,26 @@ test('encodeRaw and recipient parsing stay bounded', () => {
   assert.deepEqual(parseAddressList('Ada <ada@example.com>', 'to'), ['ada@example.com']);
   assert.throws(() => parseAddressList(Array.from({ length: 25 }, (_, i) => `u${i}@ex.com`), 'to'));
 });
+
+test('Stage A gmail-write modules are on package and release allowlists; MCP trash stays inactive', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const release = new Set(JSON.parse(fs.readFileSync(path.join(root, 'release-files.json'), 'utf8')));
+  const policy = JSON.parse(fs.readFileSync(path.join(root, 'config/capability-policy-v2.json'), 'utf8'));
+  for (const file of [
+    'src/gmail-write-connector.js',
+    'src/gmail-write-intent.js',
+    'src/gmail-write-service.js',
+    'src/gmail-write-session.js',
+    'docs/GOOGLE-WORKSPACE-STAGE-A-V1.md',
+    'tests/gmail-write-stage-a.test.js',
+  ]) {
+    assert.ok(release.has(file), file + ' missing from release-files.json');
+    assert.ok(pkg.files.includes(file), file + ' missing from package.json files');
+  }
+  assert.equal(policy.capabilities.gmail_trash.active, false);
+  assert.equal(policy.capabilities.gmail_trash.riskClass, 'DESTRUCTIVE');
+  assert.equal(policy.capabilities.gmail_send.active, false);
+});
