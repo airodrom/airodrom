@@ -108,6 +108,7 @@ class ControlServer {
   #wireAssistantConnectors() {
     if (!this.gmailOAuth) return;
     const { whatsappSource } = require('./whatsapp-inbound');
+    const writeQual = require('./gmail-write-qualification');
     this.bridge.assistantConnectors = new (require('./assistant-connectors').AssistantConnectors)({
       gmail: this.gmailOAuth.configuration(),
       secrets: { resolve: () => this.gmailOAuth.resolve() },
@@ -124,6 +125,8 @@ class ControlServer {
           read_only: !!st.read_only,
         };
       },
+      // write_qualified only from durable provider-confirmed send evidence — never from OAuth alone.
+      writeQualified: () => writeQual.isWriteQualified(this.bridge?.controlStore?.db || null),
       ...whatsappSource(this.bridge)
     });
   }

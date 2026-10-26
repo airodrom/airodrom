@@ -10,12 +10,12 @@
 
 | Claim | State |
 | --- | --- |
-| Installed tip | `b182fa4` (Gmail NL search live-qualified read-only; Calendar Desktop configured) |
-| Integrated source candidate | PR [#240](https://github.com/airodrom/airodrom/pull/240) (`integrate/unified-recovery-workspace-v1`) = #238 → #239 → #237 |
-| Memory-grounded local email composition | Source on #239 / #240 — **not installed** until authorized cutover |
-| Gmail / Calendar Stage A writes | Source on #237 / #240 — **not** `write_qualified` without owner OAuth + provider confirmation |
-| Local date / `port_status` NL routing | Capability exists (`port_status`); NL still falls through to conversation — Priority 1 gap |
-| Semantic Capability Rail (§20) | **Partial (CI V2)** — host facts (P1) + allowlisted contextual compositions (P2) on installed tip after authorized cutover; not a general unrestricted agent |
+| Installed tip | `28baa92` (#242 contextual assistant + host facts) — Gmail/Calendar connected read-only; `write_qualified=false` until owner send consent + provider-confirmed receipt |
+| Prior integrations | #241 host-facts · #240 unified recovery · #237 Stage A writes |
+| Personal Assistant E2E composition | Source on `feat/personal-assistant-e2e-v1` — calendar→Memory→local draft→Gmail preview; send only via `/gmail confirm` |
+| Gmail `write_qualified` | Durable evidence table after provider-confirmed send — **never** from OAuth scope alone; live qualification owner-gated |
+| Developer Autonomy | Pending enrollment request presented in Control Center; `confirmed` stays false until authenticated owner enroll |
+| Semantic Capability Rail (§20) | Allowlisted compositions only (MEMORY_DATE / CALENDAR_FOLLOWUP / MEETING_FOLLOWUP_SEND / HEALTH_EXPLAIN); not a general unrestricted agent |
 
 ---
 

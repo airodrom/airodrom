@@ -6,9 +6,13 @@ const {hasReadCapability,hasSendScope,hasModifyScope,READ_SCOPE}=require('./gmai
 const ID=/^[A-Za-z0-9_.:-]{1,200}$/;
 const clean=value=>{const raw=String(value||'');if(secret(raw))return '[Sensitive content withheld]';return require('./secret-observation').redactText(require('node:util').stripVTControlCharacters(raw).slice(0,4000));};
 class AssistantConnectors {
- #gmail; #whatsapp; #secret; #request; #liveGmail=false; #connectedProbe=null; #capabilities=null;
- constructor({gmail=null,whatsapp=null,secrets=null,request=fetch,connected=null,capabilities=null}={}){
-  this.#gmail=gmail;this.#whatsapp=whatsapp;this.#secret=secrets;this.#request=request;this.#connectedProbe=connected;this.#capabilities=capabilities;
+ #gmail; #whatsapp; #secret; #request; #liveGmail=false; #connectedProbe=null; #capabilities=null; #writeQualifiedProbe=null;
+ constructor({gmail=null,whatsapp=null,secrets=null,request=fetch,connected=null,capabilities=null,writeQualified=null}={}){
+  this.#gmail=gmail;this.#whatsapp=whatsapp;this.#secret=secrets;this.#request=request;this.#connectedProbe=connected;this.#capabilities=capabilities;this.#writeQualifiedProbe=writeQualified;
+ }
+ #writeQualified(){
+  if(typeof this.#writeQualifiedProbe!=='function')return false;
+  try{return this.#writeQualifiedProbe()===true;}catch{return false;}
  }
  #caps(){
   if(typeof this.#capabilities==='function'){
@@ -35,11 +39,15 @@ class AssistantConnectors {
   if(oauthClient&&this.#liveGmail&&connected)state='live_qualified';
   else if(oauthClient&&connected)state='connected';
   else if(oauthClient)state='configured';
+  const writeQualified=this.#writeQualified();
   const writeHint=caps.can_modify
    ?'Manage consent present — governed send/archive/label/trash use host preview confirmation (/gmail confirm).'
    :(caps.can_send
     ?'Send consent present — governed outbound send/draft use host preview confirmation. Mailbox modify needs /connect gmail manage.'
     :'No send/archive/label until /connect gmail send or /connect gmail manage.');
+  const writeQualHint=writeQualified
+   ?' write_qualified=true from a durable provider-confirmed send receipt.'
+   :' write_qualified stays false until a provider-confirmed governed send receipt is recorded.';
   return {items:[{
    id:'gmail',
    protocol:'Google Gmail API / OAuth 2.0',
@@ -51,12 +59,12 @@ class AssistantConnectors {
    can_send:!!caps.can_send,
    can_modify:!!caps.can_modify,
    mode:caps.mode||'readonly',
-   write_qualified:false,
+   write_qualified:writeQualified,
    live_qualified:this.#liveGmail&&connected,
    setup:connected
     ?(this.#liveGmail
-      ?(`Gmail reads are live-qualified for bounded list/search/read in this process. ${writeHint}`)
-      :(`OAuth credentials appear usable. Run a bounded Gmail search/read to live-qualify. Presence alone is not live access. ${writeHint}`))
+      ?(`Gmail reads are live-qualified for bounded list/search/read in this process. ${writeHint}${writeQualHint}`)
+      :(`OAuth credentials appear usable. Run a bounded Gmail search/read to live-qualify. Presence alone is not live access. ${writeHint}${writeQualHint}`))
     :(oauthClient
       ?'OAuth client is configured. Account consent still required via /connect gmail [send|manage]. Saved references are not live access.'
       :'Requires owner-configured OAuth Gmail credential reference. No account connected by qualification.'),

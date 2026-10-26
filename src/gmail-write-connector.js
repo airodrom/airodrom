@@ -68,15 +68,20 @@ function encodeRaw({
 }
 
 class GmailWriteConnector {
-  #oauth; #request; #profileEmail = null;
+  #oauth; #request; #profileEmail = null; #writeQualifiedProbe = null;
 
-  constructor({ oauth = null, request = fetch } = {}) {
+  constructor({ oauth = null, request = fetch, writeQualified = null } = {}) {
     this.#oauth = oauth;
     this.#request = request;
+    this.#writeQualifiedProbe = writeQualified;
   }
 
   status() {
     const st = this.#oauth?.status?.() || {};
+    let write_qualified = false;
+    if (typeof this.#writeQualifiedProbe === 'function') {
+      try { write_qualified = this.#writeQualifiedProbe() === true; } catch { write_qualified = false; }
+    }
     return {
       id: 'gmail_write',
       can_send: !!st.can_send,
@@ -85,7 +90,7 @@ class GmailWriteConnector {
       mode: st.mode || 'readonly',
       scope: st.scope || READ_SCOPE,
       read_only: st.read_only !== false && !st.can_write,
-      write_qualified: false,
+      write_qualified,
       authority: false,
     };
   }

@@ -43,6 +43,29 @@ function parse(request) {
     };
   }
 
+  // CALENDAR + MEMORY + LOCAL_DRAFT + GMAIL_PREVIEW (approval-gated send)
+  // "Find tomorrow's meeting, draft a follow-up email using my company information, show me the preview, and send it only after I approve."
+  if (
+    /\b(?:meeting|meetings|event|events|appointment)\b/i.test(text)
+    && /\btomorrow\b/i.test(text)
+    && /\b(?:draft|write|compose)\b/i.test(text)
+    && /\b(?:follow[- ]?up|email|mail|message)\b/i.test(text)
+    && /\b(?:company\s+information|company(?:['’]s)?\s+(?:address|info)|business\s+address)\b/i.test(text)
+    && (/\b(?:preview|approve|approval|confirm)\b/i.test(text) || /\bsend\b.*\bafter\b/i.test(text))
+  ) {
+    const toEmail = /\bto\s+(\S+@\S+)\b/i.exec(text);
+    return {
+      kind: 'contextual_assistant',
+      composition: 'MEETING_FOLLOWUP_SEND',
+      plan: ['calendar_tomorrow', 'memory_company', 'local_compose', 'gmail_preview'],
+      route: 'CONTEXTUAL_ASSISTANT',
+      host_verified: true,
+      day: 'tomorrow',
+      to: toEmail ? toEmail[1] : null,
+      raw: text,
+    };
+  }
+
   // CALENDAR_TOMORROW + LOCAL_COMPOSE_FOLLOWUP
   // "Find my meeting tomorrow and draft a follow-up email."
   if (

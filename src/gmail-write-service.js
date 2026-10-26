@@ -26,7 +26,11 @@ function stageOpts(server, conversation_id) {
 function writeConnector(server) {
   if (!server.gmailOAuth) return null;
   if (!server.gmailWriteConnector) {
-    server.gmailWriteConnector = new GmailWriteConnector({ oauth: server.gmailOAuth });
+    const writeQual = require('./gmail-write-qualification');
+    server.gmailWriteConnector = new GmailWriteConnector({
+      oauth: server.gmailOAuth,
+      writeQualified: () => writeQual.isWriteQualified(server.bridge?.controlStore?.db || server.gmailWriteDb || null),
+    });
   }
   return server.gmailWriteConnector;
 }
@@ -476,6 +480,25 @@ async function run(server, parsed, {
           operator: 'operator',
           claim_token,
         });
+        // Durable write qualification: only provider-confirmed send with message id.
+        if (receipt?.action === 'sent' && receipt?.provider_confirmed === true) {
+          const messageId = receipt?.item?.message_id || receipt?.item?.id || null;
+          const account = receipt?.item?.account || null;
+          if (messageId) {
+            try {
+              require('./gmail-write-qualification').recordSendQualification(
+                server.bridge?.controlStore?.db || server.gmailWriteDb || null,
+                {
+                  operation_id: receipt.operation_id || id,
+                  preview_id: id,
+                  provider_message_id: String(messageId),
+                  account_email: account,
+                  synthetic: receipt.synthetic === true || receipt.fixture === true,
+                },
+              );
+            } catch { /* qualification store optional in fixtures */ }
+          }
+        }
         return receipt;
       }
 
