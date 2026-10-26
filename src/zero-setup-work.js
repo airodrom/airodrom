@@ -378,34 +378,49 @@ class ZeroSetupWork {
     // exact two-file fixture grammar. Resolve the named repository first.
     let enrolledCursorScope = null;
     if (!workSpec && sandbox.explicitlyRequestsCursor(instruction)) {
-      // Host Cursor disable outranks enrollment clarify so disabled execution never
-      // looks like a missing cognitive enrollment or Local OpenCode fallback.
-      if (this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
-        const record = {
-          version: 1, instruction, clarify: true, authority: false,
-          requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
-          intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
-          presentation: {
-            worker: 'cursor', files: [], measurable: false,
-            status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
-          },
-        };
-        this.write(request_id, principal, record, 'blocked');
-        return {
-          state: 'BLOCKED',
-          code: 'CURSOR_EXECUTION_DISABLED',
-          message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
-          blockers: ['CURSOR_EXECUTION_DISABLED'],
-          authority: false,
-          execution_authorized: false,
-          requested_specialist: 'cursor',
-          planner: 'opencode',
-          evaluator: 'opencode',
-          next_action: 'enable_cursor_via_authenticated_local_api',
-          presentation: record.presentation,
-        };
-      }
       const enrolled = this.resolveEnrolledProject(instruction);
+      // When standing DA or Autopilot already covers a recognized project, disabled
+      // Cursor fails closed as BLOCKED before cognitive-enrollment clarify can look
+      // like a Local OpenCode fallback. Ambiguous/unenrolled/projectless selectors
+      // keep their precise clarify codes.
+      if (this.bridge.hostExecutionPolicy?.cursorDisabled?.() && enrolled.project) {
+        let standingCover = false;
+        try {
+          const policies = this.bridge.developerAutonomy?.list?.('operator') || [];
+          standingCover = policies.some(p => p && p.state === 'active'
+            && (!enrolled.workspace || p.repository === enrolled.workspace
+              || (() => { try { return require('node:fs').realpathSync(p.repository) === enrolled.workspace; } catch { return false; } })()));
+        } catch { standingCover = false; }
+        if (!standingCover) standingCover = !!this.bridge.globalAutopilot?.enabled?.();
+        if (standingCover) {
+          const record = {
+            version: 1, instruction, clarify: true, authority: false,
+            project_id: enrolled.project.projectId, project_name: enrolled.project.name,
+            workspace: enrolled.workspace || null,
+            requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+            intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
+            presentation: {
+              worker: 'cursor', files: [], measurable: false,
+              project_name: enrolled.project.name,
+              status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
+            },
+          };
+          this.write(request_id, principal, record, 'blocked');
+          return {
+            state: 'BLOCKED',
+            code: 'CURSOR_EXECUTION_DISABLED',
+            message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+            blockers: ['CURSOR_EXECUTION_DISABLED'],
+            authority: false,
+            execution_authorized: false,
+            requested_specialist: 'cursor',
+            planner: 'opencode',
+            evaluator: 'opencode',
+            next_action: 'enable_cursor_via_authenticated_local_api',
+            presentation: record.presentation,
+          };
+        }
+      }
       if (!enrolled.ok) {
         const record = {
           version: 1, instruction, clarify: enrolled, authority: false,
@@ -525,35 +540,6 @@ class ZeroSetupWork {
         try { return require('./cognitive-router').requestedWorker(instruction, { cursorDisabled: false }) === 'cursor'; }
         catch { return false; }
       })();
-    // Explicit Cursor with host execution disabled fails closed before enrollment
-    // clarify paths can present Local OpenCode or ask for cognitive setup.
-    if (wantsCursorEarly && this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
-      const record = {
-        version: 1, instruction, intent, clarify: true, authority: false,
-        project_id: project.projectId, project_name: project.name, workspace,
-        requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
-        intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
-        presentation: {
-          worker: 'cursor', files: intent.file ? [intent.file] : [], measurable: false,
-          project_name: project.name, workspace_label: readablePath(workspace),
-          status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
-        },
-      };
-      this.write(request_id, principal, record, 'blocked');
-      return {
-        state: 'BLOCKED',
-        code: 'CURSOR_EXECUTION_DISABLED',
-        message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
-        blockers: ['CURSOR_EXECUTION_DISABLED'],
-        authority: false,
-        execution_authorized: false,
-        requested_specialist: 'cursor',
-        planner: 'opencode',
-        evaluator: 'opencode',
-        next_action: 'enable_cursor_via_authenticated_local_api',
-        presentation: record.presentation,
-      };
-    }
     const selectStanding = (policies) => {
       if (scope.developer_autonomy_policy_id) {
         return policies.find(policy => policy.policy_id === scope.developer_autonomy_policy_id) || null;
