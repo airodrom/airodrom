@@ -189,3 +189,13 @@ test('incomplete Send the email clarifies on GMAIL_WRITE rail', () => {
   assert.match(parsed.message, /preview|recipient|\/gmail confirm|gmail\.send|send/i);
   assert.doesNotMatch(parsed.message, /Gmail search is read-only/i);
 });
+
+test('gmail_write_ops is classified in memory retention registry', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const reg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config/memory-retention-fields.json'), 'utf8'));
+  assert.ok(reg.gmail_write_ops);
+  assert.ok(reg.gmail_write_ops.fields.includes('preview_id'));
+  assert.ok(reg.gmail_write_ops.fields.includes('proposal_json'));
+  assert.equal(reg.gmail_write_ops.source, 'src/gmail-write-session.js');
+});
