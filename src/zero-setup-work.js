@@ -153,6 +153,23 @@ class ZeroSetupWork {
       return { ok: true, projectless: true, project: null, workspace: null };
     }
     if (!resolved.ok) {
+      // Autopilot creates the standing policy at ask-time. Named project + live
+      // default workspace still resolve so Autopilot intake is not blocked on a
+      // pre-existing DA enrollment.
+      if (resolved.project && resolved.workspace
+          && this.bridge.globalAutopilot?.enabled?.()
+          && (resolved.code === 'ENROLLED_WORKSPACE_REQUIRED' || resolved.code === 'STANDING_ENROLLMENT_REQUIRED')
+          && defaultProjectIds.has(resolved.project.projectId || resolved.project.project_id)) {
+        return {
+          ok: true,
+          project: resolved.project,
+          workspace: resolved.workspace,
+          projectless: false,
+          policy: null,
+          selector_kind: resolved.selector_kind || 'project_name',
+          autopilot_pending_policy: true,
+        };
+      }
       return {
         ok: false,
         clarify: true,
@@ -362,6 +379,48 @@ class ZeroSetupWork {
     let enrolledCursorScope = null;
     if (!workSpec && sandbox.explicitlyRequestsCursor(instruction)) {
       const enrolled = this.resolveEnrolledProject(instruction);
+      // When standing DA or Autopilot already covers a recognized project, disabled
+      // Cursor fails closed as BLOCKED before cognitive-enrollment clarify can look
+      // like a Local OpenCode fallback. Ambiguous/unenrolled/projectless selectors
+      // keep their precise clarify codes.
+      if (this.bridge.hostExecutionPolicy?.cursorDisabled?.() && enrolled.project) {
+        let standingCover = false;
+        try {
+          const policies = this.bridge.developerAutonomy?.list?.('operator') || [];
+          standingCover = policies.some(p => p && p.state === 'active'
+            && (!enrolled.workspace || p.repository === enrolled.workspace
+              || (() => { try { return require('node:fs').realpathSync(p.repository) === enrolled.workspace; } catch { return false; } })()));
+        } catch { standingCover = false; }
+        if (!standingCover) standingCover = !!this.bridge.globalAutopilot?.enabled?.();
+        if (standingCover) {
+          const record = {
+            version: 1, instruction, clarify: true, authority: false,
+            project_id: enrolled.project.projectId, project_name: enrolled.project.name,
+            workspace: enrolled.workspace || null,
+            requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+            intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
+            presentation: {
+              worker: 'cursor', files: [], measurable: false,
+              project_name: enrolled.project.name,
+              status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
+            },
+          };
+          this.write(request_id, principal, record, 'blocked');
+          return {
+            state: 'BLOCKED',
+            code: 'CURSOR_EXECUTION_DISABLED',
+            message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+            blockers: ['CURSOR_EXECUTION_DISABLED'],
+            authority: false,
+            execution_authorized: false,
+            requested_specialist: 'cursor',
+            planner: 'opencode',
+            evaluator: 'opencode',
+            next_action: 'enable_cursor_via_authenticated_local_api',
+            presentation: record.presentation,
+          };
+        }
+      }
       if (!enrolled.ok) {
         const record = {
           version: 1, instruction, clarify: enrolled, authority: false,

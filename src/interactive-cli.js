@@ -489,7 +489,8 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       pendingPaste = null;
       if (quitting) break;
       const {value:rawValue,command,arg,json}=parseLine(line);
-      const value=String(rawValue||'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,' ').trim();
+      // Preserve newlines from ordinary multiline paste; collapse only horizontal whitespace.
+      const value=String(rawValue||'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/[^\S\n]+/g,' ').replace(/ ?\n ?/g,'\n').trim();
       if (!value) { nameOffered=false;await refreshName();readerLocked=false;showPrompt(); continue; }
       try {
         const ingress=require('./assistant-intent').parse(value,{nickname:assistantNickname});

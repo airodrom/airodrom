@@ -57,11 +57,14 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  // Keep newlines until after the pasted-command guard so control lines stay fail-closed.
  value=value.replace(/[\u200B-\u200D\uFEFF]/g,'');
  if(!value.trim())throw Error('Invalid assistant input');
- // A pasted control command cannot be silently embedded in a model prompt.
- if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
- value=value.replace(/\s+/g,' ').trim();
- const storage=require('./personal-storage-intent');
- const request=storage.normalize(value,assistantNickname);
+  // A pasted control command cannot be silently embedded in a model prompt.
+  if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
+  // Strict projectless packets keep exact newlines for ZeroSetupWork JSON bodies.
+  const workPacket=value.trim();
+  if(/^AIRODROM_WORK_V1\b/.test(workPacket))return route('WORK',{kind:'work',objective:workPacket,capability_classes:['repo','developer_environment']});
+  value=value.replace(/\s+/g,' ').trim();
+  const storage=require('./personal-storage-intent');
+  const request=storage.normalize(value,assistantNickname);
  const forgetId=/^forget\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.exec(request);
  if(forgetId)return route('MEMORY',{kind:'forget',selection:forgetId[1]});
  const privateIntent=require('./private-vault-intent').parse(request);
@@ -135,10 +138,7 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  if(/^(?:log|record|track)\s+(?:a\s+)?(?:job\s+)?application\b/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'upsert',raw:request});
  if(/^(?:find|identify)\s+(?:recruiter|recruiters)\b/i.test(request)||/^categorize\s+(?:job\s+)?(?:mail|email|gmail)\b/i.test(request))return route('JOB_SEARCH',{kind:'job_search',action:'recruiters'});
  if(/^(?:enable|turn on|disable|turn off)\s+(?:global\s+)?autopilot\b/i.test(request)||/^(?:read|show|what(?:'s| is))\s+(?:my\s+)?(?:settings|autonomy(?: mode)?|service status|expanded autonomy)\b/i.test(request)||/^(?:select|set)\s+(?:autonomy|expanded autonomy)\s+mode\b/i.test(request))return route('OPERATOR',{kind:'operator_control',objective:request,capability_classes:[]});
- // Strict projectless packet: host ZeroSetupWork parses the marker; chat must not
- // treat it as ordinary conversation (MCP prepare_mission already bypasses intent).
- if(/^AIRODROM_WORK_V1\b/.test(request))return route('WORK',{kind:'work',objective:value,capability_classes:['repo','developer_environment']});
- if(isWorkRequest(request))return route('WORK',{kind:'work',objective:request,capability_classes:workCapabilities(request)});
+  if(isWorkRequest(request))return route('WORK',{kind:'work',objective:request,capability_classes:workCapabilities(request)});
  if(/^(?:do|handle|take care of)\s+(?:it|this|that)$/i.test(request))return {kind:'clarify',message:'Do you want to talk it through or create a Work Mission?'};
  if(/^(?:check|read|show|open)\s+(?:my\s+)?(?:inbox|messages|email|emails|mail)$/i.test(request))return route('CONNECTOR',{kind:'clarify',message:'Should I check Gmail or the official WhatsApp connector?'});
  return route('CONVERSATION',{kind:'conversation',message:value});

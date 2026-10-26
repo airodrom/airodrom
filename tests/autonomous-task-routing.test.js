@@ -45,11 +45,13 @@ test('qualified cursor can be selected for public work and unqualified cursor fa
 });
 
 test('operator settings stay off the coding workspace path', () => {
-  for (const message of ['Enable Autopilot', 'Read settings', 'Show service status', 'Select autonomy mode routine']) {
+  for (const message of ['Enable Autopilot', 'Read settings', 'Select autonomy mode routine']) {
     const parsed = intent.parse(message);
     assert.equal(parsed.kind, 'operator_control');
     assert.deepEqual(parsed.capability_classes, []);
   }
+  // Service/health status is the host-fact rail (not coding WORK, not a free conversation guess).
+  assert.equal(intent.parse('Show service status').kind, 'host_fact');
   assert.equal(intent.parse('Fix fixture.txt in the repository').kind, 'work');
 });
 

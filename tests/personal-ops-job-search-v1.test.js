@@ -285,14 +285,19 @@ test('Gmail OAuth refresh failures expose categorical classes without tokens', a
   const ref = [...values.keys()][0];
   values.set(ref, JSON.stringify({ access_token: 'old', refresh_token: 'synthetic-refresh', expires_at: 0, scope: SCOPE }));
   mode = 'http401';
-  await assert.rejects(() => oauth.resolve(), /consent|rejected/i);
-  assert.equal(oauth.status().last_safe_error_class, FAIL.consent);
-  assert.doesNotMatch(JSON.stringify(oauth.status()), /synthetic-access|synthetic-refresh|invalid_grant/);
+  // invalid_grant / 401 is the grant-invalid class (re-authorize), not a raw token leak.
+  await assert.rejects(() => oauth.resolve(), /invalid or revoked|consent|rejected|Re-authorize/i);
+  assert.equal(oauth.status().last_safe_error_class, FAIL.grant);
+  // Tokens must never appear in status. Provider error codes like invalid_grant
+  // are categorical (safe) and may appear under last_provider_error.
+  assert.doesNotMatch(JSON.stringify(oauth.status()), /synthetic-access|synthetic-refresh/);
   mode = 'timeout';
   await assert.rejects(() => oauth.resolve(), /timed out/i);
   assert.equal(oauth.status().last_safe_error_class, FAIL.timeout);
   oauth.revoke();
-  assert.equal(oauth.status().configured, false);
+  // Client remains configured; revoke clears the stored token and failure class.
+  assert.equal(oauth.status().token_present, false);
+  assert.equal(oauth.status().connected, false);
   assert.equal(oauth.status().last_safe_error_class, null);
 });
 

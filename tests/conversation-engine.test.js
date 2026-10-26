@@ -144,6 +144,18 @@ test('SAVE_CLAIM allows discussion language and rejects asserted save success', 
   assert.equal(SAVE_CLAIM.test('If I saved an address, it would remain local.'), false);
 });
 
+test('SAVE_DENIAL rejects unsolicited inability claims and allows permission hedges', () => {
+  const engineSrc = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/conversation-engine.js'), 'utf8');
+  const match = /const SAVE_DENIAL=(.+);/.exec(engineSrc);
+  assert.ok(match);
+  const SAVE_DENIAL = eval(match[1]); // eslint-disable-line no-eval
+  assert.equal(SAVE_DENIAL.test("I don't have the ability to store personal information."), true);
+  assert.equal(SAVE_DENIAL.test('I have no ability to save that.'), true);
+  assert.equal(SAVE_DENIAL.test('Airodrom cannot store credentials in chat.'), true);
+  assert.equal(SAVE_DENIAL.test('I cannot save without permission.'), false);
+  assert.equal(SAVE_DENIAL.test('I cannot save information without your explicit permission.'), false);
+});
+
 test('output policy rejection surfaces as content_policy', async t => {
   const { OpenAICompatibleProvider } = require('../src/apps/openai-compatible-provider');
   const profile = require('../src/provider-profiles').initialProfiles().find((p) => p.id === 'ollama');

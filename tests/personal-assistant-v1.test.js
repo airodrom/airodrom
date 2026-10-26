@@ -5,7 +5,13 @@ const {fixture}=require('./fixtures/mission-fixture.cjs'),{runtime,qualifyCanoni
 const {AssistantConnectors,officialInbound}=require('../src/assistant-connectors');
 const {conversationOptions}=require('./fixtures/direct-conversation-fixture.cjs');
 async function setup(t,canonical=false){const r=runtime(t),f=await fixture(t,{opencode:r.options});if(canonical)qualifyCanonical(f.bridge);const direct=conversationOptions(),conversationInputs=[],server=new ControlServer(f.bridge,{port:0,conversationOptions:{...direct,request:async(url,options)=>{conversationInputs.push(JSON.parse(options.body));return direct.request(url,options);}}});await server.start();t.after(()=>server.close());return {...f,server,conversationInputs,settleChat:async receipt=>{await server.conversationEngine.active.get(receipt.turn_id)?.promise;return server.conversationEngine.result({conversation_id:receipt.conversation_id,turn_id:receipt.turn_id});},post:async(route,body)=>{const response=await fetch(server.origin+route,{method:'POST',headers:{Authorization:'Bearer '+server.token,'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:response.status,body:await response.json()};}};}
-for(const [input,kind]of [['Remember that my name is Aurora.','remember'],['Please remember I prefer TypeScript','remember'],['Forget my name','forget'],['What do you remember about my name?','recall'],['Explain promises','conversation'],['Edit the repository','work'],['Send the email','work'],['My API key is synthetic','secret'],['Remember my private account value is 4827','sensitive'],['hello/quit','clarify'],['Hi\n/quit','clarify'],['Summarize unread email','connector']])test('deterministic ingress: '+kind+' / '+input.split(' ')[0],()=>assert.equal(intent.parse(input).kind,kind));
+for(const [input,kind]of [['Remember that my name is Aurora.','remember'],['Please remember I prefer TypeScript','remember'],['Forget my name','forget'],['What do you remember about my name?','recall'],['Explain promises','conversation'],['Edit the repository','work'],['Send the email','clarify'],['My API key is synthetic','secret'],['Remember my private account value is 4827','sensitive'],['hello/quit','clarify'],['Hi\n/quit','clarify'],['Summarize unread email','connector']])test('deterministic ingress: '+kind+' / '+input.split(' ')[0],()=>assert.equal(intent.parse(input).kind,kind));
+test('incomplete Send the email clarifies rather than inventing WORK authority',()=>{
+ const parsed=intent.parse('Send the email');
+ assert.equal(parsed.kind,'clarify');
+ assert.match(parsed.message||'',/read-only|write capability|Local email composition|Gmail search/i);
+});
+
 for(const canonical of [false,true])test('natural memory supersedes and forget invalidates fresh retrieval / canonical '+canonical,async t=>{
  const f=await setup(t,canonical),b=f.bridge;
  const submit=message=>service.submit(f.server,{message,request_id:crypto.randomUUID(),include_memory:true});
