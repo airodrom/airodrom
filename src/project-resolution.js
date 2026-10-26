@@ -573,8 +573,25 @@ function resolveEnrolledScope(instruction, {
   }
 
   // 3) Exact project full name
-  const namedExact = matchNamedProjects(instruction, liveProjects)
+  const namedExactRaw = matchNamedProjects(instruction, liveProjects)
     .filter(hit => hit.mention?.kind === 'full_name');
+  // Drop shorter full-name hits whose span overlaps a longer matched name in the
+  // same instruction ("Fixture project" inside "Self-Repair Scope Fixture project").
+  // Genuinely separate exact names remain ambiguous below.
+  const namedExact = (() => {
+    const lower = String(instruction || '').toLowerCase();
+    const spans = namedExactRaw.map(hit => {
+      const name = String(hit.project.name || '').toLowerCase();
+      const idx = lower.indexOf(name);
+      return { hit, name, idx, end: idx < 0 ? -1 : idx + name.length, len: name.length };
+    }).filter(s => s.idx >= 0).sort((a, b) => b.len - a.len || a.idx - b.idx);
+    const kept = [];
+    for (const cand of spans) {
+      if (kept.some(k => !(cand.end <= k.idx || cand.idx >= k.end))) continue;
+      kept.push(cand);
+    }
+    return kept.map(s => s.hit);
+  })();
   // Distinct exact project names in one instruction are ambiguous — do not
   // break ties by name length (that helper is for nested Arecibo-style names).
   const distinctExactIds = new Set(namedExact.map(h => h.project.projectId || h.project.project_id));

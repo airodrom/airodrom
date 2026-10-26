@@ -761,7 +761,10 @@ class DeveloperAutonomy {
     const s = fs.statSync(repository);
     const p = this.bridge.projects.getProject(input.project_id);
     const g = this.bridge.projects.getGoal(input.goal_id);
-    if (p.status === 'archived' || g.projectId !== p.projectId || !p.repositories.includes(repository)) {
+    const projectRepos = (p.repositories || []).map(root => {
+      try { return fs.realpathSync(root); } catch { return root; }
+    });
+    if (p.status === 'archived' || g.projectId !== p.projectId || !projectRepos.includes(repository)) {
       throw Error('Project, goal and repository boundary mismatch');
     }
 
@@ -847,7 +850,10 @@ class DeveloperAutonomy {
     if (s.dev !== t.identity.dev || s.ino !== t.identity.ino) throw Error('Repository identity changed');
     const p = this.bridge.projects.getProject(t.project_id);
     const g = this.bridge.projects.getGoal(t.goal_id);
-    if (p.status === 'archived' || g.projectId !== p.projectId || !p.repositories.includes(t.repository)) {
+    const projectRepos = (p.repositories || []).map(root => {
+      try { return fs.realpathSync(root); } catch { return root; }
+    });
+    if (p.status === 'archived' || g.projectId !== p.projectId || !projectRepos.includes(t.repository)) {
       throw Error('Project, goal and repository boundary mismatch');
     }
     this.assertVerifiers(t, t.repository);

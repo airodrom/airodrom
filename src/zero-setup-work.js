@@ -153,6 +153,23 @@ class ZeroSetupWork {
       return { ok: true, projectless: true, project: null, workspace: null };
     }
     if (!resolved.ok) {
+      // Autopilot creates the standing policy at ask-time. Named project + live
+      // default workspace still resolve so Autopilot intake is not blocked on a
+      // pre-existing DA enrollment.
+      if (resolved.project && resolved.workspace
+          && this.bridge.globalAutopilot?.enabled?.()
+          && (resolved.code === 'ENROLLED_WORKSPACE_REQUIRED' || resolved.code === 'STANDING_ENROLLMENT_REQUIRED')
+          && defaultProjectIds.has(resolved.project.projectId || resolved.project.project_id)) {
+        return {
+          ok: true,
+          project: resolved.project,
+          workspace: resolved.workspace,
+          projectless: false,
+          policy: null,
+          selector_kind: resolved.selector_kind || 'project_name',
+          autopilot_pending_policy: true,
+        };
+      }
       return {
         ok: false,
         clarify: true,
@@ -361,6 +378,33 @@ class ZeroSetupWork {
     // exact two-file fixture grammar. Resolve the named repository first.
     let enrolledCursorScope = null;
     if (!workSpec && sandbox.explicitlyRequestsCursor(instruction)) {
+      // Host Cursor disable outranks enrollment clarify so disabled execution never
+      // looks like a missing cognitive enrollment or Local OpenCode fallback.
+      if (this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
+        const record = {
+          version: 1, instruction, clarify: true, authority: false,
+          requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+          intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
+          presentation: {
+            worker: 'cursor', files: [], measurable: false,
+            status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
+          },
+        };
+        this.write(request_id, principal, record, 'blocked');
+        return {
+          state: 'BLOCKED',
+          code: 'CURSOR_EXECUTION_DISABLED',
+          message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+          blockers: ['CURSOR_EXECUTION_DISABLED'],
+          authority: false,
+          execution_authorized: false,
+          requested_specialist: 'cursor',
+          planner: 'opencode',
+          evaluator: 'opencode',
+          next_action: 'enable_cursor_via_authenticated_local_api',
+          presentation: record.presentation,
+        };
+      }
       const enrolled = this.resolveEnrolledProject(instruction);
       if (!enrolled.ok) {
         const record = {
@@ -481,6 +525,35 @@ class ZeroSetupWork {
         try { return require('./cognitive-router').requestedWorker(instruction, { cursorDisabled: false }) === 'cursor'; }
         catch { return false; }
       })();
+    // Explicit Cursor with host execution disabled fails closed before enrollment
+    // clarify paths can present Local OpenCode or ask for cognitive setup.
+    if (wantsCursorEarly && this.bridge.hostExecutionPolicy?.cursorDisabled?.()) {
+      const record = {
+        version: 1, instruction, intent, clarify: true, authority: false,
+        project_id: project.projectId, project_name: project.name, workspace,
+        requested_specialist: 'cursor', planner: 'opencode', evaluator: 'opencode',
+        intake_blockers: ['CURSOR_EXECUTION_DISABLED'],
+        presentation: {
+          worker: 'cursor', files: intent.file ? [intent.file] : [], measurable: false,
+          project_name: project.name, workspace_label: readablePath(workspace),
+          status: 'Cursor execution disabled in Airodrom; implementation waits for authorized enablement',
+        },
+      };
+      this.write(request_id, principal, record, 'blocked');
+      return {
+        state: 'BLOCKED',
+        code: 'CURSOR_EXECUTION_DISABLED',
+        message: 'Cursor execution is disabled in Airodrom. Re-enable Cursor from the authenticated Terminal or Control Center. An external Cursor subscription is unaffected.',
+        blockers: ['CURSOR_EXECUTION_DISABLED'],
+        authority: false,
+        execution_authorized: false,
+        requested_specialist: 'cursor',
+        planner: 'opencode',
+        evaluator: 'opencode',
+        next_action: 'enable_cursor_via_authenticated_local_api',
+        presentation: record.presentation,
+      };
+    }
     const selectStanding = (policies) => {
       if (scope.developer_autonomy_policy_id) {
         return policies.find(policy => policy.policy_id === scope.developer_autonomy_policy_id) || null;

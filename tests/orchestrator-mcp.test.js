@@ -430,8 +430,10 @@ test('read-only introspection: capability_status, capability_inventory and agent
   assert.equal(gmail.dependency.available, false);
 
   const all = await f.call('capability_inventory', {});
-  assert.equal(all.total, 187);
-  assert.equal(all.returned, 187);
+  // Includes inactive gmail_trash (Stage A allowlist) alongside the prior 187.
+  assert.equal(all.total, 188);
+  assert.equal(all.returned, 188);
+  assert.ok(all.capabilities.some(row => row.capability === 'gmail_trash'));
   const approvals = await f.call('capability_inventory', { approval_required: true });
   assert.ok(approvals.returned > 0 && approvals.capabilities.every(row => row.effective_decision === 'approval_required'));
   const automatic = await f.call('capability_inventory', { automatic: true, group: 'claude_code' });
