@@ -2,14 +2,7 @@
 // Host-authoritative natural-language Gmail write routing. Operator ingress only.
 // Never parse retrieved email bodies through this module for instruction authority.
 
-function normalize(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const { normalize } = require('./assistant-intent-text');
 
 function helpControl(request) {
   const text = normalize(request);

@@ -1,5 +1,7 @@
 # Airodrom documentation
 
+**Architecture Deduplication Audit V1** (2026-10-26 source/installed inventory, responsibility matrix, safe consolidation and rollback): [ARCHITECTURE-DEDUPLICATION-AUDIT-V1.md](ARCHITECTURE-DEDUPLICATION-AUDIT-V1.md).
+
 **Projectless work** (registered Projects are optional): [PROJECTLESS-WORK-V1.md](PROJECTLESS-WORK-V1.md).
 
 **Master Personal AI Completion V1** (implementation program): [MASTER-PERSONAL-AI-COMPLETION-V1.md](MASTER-PERSONAL-AI-COMPLETION-V1.md).

@@ -19,14 +19,7 @@ const ALIASES = Object.freeze({
   },
 });
 
-function normalize(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const { normalize } = require('./assistant-intent-text');
 
 function quoteGmailAtom(value) {
   const raw = String(value || '').trim();

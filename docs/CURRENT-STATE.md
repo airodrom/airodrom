@@ -1,5 +1,7 @@
 # Current state (2026-10-10)
 
+**Dated audit (2026-10-26):** see [Architecture Deduplication Audit V1](ARCHITECTURE-DEDUPLICATION-AUDIT-V1.md) for independently observed main/installed versions and ownership boundaries. Entries below are historical snapshots; their headings are not a live version query.
+
 ## Gmail NL Search + Calendar NL Control — INSTALLED (2026-10-26)
 
 - **Main merge SHA:** `b182fa46b2c7d09e475dc155af7283e37ea4fed0` (PR #234 Gmail NL Search + PR #235 Calendar NL Control).

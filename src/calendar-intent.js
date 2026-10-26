@@ -2,14 +2,7 @@
 // Host-authoritative natural-language Calendar routing. Operator ingress only.
 // Never parse retrieved event descriptions or invitation bodies through this module.
 
-function normalize(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const { normalize } = require('./assistant-intent-text');
 
 function dayToken(request) {
   if (/\btoday\b/i.test(request)) return 'today';
