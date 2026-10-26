@@ -63,7 +63,8 @@ async function submit(server,input){
  const context=session?pending.get(session):null;
  const activeGmailSearch=gmailSearchSessions(server).hasActive({conversation_id:input.conversation_id||null,operator:'operator'});
  const activeCalendarSession=!!require('./calendar-service').sessions(server).hasActive?.({conversation_id:input.conversation_id||null,operator:'operator'});
- const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:context?.mode,researchURL:context?.entry_url,activeGmailSearch,activeCalendarSession});
+ const activeEmailCompose=!!require('./email-compose-service').sessions(server).hasActive?.({conversation_id:input.conversation_id||null,operator:'operator'});
+ const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:context?.mode,researchURL:context?.entry_url,activeGmailSearch,activeCalendarSession,activeEmailCompose});
  if(session){
   pending.delete(session);
   if(parsed.pending_research||['research','research_session'].includes(parsed.kind)){
@@ -103,6 +104,9 @@ async function submit(server,input){
   confirm_id:parsed.preview_id||null,
   confirmed:parsed.confirmed===true,
   destructive:parsed.destructive===true,
+ });
+ if(parsed.kind==='email_compose')return require('./email-compose-service').run(server,parsed,{
+  conversation_id:input.conversation_id||null,
  });
  if(parsed.kind==='personal_ops'){
   const plan=require('./personal-ops').plan(server,parsed.message);

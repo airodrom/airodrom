@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Added
+- Memory-grounded local email composition: “draft an email … include my company address” retrieves ordinary Personal Memory V2 facts, produces a conversation-bound editable draft, and never claims Gmail save/send or demands Gmail write scopes ([docs/MEMORY-GROUNDED-EMAIL-COMPOSE-V1.md](docs/MEMORY-GROUNDED-EMAIL-COMPOSE-V1.md)).
 - Host-authoritative natural-language Gmail search with bounded pagination: phrases such as “Find all mails from GitHub” route to the authenticated connector without OpenCode; opaque continuation sessions bind operator, query and Gmail `nextPageToken` ([docs/GMAIL-NL-SEARCH-V1.md](docs/GMAIL-NL-SEARCH-V1.md)).
 - Google Calendar natural-language control V1: separate Calendar OAuth (`calendar.readonly` / manage `calendar.events`), host routing for control/schedule/freeBusy phrases, bounded reads, preview-gated writes, and credential-screening false-positive guards ([docs/GOOGLE-CALENDAR-NL-CONTROL-V1.md](docs/GOOGLE-CALENDAR-NL-CONTROL-V1.md)).
 

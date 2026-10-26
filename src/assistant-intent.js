@@ -51,7 +51,7 @@ function isWorkRequest(request) {
  }
  return false;
 }
-function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,activeGmailSearch=false,activeCalendarSession=false} = {}) {
+function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,activeGmailSearch=false,activeCalendarSession=false,activeEmailCompose=false} = {}) {
  if(typeof value!=='string'||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');
  // Strip invisible paste residue before empty/secret gates (ZWSP/BOM must not become a secret hit).
  // Keep newlines until after the pasted-command guard so control lines stay fail-closed.
@@ -101,6 +101,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  if(/^(?:check|read|show|open)\s+(?:my\s+)?gmail$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'recent'});
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
+ // Local email composition (Memory-grounded) — never Gmail send/Drafts.
+ const emailCompose=require('./email-compose-intent').parse(request,{activeCompose:activeEmailCompose===true});
+ if(emailCompose)return route('EMAIL_COMPOSE',emailCompose);
  // Deterministic sender/search Gmail retrieval — host connector only, never OpenCode.
  // Generic "show more" only when this conversation has an active Gmail search.
  const gmailSearch=require('./gmail-search-intent').parse(request,{activeGmailSearch:activeGmailSearch===true});
