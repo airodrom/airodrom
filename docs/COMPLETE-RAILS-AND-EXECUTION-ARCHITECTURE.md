@@ -15,7 +15,7 @@
 | Memory-grounded local email composition | Source on #239 / #240 — **not installed** until authorized cutover |
 | Gmail / Calendar Stage A writes | Source on #237 / #240 — **not** `write_qualified` without owner OAuth + provider confirmation |
 | Local date / `port_status` NL routing | Capability exists (`port_status`); NL still falls through to conversation — Priority 1 gap |
-| Semantic Capability Rail (§20) | **Architectural direction only** — not implemented as a general host rail |
+| Semantic Capability Rail (§20) | **Partial (CI V2)** — host facts (P1) + allowlisted contextual compositions (P2) on installed tip after authorized cutover; not a general unrestricted agent |
 
 ---
 
@@ -729,19 +729,19 @@ The host must validate every operation independently before execution.
 
 ### Priority 1 — Basic local factual capabilities
 
-Current date, time, timezone, host state and read-only diagnostics.
+**Implemented (PR #241):** current date, time, timezone, ports, Airodrom service inventory, and live health via the host-fact rail.
 
-### Priority 2 — Semantic tool selection
+### Priority 2 — Semantic tool selection / contextual compositions
 
-Natural-language requests can select existing eligible host capabilities.
+**Partial (this change):** allowlisted multi-source plans only — Memory + host date + local compose; Calendar tomorrow + follow-up draft; health + observed-issue explanation. Not unrestricted model tool selection.
 
 ### Priority 3 — Multi-turn verified context
 
-Follow-up references bind to verified records, not model guesses.
+Follow-up references bind to verified records, not model guesses. Conversation-routing regressions and ordinary chat body paths are covered in focused tests.
 
 ### Priority 4 — Memory-grounded composition
 
-Use authorized current facts to compose drafts and other user-facing material.
+**Implemented for single-rail compose (PR #239/#240) and contextual Memory+date compose (this change).** Use authorized current facts to compose drafts; never claim Gmail persistence.
 
 ### Priority 5 — Governed external writes
 

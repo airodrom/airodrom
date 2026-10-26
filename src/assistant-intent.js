@@ -101,6 +101,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  if(/^(?:check|read|show|open)\s+(?:my\s+)?gmail$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'recent'});
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
+ // Multi-source contextual compositions (allowlisted) before single-rail compose.
+ const contextual=require('./contextual-assistant-intent').parse(request);
+ if(contextual)return route('CONTEXTUAL_ASSISTANT',contextual);
  // Local email composition (Memory-grounded) — never Gmail send/Drafts.
  const emailCompose=require('./email-compose-intent').parse(request,{activeCompose:activeEmailCompose===true});
  if(emailCompose)return route('EMAIL_COMPOSE',emailCompose);

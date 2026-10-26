@@ -199,10 +199,10 @@ test('service healthy / degraded / unavailable messaging', async () => {
   assert.match(healthy.message, /not all macOS processes/i);
 
   const degraded = await hostService.answerServices(mk([
-    { service: 'airodrom_control_plane', label: 'Control', running: true },
+    { service: 'airodrom_control_plane', label: 'Control', running: true, role: 'control_plane' },
     { service: 'opencode', label: 'OpenCode', running: false },
   ]));
-  assert.match(degraded.message, /not running/i);
+  assert.match(degraded.message, /stopped/i);
 
   const unavailable = await hostService.answerServices(mk([
     { service: 'mcp', label: 'MCP', error: 'probe failed', running: false },
