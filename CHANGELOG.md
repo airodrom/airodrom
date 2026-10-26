@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Natural-language Gmail send-preview requests (for example “Send a test email to myself and show me the preview”) route to the governed Gmail write rail and stage a conversation-bound preview ID; they no longer fall through to the read-only Gmail search refusal. Connected-but-readonly accounts get an explicit `gmail.send` requirement instead of a bare “connected” message. Only `/gmail confirm <preview-id>` sends.
+
 ### Added
 - Gmail write durability: atomic SQLite claim, uncertain-no-blind-retry (`--ack-uncertain`), account/conversation/scope binding, restart-safe receipts, and adversarial concurrency tests ([docs/GOOGLE-WORKSPACE-STAGE-A-V1.md](docs/GOOGLE-WORKSPACE-STAGE-A-V1.md)).
 - Complete rails and execution architecture reference: Conversation, Memory, Connectors, macOS capabilities, Mission rail, enrollment, verification, recovery, and Conversational Intelligence V2 priorities with installed-vs-candidate evidence ([docs/COMPLETE-RAILS-AND-EXECUTION-ARCHITECTURE.md](docs/COMPLETE-RAILS-AND-EXECUTION-ARCHITECTURE.md)).

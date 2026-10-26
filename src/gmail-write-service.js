@@ -53,13 +53,20 @@ function requireConversation(conversation_id) {
 function authorizationOffer(server, { send = false, modify = false } = {}) {
   const oauth = !!server.gmailOAuth;
   const st = server.gmailOAuth?.status?.() || {};
+  const connected = !!st.connected;
+  const canSend = !!st.can_send;
+  const canModify = !!st.can_modify;
   let message;
   if (modify) {
-    message = 'Mailbox management (archive, labels, trash, mark read) needs /connect gmail manage (gmail.modify + gmail.send). Read-only Gmail consent is not enough.';
+    message = connected && !canModify
+      ? `Gmail is connected (mode=${st.mode || 'n/a'} · can_send=${canSend} · can_modify=${canModify}), but mailbox management is not authorized. Run /connect gmail manage (gmail.modify + gmail.send). “Connected” alone is not manage consent.`
+      : 'Mailbox management (archive, labels, trash, mark read) needs /connect gmail manage (gmail.modify + gmail.send). Read-only Gmail consent is not enough.';
   } else if (send) {
-    message = 'Sending or drafting outbound mail needs /connect gmail send (gmail.readonly + gmail.send) or /connect gmail manage. Read-only Gmail consent is not enough.';
+    message = connected && !canSend && !canModify
+      ? `Gmail is connected for reading (mode=${st.mode || 'n/a'} · can_send=false · can_modify=false · write_qualified is separate), but outbound send is not authorized. Missing permission: gmail.send. Run /connect gmail send (gmail.readonly + gmail.send) or /connect gmail manage. Do not treat “connected” or “already connected” as send approval.`
+      : 'Sending or drafting outbound mail needs /connect gmail send (gmail.readonly + gmail.send) or /connect gmail manage. Read-only Gmail consent is not enough.';
   } else {
-    message = 'Gmail needs authorization. Run /connect gmail for read-only, /connect gmail send for outbound send, or /connect gmail manage for mailbox writes. A “configured” indicator is not live access.';
+    message = 'Gmail needs authorization. Run /connect gmail for read-only, /connect gmail send for outbound send, or /connect gmail manage for mailbox writes. A “configured” or “connected” indicator is not live send access.';
   }
   return {
     kind: 'connect_required',
@@ -70,6 +77,9 @@ function authorizationOffer(server, { send = false, modify = false } = {}) {
     send_required: !!send,
     modify_required: !!modify,
     mode: st.mode || null,
+    connected,
+    can_send: canSend,
+    can_modify: canModify,
     message,
     authorized: false,
     authority: false,
@@ -206,7 +216,43 @@ async function run(server, parsed, {
       const missing = requireConversation(conversation_id);
       if (missing) return missing;
       if (!oauth.canSend() && !oauth.canModify()) return authorizationOffer(server, { send: true });
-      const to = parseAddressList(parsed.to, 'to');
+      let toRaw = parsed.to;
+      if (toRaw === 'myself' || toRaw === 'me') {
+        if (!adapter?.profile) {
+          return {
+            kind: 'clarify',
+            route: 'GMAIL_WRITE',
+            message: 'Cannot resolve “myself” to the authorized mailbox profile. Provide an exact recipient email, or reconnect Gmail and retry.',
+            host_verified,
+            model_invoked,
+            authority: false,
+          };
+        }
+        const profile = await adapter.profile();
+        toRaw = profile?.email || null;
+        if (!toRaw) {
+          return {
+            kind: 'clarify',
+            route: 'GMAIL_WRITE',
+            message: 'Authorized Gmail profile email is unavailable. Provide an exact recipient address.',
+            host_verified,
+            model_invoked,
+            authority: false,
+          };
+        }
+      }
+      if (!toRaw || !parsed.subject || parsed.body == null || parsed.body === '') {
+        return {
+          kind: 'clarify',
+          route: 'GMAIL_WRITE',
+          message: parsed.message
+            || 'To stage a Gmail send preview, provide exact recipient, subject, and body. Example: Send email to person@example.com subject “Hello”: Your message here. Only /gmail confirm <preview-id> sends.',
+          host_verified,
+          model_invoked,
+          authority: false,
+        };
+      }
+      const to = parseAddressList(toRaw, 'to');
       const cc = parseAddressList(parsed.cc, 'cc');
       const bcc = parseAddressList(parsed.bcc, 'bcc');
       const recipientCount = to.length + cc.length + bcc.length;
@@ -223,11 +269,14 @@ async function run(server, parsed, {
         account_hint: 'authorized Gmail account',
       };
       const staged = sessions(server).stageWrite(proposal, stageOpts(server, conversation_id));
-      let message = `Preview send (not delivered yet):\n• To: ${to.join(', ')}`
+      let message = `Gmail send preview (not delivered)\n`
+        + `Preview ID: ${staged.preview_id}\n`
+        + `• To: ${to.join(', ')}`
         + (cc.length ? `\n• Cc: ${cc.join(', ')}` : '')
         + (bcc.length ? `\n• Bcc: ${bcc.join(', ')}` : '')
-        + `\n• Subject: ${proposal.subject}\n• Body:\n${String(proposal.body).slice(0, 2000)}\n`
-        + `Confirm with /gmail confirm ${staged.preview_id}.`;
+        + `\n• Subject: ${proposal.subject}\n• Body:\n${String(proposal.body).slice(0, 2000)}\n\n`
+        + `Nothing has been sent.\n`
+        + `Confirm delivery only with: /gmail confirm ${staged.preview_id}`;
       if (bulk) {
         message += `\nBulk recipients require independent approval first: /gmail approve ${staged.approval_id}`;
       }
