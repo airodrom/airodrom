@@ -58,6 +58,20 @@ test('list/see how-to and sensitive-access questions route to host awareness', (
   assert.equal(intent.parse('Can you access my sensitive information?').focus, 'sensitive_memory');
 });
 
+test('privacy and company-address safety questions route to host awareness not chat', () => {
+  for (const message of [
+    'How can you save sensitive information like an address?',
+    'How can you safely save sensitive information like a company address?',
+    'Can you safely remember my company\'s business address?',
+    'Is it safe to store my company address?',
+  ]) {
+    const parsed = intent.parse(message);
+    assert.equal(parsed.kind, 'memory_awareness', message);
+    assert.equal(parsed.authority, false, message);
+  }
+  assert.notEqual(intent.parse('Remember that my company address is 1 Synthetic Way.').kind, 'memory_awareness');
+});
+
 test('ordinary memory display requests stay on authorized recall', () => {
   for (const [message, queryPart] of [
     ['Show my memories', ''],

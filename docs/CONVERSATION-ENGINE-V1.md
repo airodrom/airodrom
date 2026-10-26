@@ -52,6 +52,12 @@ selects no execution worker and cannot dispatch work. Inference stays on the fix
 loopback provider, with no tools, external inference or capability fallback.
 Tool requests and secret-like output are refused.
 
+Failure classes stay distinct: `provider_timeout`, `provider_unavailable`, and
+`content_policy` (successful model HTTP whose visible text failed host output
+policy). Discussion or conditional language about saving is not treated as an
+asserted save. Host Memory/privacy capability questions are answered by the
+deterministic memory-awareness route before inference.
+
 Host-verified Mission counts (`active`, `current`, `completed`, `historical`,
 `retained`) are injected as authoritative context. Delivery grounding rewrites
 disputed active/current count claims so model prose cannot redefine host totals.

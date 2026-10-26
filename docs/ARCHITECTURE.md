@@ -104,3 +104,7 @@ context. See [ADR 0063](adr/0063-requested-file-scope.md) for the versioned requ
 constraint, literal syntax, diagnosis codes, evidence, and compatibility boundary.
 
 Current implementation policy: [Cursor-only routine autonomy](adr/0065-cursor-only-routine-autonomy.md). Existing authorization is reused; no routine billing inspection or automatic worker fallback is added.
+
+## Rails and execution narrative
+
+Product-facing rails (Conversation, Memory, Connectors, macOS capabilities, Autonomous Missions), enrollment, verification, recovery, and Conversational Intelligence V2 direction are summarized in [Complete Rails & Execution Architecture](COMPLETE-RAILS-AND-EXECUTION-ARCHITECTURE.md). That document distinguishes installed live qualification from candidate source and marks the Semantic Capability Rail as architectural direction only.

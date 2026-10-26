@@ -33,6 +33,8 @@ class GmailSearchSessions {
   #sessions = new Map();
   // operator+conversation → opaque continuation_id (never a global process pointer)
   #active = new Map();
+  // operator+conversation → last verified result page (for write follow-ups)
+  #lastResults = new Map();
 
   #sweep(now = Date.now()) {
     for (const [id, row] of this.#sessions) {
@@ -40,6 +42,9 @@ class GmailSearchSessions {
         this.#sessions.delete(id);
         this.#clearActiveId(id);
       }
+    }
+    for (const [key, row] of this.#lastResults) {
+      if (row.expires_at <= now) this.#lastResults.delete(key);
     }
     while (this.#sessions.size > MAX_SESSIONS) {
       const oldest = this.#sessions.keys().next().value;
@@ -219,6 +224,15 @@ class GmailSearchSessions {
     } else {
       this.#clearActiveId(id);
     }
+    if (row.conversation_id) {
+      try {
+        this.rememberResults({
+          items: unique,
+          conversation_id: row.conversation_id,
+          operator: row.operator,
+        });
+      } catch { /* selection memory is best-effort */ }
+    }
     return {
       items: unique,
       continuation_id,
@@ -248,6 +262,38 @@ class GmailSearchSessions {
       this.#sessions.delete(id);
       this.#clearActiveId(id);
     }
+  }
+
+  rememberResults({ items = [], conversation_id = null, operator = 'operator' } = {}) {
+    this.#sweep();
+    const key = bindingKey(operator, conversation_id);
+    const list = (items || [])
+      .filter((m) => m && typeof m.id === 'string' && m.id)
+      .slice(0, PAGE_SIZE_MAX)
+      .map((m) => ({ id: m.id, subject: m.subject || null, from: m.from || null }));
+    this.#lastResults.set(key, {
+      items: list,
+      selected_id: list.length === 1 ? list[0].id : null,
+      conversation_id,
+      operator,
+      expires_at: Date.now() + TTL_MS,
+    });
+    return this.#lastResults.get(key);
+  }
+
+  lastResults({ conversation_id = null, operator = 'operator' } = {}) {
+    this.#sweep();
+    const key = bindingKey(operator, conversation_id);
+    const row = this.#lastResults.get(key);
+    if (!row || row.expires_at <= Date.now()) {
+      this.#lastResults.delete(key);
+      return null;
+    }
+    if (row.conversation_id !== conversation_id || row.operator !== operator) {
+      this.#lastResults.delete(key);
+      return null;
+    }
+    return row;
   }
 }
 

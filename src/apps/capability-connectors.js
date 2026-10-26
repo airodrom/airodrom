@@ -55,6 +55,7 @@ function connectorCapabilities() {
     gmail_forward: connector('gmail_forward', input => { mail(['messageId', 'to'], ['body'])(input); pattern(input.messageId, ID, 'messageId'); return message(input); }, (ctx, input) => bulk(ctx, recipientCount(input), false, 'Forward')),
     gmail_archive: connector('gmail_archive', input => { mail(['messageIds'])(input); ids(input.messageIds, 'messageIds', 100); return input; }),
     gmail_label: connector('gmail_label', input => { mail(['messageIds', 'label'])(input); ids(input.messageIds, 'messageIds', 100); text(input.label, 'label', { max: 100, multiline: false }); return input; }),
+    gmail_trash: connector('gmail_trash', input => { mail(['messageIds'])(input); ids(input.messageIds, 'messageIds', 100); return input; }),
     whatsapp_read: connector('whatsapp_read', input => { keys(input, ['chatId'], ['limit']); pattern(input.chatId, ID, 'chatId'); integer(input.limit, 'limit', { min: 1, max: 100, optional: true }); return input; }),
     whatsapp_send: connector('whatsapp_send', input => { keys(input, ['to', 'body'], ['broadcast']); ids(input.to, 'to', 500); text(input.body, 'body', { max: 65_000 }); bool(input.broadcast, 'broadcast'); return input; }, (ctx, input) => bulk(ctx, input.to.length, input.broadcast, 'WhatsApp message')),
     whatsapp_reply: connector('whatsapp_reply', input => { keys(input, ['chatId', 'body']); pattern(input.chatId, ID, 'chatId'); text(input.body, 'body', { max: 65_000 }); return input; }),
