@@ -10,12 +10,13 @@
 
 | Claim | State |
 | --- | --- |
-| Installed tip | `28baa92` (#242 contextual assistant + host facts) — Gmail/Calendar connected read-only; `write_qualified=false` until owner send consent + provider-confirmed receipt |
-| Prior integrations | #241 host-facts · #240 unified recovery · #237 Stage A writes |
-| Personal Assistant E2E composition | Source on `feat/personal-assistant-e2e-v1` — calendar→Memory→local draft→Gmail preview; send only via `/gmail confirm` |
-| Gmail `write_qualified` | Durable evidence table after provider-confirmed send — **never** from OAuth scope alone; live qualification owner-gated |
-| Developer Autonomy | Pending enrollment request presented in Control Center; `confirmed` stays false until authenticated owner enroll |
-| Semantic Capability Rail (§20) | Allowlisted compositions only (MEMORY_DATE / CALENDAR_FOLLOWUP / MEETING_FOLLOWUP_SEND / HEALTH_EXPLAIN); not a general unrestricted agent |
+| Installed tip | `96e30d2` (#243 Personal Assistant E2E + #244 retention hotfix) |
+| Merge lineage | #243 `405aa3b` then hotfix #244 `96e30d2` (gmail_write_qualification retention) |
+| Personal Assistant E2E | Live: `MEETING_FOLLOWUP_SEND` routes; empty calendar clarifies honestly; `/gmail confirm` required for send; chat “yes, send it” does not send |
+| Gmail | Connected readonly; `write_qualified=false` until owner `/connect gmail send` + provider-confirmed test send |
+| Calendar | Authorized read works (empty tomorrow verified host-true) |
+| Developer Autonomy | Pending enrollment surfaced in Control Center; `confirmed:false` until owner enroll |
+| Recovery | Checkpoint `recovery-checkpoint-pre-96e30d2-*`; rollback install `airodrom-install-405aa3b` |
 
 ---
 
