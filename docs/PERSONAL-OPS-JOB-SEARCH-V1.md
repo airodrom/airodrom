@@ -14,7 +14,7 @@ There is no automatic external provider fallback for private conversation.
 
 | Connector | Availability in V1 | Auth | Live qualification | Reads | Writes / mutations |
 |---|---|---|---|---|---|
-| Gmail | `AUTH_REQUIRED` until connected; `AVAILABLE` after live read | Owner Google desktop OAuth `gmail.readonly` | Successful bounded list/search/read in-process | list, search, read, thread, job_categorize, local draft preview | **None** (send/archive/label/mark-read denied) |
+| Gmail | `AUTH_REQUIRED` until connected; `AVAILABLE` after live read | Owner Google desktop OAuth: `gmail.readonly` default; `/connect gmail send` or `manage` for writes (never `mail.google.com` by default) | Successful bounded list/search/read in-process; `write_qualified` only after provider-confirmed write receipt | list, search, read, thread, job_categorize, local draft preview | After send/manage consent: host preview + `/gmail confirm` (approve for trash/forward/bulk). See `docs/GOOGLE-WORKSPACE-STAGE-A-V1.md` |
 | Google Calendar | `AUTH_REQUIRED` → `AVAILABLE` after `/connect calendar` + live read | `calendar.readonly` (+ manage `calendar.events`) | Yes (host NL) | Preview-gated create/update; destructive cancel | Separate from Gmail; see [GOOGLE-CALENDAR-NL-CONTROL-V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md) |
 | Google Drive | `NOT_SUPPORTED` | — | No | — | — |
 | Google Sheets | `NOT_SUPPORTED` | — | No | — | Use local tracker |

@@ -2,38 +2,67 @@
 // Host protocol boundary. Message bodies are untrusted data, never actions.
 const {text,object}=require('./control-plane-store');
 const {secret}=require('./assistant-intent');
+const {hasReadCapability,hasSendScope,hasModifyScope,READ_SCOPE}=require('./gmail-oauth');
 const ID=/^[A-Za-z0-9_.:-]{1,200}$/;
 const clean=value=>{const raw=String(value||'');if(secret(raw))return '[Sensitive content withheld]';return require('./secret-observation').redactText(require('node:util').stripVTControlCharacters(raw).slice(0,4000));};
 class AssistantConnectors {
- #gmail; #whatsapp; #secret; #request; #liveGmail=false; #connectedProbe=null;
- constructor({gmail=null,whatsapp=null,secrets=null,request=fetch,connected=null}={}){
-  this.#gmail=gmail;this.#whatsapp=whatsapp;this.#secret=secrets;this.#request=request;this.#connectedProbe=connected;
+ #gmail; #whatsapp; #secret; #request; #liveGmail=false; #connectedProbe=null; #capabilities=null;
+ constructor({gmail=null,whatsapp=null,secrets=null,request=fetch,connected=null,capabilities=null}={}){
+  this.#gmail=gmail;this.#whatsapp=whatsapp;this.#secret=secrets;this.#request=request;this.#connectedProbe=connected;this.#capabilities=capabilities;
+ }
+ #caps(){
+  if(typeof this.#capabilities==='function'){
+   try{return this.#capabilities()||{};}catch{return {};}
+  }
+  const scope=this.#gmail?.scope||READ_SCOPE;
+  return {
+   scope,
+   can_send:hasSendScope(scope),
+   can_modify:hasModifyScope(scope),
+   can_write:hasSendScope(scope)||hasModifyScope(scope),
+   read_only:!(hasSendScope(scope)||hasModifyScope(scope)),
+   mode:hasModifyScope(scope)&&hasSendScope(scope)?'manage':hasSendScope(scope)?'send':'readonly',
+  };
  }
  status(){
   const oauthClient=!!(this.#gmail&&this.#secret);
   const connected=oauthClient&&(typeof this.#connectedProbe==='function'?!!this.#connectedProbe():true);
+  const caps=this.#caps();
   // configured = OAuth client wiring present. connected = usable token probe.
   // token may be present without live_qualified. live_qualified = successful bounded read.
+  // write_qualified stays false until a governed write receipt confirms provider outcome.
   let state='unavailable';
   if(oauthClient&&this.#liveGmail&&connected)state='live_qualified';
   else if(oauthClient&&connected)state='connected';
   else if(oauthClient)state='configured';
+  const writeHint=caps.can_modify
+   ?'Manage consent present — governed send/archive/label/trash use host preview confirmation (/gmail confirm).'
+   :(caps.can_send
+    ?'Send consent present — governed outbound send/draft use host preview confirmation. Mailbox modify needs /connect gmail manage.'
+    :'No send/archive/label until /connect gmail send or /connect gmail manage.');
   return {items:[{
    id:'gmail',
    protocol:'Google Gmail API / OAuth 2.0',
    state,
    configured:oauthClient,
    connected:!!connected,
-   read_only:true,
+   read_only:!!caps.read_only,
+   can_write:!!caps.can_write,
+   can_send:!!caps.can_send,
+   can_modify:!!caps.can_modify,
+   mode:caps.mode||'readonly',
+   write_qualified:false,
    live_qualified:this.#liveGmail&&connected,
    setup:connected
     ?(this.#liveGmail
-      ?'Read-only Gmail is live-qualified for bounded list/search/read in this process.'
-      :'OAuth credentials appear usable. Run a bounded Gmail search/read to live-qualify. Presence alone is not live access. No send/archive/label.')
+      ?(`Gmail reads are live-qualified for bounded list/search/read in this process. ${writeHint}`)
+      :(`OAuth credentials appear usable. Run a bounded Gmail search/read to live-qualify. Presence alone is not live access. ${writeHint}`))
     :(oauthClient
-      ?'OAuth client is configured. Account consent still required via /connect gmail. Saved references are not live access.'
-      :'Requires owner-configured OAuth gmail.readonly credential reference. No account connected by qualification.'),
-   mutations:'Remote draft/send/archive/delete/label/mark-read require separate canonical capabilities; unavailable in this read-only adapter.'
+      ?'OAuth client is configured. Account consent still required via /connect gmail [send|manage]. Saved references are not live access.'
+      :'Requires owner-configured OAuth Gmail credential reference. No account connected by qualification.'),
+   mutations:caps.can_write
+    ?'Writes require host preview + /gmail confirm. Trash/forward/bulk need independent /gmail approve. OpenCode never receives unrestricted Gmail access.'
+    :'Remote draft/send/archive/delete/label/mark-read unavailable until /connect gmail send or /connect gmail manage. Read adapter stays least-privilege.'
   },this.#whatsappItem()],authority:false};
  }
  ensureWhatsapp(whatsapp){if(whatsapp)this.#whatsapp=whatsapp;return this;}
@@ -48,7 +77,9 @@ class AssistantConnectors {
  }
  async #get(resource,query={}) {
   if(!this.#gmail||!this.#secret)throw Error('Gmail OAuth connector is not configured.');
-  if(this.#gmail.scope!=='https://www.googleapis.com/auth/gmail.readonly')throw Error('Gmail requires the exact read-only OAuth scope.');
+  const caps=this.#caps();
+  const scope=caps.scope||this.#gmail.scope;
+  if(!hasReadCapability(scope))throw Error('Gmail requires an authorized read-capable OAuth scope (gmail.readonly or gmail.modify).');
   const token=await this.#secret.resolve(this.#gmail.reference,'gmail');
   const url=new URL('https://gmail.googleapis.com/gmail/v1/users/me/'+resource);
   for(const [k,v]of Object.entries(query)){

@@ -104,6 +104,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  // Local email composition (Memory-grounded) — never Gmail send/Drafts.
  const emailCompose=require('./email-compose-intent').parse(request,{activeCompose:activeEmailCompose===true});
  if(emailCompose)return route('EMAIL_COMPOSE',emailCompose);
+ // Deterministic Gmail writes — host preview/confirm only; never OpenCode and never body-as-authority.
+ const gmailWrite=require('./gmail-write-intent').parse(request);
+ if(gmailWrite)return route('GMAIL_WRITE',gmailWrite);
  // Deterministic sender/search Gmail retrieval — host connector only, never OpenCode.
  // Generic "show more" only when this conversation has an active Gmail search.
  const gmailSearch=require('./gmail-search-intent').parse(request,{activeGmailSearch:activeGmailSearch===true});
