@@ -4,6 +4,9 @@
 - Host-authoritative natural-language Gmail search with bounded pagination: phrases such as “Find all mails from GitHub” route to the authenticated connector without OpenCode; opaque continuation sessions bind operator, query and Gmail `nextPageToken` ([docs/GMAIL-NL-SEARCH-V1.md](docs/GMAIL-NL-SEARCH-V1.md)).
 - Google Calendar natural-language control V1: separate Calendar OAuth (`calendar.readonly` / manage `calendar.events`), host routing for control/schedule/freeBusy phrases, bounded reads, preview-gated writes, and credential-screening false-positive guards ([docs/GOOGLE-CALENDAR-NL-CONTROL-V1.md](docs/GOOGLE-CALENDAR-NL-CONTROL-V1.md)).
 
+### Released
+- 2026-10-26 managed install of main `b182fa46…` (PR #234 + #235): Gmail NL search live-qualified read-only; Calendar Desktop client configured, owner `/connect calendar` still required before Calendar live-qualified reads.
+
 ### Fixed
 - Implicit mutation verbs (`fix`/`patch`/`implement`) refine onto a unique prior exact path or an explicit `in PATH` retarget; ambiguous multi-path and pathless mutations stay fail-closed ([ADR 0063](docs/adr/0063-requested-file-scope.md)).
 - Natural-language Mission admission no longer invents file targets from descriptive prose (`for read and edit operations`, `review the result`, evaluation recommendation markers); ordered `stages` stay distinct from unique `bindings` so collapsed multi-stage plans fail as `requested_file_stage_mismatch`; workspace diagnosis returns precise absence/oversized/sensitive codes with one bounded rematerialization, and execution targets remain permitted when planner bytes are withheld ([ADR 0063](docs/adr/0063-requested-file-scope.md)).

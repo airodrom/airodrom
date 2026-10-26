@@ -1,8 +1,20 @@
 # Current state (2026-10-10)
 
+## Gmail NL Search + Calendar NL Control — INSTALLED (2026-10-26)
+
+- **Main merge SHA:** `b182fa46b2c7d09e475dc155af7283e37ea4fed0` (PR #234 Gmail NL Search + PR #235 Calendar NL Control).
+- **Installed tip:** `…/airodrom-install-b182fa4` with `INSTALLED_SHA.txt` = merge SHA above.
+- **Archive fingerprint (sha256):** `ebe1bc47b03c193629eaa2062347da30254d4b03b45936eaecf28b328488699d`.
+- **Rollback:** previous tip `…/airodrom-install-c9a84ea` @ `c9a84ea…`; checkpoint `~/.airodrom/activation/recovery-checkpoint-pre-b182fa4-20261026T062146Z`.
+- **Gmail:** bounded live NL search (“Find all mails from GitHub”) host-routed (`host_verified`, `model_invoked=false`); connector `live_qualified`; read-only; conversation-bound pagination verified; cross-conversation continuation not hijacked. No personal mail content recorded in release artifacts.
+- **Calendar:** Desktop OAuth client **configured**; host NL help routes without inventing access. **Read-only live qualification pending owner** `/connect calendar` (`calendar.readonly` only). No live Calendar writes; synthetic write-safety suite 24/24 on installed tip. Manage scope not requested.
+- **Hosted CI:** Actions disabled; no repository-required checks. Merge used local equivalent validation (same policy as #234).
+- Private receipt: `~/.airodrom/activation/cutover-b182fa4-receipt.json`.
+
 ## PR #227 release closeout — SOURCE, NOT INSTALLED (2026-10-25)
 
-The installed service remains at `1a3a12e2bd21d18d68b6c6df9bde223733b86be4`.
+Historical note: earlier text claimed an older installed tip; current live tip is recorded in the section above.
+The PR #227 narrative below remains historical evidence.
 PR #227 contains the combined Cursor-only implementation, exact-file/stage admission,
 and Node/Undici security changes. Its previously qualified `4a93202` candidate
 needed further parser hardening: structured negated instructions could add edit
