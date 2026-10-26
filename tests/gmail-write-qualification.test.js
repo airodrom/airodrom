@@ -16,6 +16,13 @@ test('write_qualified starts false without evidence', () => {
   assert.equal(qual.readQualification(db).reason, 'not_qualified');
 });
 
+test('read/status path does not CREATE TABLE (avoids unclassified store)', () => {
+  const db = memDb();
+  assert.equal(qual.isWriteQualified(db), false);
+  const row = db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='gmail_write_qualification'").get();
+  assert.equal(row, undefined);
+});
+
 test('synthetic receipts never qualify', () => {
   const db = memDb();
   const r = qual.recordSendQualification(db, {

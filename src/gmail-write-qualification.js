@@ -16,6 +16,14 @@ CREATE TABLE IF NOT EXISTS gmail_write_qualification (
 );
 `;
 
+function tableExists(db) {
+  try {
+    return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gmail_write_qualification'").get();
+  } catch {
+    return false;
+  }
+}
+
 function ensure(db) {
   if (!db || typeof db.exec !== 'function') return null;
   db.exec(TABLE);
@@ -75,9 +83,11 @@ function recordSendQualification(db, {
 }
 
 function readQualification(db) {
-  const store = ensure(db);
-  if (!store) return { write_qualified: false, reason: 'db_unavailable' };
-  const row = store.prepare('SELECT * FROM gmail_write_qualification WHERE id=?').get('default');
+  // Read path must not CREATE TABLE — schema mutations during status probes
+  // leave unclassified stores that deny conversation/Memory reads.
+  if (!db || typeof db.prepare !== 'function') return { write_qualified: false, reason: 'db_unavailable' };
+  if (!tableExists(db)) return { write_qualified: false, reason: 'not_qualified' };
+  const row = db.prepare('SELECT * FROM gmail_write_qualification WHERE id=?').get('default');
   if (!row || row.synthetic === 1) {
     return { write_qualified: false, reason: row ? 'synthetic' : 'not_qualified' };
   }
