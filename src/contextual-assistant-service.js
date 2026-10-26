@@ -9,7 +9,19 @@ const { secret } = require('./assistant-intent');
 const ALLOWED = Object.freeze({
   MEMORY_DATE_COMPOSE: ['memory_address', 'host_date', 'local_compose'],
   CALENDAR_FOLLOWUP_COMPOSE: ['calendar_tomorrow', 'local_compose'],
+  MEETING_FOLLOWUP_SEND: ['calendar_tomorrow', 'memory_company', 'local_compose', 'gmail_preview'],
   HEALTH_EXPLAIN: ['airodrom_health', 'explain_observed'],
+});
+
+/** Product-facing workflow states — never equate chat text with authenticated approval. */
+const WORKFLOW = Object.freeze({
+  DRAFT_READY: 'draft_ready',
+  APPROVAL_REQUIRED: 'approval_required',
+  SENDING: 'sending',
+  SENT_CONFIRMED: 'sent_and_provider_confirmed',
+  DELIVERY_UNCERTAIN: 'delivery_uncertain',
+  NOT_AUTHORIZED: 'not_authorized',
+  CLARIFY: 'clarify',
 });
 
 function base(extra = {}) {
@@ -222,6 +234,261 @@ async function calendarFollowupCompose(server, parsed, { conversation_id }) {
   });
 }
 
+/**
+ * Full personal-assistant rail: calendar → company memory → local draft → Gmail send preview.
+ * Never sends. Never treats ordinary chat as approval. Confirmation uses /gmail confirm only.
+ */
+async function meetingFollowupSend(server, parsed, { conversation_id }) {
+  const evidence = { calendar: null, memory: null, gmail: null };
+  const calendar = require('./calendar-service');
+  const gmailWrite = require('./gmail-write-service');
+
+  let calResult;
+  try {
+    calResult = await calendar.run(server, {
+      kind: 'calendar',
+      action: 'events',
+      day: parsed.day || 'tomorrow',
+      host_verified: true,
+    }, { conversation_id });
+  } catch (error) {
+    return deny(
+      `Calendar could not be checked (${String(error.message || error).slice(0, 120)}). No draft or send was started.`,
+      'calendar_unavailable',
+      { composition: parsed.composition, evidence, workflow_state: WORKFLOW.CLARIFY }
+    );
+  }
+
+  if (calResult.kind === 'connect_required' || calResult.code === 'calendar_oauth_required') {
+    return deny(
+      calResult.message || 'Calendar authorization required. Run /connect calendar. No draft or send was started.',
+      calResult.code || 'calendar_oauth_required',
+      { composition: parsed.composition, evidence, workflow_state: WORKFLOW.NOT_AUTHORIZED }
+    );
+  }
+
+  const items = Array.isArray(calResult.items) ? calResult.items : [];
+  evidence.calendar = {
+    status: calResult.kind,
+    count: items.length,
+    day: parsed.day || 'tomorrow',
+    host_verified: calResult.host_verified === true,
+    timezone: calResult.timezone || calResult.clock_timezone || null,
+  };
+
+  if (!items.length) {
+    return deny(
+      `No authorized calendar events were found for ${parsed.day || 'tomorrow'}. I did not invent a meeting, draft, or send.`,
+      'calendar_empty',
+      { composition: parsed.composition, evidence, workflow_state: WORKFLOW.CLARIFY }
+    );
+  }
+
+  if (items.length > 1) {
+    const lines = items.slice(0, 8).map((ev, i) => {
+      const title = sanitizeUntrusted(ev.summary || ev.title || 'Untitled event');
+      const when = sanitizeUntrusted(ev.when || ev.start || '');
+      return `${i + 1}. ${title}${when ? ` — ${when}` : ''}`;
+    });
+    return deny(
+      `Multiple meetings match ${parsed.day || 'tomorrow'}. Which one should the follow-up email reference?\n${lines.join('\n')}\n\nReply with the number (or exact title). Nothing was drafted or sent.`,
+      'calendar_ambiguous',
+      {
+        composition: parsed.composition,
+        evidence,
+        workflow_state: WORKFLOW.CLARIFY,
+        choices: items.slice(0, 8).map((ev) => ({
+          id: ev.id || null,
+          title: sanitizeUntrusted(ev.summary || ev.title || 'Untitled'),
+        })),
+      }
+    );
+  }
+
+  const meeting = items[0];
+  const title = sanitizeUntrusted(meeting.summary || meeting.title || 'our meeting');
+  const when = sanitizeUntrusted(meeting.when || meeting.start || (parsed.day || 'tomorrow'));
+  evidence.calendar.meeting = { title, when, id: meeting.id || null };
+
+  const addressLookup = composeService.lookupCompanyAddress(server);
+  evidence.memory = { status: addressLookup.status };
+  if (addressLookup.status === 'ambiguous') {
+    return deny(addressLookup.message, 'memory_address_ambiguous', {
+      composition: parsed.composition, evidence, workflow_state: WORKFLOW.CLARIFY,
+    });
+  }
+  if (addressLookup.status === 'missing' || addressLookup.status === 'unavailable') {
+    return deny(
+      (addressLookup.message || 'No ordinary company address found.') + ' I did not invent company information.',
+      'memory_address_' + addressLookup.status,
+      { composition: parsed.composition, evidence, workflow_state: WORKFLOW.CLARIFY }
+    );
+  }
+  const address = sanitizeUntrusted(addressLookup.address);
+  evidence.memory.address_included = true;
+
+  // Prefer explicit recipient; otherwise try a single attendee email from the event.
+  let to = parsed.to || null;
+  if (!to) {
+    const attendees = Array.isArray(meeting.attendees) ? meeting.attendees : [];
+    const emails = attendees
+      .map((a) => (typeof a === 'string' ? a : (a?.email || a?.address || '')))
+      .filter((e) => typeof e === 'string' && /@/.test(e) && !/@resource\.calendar\.google\.com$/i.test(e));
+    const unique = [...new Set(emails.map((e) => e.toLowerCase()))];
+    if (unique.length === 1) to = unique[0];
+  }
+
+  const purpose = `I am following up on ${title}${when ? ` (${when})` : ''}. Our company address for reference: ${address}.`;
+  const composed = await composeService.run(server, {
+    kind: 'email_compose',
+    action: 'compose',
+    include_company_address: true,
+    to: to || 'there',
+    audience: to && /@/.test(to) ? null : (to || 'there'),
+    purpose,
+  }, { conversation_id });
+
+  if (composed.kind === 'clarify') {
+    return {
+      ...composed,
+      composition: parsed.composition,
+      evidence,
+      workflow_state: WORKFLOW.CLARIFY,
+      route: 'CONTEXTUAL_ASSISTANT',
+    };
+  }
+
+  const draft = composed.draft || null;
+  const subject = draft?.subject || `Follow-up: ${title}`;
+  const body = draft?.body || composed.message || '';
+
+  // Without a concrete recipient email, stop at draft_ready — never invent an address.
+  if (!to || !/@/.test(String(to))) {
+    return base({
+      composition: parsed.composition,
+      plan: parsed.plan,
+      workflow_state: WORKFLOW.DRAFT_READY,
+      evidence: { ...evidence, meeting: evidence.calendar.meeting },
+      draft,
+      draft_id: composed.draft_id || null,
+      address_included: true,
+      requires_confirmation: false,
+      message:
+        (composed.message || '')
+        + `\n\nState: Draft ready (local only).\n`
+        + `Calendar: “${title}”${when ? ` (${when})` : ''}. Company address from Memory V2 included.\n`
+        + 'Provide the recipient email to stage a Gmail send preview '
+        + '(example: “Send the draft to person@example.com after I approve”). '
+        + 'Nothing was sent. Chat text alone is never send approval.',
+    });
+  }
+
+  const oauth = server.gmailOAuth?.status?.() || {};
+  evidence.gmail = {
+    connected: !!oauth.connected,
+    can_send: !!oauth.can_send || !!oauth.can_modify,
+    mode: oauth.mode || null,
+    write_qualified: false,
+  };
+
+  if (!oauth.connected) {
+    return base({
+      composition: parsed.composition,
+      plan: parsed.plan,
+      workflow_state: WORKFLOW.NOT_AUTHORIZED,
+      evidence: { ...evidence, meeting: evidence.calendar.meeting },
+      draft,
+      draft_id: composed.draft_id || null,
+      address_included: true,
+      message:
+        (composed.message || '')
+        + `\n\nState: Not authorized to send.\n`
+        + `Draft is ready locally for “${title}”. Connect Gmail with /connect gmail send (or manage), then ask again to stage the send preview. Nothing was sent.`,
+    });
+  }
+
+  if (!oauth.can_send && !oauth.can_modify) {
+    return base({
+      composition: parsed.composition,
+      plan: parsed.plan,
+      workflow_state: WORKFLOW.NOT_AUTHORIZED,
+      evidence: { ...evidence, meeting: evidence.calendar.meeting },
+      draft,
+      draft_id: composed.draft_id || null,
+      address_included: true,
+      message:
+        (composed.message || '')
+        + `\n\nState: Not authorized to send.\n`
+        + 'Gmail is connected read-only. Run /connect gmail send (or /connect gmail manage) for outbound send consent, then ask again. '
+        + 'Draft remains local — not saved to Gmail Drafts, not sent.',
+    });
+  }
+
+  // Stage durable Gmail write preview — does not send.
+  const preview = await gmailWrite.run(server, {
+    kind: 'gmail_write',
+    action: 'send',
+    to: String(to),
+    subject,
+    body,
+  }, { conversation_id });
+
+  if (preview.kind === 'connect_required' || preview.code === 'gmail_write_session_required') {
+    return {
+      ...preview,
+      composition: parsed.composition,
+      evidence,
+      workflow_state: WORKFLOW.NOT_AUTHORIZED,
+      draft,
+      draft_id: composed.draft_id || null,
+      route: 'CONTEXTUAL_ASSISTANT',
+    };
+  }
+
+  if (preview.kind === 'clarify' || preview.action !== 'preview') {
+    return {
+      ...preview,
+      composition: parsed.composition,
+      evidence,
+      workflow_state: WORKFLOW.CLARIFY,
+      draft,
+      draft_id: composed.draft_id || null,
+      route: 'CONTEXTUAL_ASSISTANT',
+    };
+  }
+
+  evidence.gmail.preview_id = preview.preview_id;
+  evidence.gmail.operation_id = preview.operation_id;
+  evidence.gmail.account = preview.proposal?.account_hint || oauth.email || null;
+
+  return base({
+    composition: parsed.composition,
+    plan: parsed.plan,
+    workflow_state: WORKFLOW.APPROVAL_REQUIRED,
+    local_only: false,
+    gmail_sent: false,
+    gmail_saved: false,
+    requires_confirmation: true,
+    preview_id: preview.preview_id,
+    approval_id: preview.approval_id || null,
+    operation_id: preview.operation_id,
+    evidence: { ...evidence, meeting: evidence.calendar.meeting },
+    draft,
+    draft_id: composed.draft_id || null,
+    address_included: true,
+    proposal: preview.proposal || null,
+    message:
+      `State: Approval required — nothing has been sent.\n\n`
+      + `Calendar: “${title}”${when ? ` (${when})` : ''} (authorized host event).\n`
+      + `Company information: included from Memory V2 (ordinary address).\n`
+      + `Sender account: authorized Gmail account.\n`
+      + `To: ${to}\nSubject: ${subject}\n\n`
+      + `${String(body).slice(0, 2000)}\n\n`
+      + `Confirm delivery with: /gmail confirm ${preview.preview_id}\n`
+      + 'Ordinary chat messages are not send approval. Local draft ≠ Gmail Drafts ≠ delivered mail.',
+  });
+}
+
 async function healthExplain(server, parsed) {
   const health = await hostFacts.answerHealth(server);
   if (health.kind === 'clarify') {
@@ -285,6 +552,8 @@ async function run(server, parsed, { conversation_id = null } = {}) {
       return memoryDateCompose(server, parsed, { conversation_id });
     case 'CALENDAR_FOLLOWUP_COMPOSE':
       return calendarFollowupCompose(server, parsed, { conversation_id });
+    case 'MEETING_FOLLOWUP_SEND':
+      return meetingFollowupSend(server, parsed, { conversation_id });
     case 'HEALTH_EXPLAIN':
       return healthExplain(server, parsed);
     default:
@@ -296,7 +565,9 @@ module.exports = {
   run,
   planAllowed,
   ALLOWED,
+  WORKFLOW,
   memoryDateCompose,
   calendarFollowupCompose,
+  meetingFollowupSend,
   healthExplain,
 };

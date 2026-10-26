@@ -1810,6 +1810,13 @@ class DeveloperAutonomy {
     this.owner(owner);
     const policies = this.list(owner);
     const active = policies.filter(p => p.state === 'active');
+    let pending_enrollment_requests = [];
+    try {
+      const home = this.bridge?.options?.localHome
+        || require('./local-bootstrap').localHome?.()
+        || path.join(os.homedir(), '.airodrom');
+      pending_enrollment_requests = require('./pending-enrollment-requests').listPending(home).slice(0, 12);
+    } catch { /* presentation optional */ }
     return {
       mechanism: 'developer_autonomy',
       active_count: active.length,
@@ -1825,10 +1832,13 @@ class DeveloperAutonomy {
         budgets: p.budgets || null,
         cognitive: p.cognitive || null
       })),
+      pending_enrollment_requests,
       never_auto: NEVER_AUTO,
       note: active.length
         ? 'Active standing Developer Autonomy policies authorize routine local work inside enrolled repositories without renewing WORK templates per task. Short-lived Mission grants remain validated at dispatch.'
-        : 'No active Developer Autonomy policy. Authenticated local enrollment is required once per repository.',
+        : (pending_enrollment_requests.length
+          ? 'Prepared enrollment request(s) await authenticated owner confirmation in Control Center. Nothing is enrolled until you submit with confirmed:true.'
+          : 'No active Developer Autonomy policy. Authenticated local enrollment is required once per repository.'),
       authority: false
     };
   }

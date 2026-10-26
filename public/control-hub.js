@@ -958,8 +958,34 @@
 }
 function developerAutonomyView(){
   const result=node('section');result.append(node('h2','Developer Autonomy'),node('p','Enroll a named repository once. Routine work issues short-lived Mission grants inside that standing scope, prepares isolated worktrees, and never auto-merges or deploys. Protected operations stay separately gated.'));
-  const status=snapshot.developer_autonomy||{policies:[],active_count:0,never_auto:[]};
+  const status=snapshot.developer_autonomy||{policies:[],active_count:0,never_auto:[],pending_enrollment_requests:[]};
   result.append(glass('Standing policies',String(status.active_count||0)+' active',status.note||'Owner enrollment required'));
+  for(const pending of status.pending_enrollment_requests||[]){
+   const card=glass(pending.title||pending.alias||'Pending enrollment','Awaiting owner confirmation','confirmed remains false until you enroll');
+   card.append(node('p',pending.note||'Owner confirmation required. This request never self-approves.'));
+   if(pending.cognitive_files?.length)card.append(node('p','Cognitive files: '+pending.cognitive_files.join(', ')));
+   if(pending.workers?.length)card.append(node('p','Workers: '+pending.workers.join(', ')));
+   if(pending.google_workspace_qualification){
+    const gw=pending.google_workspace_qualification;
+    card.append(node('p','Gmail write_qualified: '+!!gw.gmail?.write_qualified+' · Calendar live: '+!!gw.calendar?.live_qualified));
+   }
+   card.append(button('Load into enroll form',()=>{
+    developerAutonomyDraft.alias=pending.alias||'';
+    developerAutonomyDraft.repository=pending.repository||'';
+    developerAutonomyDraft.project_id=pending.project_id||'';
+    developerAutonomyDraft.goal_id=pending.goal_id||'';
+    developerAutonomyDraft.diff_check=pending.diff_check||'diff-check';
+    developerAutonomyDraft.default_tests=(pending.default_tests||[]).join('\n')||'fixture-test';
+    developerAutonomyDraft.workflows=(pending.workflows||[]).join(',')||'routine_edit,test,repair,feature_branch';
+    developerAutonomyDraft.duration_days=String(pending.duration_days||30);
+    developerAutonomyDraft.cognitive_files=(pending.cognitive_files||[]).join('\n');
+    developerAutonomyDraft.cognitive_callers=(pending.cognitive_callers||[]).join('\n');
+    developerAutonomyDraft.cognitive_repairs=String(pending.cognitive_repairs||0);
+    $('notice').textContent='Pending enrollment loaded into the form below. Review exact scope, then Review and enroll. confirmed:true is set only by your authenticated submit.';
+    render();
+   }));
+   result.append(card);
+  }
   for(const item of status.policies||[]){
    const card=glass(item.alias||item.policy_id,item.state,'Repository standing consent');
    const detail=node('details');detail.append(node('summary','Inspect policy'),node('p','Repository: '+(item.repository||'Unavailable')),node('p','Workflows: '+(item.workflows||[]).join(', ')),node('p','Workers: '+(item.workers||[]).join(', ')),node('p','Expires: '+(item.expires_at?stamp(item.expires_at):'Unavailable')),node('pre',JSON.stringify(item.budgets||{},null,2)));
