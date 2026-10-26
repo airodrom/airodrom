@@ -51,7 +51,7 @@ function isWorkRequest(request) {
  }
  return false;
 }
-function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} = {}) {
+function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,activeGmailSearch=false} = {}) {
  if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');value=value.trim();
  // A pasted control command cannot be silently embedded in a model prompt.
  if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
@@ -96,6 +96,10 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL} =
  if(/^(?:check|read|show|open)\s+(?:my\s+)?gmail$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'recent'});
  if(/^(?:summari[sz]e (?:my )?unread (?:email|mail)|anything important this morning)$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'attention'});
  const draft=/^draft (?:a )?reply to (.{1,200})$/i.exec(request);if(draft)return route('CONNECTOR',{kind:'connector',connector:'gmail',action:'draft_reply',query:draft[1]});
+ // Deterministic sender/search Gmail retrieval — host connector only, never OpenCode.
+ // Generic "show more" only when this conversation has an active Gmail search.
+ const gmailSearch=require('./gmail-search-intent').parse(request,{activeGmailSearch:activeGmailSearch===true});
+ if(gmailSearch)return gmailSearch;
  if(/^(?:show|check|read)\s+(?:my\s+)?whatsapp(?: messages(?: needing attention)?)?$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'whatsapp',action:'attention'});
  // Personal ops / job search — host capability plan before model denial.
  const personalOps=require('./personal-ops');

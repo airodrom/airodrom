@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Host-authoritative natural-language Gmail search with bounded pagination: phrases such as “Find all mails from GitHub” route to the authenticated connector without OpenCode; opaque continuation sessions bind operator, query and Gmail `nextPageToken` ([docs/GMAIL-NL-SEARCH-V1.md](docs/GMAIL-NL-SEARCH-V1.md)).
+
 ### Fixed
 - Implicit mutation verbs (`fix`/`patch`/`implement`) refine onto a unique prior exact path or an explicit `in PATH` retarget; ambiguous multi-path and pathless mutations stay fail-closed ([ADR 0063](docs/adr/0063-requested-file-scope.md)).
 - Natural-language Mission admission no longer invents file targets from descriptive prose (`for read and edit operations`, `review the result`, evaluation recommendation markers); ordered `stages` stay distinct from unique `bindings` so collapsed multi-stage plans fail as `requested_file_stage_mismatch`; workspace diagnosis returns precise absence/oversized/sensitive codes with one bounded rematerialization, and execution targets remain permitted when planner bytes are withheld ([ADR 0063](docs/adr/0063-requested-file-scope.md)).

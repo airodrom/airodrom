@@ -67,6 +67,7 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Grounded Assistant Accuracy V1](GROUNDED-ASSISTANT-ACCURACY-V1.md) (SHIPPED + INSTALLED)
 - [Conversation UX Bugfix V1](CONVERSATION-UX-BUGFIX-V1.md) (SHIPPED + INSTALLED)
 - [Git Repository Cleanup V1](GIT-REPOSITORY-CLEANUP-V1.md)
+- [Gmail Natural-Language Search & Pagination V1](GMAIL-NL-SEARCH-V1.md) (source candidate — host connector routing; not installed until authorized cutover)
 
 - [Autonomous Reliability & Intelligence V1](AUTONOMOUS-RELIABILITY-V1.md): local evaluations, memory metrics, durable observing goals, flight traces and discovery diagnostics.
 - [Autonomous Supervisor V1](AUTONOMOUS-SUPERVISOR-V1.md): Live Activity execution projection, CLI `logs follow`, AUTO admission honesty, obsolete rework cleanup, standing WORK-template authorization (Issue #108).
