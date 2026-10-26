@@ -284,10 +284,13 @@ async function run(server, parsed, { conversation_id = null } = {}) {
   const subject = parsed.to || parsed.audience
     ? 'Following up'
     : 'Following up';
+  const purpose = typeof parsed.purpose === 'string' && parsed.purpose.trim()
+    ? parsed.purpose.trim().slice(0, 500)
+    : null;
   const body = buildBody({
     audience,
     address,
-    purpose: null,
+    purpose,
     tone: 'professional',
   });
 
@@ -298,14 +301,15 @@ async function run(server, parsed, { conversation_id = null } = {}) {
     body,
     address,
     address_memory_id,
-    purpose: null,
+    purpose,
     tone: 'professional',
     include_company_address: !!parsed.include_company_address,
   }, { conversation_id, operator: 'operator' });
 
   let message = formatDraft(draft);
   if (address_note) message += '\n\n' + address_note;
-  if (clarifications.length) {
+  // Host-supplied purpose already grounds the draft; skip redundant clarify prompts.
+  if (clarifications.length && !purpose) {
     message += '\n\nTo finish the draft, please tell me:\n• ' + clarifications.join('\n• ');
   }
   message += '\n\nYou can say “Make it more formal”, “Make it shorter”, or “Show me the draft again”. This did not send or save to Gmail.';

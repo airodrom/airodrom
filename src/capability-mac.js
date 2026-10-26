@@ -195,6 +195,7 @@ function controlPlaneStatus(ctx) {
     pid,
     uptime_s: Math.round(process.uptime()),
     identity: CONTROL_PLANE_SERVICE,
+    role: 'control_plane',
     product: 'Airodrom',
     legacy_service_id: CONTROL_PLANE_LEGACY_SERVICE,
     pid_source: supervisorAlive ? 'bridge_lock' : (hostAlive ? 'capability_host' : 'none'),

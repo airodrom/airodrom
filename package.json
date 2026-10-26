@@ -45,7 +45,7 @@
     "macos:desktop-login": "node scripts/run.cjs scripts/macos/desktop-login.cjs",
     "macos:desktop-login:install": "node scripts/run.cjs scripts/macos/desktop-login.cjs install",
     "test:product:browser": "node scripts/run.cjs --test tests/product-browser.cjs",
-    "test:assistant": "node scripts/run.cjs --test tests/personal-assistant-v1.test.js tests/host-facts-nl-v1.test.js",
+    "test:assistant": "node scripts/run.cjs --test tests/personal-assistant-v1.test.js tests/host-facts-nl-v1.test.js tests/contextual-assistant-v1.test.js",
     "test:host-facts": "NODE_ENV=test node scripts/run.cjs --test tests/host-facts-nl-v1.test.js",
     "test:conversation": "NODE_ENV=test node scripts/run.cjs --test tests/conversation-engine.test.js tests/conversation-routing-v1.test.js tests/conversation-cli.test.js tests/secure-vault-guide.test.js",
     "test:workers": "NODE_ENV=test node scripts/run.cjs --test tests/multi-worker-v2.test.js tests/multi-worker-ui.test.js",
@@ -62,7 +62,8 @@
     "test:cae:opencode:live": "AIRODROM_OPENCODE_LIVE=1 NODE_ENV=test node scripts/run.cjs --test tests/cae-opencode-live.cjs",
     "test:unified": "NODE_ENV=test node scripts/run.cjs --test --test-force-exit tests/repair-observation-v1.test.js tests/mission-contract-approval.test.js tests/cursor-worker.test.js tests/sandbox-containment.test.js tests/mcp-mission-coordinator.test.js tests/component-status.test.js tests/trusted-boundary-adversarial.test.js tests/unified-e2e-v1.test.js",
     "test:unified:live": "AIRODROM_OPENCODE_LIVE=1 NODE_ENV=test node scripts/run.cjs scripts/live-self-repair-proof.cjs",
-    "qualify:cursor": "NODE_ENV=test node scripts/run.cjs scripts/qualify-cursor-worker.cjs"
+    "qualify:cursor": "NODE_ENV=test node scripts/run.cjs scripts/qualify-cursor-worker.cjs",
+    "test:contextual-assistant": "NODE_ENV=test node scripts/run.cjs --test tests/contextual-assistant-v1.test.js tests/conversation-routing-v1.test.js tests/host-facts-nl-v1.test.js"
   },
   "dependencies": {
     "@slack/socket-mode": "3.1.0",
@@ -369,6 +370,8 @@
     "src/component-status.js",
     "src/config.js",
     "src/connection-status.js",
+    "src/contextual-assistant-intent.js",
+    "src/contextual-assistant-service.js",
     "src/control-context.js",
     "src/control-execution.js",
     "src/control-plane-api.js",
@@ -600,6 +603,7 @@
     "tests/autonomous-reliability.test.js",
     "tests/calendar-nl-control-v1.test.js",
     "tests/checkpoint-integrity.test.js",
+    "tests/contextual-assistant-v1.test.js",
     "tests/conversation-grounding-v1.test.js",
     "tests/developer-autonomy-v1.test.js",
     "tests/email-compose-memory-v1.test.js",

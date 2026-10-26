@@ -236,14 +236,39 @@ async function answerPorts(server, port) {
   });
 }
 
-function formatServiceRow(row) {
+const LOGIN_START_ROLES = new Set(['login_start', 'reboot_verifier']);
+
+function classifyServiceState(row) {
+  if (row.error) return 'unavailable';
+  if (row.stale === true) return 'stale';
+  if (row.running === true) return 'running';
+  if (row.running === false) {
+    // One-shot LaunchAgents often exit after starting the control plane.
+    if (LOGIN_START_ROLES.has(row.role) || row.role === 'login_start') return 'stopped';
+    return 'stopped';
+  }
+  if (row.verification === 'not_checked' || row.state === 'unknown') return 'not_checked';
+  if (row.verification === 'error') return 'unavailable';
+  return 'not_checked';
+}
+
+function formatServiceRow(row, { controlRunning = null } = {}) {
   const name = row.service || row.id || 'unknown';
   const label = row.label && row.label !== name ? `${row.label} (${name})` : name;
+  const state = classifyServiceState(row);
   if (row.error) return `${label}: unavailable (${String(row.error).slice(0, 80)})`;
-  if (row.running === true) return `${label}: running`;
-  if (row.running === false) return `${label}: not running`;
-  if (row.verification) return `${label}: ${row.verification}`;
-  return `${label}: status observed`;
+  if (state === 'running') return `${label}: running`;
+  if (state === 'stale') return `${label}: stale observation (not presented as live)`;
+  if (state === 'not_checked') return `${label}: not checked`;
+  if (state === 'degraded') return `${label}: degraded`;
+  // stopped
+  if (LOGIN_START_ROLES.has(row.role) || /desktop_login|reboot_acceptance/.test(name)) {
+    const note = controlRunning === true
+      ? 'stopped (expected for one-shot launcher; Control Plane is running separately)'
+      : 'stopped (LaunchAgent probe; not evidence that the Control Plane is down)';
+    return `${label}: ${note}`;
+  }
+  return `${label}: stopped`;
 }
 
 async function answerServices(server) {
@@ -264,18 +289,32 @@ async function answerServices(server) {
       message: 'No Airodrom-registered services were returned. This is not a full macOS process inventory.',
     });
   }
-  const lines = services.map(formatServiceRow);
+  const mapped = services.map((s) => {
+    const state = classifyServiceState(s);
+    return {
+      service: s.service,
+      label: s.label || null,
+      role: s.role || null,
+      running: s.running === true ? true : s.running === false ? false : null,
+      state,
+      verification: s.verification || null,
+      error: s.error ? String(s.error).slice(0, 120) : null,
+    };
+  });
+  const control = mapped.find((s) => s.service === 'airodrom_control_plane');
+  const controlRunning = control?.running === true;
+  const lines = mapped.map((row, i) => formatServiceRow({ ...services[i], ...row }, { controlRunning }));
+  const lead = controlRunning
+    ? 'Control Plane is running. Auxiliary LaunchAgents are listed separately; a stopped login starter is not evidence that the Control Plane is down.'
+    : control?.state === 'stopped'
+      ? 'Control Plane probe reports stopped.'
+      : 'Control Plane status is shown below.';
   return base({
     fact: 'SERVICE_STATUS',
     scope: 'airodrom_registry',
-    services: services.map((s) => ({
-      service: s.service,
-      label: s.label || null,
-      running: s.running === true ? true : s.running === false ? false : null,
-      verification: s.verification || null,
-      error: s.error ? String(s.error).slice(0, 120) : null,
-    })),
-    message: `Airodrom-registered services (not all macOS processes):\n${lines.map((l) => `• ${l}`).join('\n')}`,
+    control_running: controlRunning,
+    services: mapped,
+    message: `${lead}\nAirodrom-registered services (not all macOS processes):\n${lines.map((l) => `• ${l}`).join('\n')}`,
   });
 }
 

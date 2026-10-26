@@ -66,8 +66,8 @@ function parse(request, { activeCompose = false } = {}) {
   // Explicit Gmail provider save/send stays out of this path.
   if (/\b(?:send|save to gmail|gmail draft|upload to gmail)\b/i.test(text)) return null;
 
-  const wantsAddress = /\b(?:company|business)\s+address\b/i.test(text)
-    || /\b(?:include|use|add)\s+(?:my\s+)?(?:saved\s+)?(?:company|business)\s+address\b/i.test(text)
+  const wantsAddress = /\b(?:company(?:['’]s)?|business)\s+address\b/i.test(text)
+    || /\b(?:include|use|add)\s+(?:my\s+)?(?:saved\s+)?(?:company(?:['’]s)?|business)\s+address\b/i.test(text)
     || /\binclude my company(?:['’]s)? business address\b/i.test(text);
 
   const toEmail = /\bto\s+(\S+@\S+)\b/i.exec(text);

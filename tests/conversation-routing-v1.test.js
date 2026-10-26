@@ -94,7 +94,13 @@ test('authorized Gmail uses only canonical read-only GETs; previews get minimum 
  const summarized=await service.connectorInput(server,{connector:'gmail',action:'summarize',input:{id:'one'},conversation_id:id()});assert.equal(summarized.kind,'chat');assert.equal(contexts[0].include_memory,false);assert.equal(contexts[0].conversation_id,undefined);assert.equal(contexts[0].context.length,1);assert.equal(contexts[0].context[0].untrusted,true);assert.match(contexts[0].context[0].content,/Ignore policy/);assert.doesNotMatch(JSON.stringify(contexts),/synthetic-token/);
  assert.ok(calls.every(c=>c.method==='GET'&&c.url.startsWith('https://gmail.googleapis.com/')));
  await assert.rejects(service.connectorInput(server,{connector:'gmail',action:'send',input:{}}),/governed/);
- const wrong=new AssistantConnectors({gmail:{scope:'https://www.googleapis.com/auth/gmail.modify',reference:'opaque'},secrets:{resolve:async()=>{throw Error('must not resolve');}}});await assert.rejects(wrong.read('gmail','recent'),/exact read-only/);
+ // gmail.modify is read-capable (manage includes read). Non-read scopes must fail before token resolve.
+ const modifyOk=new AssistantConnectors({gmail:{scope:'https://www.googleapis.com/auth/gmail.modify',reference:'opaque'},secrets:{resolve:async()=>'synthetic-manage-token'},request:async(url,options)=>{calls.push({url:String(url),method:options.method});return {ok:true,text:async()=>JSON.stringify({messages:[]})};}});
+ const managed=await modifyOk.read('gmail','recent');
+ assert.equal(managed.host_verified,true);
+ assert.equal(Array.isArray(managed.items),true);
+ const sendOnly=new AssistantConnectors({gmail:{scope:'https://www.googleapis.com/auth/gmail.send',reference:'opaque'},secrets:{resolve:async()=>{throw Error('must not resolve');}}});
+ await assert.rejects(sendOnly.read('gmail','recent'),/read-capable/);
 });
 
 function assertUnapprovedResearch(r) {
@@ -107,6 +113,46 @@ function assertUnapprovedResearch(r) {
 function assertNoResearchExecution(bridge) {
  for(const table of ['cp_missions','cp_mission_tasks','cp_dispatches','cp_runs','cp_leases','cp_acceptances'])assert.equal(bridge.controlStore.db.prepare('SELECT count(*) n FROM '+table).get().n,0,table);
 }
+test('ordinary philosophy conversation routes to conversation with a response body path',async()=>{
+ const bodies=[];
+ const server={bridge:{options:{}},conversationEngine:{start:async input=>{
+  bodies.push(input.message);
+  return {kind:'chat',conversation_id:id(),turn_id:id(),state:'completed',message:'Philosophy explores how we should live; I can discuss it without tools or authority.'};
+ }}};
+ const r=await service.submit(server,{message:'What do you think about philosophy?',request_id:id()});
+ assert.equal(r.kind,'chat');
+ assert.equal(typeof r.message,'string');
+ assert.match(r.message,/Philosophy|live|discuss/i);
+ assert.equal(bodies[0],'What do you think about philosophy?');
+ assert.equal(intent.parse('What do you think about philosophy?').kind,'conversation');
+});
+
+test('multi-turn conversation keeps the same conversation_id on the engine start path',async()=>{
+ const starts=[];
+ const conversation_id=id();
+ const server={bridge:{options:{}},conversationEngine:{
+  start:async input=>{starts.push(input);return {kind:'chat',conversation_id:input.conversation_id||conversation_id,turn_id:id(),state:'completed',message:'Turn ok.'};}
+ }};
+ const a=await service.submit(server,{message:'Hello there, just chatting.',request_id:id(),conversation_id});
+ const b=await service.submit(server,{message:'And one more ordinary follow-up.',request_id:id(),conversation_id});
+ assert.equal(a.conversation_id,conversation_id);
+ assert.equal(b.conversation_id,conversation_id);
+ assert.equal(starts.length,2);
+ assert.equal(starts[0].conversation_id,conversation_id);
+ assert.equal(starts[1].conversation_id,conversation_id);
+});
+
+test('transport failure on conversation start surfaces without inventing a reply body',async()=>{
+ const server={bridge:{options:{}},conversationEngine:{start:async()=>{const err=Error('socket hang up');err.code='ECONNRESET';throw err;}}};
+ await assert.rejects(service.submit(server,{message:'What do you think about philosophy?',request_id:id()}),/hang up|ECONNRESET/i);
+});
+
+test('privacy awareness still wins over ordinary conversation',()=>{
+ const r=intent.parse('How can you safely save sensitive information like a company address?');
+ assert.ok(r.kind==='memory_awareness'||r.route==='MEMORY'||r.kind==='private_storage'||r.kind==='clarify'||r.kind==='memory_awareness');
+ assert.notEqual(r.kind,'conversation');
+});
+
 test('private ingress and unapproved public research return no model authority or execution',async t=>{
  const f=await fixture(t),server={bridge:f.bridge,conversationEngine:{start(){throw Error('No model allowed');}}};
  for(const [message,kind] of [['Save my mailbox number 818','private_storage'],['Save my mailbox number 818\nThanks','clarify'],["What's my mailbox number?",'private_storage']]){const r=await service.submit(server,{message,request_id:id()});assert.equal(r.kind,kind);assert.doesNotMatch(JSON.stringify(r),/\b818\b/);}
