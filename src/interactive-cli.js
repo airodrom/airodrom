@@ -37,8 +37,67 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail|whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail [retry-open|show-local|fresh] · /connect whatsapp · /gmail status|unread|recent|search|read|thread · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
+// Operator-local only: last Gmail authorization URL for LaunchServices retry / local show.
+// Never written to Mission evidence, telemetry, or ChatGPT surfaces.
+let pendingGmailAuthorization = null;
+
+function clearPendingGmailAuthorization() { pendingGmailAuthorization = null; }
+
+function rememberGmailAuthorization(result) {
+  if (!result || typeof result.authorization_url !== 'string') {
+    clearPendingGmailAuthorization();
+    return null;
+  }
+  // Fail closed before retaining anything that is not the pinned Google auth host.
+  try { require('./oauth-browser-launch').assertAuthorizationUrl(result.authorization_url); }
+  catch {
+    clearPendingGmailAuthorization();
+    throw Error('Authorization URL host is not permitted. Pending Gmail authorization was not retained.');
+  }
+  pendingGmailAuthorization = {
+    authorization_url: result.authorization_url,
+    expires_at: Number(result.expires_at) || (Date.now() + 300000),
+    read_only: result.read_only !== false,
+    reused: result.reused === true,
+  };
+  return pendingGmailAuthorization;
+}
+
+function requirePendingGmailAuthorization({ forLocalReveal = false } = {}) {
+  if (!pendingGmailAuthorization?.authorization_url) {
+    throw Error('No pending Gmail authorization in this Terminal session. Run /connect gmail first.');
+  }
+  if (pendingGmailAuthorization.expires_at && pendingGmailAuthorization.expires_at < Date.now()) {
+    clearPendingGmailAuthorization();
+    throw Error('OAuth callback expired or the pending authorization timed out. Run /connect gmail to start a fresh read-only consent.');
+  }
+  require('./oauth-browser-launch').assertAuthorizationUrl(pendingGmailAuthorization.authorization_url);
+  if (forLocalReveal) {
+    const outIsTty = !!(process.stdout.isTTY || process.stderr.isTTY);
+    const inIsTty = !!process.stdin.isTTY;
+    if (!outIsTty || !inIsTty) {
+      throw Error('show-local requires an interactive local Terminal TTY. Authorization URLs are not printed to redirected or non-interactive output.');
+    }
+  }
+  return pendingGmailAuthorization;
+}
+
+async function openGmailAuthorization(output, authorizationUrl, { launch = null } = {}) {
+  const browser = require('./oauth-browser-launch');
+  const launchFn = launch || browser.launchAuthorizationUrl;
+  const opened = await launchFn(authorizationUrl);
+  if (opened.ok) {
+    output.write(terminalText(opened.message) + '\n');
+    output.write('Read-only Gmail scope only. Airodrom reports connected only after Google consent and the localhost callback succeed.\n');
+    return opened;
+  }
+  const err = Error(browser.recoveryMessage(opened));
+  err.code = opened.code || 'oauth_browser_launch_failed';
+  err.oauth_browser = { code: opened.code, status: opened.status ?? null, signal: opened.signal ?? null };
+  throw err;
+}
 function rows(s) {
  const p=s.product, runtime=p?.runtime|| (s.opencode?.ready?'Ready':s.opencode?.reason==='opencode_runtime_pins_changed'?'Degraded':'Unavailable');
  return `OpenCode   ${runtime==='Ready'?'● Ready · Primary':runtime+' · '+(p?.runtimeReason||s.opencode?.reason||'Not observed')}${s.opencode?.version?' · '+s.opencode.version:''}
@@ -483,17 +542,43 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         }
         else if(command==='connectors')show(output,await local.request(home,'/api/assistant/connectors'),render.connectors,json);
         else if(command==='connect') {
-          if(!['gmail','google','whatsapp'].includes(arg))throw Error('Use /connect gmail, /connect google or /connect whatsapp');
-          if(arg==='whatsapp'){
+          const [connector,...connectParts]=String(arg||'').trim().split(/\s+/).filter(Boolean);
+          const connectAction=(connectParts[0]||'').toLowerCase();
+          if(!['gmail','google','whatsapp'].includes(connector))throw Error('Use /connect gmail, /connect google or /connect whatsapp');
+          if(connector==='whatsapp'){
             active=new AbortController();
             try{
               await require('./whatsapp-credential-onboarding').run({home,input,output,signal:active.signal});
             }finally{active=null;}
             readerLocked=false;showPrompt();continue;
           }
-          const result=await local.request(home,'/api/assistant/connect',{connector:arg});
-          if(result.authorization_url){const r=require('node:child_process').spawnSync('/usr/bin/open',[result.authorization_url],{stdio:'ignore',timeout:5000});if(r.status!==0)throw Error('OAuth browser could not open.');output.write('Read-only Gmail OAuth opened. Complete the operator authorization in your browser.\n');}
-          else output.write(terminalText(result.message)+'\n');
+          if(connectAction==='retry-open'){
+            const pending=requirePendingGmailAuthorization();
+            await openGmailAuthorization(output, pending.authorization_url);
+            continue;
+          }
+          if(connectAction==='show-local'){
+            const pending=requirePendingGmailAuthorization({forLocalReveal:true});
+            // Local interactive Terminal TTY only — never route this URL through ChatGPT/MCP/Mission logs.
+            output.write('Local Terminal only — authorization URL (do not paste into ChatGPT or remote chats):\n');
+            output.write(pending.authorization_url+'\n');
+            output.write('Complete Google consent in your browser. Airodrom waits on the localhost callback.\n');
+            continue;
+          }
+          if(connectAction&&connectAction!=='fresh'){
+            throw Error('Use /connect gmail, /connect gmail retry-open, /connect gmail show-local, or /connect gmail fresh.');
+          }
+          const connectBody={connector:'gmail'};
+          if(connectAction==='fresh')connectBody.force_new=true;
+          const result=await local.request(home,'/api/assistant/connect',connectBody);
+          if(result.authorization_url){
+            rememberGmailAuthorization(result);
+            if(result.reused)output.write('Reusing the still-active read-only Gmail authorization session.\n');
+            await openGmailAuthorization(output, result.authorization_url);
+          }else{
+            clearPendingGmailAuthorization();
+            output.write(terminalText(result.message)+'\n');
+          }
         }
         else if(command==='gmail'||command==='whatsapp') {
           const [actionArg='status',...parts]=arg.split(/\s+/),action=actionArg==='draft-reply'?'draft_reply':actionArg,query=parts.join(' '),selected=['read','thread','summarize','draft_reply'].includes(action);
@@ -725,4 +810,13 @@ async function main(args = process.argv.slice(2)) {
   throw Error('Unknown command. Use airodrom --help.');
 }
 if (require.main === module) main().catch(error => { console.error('Airodrom: ' + terminalText(require('./secret-observation').safeValue(error.message))); process.exitCode = error.message === 'Unknown command. Use airodrom --help.' ? 2 : 1; });
-module.exports = { parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation, admitConversation, isTransportTimeout, sanitizePaste, pastePreview, secureIngressLine, missionReceipt, interactive, main, showStatus, serviceCommand, formatAutopilot, autopilotControl };
+module.exports = {
+  parseLine, intro, rows, help, terminalText, memory, scopedTask, waitResult, waitConversation,
+  admitConversation, isTransportTimeout, sanitizePaste, pastePreview, secureIngressLine, missionReceipt,
+  interactive, main, showStatus, serviceCommand, formatAutopilot, autopilotControl,
+  openGmailAuthorization, rememberGmailAuthorization, requirePendingGmailAuthorization,
+  clearPendingGmailAuthorization,
+  // Test seam: inspect/replace pending authorization without printing secrets elsewhere.
+  _pendingGmailAuthorization: () => pendingGmailAuthorization,
+  _setPendingGmailAuthorization: (value) => { pendingGmailAuthorization = value; },
+};
