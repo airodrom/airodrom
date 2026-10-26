@@ -137,7 +137,7 @@ async function memoryDateCompose(server, parsed, { conversation_id }) {
     date_included: !!evidence.date.date,
     message:
       message
-      + '\n\nSources: Personal Memory V2 (ordinary address) + host clock. Local draft only — not saved to Gmail, not sent.',
+      + '\n\nSources: Personal Memory V2 (ordinary address) + host clock. Your draft is ready. Nothing has been sent.',
   });
 }
 
@@ -180,7 +180,7 @@ async function calendarFollowupCompose(server, parsed, { conversation_id }) {
 
   if (!items.length) {
     return deny(
-      `No authorized calendar events were found for ${parsed.day || 'tomorrow'}. I did not invent a meeting or draft.`,
+      `I couldn't find a meeting ${parsed.day || 'tomorrow'}. Nothing was drafted.`,
       'calendar_empty',
       { composition: parsed.composition, evidence }
     );
@@ -229,8 +229,8 @@ async function calendarFollowupCompose(server, parsed, { conversation_id }) {
     draft_id: composed.draft_id || null,
     message:
       (composed.message || '')
-      + `\n\nCalendar source: authorized host event “${title}”${when ? ` (${when})` : ''}. `
-      + 'Local draft only — not sent. Sending requires a separate Gmail write confirmation.',
+      + `\n\nAbout “${title}”${when ? ` (${when})` : ''}. `
+      + 'Your draft is ready. Nothing has been sent. Sending requires your confirmation.',
   });
 }
 
@@ -278,7 +278,7 @@ async function meetingFollowupSend(server, parsed, { conversation_id }) {
 
   if (!items.length) {
     return deny(
-      `No authorized calendar events were found for ${parsed.day || 'tomorrow'}. I did not invent a meeting, draft, or send.`,
+      `I couldn't find a meeting ${parsed.day || 'tomorrow'}. Nothing was drafted or sent.`,
       'calendar_empty',
       { composition: parsed.composition, evidence, workflow_state: WORKFLOW.CLARIFY }
     );
@@ -418,9 +418,9 @@ async function meetingFollowupSend(server, parsed, { conversation_id }) {
       address_included: true,
       message:
         (composed.message || '')
-        + `\n\nState: Not authorized to send.\n`
-        + 'Gmail is connected read-only. Run /connect gmail send (or /connect gmail manage) for outbound send consent, then ask again. '
-        + 'Draft remains local — not saved to Gmail Drafts, not sent.',
+        + '\n\nYour draft is ready. Nothing has been sent.\n'
+        + 'Gmail is connected for reading. Sending requires additional Google permission. '
+        + 'Use Connections to grant send access, then ask again.',
     });
   }
 

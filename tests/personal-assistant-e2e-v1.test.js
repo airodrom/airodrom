@@ -89,7 +89,7 @@ test('empty calendar does not invent a meeting', async () => {
     }, { conversation_id: randomUUID() });
     assert.equal(result.code, 'calendar_empty');
     assert.notEqual(result.gmail_sent, true);
-    assert.match(result.message, /did not invent/i);
+    assert.match(result.message, /couldn't find a meeting|did not invent/i);
   } finally {
     restore();
   }
@@ -187,7 +187,7 @@ test('readonly Gmail yields draft_ready or not_authorized — never sent', async
       || result.workflow_state === contextual.WORKFLOW.DRAFT_READY
     );
     assert.equal(result.gmail_sent, false);
-    assert.match(result.message, /Not authorized|Draft ready|read-only|connect gmail send/i);
+    assert.match(result.message, /Not authorized|Draft ready|read-only|connected for reading|additional Google permission|connect gmail send|Nothing has been sent/i);
   } finally {
     restore();
   }

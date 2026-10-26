@@ -57,7 +57,7 @@ test('memory + host date + local compose; never claims Gmail persistence', async
   assert.equal(result.model_invoked, false);
   assert.match(result.message, /100 Synthetic Parkway/);
   assert.match(result.message, /Today's date \(host clock\)|host clock/i);
-  assert.match(result.message, /not saved to Gmail|Local draft only/i);
+  assert.match(result.message, /Your draft is ready|Nothing has been sent|not saved to Gmail|Local draft only/i);
   assert.equal(result.gmail_sent, false);
   assert.equal(result.gmail_saved, false);
   assert.equal(result.address_included, true);

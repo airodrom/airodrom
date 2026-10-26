@@ -112,7 +112,11 @@ test('OpenCode file observations mark OPENCODE_WRITE', async t => {
 
 test('Control Center primary navigation is simplified', () => {
   const hub = fs.readFileSync(path.join(__dirname, '../public/control-hub.js'), 'utf8');
-  assert.match(hub, /primaryViews=\['Overview','Live Activity','Missions','Workers','History','Settings'\]/);
+  assert.match(hub, /primaryNav=\[\s*\{id:'Conversation',label:'Chat'\}/);
+  assert.match(hub, /\{id:'Missions',label:'Tasks'\}/);
+  assert.match(hub, /\{id:'Google Connections',label:'Connections'\}/);
+  assert.match(hub, /\{id:'Settings',label:'Settings'\}/);
+  assert.match(hub, /node\('summary','Advanced'\)/);
   assert.match(hub, /function liveActivityView/);
   assert.match(hub, /Unread Results/);
   assert.match(hub, /connectGlobalLiveStream/);
