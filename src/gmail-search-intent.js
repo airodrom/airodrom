@@ -217,7 +217,16 @@ function isHostSearchQuery(query) {
   if (/[\r\n\0]/.test(query) || /\b(?:password|passphrase|bearer|api[_-]?key|refresh_token|access_token)\b/i.test(query)) return false;
   if (!/\bfrom:/i.test(query)) return false;
   // Operators and atoms we emit: from, is:unread, newer_than:7d, OR, parentheses, quotes.
-  return /^(?:(?:is:unread|newer_than:7d)\s+|\(|\)|OR\s+|from:(?:"[^"]{1,200}"|[^\s()]+)\s*)+$/i.test(query.trim());
+  if (!/^(?:(?:is:unread|newer_than:7d)\s+|\(|\)|OR\s+|from:(?:"[^"]{1,200}"|[^\s()]+)\s*)+$/i.test(query.trim())) return false;
+  // Alphabet match alone is not enough: refuse credential-shaped from: atoms.
+  const policy = require('./provider-policy');
+  for (const match of query.matchAll(/from:("[^"]{1,200}"|[^\s()]+)/gi)) {
+    const atom = String(match[1] || '').replace(/^"|"$/g, '').trim();
+    if (!atom) return false;
+    if (policy.secretLike(atom) || policy.operatorSecretLike?.(atom)
+      || /^(?:sk-|AKIA|ASIA|ghp_|gho_|github_pat_|xox[baprs]-|ya29\.|AIza)/i.test(atom)) return false;
+  }
+  return true;
 }
 
 module.exports = {

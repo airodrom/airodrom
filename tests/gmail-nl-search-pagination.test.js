@@ -93,10 +93,16 @@ test('pagination sessions bind query operator and reject tampering', () => {
   const id = sessions.begin({ query: 'from:github.com', label: 'GitHub', conversation_id: 'conv-1' });
   sessions.recordPage(id, { messages: [{ id: 'm1' }], next_page_token: 'tok-2' });
   assert.throws(() => sessions.require(id, { conversation_id: 'other-conv' }), /different conversation/);
-  assert.throws(() => sessions.require(id, { expected_query: 'from:evil.com' }), /query changed/);
+  assert.throws(() => sessions.require(id, {}), /different conversation/);
+  assert.throws(() => sessions.require(id, { conversation_id: 'conv-1', expected_query: 'from:evil.com' }), /query changed/);
   assert.throws(() => sessions.require('not-a-uuid'), /unavailable or expired/);
-  const forged = '<<<<<<<'.replace(/</g, '') || null;
   assert.throws(() => sessions.require('00000000-0000-4000-8000-000000000000'), /expired|unavailable/);
+});
+
+test('host search query allowlist rejects credential-shaped from atoms', () => {
+  assert.equal(gmailIntent.isHostSearchQuery('from:github.com'), true);
+  assert.equal(gmailIntent.isHostSearchQuery('from:sk-live-not-a-real-secret-value'), false);
+  assert.equal(gmailIntent.isHostSearchQuery('from:AKIAIOSFODNN7EXAMPLE'), false);
 });
 
 test('duplicate message ids are deduped across pages', () => {
@@ -164,6 +170,14 @@ test('integration: natural language to paginated host Gmail search without model
   assert.equal(modelCalls, 0);
   assert.match(render.receipt(first), /From:/);
   assert.match(render.receipt(first), /Subject:/);
+
+  // Non-search list receipts must not project provider page tokens either.
+  const recent = await service.connectorInput(server, { connector: 'gmail', action: 'recent', input: { limit: 10 } });
+  assert.doesNotMatch(JSON.stringify(recent), /_provider_next|nextPageToken|page2/);
+  await assert.rejects(
+    () => bridge.assistantConnectors.read('gmail', 'recent', { limit: 10, page_token: 'leaked' }),
+    /host-session only/
+  );
 });
 
 test('empty results and oauth disconnect stay host-classified', async () => {

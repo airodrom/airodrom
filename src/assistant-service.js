@@ -279,7 +279,10 @@ async function connectorInput(server,{connector,action,input={},conversation_id,
  }};
  if(!['summarize','attention','draft_reply'].includes(action)){
   const data=await read(action);
-  return {kind:'connector',route:'CONNECTOR',...data,model_invoked:false,host_verified:host_verified||data.host_verified===true};
+  // Never project Gmail provider page tokens onto operator/API receipts.
+  const {_provider_next_page_token,...safe}=data||{};
+  void _provider_next_page_token;
+  return {kind:'connector',route:'CONNECTOR',...safe,model_invoked:false,host_verified:host_verified||data.host_verified===true};
  }
  const data=await read(action==='draft_reply'?(input.id?'read':'search'):action);
  if(data.kind==='connect_required')return data;

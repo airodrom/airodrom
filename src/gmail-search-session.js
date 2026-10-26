@@ -74,7 +74,8 @@ class GmailSearchSessions {
       err.code = 'gmail_search_cursor_forbidden';
       throw err;
     }
-    if (row.conversation_id && conversation_id && row.conversation_id !== conversation_id) {
+    // Bound sessions require the same conversation; omitting conversation_id is not a free pass.
+    if (row.conversation_id && row.conversation_id !== (conversation_id || null)) {
       const err = Error('Gmail search continuation belongs to a different conversation.');
       err.code = 'gmail_search_cursor_forbidden';
       throw err;
@@ -89,7 +90,12 @@ class GmailSearchSessions {
   }
 
   recordPage(id, { messages = [], next_page_token = null } = {}) {
-    const row = this.require(id);
+    // Host page recording is bound to the session row itself (not a client-supplied conversation).
+    const existing = this.#sessions.get(id);
+    const row = this.require(id, {
+      conversation_id: existing?.conversation_id || null,
+      operator: existing?.operator || 'operator',
+    });
     if (row.pages_fetched >= MAX_PAGES || row.total_returned >= MAX_TOTAL_RESULTS) {
       row.exhausted = true;
       row.next_page_token = null;

@@ -56,7 +56,7 @@ Host queries use a narrow operator alphabet (`isHostSearchQuery`) so `from:domai
 | Cursor TTL | 15 minutes |
 | Body fetch | Metadata only on list pages (From, Subject, Date + short snippet) |
 
-Continuation uses an **opaque** `continuation_id` bound to operator + optional conversation + exact query. Gmail `nextPageToken` never leaves the host session store.
+Continuation uses an **opaque** `continuation_id` bound to operator + conversation (when the search started in a conversation) + exact query. Omitting `conversation_id` cannot continue a conversation-bound session. Gmail `nextPageToken` stays in the host session store only; connector list receipts do not project `_provider_next_page_token`, and clients cannot supply `page_token` except through that host search path.
 
 “All” means **bounded, resumable pages**, not loading the mailbox into memory. If a safety limit is hit, the receipt is marked **partial**. When the provider returns no further page, the receipt is marked **complete** for that query (distinct from estimates).
 

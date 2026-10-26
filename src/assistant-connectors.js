@@ -97,6 +97,9 @@ class AssistantConnectors {
    // Host NL Gmail search queries use from:domain atoms that trip chat secret heuristics.
    if(!require('./gmail-search-intent').isHostSearchQuery(input.query)&&secret(input.query))throw Error('Secret query refused.');
   }
+  // Provider page tokens are host-session only (gmailSearchPage). Clients cannot supply them.
+  if(input.page_token!==undefined&&action!=='search')throw Error('Gmail page continuation is host-session only.');
+  if(input.page_token!==undefined&&action==='search'&&(typeof input.page_token!=='string'||!input.page_token||input.page_token.length>2048))throw Error('Invalid Gmail page continuation.');
   let items;
   let pageMeta=null;
   if(connector==='gmail') {
@@ -108,7 +111,7 @@ class AssistantConnectors {
     const q=action==='job_categorize'
      ?(input.query||'newer_than:30d (subject:(application OR interview OR recruiter OR hiring OR opportunity) OR from:(recruiter OR talent OR careers))')
      :(['unread','attention'].includes(action)?'is:unread':action==='search'?input.query||'': 'newer_than:7d');
-    pageMeta=await this.#listMessages({q,limit,pageToken:input.page_token||null});
+    pageMeta=await this.#listMessages({q,limit,pageToken:action==='search'?(input.page_token||null):null});
     items=pageMeta.items;
    }
    this.#liveGmail=true;
