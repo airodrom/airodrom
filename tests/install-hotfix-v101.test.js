@@ -24,7 +24,7 @@ test('ControlServer accepts optional Gmail clientSecretReference and rejects unk
   write({ clientId: 'fixture.apps.googleusercontent.com', reference: tokenRef, clientSecretReference: secretRef });
   const ok = new ControlServer(bridge, { port: 0, token: 'a'.repeat(64), mcpToken: 'b'.repeat(64) });
   assert.equal(!!ok.gmailOAuth, true);
-  assert.equal(ok.gmailOAuth.status().client_secret_configured, true);
+  assert.equal(ok.gmailOAuth.status().client_secret_bound, true);
 
   write({ clientId: 'fixture.apps.googleusercontent.com', reference: tokenRef, unexpected: true });
   assert.throws(() => new ControlServer(bridge, { port: 0, token: 'a'.repeat(64), mcpToken: 'b'.repeat(64) }), /Unexpected input fields/);
@@ -32,7 +32,7 @@ test('ControlServer accepts optional Gmail clientSecretReference and rejects unk
   write({ clientId: 'fixture.apps.googleusercontent.com', reference: tokenRef });
   const legacy = new ControlServer(bridge, { port: 0, token: 'a'.repeat(64), mcpToken: 'b'.repeat(64) });
   assert.equal(!!legacy.gmailOAuth, true);
-  assert.equal(legacy.gmailOAuth.status().client_secret_configured, false);
+  assert.equal(legacy.gmailOAuth.status().client_secret_bound, false);
 
   fs.rmSync(dir, { recursive: true, force: true });
 });

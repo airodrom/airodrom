@@ -241,7 +241,7 @@ class GmailOAuth {
    values_displayed:false,
    // Live qualification is process-local after a successful bounded Gmail read.
    live_qualified:false,
-   client_secret_configured:!!this.#clientSecretReference,
+   client_secret_bound:!!this.#clientSecretReference,
    last_safe_error_class:this.#lastFailure?.safe_error_class||null,
    last_failure_phase:this.#lastFailure?.phase||null,
    last_provider_error:this.#lastFailure?.provider_error||null
