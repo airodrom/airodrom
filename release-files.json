@@ -760,6 +760,8 @@
   "tests/fixtures/test-bridge.cjs",
   "tests/global-autopilot-v1.test.js",
   "tests/gmail-nl-search-pagination.test.js",
+  "tests/gmail-oauth-token-exchange.test.js",
+  "tests/gmail-write-durability-v1.test.js",
   "tests/gmail-write-stage-a.test.js",
   "tests/harness-agent-truthfulness.test.js",
   "tests/harness-chaos-boundaries.test.js",

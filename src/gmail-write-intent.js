@@ -39,14 +39,16 @@ function parse(request) {
   if (approve) {
     return { kind: 'gmail_write', action: 'approve', approval_id: approve[1], route: 'GMAIL_WRITE', host_verified: true };
   }
-  const confirm = /^\/gmail\s+confirm\s+([a-f0-9-]{36})(?:\s+(--destructive))?\s*$/i.exec(text);
+  const confirm = /^\/gmail\s+confirm\s+([a-f0-9-]{36})((?:\s+--(?:destructive|ack-uncertain))+)?\s*$/i.exec(text);
   if (confirm) {
+    const flags = confirm[2] || '';
     return {
       kind: 'gmail_write',
       action: 'confirm',
       preview_id: confirm[1],
       confirmed: true,
-      destructive: !!confirm[2],
+      destructive: /(?:^|\s)--destructive(?:\s|$)/i.test(flags),
+      ack_uncertain: /(?:^|\s)--ack-uncertain(?:\s|$)/i.test(flags),
       route: 'GMAIL_WRITE',
       host_verified: true,
     };

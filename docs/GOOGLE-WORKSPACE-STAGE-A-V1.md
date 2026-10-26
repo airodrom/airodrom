@@ -20,7 +20,7 @@ Never requests `https://mail.google.com/` by default. Drive/Docs/Sheets/Contacts
 2. `/gmail confirm <preview-id>` for ordinary sends and mailbox mutations.
 3. Independent `/gmail approve <approval-id>` then confirm for trash, sensitive forward, and bulk recipients (>5).
 4. Destructive trash also requires `--destructive` after approval.
-5. Durable `operation_id` / preview id; uncertain network outcomes keep the preview and refuse blind retry; completed sends replay host-local receipts (Google send is not idempotent).
+5. Durable SQLite-backed `operation_id` / preview rows (shared control-plane DB when available): atomic claim (`pending|uncertain` → `sending`) so concurrent confirms cannot double-dispatch; uncertain provider outcomes require `/gmail confirm <id> --ack-uncertain` after operator verification (never blind retry); completed receipts survive restart and replay host-local dedupe (Google send is not idempotent). Account, conversation, approval, and scope bindings fail closed on mismatch.
 
 Natural language examples (after consent):
 

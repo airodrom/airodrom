@@ -113,6 +113,7 @@ async function submit(server,input){
   confirm_id:parsed.preview_id||null,
   confirmed:parsed.confirmed===true,
   destructive:parsed.destructive===true,
+  // ack_uncertain is carried on parsed and read inside gmail-write-service
  });
  if(parsed.kind==='personal_ops'){
   const plan=require('./personal-ops').plan(server,parsed.message);

@@ -4,8 +4,23 @@ const { GmailWriteConnector, parseAddressList, MAX_RECIPIENTS } = require('./gma
 const { GmailWriteSessions } = require('./gmail-write-session');
 
 function sessions(server) {
-  if (!server.gmailWriteSessions) server.gmailWriteSessions = new GmailWriteSessions();
+  if (!server.gmailWriteSessions) {
+    const db = server.bridge?.controlStore?.db || server.gmailWriteDb || null;
+    server.gmailWriteSessions = new GmailWriteSessions({ db });
+  }
   return server.gmailWriteSessions;
+}
+
+function oauthBinding(server) {
+  const st = server.gmailOAuth?.status?.() || {};
+  return {
+    oauth_mode: st.mode || null,
+    oauth_scope: st.scope || null,
+  };
+}
+
+function stageOpts(server, conversation_id) {
+  return { conversation_id, operator: 'operator', ...oauthBinding(server) };
 }
 
 function writeConnector(server) {
@@ -203,7 +218,7 @@ async function run(server, parsed, {
         bulk_recipients: bulk,
         account_hint: 'authorized Gmail account',
       };
-      const staged = sessions(server).stageWrite(proposal, { conversation_id, operator: 'operator' });
+      const staged = sessions(server).stageWrite(proposal, stageOpts(server, conversation_id));
       let message = `Preview send (not delivered yet):\n• To: ${to.join(', ')}`
         + (cc.length ? `\n• Cc: ${cc.join(', ')}` : '')
         + (bcc.length ? `\n• Bcc: ${bcc.join(', ')}` : '')
@@ -274,7 +289,7 @@ async function run(server, parsed, {
         reply_all: !!parsed.reply_all,
         bulk_recipients: (to.length + cc.length) > 5,
       };
-      const staged = sessions(server).stageWrite(proposal, { conversation_id, operator: 'operator' });
+      const staged = sessions(server).stageWrite(proposal, stageOpts(server, conversation_id));
       return {
         kind: 'gmail_write',
         action: 'preview',
@@ -313,7 +328,7 @@ async function run(server, parsed, {
         source_message_id: meta.id,
         sensitive_forward: true,
       };
-      const staged = sessions(server).stageWrite(proposal, { conversation_id, operator: 'operator' });
+      const staged = sessions(server).stageWrite(proposal, stageOpts(server, conversation_id));
       return {
         kind: 'gmail_write',
         action: 'preview',
@@ -347,7 +362,7 @@ async function run(server, parsed, {
         label_op: parsed.label_op || null,
         destructive: parsed.action === 'trash',
       };
-      const staged = sessions(server).stageWrite(proposal, { conversation_id, operator: 'operator' });
+      const staged = sessions(server).stageWrite(proposal, stageOpts(server, conversation_id));
       let message = `Preview ${parsed.action} on message ${resolved.id}. Confirm with /gmail confirm ${staged.preview_id}.`;
       if (proposal.destructive) {
         message = `Destructive preview — move message ${resolved.id} to trash.\n1) /gmail approve ${staged.approval_id}\n2) /gmail confirm ${staged.preview_id} --destructive`;
@@ -378,31 +393,10 @@ async function run(server, parsed, {
       if (prior) {
         return { ...prior, host_verified, model_invoked, live_qualified: true, authority: false };
       }
-      let row;
-      try {
-        row = sessions(server).peekWrite(id, { conversation_id, operator: 'operator' });
-      } catch (error) {
-        return { kind: 'clarify', route: 'GMAIL_WRITE', message: error.message, code: error.code, host_verified, model_invoked, authority: false };
-      }
 
       const ownerConfirmed = confirmed === true || parsed.confirmed === true;
       const destructiveOk = destructive === true || parsed.destructive === true;
-      const needsApproval = row.approval_status !== 'not_required';
-
-      if (needsApproval) {
-        if (row.approval_status !== 'approved') {
-          return {
-            kind: 'clarify',
-            route: 'GMAIL_WRITE',
-            message: `This Gmail write requires independent approval first: /gmail approve ${row.approval_id}.`,
-            approval_id: row.approval_id,
-            host_verified,
-            model_invoked,
-            authority: false,
-            code: 'gmail_write_approval_required',
-          };
-        }
-      }
+      const ackUncertain = parsed.ack_uncertain === true;
       if (!ownerConfirmed) {
         return {
           kind: 'clarify',
@@ -413,7 +407,14 @@ async function run(server, parsed, {
           authority: false,
         };
       }
-      if (row.destructive && !destructiveOk) {
+
+      let peeked;
+      try {
+        peeked = sessions(server).peekWrite(id, { conversation_id, operator: 'operator' });
+      } catch (error) {
+        return { kind: 'clarify', route: 'GMAIL_WRITE', message: error.message, code: error.code, host_verified, model_invoked, authority: false };
+      }
+      if (peeked.destructive && !destructiveOk) {
         return {
           kind: 'clarify',
           route: 'GMAIL_WRITE',
@@ -423,12 +424,80 @@ async function run(server, parsed, {
           authority: false,
         };
       }
+      if (peeked.op === 'send' && !oauth.canSend() && !oauth.canModify()) {
+        return authorizationOffer(server, { send: true });
+      }
+      if (peeked.op !== 'send' && !oauth.canModify()) {
+        return authorizationOffer(server, { modify: true });
+      }
+
+      // Resolve Google account before claim so the operation binds to the live identity.
+      let account_email = null;
+      try {
+        if (adapter?.profile) {
+          const profile = await adapter.profile();
+          account_email = profile?.email || null;
+        }
+      } catch { /* claim still proceeds; account bound when available */ }
+
+      let claimed;
+      try {
+        claimed = sessions(server).claimWrite(id, {
+          conversation_id,
+          operator: 'operator',
+          account_email,
+          ...oauthBinding(server),
+          ack_uncertain: ackUncertain,
+        });
+      } catch (error) {
+        return {
+          kind: 'clarify',
+          route: 'GMAIL_WRITE',
+          message: error.message,
+          code: error.code,
+          approval_id: error.approval_id || null,
+          preview_id: id,
+          host_verified,
+          model_invoked,
+          authority: false,
+        };
+      }
+      if (claimed.kind === 'completed') {
+        return { ...claimed.receipt, host_verified, model_invoked, live_qualified: true, authority: false };
+      }
+
+      const row = claimed.row;
+      const claim_token = claimed.claim_token;
+
+      async function finishSuccess(receipt) {
+        // Persist a replay-annotated copy; return the fresh provider receipt unmarked.
+        sessions(server).markCompleted(id, receipt, {
+          conversation_id,
+          operator: 'operator',
+          claim_token,
+        });
+        return receipt;
+      }
+
+      async function finishUncertain(message, code = 'gmail_write_uncertain') {
+        sessions(server).markUncertain(id, claim_token, { conversation_id, operator: 'operator' });
+        return {
+          kind: 'clarify',
+          route: 'GMAIL_WRITE',
+          action: 'uncertain',
+          message,
+          operation_id: row.operation_id || id,
+          preview_id: id,
+          code,
+          host_verified,
+          model_invoked,
+          authority: false,
+        };
+      }
 
       if (row.op === 'send') {
-        if (!oauth.canSend() && !oauth.canModify()) return authorizationOffer(server, { send: true });
         try {
           const sent = await adapter.sendMessage(row);
-          sessions(server).commitWrite(id, { conversation_id, operator: 'operator' });
           const receipt = {
             kind: 'gmail_write',
             action: 'sent',
@@ -443,30 +512,23 @@ async function run(server, parsed, {
             live_qualified: true,
             authority: false,
           };
-          sessions(server).markCompleted(id, receipt, { conversation_id, operator: 'operator' });
-          return receipt;
+          return await finishSuccess(receipt);
         } catch (error) {
           if (isUncertainWriteError(error)) {
-            return {
-              kind: 'clarify',
-              route: 'GMAIL_WRITE',
-              message: 'Send outcome is uncertain (network/timeout). Preview kept — do not retry blindly. Check Gmail Sent, then re-confirm only if nothing was delivered. Operation id: ' + (row.operation_id || id),
-              operation_id: row.operation_id || id,
-              preview_id: id,
-              code: 'gmail_write_uncertain',
-              host_verified,
-              model_invoked,
-              authority: false,
-            };
+            return finishUncertain(
+              'Send outcome is uncertain (network/timeout). Operation marked uncertain — do not retry blindly. Check Gmail Sent, then /gmail confirm '
+                + id + ' --ack-uncertain only if nothing was delivered. Operation id: ' + (row.operation_id || id),
+            );
           }
+          // Definite provider rejection: release claim back to pending by marking uncertain
+          // is wrong; rethrow for outer handler. Drop claim to uncertain so restart is safe.
+          try { sessions(server).markUncertain(id, claim_token, { conversation_id, operator: 'operator' }); } catch { /* */ }
           throw error;
         }
       }
 
-      if (!oauth.canModify()) return authorizationOffer(server, { modify: true });
-
-      let result;
       try {
+        let result;
         if (row.op === 'archive') result = await adapter.archive(row.message_id);
         else if (row.op === 'restore') result = await adapter.restore(row.message_id);
         else if (row.op === 'mark_read') result = await adapter.markRead(row.message_id);
@@ -477,9 +539,9 @@ async function run(server, parsed, {
           const remove = row.label_op === 'remove' ? [row.label] : [];
           result = await adapter.modifyLabels(row.message_id, { add, remove });
         } else {
+          sessions(server).markUncertain(id, claim_token, { conversation_id, operator: 'operator' });
           return { kind: 'clarify', route: 'GMAIL_WRITE', message: 'Unknown Gmail write operation.', host_verified, model_invoked, authority: false };
         }
-        sessions(server).commitWrite(id, { conversation_id, operator: 'operator' });
         const receipt = {
           kind: 'gmail_write',
           action: row.op,
@@ -493,22 +555,14 @@ async function run(server, parsed, {
           live_qualified: true,
           authority: false,
         };
-        sessions(server).markCompleted(id, receipt, { conversation_id, operator: 'operator' });
-        return receipt;
+        return await finishSuccess(receipt);
       } catch (error) {
         if (isUncertainWriteError(error)) {
-          return {
-            kind: 'clarify',
-            route: 'GMAIL_WRITE',
-            message: `Gmail ${row.op} outcome uncertain. Preview kept (operation ${row.operation_id || id}). Verify in Gmail before retrying.`,
-            operation_id: row.operation_id || id,
-            preview_id: id,
-            code: 'gmail_write_uncertain',
-            host_verified,
-            model_invoked,
-            authority: false,
-          };
+          return finishUncertain(
+            `Gmail ${row.op} outcome uncertain. Operation marked uncertain (operation ${row.operation_id || id}). Verify in Gmail, then /gmail confirm ${id} --ack-uncertain only if the change did not apply.`,
+          );
         }
+        try { sessions(server).markUncertain(id, claim_token, { conversation_id, operator: 'operator' }); } catch { /* */ }
         throw error;
       }
     }
