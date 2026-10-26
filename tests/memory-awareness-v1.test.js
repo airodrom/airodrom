@@ -61,6 +61,7 @@ test('list/see how-to and sensitive-access questions route to host awareness', (
 test('privacy and company-address safety questions route to host awareness not chat', () => {
   for (const message of [
     'How can you save sensitive information like an address?',
+    'How can you safely save sensitive information like a company address?',
     'Can you safely remember my company\'s business address?',
     'Is it safe to store my company address?',
   ]) {

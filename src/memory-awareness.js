@@ -86,7 +86,7 @@ function detect(message) {
     /\bdo you have (?:a )?personal memory\b/i,
     /\b(?:can you|do you) remember (?:my )?(?:company|personal|private|sensitive)?\s*information\b/i,
     /\b(?:can you|do you|could you)\s+safely\s+remember\b/i,
-    /\bhow\s+(?:can|do)\s+you\s+save\s+(?:sensitive\s+)?(?:information|data|memories?|addresses?)\b/i,
+    /\bhow\s+(?:can|do)\s+you\s+(?:safely\s+)?save\s+(?:sensitive\s+)?(?:information|data|memories?|addresses?)\b/i,
     /\bis\s+it\s+safe\s+to\s+(?:save|store|remember)\b/i,
     /\b(?:can you|do you|could you)\s+(?:safely\s+)?(?:remember|save|store)\s+(?:my\s+)?(?:company(?:['’]s)?\s+)?(?:business\s+)?address\b/i,
     /\bwhat is sensitive memory\b/i,
