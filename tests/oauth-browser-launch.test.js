@@ -5,8 +5,9 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const {
   launchAuthorizationUrl, recoveryMessage, redact, assertAuthorizationUrl,
-  CODES, AUTH_HOST,
+  wireConnectOffer, CODES, AUTH_HOST,
 } = require('../src/oauth-browser-launch');
+const { safeValue } = require('../src/secret-observation');
 const { GmailOAuth, SCOPE } = require('../src/gmail-oauth');
 const cli = require('../src/interactive-cli');
 
@@ -31,6 +32,24 @@ test('assertAuthorizationUrl permits only Google accounts HTTPS host', () => {
   assert.equal(assertAuthorizationUrl(SAMPLE).hostname, AUTH_HOST);
   assert.throws(() => assertAuthorizationUrl('http://accounts.google.com/x'), /not permitted|invalid/i);
   assert.throws(() => assertAuthorizationUrl('https://evil.example/oauth'), /not permitted|invalid/i);
+});
+
+test('wireConnectOffer preserves pinned authorization_url that safeValue would scrub', () => {
+  const offer = {
+    authorization_url: SAMPLE,
+    read_only: true,
+    expires_at: 1_700_000_000_000,
+    reused: false,
+    client_secret: 'sk-ant-synthetic-must-omit',
+  };
+  assert.equal(safeValue(offer).authorization_url, '[omitted]');
+  const wired = wireConnectOffer(offer);
+  assert.equal(wired.authorization_url, SAMPLE);
+  assert.equal(wired.read_only, true);
+  assert.equal(wired.expires_at, 1_700_000_000_000);
+  assert.equal(wired.reused, false);
+  assert.equal(wired.client_secret, '[omitted]');
+  assert.throws(() => wireConnectOffer({ authorization_url: 'https://evil.example/oauth' }), /not permitted|invalid/i);
 });
 
 test('redact strips authorization URL and PKCE parameters', () => {

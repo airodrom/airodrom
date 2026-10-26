@@ -206,6 +206,25 @@ function recoveryMessage(result) {
     + ' Gmail is connected only after Google consent and the localhost callback succeed.';
 }
 
+/**
+ * Operator-local `/api/assistant/connect` wire body.
+ * `safeValue` omits keys matching /authorization/i and `redactUrls` strips OAuth
+ * query material — either leaves Terminal LaunchServices without a usable URL.
+ * Preserve only a pinned Google authorization URL after host assertion; scrub the rest.
+ */
+function wireConnectOffer(offer) {
+  if (!offer || typeof offer !== 'object' || Array.isArray(offer)) {
+    return require('./secret-observation').safeValue(offer);
+  }
+  const url = typeof offer.authorization_url === 'string' ? offer.authorization_url : null;
+  if (url) assertAuthorizationUrl(url);
+  const rest = { ...offer };
+  delete rest.authorization_url;
+  const body = require('./secret-observation').safeValue(rest);
+  if (url) body.authorization_url = url;
+  return body;
+}
+
 module.exports = {
   launchAuthorizationUrl,
   recoveryMessage,
@@ -213,6 +232,7 @@ module.exports = {
   assertAuthorizationUrl,
   openerAvailable,
   graphicalSessionHint,
+  wireConnectOffer,
   CODES,
   OPEN,
   DEFAULT_TIMEOUT_MS,

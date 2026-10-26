@@ -82,6 +82,11 @@ class ControlServer {
     return { url: `${this.origin}/#token=${this.token}`, port: this.port };
   }
   json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(require('./secret-observation').safeValue(data))); }
+  // Operator-local Gmail OAuth offer only — preserves pinned authorization_url for Terminal LaunchServices.
+  jsonConnectOffer(res, offer) {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(require('./oauth-browser-launch').wireConnectOffer(offer)));
+  }
   authorize(req, token = this.token) {
     const provided = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${token}`);
@@ -574,7 +579,8 @@ class ControlServer {
         if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport.'});
         // Default reuses an unexpired pending PKCE session so browser-launch retries
         // do not invalidate consent still in flight. force_new starts a fresh session.
-        return this.json(res,200,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback',{forceNew:body.force_new===true}));
+        // Use jsonConnectOffer: plain json()/safeValue would omit or redact authorization_url.
+        return this.jsonConnectOffer(res,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback',{forceNew:body.force_new===true}));
       }
       if(url.pathname==='/api/assistant/disconnect'){
         require('./control-plane-store').object(body,['connector','confirmed']);
