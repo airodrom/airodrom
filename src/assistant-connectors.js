@@ -12,8 +12,8 @@ class AssistantConnectors {
  status(){
   const oauthClient=!!(this.#gmail&&this.#secret);
   const connected=oauthClient&&(typeof this.#connectedProbe==='function'?!!this.#connectedProbe():true);
-  // configured = OAuth client wiring present. connected = token/reference present.
-  // live_qualified = at least one successful bounded read in this process.
+  // configured = OAuth client wiring present. connected = usable token probe.
+  // token may be present without live_qualified. live_qualified = successful bounded read.
   let state='unavailable';
   if(oauthClient&&this.#liveGmail&&connected)state='live_qualified';
   else if(oauthClient&&connected)state='connected';
@@ -29,9 +29,9 @@ class AssistantConnectors {
    setup:connected
     ?(this.#liveGmail
       ?'Read-only Gmail is live-qualified for bounded list/search/read in this process.'
-      :'OAuth token is present. Run a bounded Gmail search/read to live-qualify. No send/archive/label.')
+      :'OAuth credentials appear usable. Run a bounded Gmail search/read to live-qualify. Presence alone is not live access. No send/archive/label.')
     :(oauthClient
-      ?'OAuth client is configured. Account consent still required via /connect gmail. “Configured” is not live access.'
+      ?'OAuth client is configured. Account consent still required via /connect gmail. Saved references are not live access.'
       :'Requires owner-configured OAuth gmail.readonly credential reference. No account connected by qualification.'),
    mutations:'Remote draft/send/archive/delete/label/mark-read require separate canonical capabilities; unavailable in this read-only adapter.'
   },this.#whatsappItem()],authority:false};

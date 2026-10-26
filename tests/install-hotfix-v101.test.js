@@ -19,16 +19,20 @@ test('ControlServer accepts optional Gmail clientSecretReference and rejects unk
   const ControlServer = require('../src/control-server');
   const bridge = { dataDir: data, conversationEngine: { close: async () => {} } };
 
-  write({ clientId: 'fixture.apps.googleusercontent.com', reference: 'vault:gmail:fixture', clientSecretReference: 'vault:gmail:secret-fixture' });
+  const tokenRef = '11111111-1111-4111-8111-111111111111';
+  const secretRef = '22222222-2222-4222-8222-222222222222';
+  write({ clientId: 'fixture.apps.googleusercontent.com', reference: tokenRef, clientSecretReference: secretRef });
   const ok = new ControlServer(bridge, { port: 0, token: 'a'.repeat(64), mcpToken: 'b'.repeat(64) });
   assert.equal(!!ok.gmailOAuth, true);
+  assert.equal(ok.gmailOAuth.status().client_secret_configured, true);
 
-  write({ clientId: 'fixture.apps.googleusercontent.com', reference: 'vault:gmail:fixture', unexpected: true });
+  write({ clientId: 'fixture.apps.googleusercontent.com', reference: tokenRef, unexpected: true });
   assert.throws(() => new ControlServer(bridge, { port: 0, token: 'a'.repeat(64), mcpToken: 'b'.repeat(64) }), /Unexpected input fields/);
 
-  write({ clientId: 'fixture.apps.googleusercontent.com', reference: 'vault:gmail:fixture' });
+  write({ clientId: 'fixture.apps.googleusercontent.com', reference: tokenRef });
   const legacy = new ControlServer(bridge, { port: 0, token: 'a'.repeat(64), mcpToken: 'b'.repeat(64) });
   assert.equal(!!legacy.gmailOAuth, true);
+  assert.equal(legacy.gmailOAuth.status().client_secret_configured, false);
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
