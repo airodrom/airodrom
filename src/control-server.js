@@ -53,6 +53,7 @@ class ControlServer {
         }
       });
       if(config.reference)this.#wireAssistantConnectors();
+      this.#wireCalendarOAuth(config);
     }
     this.#wirePersonalOps();
     this.conversationEngine=bridge.conversationEngine ||= new(require('./conversation-engine').ConversationEngine)(bridge,conversationOptions);
@@ -107,6 +108,42 @@ class ControlServer {
       // token_present alone is not live access; connected excludes known-unusable grants.
       connected: () => !!this.gmailOAuth.status().connected,
       ...whatsappSource(this.bridge)
+    });
+  }
+  #wireCalendarOAuth(gmailConfig) {
+    if (!this.bridge?.dataDir || !gmailConfig?.clientId) return;
+    const calendarFile = path.join(this.bridge.dataDir, 'calendar-oauth-config.json');
+    let config = { clientId: gmailConfig.clientId, reference: null };
+    if (gmailConfig.clientSecretReference) config.clientSecretReference = gmailConfig.clientSecretReference;
+    if (require('./private-json').privateFileExists(calendarFile)) {
+      const stored = require('./private-json').readPrivateJSON(calendarFile);
+      const keys = ['clientId', 'reference'].concat(Object.prototype.hasOwnProperty.call(stored, 'clientSecretReference') ? ['clientSecretReference'] : []).concat(Object.prototype.hasOwnProperty.call(stored, 'mode') ? ['mode'] : []);
+      require('./control-plane-store').object(stored, keys);
+      config = {
+        clientId: stored.clientId || gmailConfig.clientId,
+        reference: stored.reference || null,
+        ...(stored.clientSecretReference ? { clientSecretReference: stored.clientSecretReference } : (gmailConfig.clientSecretReference ? { clientSecretReference: gmailConfig.clientSecretReference } : {})),
+        mode: stored.mode === 'events' ? 'events' : 'readonly',
+      };
+    } else {
+      require('./local-bootstrap').writePrivate(calendarFile, config);
+    }
+    this.calendarOAuth = new (require('./calendar-oauth').CalendarOAuth)({
+      clientId: config.clientId,
+      reference: config.reference || null,
+      clientSecretReference: config.clientSecretReference || null,
+      mode: config.mode || 'readonly',
+      vault: new (require('./secret-vault').SecretVault)(this.bridge.dataDir),
+      onReference: (reference, meta = {}) => {
+        const next = {
+          clientId: config.clientId,
+          reference,
+          mode: meta.mode || (this.calendarOAuth?.status?.().mode) || 'readonly',
+        };
+        if (config.clientSecretReference) next.clientSecretReference = config.clientSecretReference;
+        require('./local-bootstrap').writePrivate(calendarFile, next);
+        this.calendarConnector = null;
+      },
     });
   }
   #wirePersonalOps() {
@@ -226,7 +263,7 @@ class ControlServer {
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
     try {
       const earlyPath=new URL(req.url,'http://127.0.0.1').pathname;
-      const callbackPath=earlyPath==='/oauth/gmail/callback'&&req.method==='GET';
+      const callbackPath=(earlyPath==='/oauth/gmail/callback'||earlyPath==='/oauth/calendar/callback')&&req.method==='GET';
       const whatsappWebhook=earlyPath==='/webhooks/whatsapp';
       // WhatsApp webhook is signature-authenticated (POST) or verify-token authenticated (GET).
       // Still loopback-only; public ingress / tunnels require separate owner authorization.
@@ -243,6 +280,20 @@ class ControlServer {
           const message=error?.safe_error_class&&typeof error.message==='string'
             ?error.message
             :'Gmail authorization could not be completed. Return to Airodrom and run /connect gmail fresh.';
+          res.statusCode=400;res.end(message);
+        }
+        return;
+      }
+      if(url.pathname==='/oauth/calendar/callback'){
+        if(req.method!=='GET'||!this.calendarOAuth)throw Error('Calendar OAuth callback unavailable');
+        res.setHeader('Content-Type','text/plain; charset=utf-8');
+        try{
+          await this.calendarOAuth.complete({state:url.searchParams.get('state'),code:url.searchParams.get('code')});
+          res.end('Google Calendar authorization completed. Close this tab and return to Airodrom.');
+        }catch(error){
+          const message=error?.safe_error_class&&typeof error.message==='string'
+            ?error.message
+            :'Calendar authorization could not be completed. Return to Airodrom and run /connect calendar fresh.';
           res.statusCode=400;res.end(message);
         }
         return;
@@ -401,6 +452,27 @@ class ControlServer {
             }
           }
         }
+        try{
+          const cal=require('./calendar-service').connector(this)?.status();
+          if(cal)status.items=[...status.items.filter(i=>i.id!=='calendar'),cal];
+          else if(this.calendarOAuth){
+            const oauth=this.calendarOAuth.status();
+            status.items.push({
+              id:'calendar',
+              protocol:'Google Calendar API / OAuth 2.0',
+              state:oauth.connected?'connected':'configured',
+              configured:true,
+              connected:!!oauth.connected,
+              token_present:!!oauth.token_present,
+              read_only:!!oauth.read_only,
+              can_write:!!oauth.can_write,
+              live_qualified:false,
+              setup:'Calendar OAuth client ready. /connect calendar for reads; /connect calendar manage for writes. Gmail consent does not grant Calendar.',
+              mutations:oauth.can_write?'Preview-gated writes':'Authorize /connect calendar manage for writes',
+              authority:false
+            });
+          }
+        }catch{/* calendar optional */}
         return this.json(res,200,status);
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
@@ -602,8 +674,12 @@ class ControlServer {
         } catch { return this.json(res, 400, { error: 'Canonical operation refused. Refresh current authority and verification before retrying.' }); }
       }
       if(url.pathname==='/api/assistant/connect'){
-        require('./control-plane-store').object(body,['connector','force_new']);
-        if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport.'});
+        require('./control-plane-store').object(body,['connector','force_new','mode']);
+        if(body.connector==='calendar'){
+          if(!this.calendarOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, restart, then /connect calendar. Gmail consent does not grant Calendar.'});
+          return this.jsonConnectOffer(res,this.calendarOAuth.start(this.origin+'/oauth/calendar/callback',{forceNew:body.force_new===true,mode:body.mode||'readonly'}));
+        }
+        if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport. Use /connect calendar for Google Calendar.'});
         // Default reuses an unexpired pending PKCE session so browser-launch retries
         // do not invalidate consent still in flight. force_new starts a fresh session.
         // Use jsonConnectOffer: plain json()/safeValue would omit or redact authorization_url.

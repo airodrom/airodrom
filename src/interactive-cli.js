@@ -488,7 +488,9 @@ async function interactive(home, { input = process.stdin, output = process.stdou
       const line = pendingPaste !== null ? pendingPaste : next.value;
       pendingPaste = null;
       if (quitting) break;
-      const {value,command,arg,json}=parseLine(line); if (!value) { nameOffered=false;await refreshName();readerLocked=false;showPrompt(); continue; }
+      const {value:rawValue,command,arg,json}=parseLine(line);
+      const value=String(rawValue||'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,' ').trim();
+      if (!value) { nameOffered=false;await refreshName();readerLocked=false;showPrompt(); continue; }
       try {
         const ingress=require('./assistant-intent').parse(value,{nickname:assistantNickname});
         if(ingress.kind==='secret'){nameOffered=false;output.write('\nAiro\n'+ingress.message+'\n');await refreshName();readerLocked=false;showPrompt();continue;}
@@ -544,7 +546,8 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if(command==='connect') {
           const [connector,...connectParts]=String(arg||'').trim().split(/\s+/).filter(Boolean);
           const connectAction=(connectParts[0]||'').toLowerCase();
-          if(!['gmail','google','whatsapp'].includes(connector))throw Error('Use /connect gmail, /connect google or /connect whatsapp');
+          if(!['gmail','google','whatsapp','calendar'].includes(connector))throw Error('Use /connect gmail, /connect calendar, /connect calendar manage, or /connect whatsapp');
+          if(connector==='google')throw Error('Use /connect gmail for mail or /connect calendar for Google Calendar. They are separate consents.');
           if(connector==='whatsapp'){
             active=new AbortController();
             try{
@@ -565,6 +568,26 @@ async function interactive(home, { input = process.stdin, output = process.stdou
             output.write('Complete Google consent in your browser. Airodrom waits on the localhost callback.\n');
             continue;
           }
+          if(connector==='calendar'){
+            if(connectAction&&!['fresh','manage','write','events',''].includes(connectAction)){
+              throw Error('Use /connect calendar, /connect calendar manage, or /connect calendar fresh.');
+            }
+            const connectBody={connector:'calendar'};
+            if(connectAction==='fresh')connectBody.force_new=true;
+            if(connectAction==='manage'||connectAction==='write'||connectAction==='events')connectBody.mode='events';
+            const result=await local.request(home,'/api/assistant/connect',connectBody);
+            if(result.authorization_url){
+              rememberGmailAuthorization(result);
+              if(result.reused)output.write('Reusing the still-active Calendar authorization session.\n');
+              else if(connectBody.mode==='events')output.write('Starting Calendar manage consent (calendar.events). This is separate from Gmail and from read-only Calendar.\n');
+              else output.write('Starting read-only Calendar consent (calendar.readonly). Gmail consent does not grant Calendar.\n');
+              await openGmailAuthorization(output, result.authorization_url);
+            }else{
+              clearPendingGmailAuthorization();
+              output.write(terminalText(result.message)+'\n');
+            }
+            continue;
+          }
           if(connectAction&&connectAction!=='fresh'){
             throw Error('Use /connect gmail, /connect gmail retry-open, /connect gmail show-local, or /connect gmail fresh.');
           }
@@ -578,6 +601,22 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           }else{
             clearPendingGmailAuthorization();
             output.write(terminalText(result.message)+'\n');
+          }
+        }
+        else if(command==='calendar'){
+          const parts=String(arg||'').trim().split(/\s+/).filter(Boolean);
+          const action=(parts[0]||'help').toLowerCase();
+          if(action==='confirm'){
+            const id=parts[1];
+            const destructive=parts.includes('--destructive');
+            if(!id)throw Error('Use /calendar confirm <preview-id> [--destructive]');
+            const result=await local.request(home,'/api/assistant/input',{message:`/calendar confirm ${id}${destructive?' --destructive':''}`,request_id:randomUUID()});
+            await handleReceipt(result,json);
+          }else if(action==='help'||action==='status'){
+            const result=await local.request(home,'/api/assistant/input',{message:'help me control my calendar',request_id:randomUUID()});
+            await handleReceipt(result,json);
+          }else{
+            throw Error('Use /calendar help|status|confirm <preview-id> [--destructive], or ask in natural language.');
           }
         }
         else if(command==='gmail'||command==='whatsapp') {

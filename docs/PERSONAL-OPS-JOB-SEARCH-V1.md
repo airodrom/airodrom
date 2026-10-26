@@ -15,7 +15,7 @@ There is no automatic external provider fallback for private conversation.
 | Connector | Availability in V1 | Auth | Live qualification | Reads | Writes / mutations |
 |---|---|---|---|---|---|
 | Gmail | `AUTH_REQUIRED` until connected; `AVAILABLE` after live read | Owner Google desktop OAuth `gmail.readonly` | Successful bounded list/search/read in-process | list, search, read, thread, job_categorize, local draft preview | **None** (send/archive/label/mark-read denied) |
-| Google Calendar | `NOT_SUPPORTED` | — | No | — | Local interview **suggestions** only; no invites |
+| Google Calendar | `AUTH_REQUIRED` → `AVAILABLE` after `/connect calendar` + live read | `calendar.readonly` (+ manage `calendar.events`) | Yes (host NL) | Preview-gated create/update; destructive cancel | Separate from Gmail; see [GOOGLE-CALENDAR-NL-CONTROL-V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md) |
 | Google Drive | `NOT_SUPPORTED` | — | No | — | — |
 | Google Sheets | `NOT_SUPPORTED` | — | No | — | Use local tracker |
 | Local files (selected tracker) | `AVAILABLE` | Host-governed | Yes | Tracker read | Tracker create/update with evidence |
@@ -64,7 +64,7 @@ Owner may grant standing **read-only Gmail organization** and **selected local t
    - Ask: “Create a local job-search tracker”
    - Log applications only with evidence; ask for a “daily digest”.
    - Manual entries without Gmail, a posting URL, or standing permission: submit `operator_confirmation` claim evidence → open Control Center → Approvals → Review exact fields → Approve → re-submit the exact body with `host_approval_id`. Conversation cannot auto-approve.
-4. Calendar / Drive / Sheets remain WAIT until separately enrolled with least-privilege OAuth. Do not infer them from Gmail consent.
+4. Calendar enrolls via `/connect calendar` (separate least-privilege OAuth). Drive / Sheets remain WAIT. Do not infer Calendar from Gmail consent.
 5. Standing local tracker updates (optional): confirm via personal-ops automation API; never grants send/apply/invite.
 
 ## Privacy and adversarial boundaries
@@ -76,7 +76,7 @@ Owner may grant standing **read-only Gmail organization** and **selected local t
 
 ## Limitations
 
-- Calendar, Drive, and Sheets cloud connectors are not live-qualified in this revision.
+- Drive and Sheets cloud connectors are not live-qualified in this revision. Calendar host NL control is documented in [GOOGLE-CALENDAR-NL-CONTROL-V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md) (requires owner consent + live read).
 - No remote Gmail draft/send/archive/label.
 - Job discovery does not scrape or invent postings; only evidence-backed tracker rows and host categorization of selected mail.
 - Tracker is CSV (Excel-openable), not a native `.xlsx` workbook.

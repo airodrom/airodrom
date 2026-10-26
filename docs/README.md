@@ -63,6 +63,7 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Autonomous Self-Development V1](AUTONOMOUS-SELF-DEVELOPMENT-V1.md)
 - [Self-Development Reliability V1.1](SELF-DEVELOPMENT-RELIABILITY-V1.1.md)
 - [Personal Operations & Job Search V1](PERSONAL-OPS-JOB-SEARCH-V1.md) (Issue #112 — draft; not installed)
+- [Google Calendar NL Control V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md) (source candidate — separate Calendar OAuth; not installed until authorized cutover)
 - [Everyday Personal AI UX V1](EVERYDAY-PERSONAL-AI-UX-V1.md) (SHIPPED + INSTALLED)
 - [Grounded Assistant Accuracy V1](GROUNDED-ASSISTANT-ACCURACY-V1.md) (SHIPPED + INSTALLED)
 - [Conversation UX Bugfix V1](CONVERSATION-UX-BUGFIX-V1.md) (SHIPPED + INSTALLED)

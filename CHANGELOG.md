@@ -2,6 +2,7 @@
 
 ### Added
 - Host-authoritative natural-language Gmail search with bounded pagination: phrases such as “Find all mails from GitHub” route to the authenticated connector without OpenCode; opaque continuation sessions bind operator, query and Gmail `nextPageToken` ([docs/GMAIL-NL-SEARCH-V1.md](docs/GMAIL-NL-SEARCH-V1.md)).
+- Google Calendar natural-language control V1: separate Calendar OAuth (`calendar.readonly` / manage `calendar.events`), host routing for control/schedule/freeBusy phrases, bounded reads, preview-gated writes, and credential-screening false-positive guards ([docs/GOOGLE-CALENDAR-NL-CONTROL-V1.md](docs/GOOGLE-CALENDAR-NL-CONTROL-V1.md)).
 
 ### Fixed
 - Implicit mutation verbs (`fix`/`patch`/`implement`) refine onto a unique prior exact path or an explicit `in PATH` retarget; ambiguous multi-path and pathless mutations stay fail-closed ([ADR 0063](docs/adr/0063-requested-file-scope.md)).

@@ -71,10 +71,10 @@ async function run(home,args,input,output){
  if(args[0]==='put'){
   if(args[1]==='whatsapp'&&(args[2]==='bind'||args[2]==='onboard'))throw Error('Use airodrom whatsapp bind for labeled WhatsApp credential onboarding');
   if(args.length>2)throw Error('Secret values must use hidden input, never command arguments');
-  if(args[1]&&!['operator','gmail','whatsapp'].includes(args[1]))throw Error('Use secret put [operator|gmail|whatsapp] (WhatsApp onboarding: airodrom whatsapp bind)');
+  if(args[1]&&!['operator','gmail','whatsapp','calendar'].includes(args[1]))throw Error('Use secret put [operator|gmail|whatsapp|calendar] (WhatsApp onboarding: airodrom whatsapp bind)');
   let value=await hidden(input,output);try{if(!value||!await confirm(input,output,{prompt:'Save this credential securely in Keychain?'})){output.write('Save cancelled.\n');return;}const receipt=vault.put(value,args[1]||'operator');output.write('Credential saved securely in Keychain.\nCapability reference: '+receipt.reference+'\n');if(args[1]==='whatsapp')output.write('Tip: airodrom whatsapp bind captures all three labeled WhatsApp secrets and configures opaque references automatically.\n');}finally{value='';}return;}
  if(args[0]==='forget'){if(args.length!==2)throw Error('Use secret forget <reference>; confirm in the operator terminal.');if(!await confirm(input,output,{prompt:'Revoke this reference permanently?'})){output.write('Revocation cancelled.\n');return;}vault.forget(args[1]);output.write('Secret revoked.\n');return;}
- if(args.some((v,i)=>!(i===0&&v==='status'||v==='--json')))throw Error('Use secret prepare|put [operator|gmail|whatsapp]|forget <ref>|status (WhatsApp: airodrom whatsapp bind)');
+ if(args.some((v,i)=>!(i===0&&v==='status'||v==='--json')))throw Error('Use secret prepare|put [operator|gmail|whatsapp|calendar]|forget <ref>|status (WhatsApp: airodrom whatsapp bind)');
  output.write(args.includes('--json')?JSON.stringify(vault.status())+'\n':require('./assistant-render').vault(vault.status()));
 }
 module.exports={hidden,visible,confirm,run};
