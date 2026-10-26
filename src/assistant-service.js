@@ -61,7 +61,8 @@ async function submit(server,input){
  for(const [key,item] of pending)if(item.expires<=now)pending.delete(key);
  const session=input.conversation_id&&server.conversationEngine?.requireSession?server.conversationEngine.requireSession(input.conversation_id).id:null;
  const context=session?pending.get(session):null;
- const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:context?.mode,researchURL:context?.entry_url});
+ const activeGmailSearch=gmailSearchSessions(server).hasActive({conversation_id:input.conversation_id||null,operator:'operator'});
+ const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:context?.mode,researchURL:context?.entry_url,activeGmailSearch});
  if(session){
   pending.delete(session);
   if(parsed.pending_research||['research','research_session'].includes(parsed.kind)){
@@ -170,9 +171,17 @@ function formatGmailSearchReceipt({items,label,page,has_more,exhausted,limit_rea
  if(match==='display_name')message+='\nNote: a display-name match is not proof of authentic domain origin; inspect the From field.';
  return message;
 }
+function requireConversationId(conversation_id){
+ if(typeof conversation_id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(conversation_id)){
+  return {kind:'clarify',route:'CONNECTOR',message:'Gmail search requires an authenticated Terminal conversation session. Re-open the interactive chat and try again.',authority:false,host_verified:true,model_invoked:false,code:'gmail_search_session_required'};
+ }
+ return null;
+}
 async function gmailSearchPage(server,{input={},conversation_id=null}){
  const sessions=gmailSearchSessions(server);
  const adapter=connectors(server.bridge);
+ const missing=requireConversationId(conversation_id);
+ if(missing)return missing;
  let sessionId=input.continuation_id||null;
  let pageToken=null;
  let label=input.label||null;
@@ -180,9 +189,16 @@ async function gmailSearchPage(server,{input={},conversation_id=null}){
  let query=input.query||null;
  const limit=input.limit||require('./gmail-search-intent').PAGE_SIZE_DEFAULT;
  if(input.continuation===true){
-  const active=server.gmailSearchActive;
+  let active;
+  try{active=sessions.getActive({conversation_id,operator:'operator'});}
+  catch(error){
+   if(error?.code==='gmail_search_session_required'||error?.code==='gmail_search_session_invalid'){
+    return {kind:'clarify',route:'CONNECTOR',message:error.message,authority:false,host_verified:true,model_invoked:false,code:error.code};
+   }
+   throw error;
+  }
   if(!active?.continuation_id){
-   return {kind:'clarify',route:'CONNECTOR',message:'No active Gmail search to continue. Try: Find all mails from GitHub.',authority:false,host_verified:true,model_invoked:false};
+   return {kind:'clarify',route:'CONNECTOR',message:'No active Gmail search to continue in this conversation. Try: Find all mails from GitHub.',authority:false,host_verified:true,model_invoked:false};
   }
   sessionId=active.continuation_id;
  }
@@ -191,6 +207,7 @@ async function gmailSearchPage(server,{input={},conversation_id=null}){
   query=row.query;label=row.label;match=row.match;
   pageToken=sessions.peekToken(sessionId,{conversation_id,operator:'operator'});
   if(!pageToken&&row.exhausted){
+   sessions.clearActive({conversation_id,operator:'operator'});
    return {kind:'connector',route:'CONNECTOR',connector:'gmail',action:'search',items:[],message:'No further matching emails. This search is complete.',has_more:false,exhausted:true,host_verified:true,model_invoked:false,live_qualified:true,authority:false,worker_context:false};
   }
  }else{
@@ -219,7 +236,7 @@ async function gmailSearchPage(server,{input={},conversation_id=null}){
  }catch(error){
   if(error?.code==='gmail_search_limit'){
    const items=raw.items||[];
-   server.gmailSearchActive={continuation_id:null,query,label};
+   sessions.clearActive({conversation_id,operator:'operator'});
    return {
     kind:'connector',route:'CONNECTOR',connector:'gmail',action:'search',items,
     message:formatGmailSearchReceipt({items,label,page:1,has_more:false,exhausted:false,limit_reached:true,total_returned:items.length,continuation_id:null,result_size_estimate:raw.result_size_estimate,match}),
@@ -231,9 +248,7 @@ async function gmailSearchPage(server,{input={},conversation_id=null}){
  }
  // Never project provider page tokens on the operator receipt.
  const items=recorded.items.map(m=>({id:m.id,from:m.from,subject:m.subject,date:m.date,snippet:typeof m.content==='string'?m.content.slice(0,240):'',untrusted:true,authority:false}));
- server.gmailSearchActive=recorded.has_more&&recorded.continuation_id
-  ?{continuation_id:recorded.continuation_id,query:recorded.query,label:recorded.label,conversation_id:conversation_id||null}
-  :null;
+ if(!(recorded.has_more&&recorded.continuation_id))sessions.clearActive({conversation_id,operator:'operator'});
  return {
   kind:'connector',
   route:'CONNECTOR',

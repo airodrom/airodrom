@@ -18,11 +18,12 @@ Examples (case/whitespace insensitive):
 - Find unread GitHub emails / Show recent emails from GitHub
 - Search email from `notifications@github.com`
 - Find emails from a specified sender or domain
-- Show more / Show the next page (continues the active search in this session)
+- Show more / Show the next page (only when this authenticated Terminal conversation has an active Gmail search)
+- Show more GitHub emails (mail-explicit continuation; still requires a bound active search)
 
-Ambiguous “find all emails from …” asks for one clarification. Mutation verbs (send, archive, delete, label, …) are refused as read-only.
+Ambiguous “find all emails from …” asks for one clarification. Mutation verbs (send, archive, delete, label, …) are refused as read-only **only after** mail-related intent is established — ordinary WORK (“send the patch”, “delete the file”) is not hijacked.
 
-Unrelated GitHub/repo discussion without mail language stays conversation/work routing.
+Unrelated GitHub/repo discussion without mail language stays conversation/work routing. Generic “show more” without an active search in the current conversation stays conversation.
 
 ## Deterministic routing
 
@@ -56,7 +57,7 @@ Host queries use a narrow operator alphabet (`isHostSearchQuery`) so `from:domai
 | Cursor TTL | 15 minutes |
 | Body fetch | Metadata only on list pages (From, Subject, Date + short snippet) |
 
-Continuation uses an **opaque** `continuation_id` bound to operator + conversation (when the search started in a conversation) + exact query. Omitting `conversation_id` cannot continue a conversation-bound session. Gmail `nextPageToken` stays in the host session store only; connector list receipts do not project `_provider_next_page_token`, and clients cannot supply `page_token` except through that host search path.
+Continuation uses an **opaque** `continuation_id` bound to operator + conversation UUID + exact query. The active-search pointer is a per-`(operator, conversation_id)` map — never a process-global slot — so one conversation cannot continue or overwrite another’s search. Terminal searches **fail closed** when session identity is missing or mismatched. Omitting `conversation_id` cannot continue a conversation-bound session. Gmail `nextPageToken` stays in the host session store only; connector list receipts do not project `_provider_next_page_token`, and clients cannot supply `page_token` except through that host search path.
 
 “All” means **bounded, resumable pages**, not loading the mailbox into memory. If a safety limit is hit, the receipt is marked **partial**. When the provider returns no further page, the receipt is marked **complete** for that query (distinct from estimates).
 

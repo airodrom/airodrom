@@ -9,16 +9,48 @@ const MAX_TOTAL_RESULTS = 200;
 const MAX_SESSIONS = 64;
 const PAGE_SIZE_MAX = 20;
 
+function bindingKey(operator, conversation_id) {
+  if (operator !== 'operator') {
+    const err = Error('Gmail search continuation is operator-local only');
+    err.code = 'gmail_search_cursor_forbidden';
+    throw err;
+  }
+  // Conversation identity is required for active-search binding (Terminal session).
+  if (typeof conversation_id !== 'string' || !conversation_id.trim()) {
+    const err = Error('Gmail search continuation requires an authenticated conversation session.');
+    err.code = 'gmail_search_session_required';
+    throw err;
+  }
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(conversation_id)) {
+    const err = Error('Gmail search continuation requires a valid conversation session identity.');
+    err.code = 'gmail_search_session_invalid';
+    throw err;
+  }
+  return operator + '\0' + conversation_id;
+}
+
 class GmailSearchSessions {
   #sessions = new Map();
+  // operator+conversation → opaque continuation_id (never a global process pointer)
+  #active = new Map();
 
   #sweep(now = Date.now()) {
     for (const [id, row] of this.#sessions) {
-      if (row.expires_at <= now) this.#sessions.delete(id);
+      if (row.expires_at <= now) {
+        this.#sessions.delete(id);
+        this.#clearActiveId(id);
+      }
     }
     while (this.#sessions.size > MAX_SESSIONS) {
       const oldest = this.#sessions.keys().next().value;
       this.#sessions.delete(oldest);
+      this.#clearActiveId(oldest);
+    }
+  }
+
+  #clearActiveId(id) {
+    for (const [key, activeId] of this.#active) {
+      if (activeId === id) this.#active.delete(key);
     }
   }
 
@@ -52,7 +84,57 @@ class GmailSearchSessions {
       expires_at: Date.now() + TTL_MS,
     };
     this.#sessions.set(id, row);
+    // Active pointer only when conversation identity is present — never a global process slot.
+    if (conversation_id) this.#active.set(bindingKey(operator, conversation_id), id);
     return id;
+  }
+
+  hasActive({ conversation_id = null, operator = 'operator' } = {}) {
+    try {
+      return !!this.getActive({ conversation_id, operator });
+    } catch {
+      return false;
+    }
+  }
+
+  getActive({ conversation_id = null, operator = 'operator' } = {}) {
+    this.#sweep();
+    const key = bindingKey(operator, conversation_id);
+    const id = this.#active.get(key);
+    if (!id) return null;
+    const row = this.#sessions.get(id);
+    if (!row || row.expires_at <= Date.now()) {
+      this.#sessions.delete(id);
+      this.#active.delete(key);
+      return null;
+    }
+    if (row.conversation_id !== conversation_id || row.operator !== operator) {
+      this.#active.delete(key);
+      const err = Error('Gmail search continuation belongs to a different conversation.');
+      err.code = 'gmail_search_cursor_forbidden';
+      throw err;
+    }
+    if (!row.next_page_token && row.exhausted) return null;
+    return { continuation_id: id, query: row.query, label: row.label, conversation_id: row.conversation_id };
+  }
+
+  setActive(id, { conversation_id = null, operator = 'operator' } = {}) {
+    this.#sweep();
+    const key = bindingKey(operator, conversation_id);
+    if (!id) {
+      this.#active.delete(key);
+      return;
+    }
+    const row = this.require(id, { conversation_id, operator });
+    this.#active.set(key, row.id);
+  }
+
+  clearActive({ conversation_id = null, operator = 'operator' } = {}) {
+    try {
+      this.#active.delete(bindingKey(operator, conversation_id));
+    } catch {
+      /* invalid identity — nothing to clear */
+    }
   }
 
   require(id, { conversation_id = null, operator = 'operator', expected_query = null } = {}) {
@@ -65,6 +147,7 @@ class GmailSearchSessions {
     const row = this.#sessions.get(id);
     if (!row || row.expires_at <= Date.now()) {
       this.#sessions.delete(id);
+      this.#clearActiveId(id);
       const err = Error('Gmail search continuation expired. Run the search again.');
       err.code = 'gmail_search_cursor_expired';
       throw err;
@@ -76,6 +159,11 @@ class GmailSearchSessions {
     }
     // Bound sessions require the same conversation; omitting conversation_id is not a free pass.
     if (row.conversation_id && row.conversation_id !== (conversation_id || null)) {
+      const err = Error('Gmail search continuation belongs to a different conversation.');
+      err.code = 'gmail_search_cursor_forbidden';
+      throw err;
+    }
+    if (!row.conversation_id && conversation_id) {
       const err = Error('Gmail search continuation belongs to a different conversation.');
       err.code = 'gmail_search_cursor_forbidden';
       throw err;
@@ -121,9 +209,19 @@ class GmailSearchSessions {
     // Cap stops continuation; do not claim provider exhaustion when the host limit cut off more pages.
     if (limit_reached) row.next_page_token = null;
     row.exhausted = !provider_has_more;
+    const continuation_id = limit_reached || row.exhausted ? null : id;
+    if (continuation_id) {
+      try {
+        this.setActive(continuation_id, { conversation_id: row.conversation_id, operator: row.operator });
+      } catch {
+        /* row without conversation cannot be active-bound */
+      }
+    } else {
+      this.#clearActiveId(id);
+    }
     return {
       items: unique,
-      continuation_id: limit_reached || row.exhausted ? null : id,
+      continuation_id,
       has_more: !limit_reached && !row.exhausted && provider_has_more,
       page: row.page,
       pages_fetched: row.pages_fetched,
@@ -135,6 +233,7 @@ class GmailSearchSessions {
       label: row.label,
       match: row.match,
       page_size: row.page_size,
+      conversation_id: row.conversation_id,
       next_page_token: row.next_page_token, // internal only — callers must not project this
     };
   }
@@ -145,12 +244,16 @@ class GmailSearchSessions {
   }
 
   clear(id) {
-    if (id) this.#sessions.delete(id);
+    if (id) {
+      this.#sessions.delete(id);
+      this.#clearActiveId(id);
+    }
   }
 }
 
 module.exports = {
   GmailSearchSessions,
+  bindingKey,
   TTL_MS,
   MAX_PAGES,
   MAX_TOTAL_RESULTS,

@@ -8,10 +8,9 @@ const PAGE_SIZE_MAX = 20;
 const MAIL = '(?:e-?mails?|mails?|messages?|gmail)';
 const FIND = '(?:find|show|list|search|get|check|read|open)';
 const EMAIL_ADDR = /([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/;
-const DOMAIN = /([A-Za-z0-9.-]+\.[A-Za-z]{2,})/;
 
 // Well-known read-only sender aliases. Matching the display name "GitHub" in a
- // message does not prove authentic GitHub origin; results show From metadata.
+// message does not prove authentic GitHub origin; results show From metadata.
 const ALIASES = Object.freeze({
   github: {
     label: 'GitHub',
@@ -51,34 +50,56 @@ function applyFlags(query, { unread = false, recent = false } = {}) {
   return q.replace(/\s+/g, ' ').trim();
 }
 
-function continuation(request) {
+function looksLikeMail(request) {
+  return /\b(?:gmail|inbox)\b/i.test(request)
+    || new RegExp('\\b' + MAIL + '\\b', 'i').test(request)
+    || /\b(?:search|find|show|list)\s+(?:my\s+)?(?:e-?mail|mail)\b/i.test(request);
+}
+
+/**
+ * Continuation phrases.
+ * - Generic ("show more" / "next page"): only when the caller reports an active
+ *   Gmail search for this authenticated conversation.
+ * - Mail-explicit ("show more GitHub emails"): mail-shaped; still requires an
+ *   active bound search at execution time.
+ */
+function continuation(request, { activeGmailSearch = false } = {}) {
   const text = normalize(request);
-  if (/^(?:show|get|list|find)?\s*(?:the\s+)?(?:next\s+page|more(?:\s+(?:results|emails?|mails?|messages?))?)(?:\s+of\s+(?:those|that|the)?\s*(?:results?|emails?|mails?|messages?)?)?\.?$/i.test(text)) {
-    return { kind: 'connector', connector: 'gmail', action: 'search', continuation: true, route: 'CONNECTOR' };
+  const mailExplicit = /^(?:show|get|list|find)\s+more\s+(?:github\s+)?(?:emails?|mails?|messages?)\.?$/i.test(text)
+    || /^(?:show|get|list|find)?\s*(?:the\s+)?(?:next\s+page|more)\s+(?:of\s+)?(?:those\s+|the\s+)?(?:emails?|mails?|messages?|results)\.?$/i.test(text);
+  const generic = /^(?:show|get|list|find)?\s*(?:the\s+)?(?:next\s+page|more(?:\s+results)?)\.?$/i.test(text);
+  if (mailExplicit) {
+    return {
+      kind: 'connector',
+      connector: 'gmail',
+      action: 'search',
+      continuation: true,
+      route: 'CONNECTOR',
+      hint_alias: /github/i.test(text) ? 'github' : null,
+      host_verified: true,
+    };
   }
-  if (/^(?:show|get|list|find)\s+more\s+(?:github\s+)?(?:emails?|mails?|messages?)\.?$/i.test(text)) {
-    return { kind: 'connector', connector: 'gmail', action: 'search', continuation: true, route: 'CONNECTOR', hint_alias: /github/i.test(text) ? 'github' : null };
+  if (generic && activeGmailSearch) {
+    return {
+      kind: 'connector',
+      connector: 'gmail',
+      action: 'search',
+      continuation: true,
+      route: 'CONNECTOR',
+      host_verified: true,
+    };
   }
   return null;
 }
 
 function refuseMutations(request) {
+  // Caller must already have established mail-related intent.
   if (/\b(?:send|archive|delete|trash|label|mark\s+as\s+read|mark\s+read|forward|reply|draft)\b/i.test(request)) {
     return {
       kind: 'clarify',
       route: 'CONNECTOR',
       message: 'Gmail search is read-only. Sending, archiving, deleting, labeling, or drafting requires a separately governed capability.',
     };
-  }
-  return null;
-}
-
-function refuseNonGmail(request) {
-  // Public GitHub / repository discussion must not become a mailbox search.
-  if (/\b(?:github\.com\/|pull request|pull-request|\bprs?\b|repository|repo\b|commit|issue\s+#?\d+)\b/i.test(request)
-    && !/\b(?:gmail|inbox|e-?mail|mail|from:)\b/i.test(request)
-    && !/\b(?:find|show|search|list)\s+(?:all\s+)?(?:my\s+)?(?:e-?mails?|mails?)\b/i.test(request)) {
-    return null; // leave to other routers / conversation
   }
   return null;
 }
@@ -112,26 +133,23 @@ function extractSender(request) {
 }
 
 /**
- * @returns {null|{kind:string,connector?:string,action?:string,query?:string,route?:string,message?:string,unread?:boolean,recent?:boolean,continuation?:boolean,label?:string,match?:string,page_size?:number,host_verified?:boolean}}
+ * @param {string} value
+ * @param {{activeGmailSearch?: boolean}} [options]
  */
-function parse(value) {
+function parse(value, { activeGmailSearch = false } = {}) {
   if (typeof value !== 'string' || !value.trim()) return null;
   const request = normalize(value);
   if (Buffer.byteLength(request) > 4000) return null;
 
-  const cont = continuation(request);
+  const cont = continuation(request, { activeGmailSearch });
   if (cont) return cont;
+
+  // Mail-related intent must be established before mutation refusal — otherwise
+  // ordinary WORK/conversation ("send the patch", "delete the file") is hijacked.
+  if (!looksLikeMail(request)) return null;
 
   const mutation = refuseMutations(request);
   if (mutation) return mutation;
-
-  // Must look like an email/Gmail retrieval, not a generic "find github".
-  const looksLikeMail =
-    /\b(?:gmail|inbox)\b/i.test(request)
-    || new RegExp('\\b' + MAIL + '\\b', 'i').test(request)
-    || /\b(?:search|find|show|list)\s+(?:my\s+)?(?:e-?mail|mail)\b/i.test(request);
-
-  if (!looksLikeMail) return null;
 
   // Ambiguous inbox without sender — leave existing clarify / recent handlers.
   if (/^(?:check|read|show|open)\s+(?:my\s+)?(?:inbox|messages|email|emails|mail)$/i.test(request)) return null;
@@ -236,6 +254,8 @@ module.exports = {
   applyFlags,
   quoteGmailAtom,
   isHostSearchQuery,
+  looksLikeMail,
+  continuation,
   ALIASES,
   PAGE_SIZE_DEFAULT,
   PAGE_SIZE_MAX,
