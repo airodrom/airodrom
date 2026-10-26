@@ -6,12 +6,13 @@ const calendarIntent = require('../src/calendar-intent');
 const intent = require('../src/assistant-intent');
 const service = require('../src/assistant-service');
 const { CalendarOAuth, READ_SCOPE, WRITE_SCOPE } = require('../src/calendar-oauth');
-const { CalendarConnector } = require('../src/calendar-connector');
+const { CalendarConnector, assertRange } = require('../src/calendar-connector');
+const { CalendarSessions } = require('../src/calendar-session');
 const render = require('../src/assistant-render');
 
 const rid = () => randomUUID();
 
-function mockCalendarApi({ eventsPages = [], calendars = [], freeBusy = {}, writes = [] } = {}) {
+function mockCalendarApi({ eventsPages = [], calendars = [], freeBusy = {}, writes = [], createHandler = null } = {}) {
   let eventPage = 0;
   return async (url, options = {}) => {
     const href = String(url);
@@ -34,25 +35,36 @@ function mockCalendarApi({ eventsPages = [], calendars = [], freeBusy = {}, writ
       return { ok: true, text: async () => JSON.stringify({ calendars: freeBusy }) };
     }
     if (/\/calendars\/[^/]+\/events\/[^/?]+$/.test(href) && method === 'GET') {
-      const id = href.split('/events/')[1].split('?')[0];
+      const parts = href.split('/calendars/')[1].split('/events/');
+      const calendarId = decodeURIComponent(parts[0]);
+      const id = parts[1].split('?')[0];
       return {
         ok: true,
         text: async () => JSON.stringify({
           id,
           summary: 'Loaded',
+          organizer: { email: 'someone-else@example.com' },
           start: { dateTime: '2026-10-26T14:00:00Z' },
           end: { dateTime: '2026-10-26T15:00:00Z' },
+          calendarId,
         }),
       };
     }
     if (/\/calendars\/[^/]+\/events$/.test(href.split('?')[0]) && method === 'GET') {
+      const calendarId = decodeURIComponent(href.split('/calendars/')[1].split('/events')[0]);
       const page = eventsPages[eventPage] || { items: [], nextPageToken: null };
       eventPage += 1;
-      return { ok: true, text: async () => JSON.stringify(page) };
+      const items = (page.items || []).map((e) => ({
+        ...e,
+        organizer: e.organizer || { email: 'organizer@other.example' },
+        calendarId,
+      }));
+      return { ok: true, text: async () => JSON.stringify({ ...page, items }) };
     }
     if (/\/calendars\/[^/]+\/events$/.test(href.split('?')[0]) && method === 'POST') {
+      if (typeof createHandler === 'function') return createHandler(url, options, writes);
       const body = JSON.parse(options.body || '{}');
-      writes.push({ op: 'create', body });
+      writes.push({ op: 'create', body, href });
       return {
         ok: true,
         text: async () => JSON.stringify({
@@ -65,7 +77,7 @@ function mockCalendarApi({ eventsPages = [], calendars = [], freeBusy = {}, writ
     }
     if (/\/calendars\/[^/]+\/events\//.test(href) && method === 'PATCH') {
       const body = JSON.parse(options.body || '{}');
-      writes.push({ op: 'update', body });
+      writes.push({ op: 'update', body, href });
       return {
         ok: true,
         text: async () => JSON.stringify({
@@ -84,7 +96,7 @@ function mockCalendarApi({ eventsPages = [], calendars = [], freeBusy = {}, writ
   };
 }
 
-function fixtureServer({ scope = READ_SCOPE, eventsPages, freeBusy, writes } = {}) {
+function fixtureServer({ scope = READ_SCOPE, eventsPages, freeBusy, writes, createHandler } = {}) {
   const values = new Map();
   const vault = {
     put: (value, purpose) => {
@@ -107,14 +119,13 @@ function fixtureServer({ scope = READ_SCOPE, eventsPages, freeBusy, writes } = {
     },
     forget: (ref) => values.delete(ref),
   };
-  const request = mockCalendarApi({ eventsPages, freeBusy, writes });
+  const request = mockCalendarApi({ eventsPages, freeBusy, writes, createHandler });
   const oauth = new CalendarOAuth({
     clientId: 'synthetic.apps.googleusercontent.com',
     vault,
     request,
     clientSecretReference: rid(),
   });
-  // Seed a stored calendar token without going through browser consent.
   const seeded = vault.put(JSON.stringify({
     access_token: 'synthetic-cal-access',
     refresh_token: 'synthetic-cal-refresh',
@@ -122,7 +133,6 @@ function fixtureServer({ scope = READ_SCOPE, eventsPages, freeBusy, writes } = {
     scope,
   }), 'calendar');
   oauth.onReference(seeded.reference, { mode: scope === WRITE_SCOPE ? 'events' : 'readonly', scope });
-  // Reconstruct with reference
   const live = new CalendarOAuth({
     clientId: 'synthetic.apps.googleusercontent.com',
     vault,
@@ -135,7 +145,11 @@ function fixtureServer({ scope = READ_SCOPE, eventsPages, freeBusy, writes } = {
     calendarOAuth: live,
     calendarConnector: new CalendarConnector({ oauth: live, request, connected: () => true }),
     conversationEngine: {
-      start: async () => { throw Error('model must not run for deterministic calendar'); },
+      start: async ({ message }) => ({ kind: 'chat', message, model_invoked: true }),
+      requireSession: (id) => {
+        if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)) throw Error('session');
+        return { id };
+      },
     },
   };
   return { server, writes: writes || [], request };
@@ -170,11 +184,19 @@ test('ambiguous create asks for details instead of inventing', () => {
   assert.equal(parsed.clarify, true);
 });
 
+test('generic show more and cancel that stay out without active calendar session', () => {
+  assert.equal(calendarIntent.parse('show more', { activeCalendarSession: false }), null);
+  assert.equal(calendarIntent.parse('cancel that', { activeCalendarSession: false }), null);
+  assert.equal(calendarIntent.parse('show more', { activeCalendarSession: true }).action, 'continue');
+  assert.equal(calendarIntent.parse('cancel that', { activeCalendarSession: true }).action, 'followup_cancel');
+  // Without active calendar, assistant intent must not steal Gmail/conversation for generic show more.
+  const unbound = intent.parse('show more', { activeGmailSearch: false, activeCalendarSession: false });
+  assert.equal(unbound.kind, 'conversation');
+});
+
 test('help explains auth state without inventing access', async () => {
-  const { server } = fixtureServer({
-    eventsPages: [{ items: [] }],
-  });
-  const receipt = await service.submit(server, { message: 'yes i want you help me to control calendar', request_id: rid() });
+  const { server } = fixtureServer({ eventsPages: [{ items: [] }] });
+  const receipt = await service.submit(server, { message: 'yes i want you help me to control calendar', request_id: rid(), conversation_id: rid() });
   assert.equal(receipt.kind, 'calendar');
   assert.equal(receipt.model_invoked, false);
   assert.equal(receipt.host_verified, true);
@@ -182,7 +204,8 @@ test('help explains auth state without inventing access', async () => {
   assert.doesNotMatch(receipt.message, /I cannot access|as an AI/i);
 });
 
-test('events list is host-verified and paginates honestly', async () => {
+test('events list is host-verified, conversation-bound, and paginates honestly', async () => {
+  const conv = rid();
   const { server } = fixtureServer({
     eventsPages: [
       {
@@ -200,28 +223,113 @@ test('events list is host-verified and paginates honestly', async () => {
       },
     ],
   });
-  const first = await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid() });
+  const first = await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid(), conversation_id: conv });
   assert.equal(first.kind, 'calendar');
   assert.equal(first.host_verified, true);
   assert.equal(first.model_invoked, false);
   assert.equal(first.items.length, 2);
   assert.equal(first.has_more, true);
+  assert.equal(first.items[0].calendar_id, 'primary');
+  assert.notEqual(first.items[0].calendar_id, 'organizer@other.example');
   assert.doesNotMatch(JSON.stringify(first), /page2|synthetic-cal-access|nextPageToken|_provider_next/);
   assert.match(render.receipt(first), /HOST-VERIFIED CALENDAR/);
 
-  const more = await service.submit(server, { message: 'show more', request_id: rid() });
+  const more = await service.submit(server, { message: 'show more', request_id: rid(), conversation_id: conv });
   assert.equal(more.items.length, 1);
   assert.equal(more.items[0].id, 'e3');
   assert.equal(more.has_more, false);
 });
 
-test('freebusy returns host-verified busy blocks', async () => {
+test('cross-conversation continuation and missing session fail closed', async () => {
+  const convA = rid();
+  const convB = rid();
+  const { server } = fixtureServer({
+    eventsPages: [
+      {
+        items: [{ id: 'a1', summary: 'A', start: { dateTime: '2026-10-26T14:00:00Z' }, end: { dateTime: '2026-10-26T15:00:00Z' } }],
+        nextPageToken: 'page2',
+      },
+      {
+        items: [{ id: 'a2', summary: 'A2', start: { dateTime: '2026-10-26T16:00:00Z' }, end: { dateTime: '2026-10-26T17:00:00Z' } }],
+        nextPageToken: null,
+      },
+    ],
+  });
+  await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid(), conversation_id: convA });
+  const other = await service.submit(server, { message: 'show more', request_id: rid(), conversation_id: convB });
+  assert.equal(other.kind, 'chat');
+  const missing = await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid() });
+  assert.equal(missing.kind, 'clarify');
+  assert.match(missing.message, /authenticated Terminal conversation/i);
+  const moreA = await service.submit(server, { message: 'show more', request_id: rid(), conversation_id: convA });
+  assert.equal(moreA.kind, 'calendar');
+  assert.equal(moreA.items[0].id, 'a2');
+});
+
+test('simultaneous calendar sessions stay conversation-isolated', async () => {
+  const convA = rid();
+  const convB = rid();
+  const pagesA = [
+    { items: [{ id: 'a1', summary: 'A', start: { dateTime: '2026-10-26T10:00:00Z' }, end: { dateTime: '2026-10-26T11:00:00Z' } }], nextPageToken: 'pa' },
+    { items: [{ id: 'a2', summary: 'A2', start: { dateTime: '2026-10-26T12:00:00Z' }, end: { dateTime: '2026-10-26T13:00:00Z' } }], nextPageToken: null },
+  ];
+  const pagesB = [
+    { items: [{ id: 'b1', summary: 'B', start: { dateTime: '2026-10-26T14:00:00Z' }, end: { dateTime: '2026-10-26T15:00:00Z' } }], nextPageToken: 'pb' },
+    { items: [{ id: 'b2', summary: 'B2', start: { dateTime: '2026-10-26T16:00:00Z' }, end: { dateTime: '2026-10-26T17:00:00Z' } }], nextPageToken: null },
+  ];
+  const { server: serverA } = fixtureServer({ scope: WRITE_SCOPE, eventsPages: pagesA });
+  const { server: serverB } = fixtureServer({ scope: WRITE_SCOPE, eventsPages: pagesB });
+  // Shared session store to simulate one process with concurrent conversations.
+  const shared = new CalendarSessions();
+  serverA.calendarSessions = shared;
+  serverB.calendarSessions = shared;
+  await service.submit(serverA, { message: "what's on my calendar tomorrow?", request_id: rid(), conversation_id: convA });
+  await service.submit(serverB, { message: "what's on my calendar tomorrow?", request_id: rid(), conversation_id: convB });
+  assert.equal(shared.hasActive({ conversation_id: convA }), true);
+  assert.equal(shared.hasActive({ conversation_id: convB }), true);
+  const cancelB = await service.submit(serverB, { message: 'cancel that', request_id: rid(), conversation_id: convB });
+  assert.equal(cancelB.action, 'preview', cancelB.message || cancelB.kind);
+  assert.equal(cancelB.proposal.event_id, 'b1');
+  const cancelA = await service.submit(serverA, { message: 'cancel that', request_id: rid(), conversation_id: convA });
+  assert.equal(cancelA.proposal.event_id, 'a1');
+});
+
+test('expired active cursor cannot continue', async () => {
+  const conv = rid();
+  const sessions = new CalendarSessions();
+  sessions.rememberList({
+    items: [{ id: 'x', summary: 'X', start: '2026-10-26T10:00:00Z', end: '2026-10-26T11:00:00Z' }],
+    next_page_token: 'tok',
+    conversation_id: conv,
+  });
+  const row = sessions.getActive({ conversation_id: conv });
+  row.expires_at = Date.now() - 1;
+  assert.equal(sessions.hasActive({ conversation_id: conv }), false);
+});
+
+test('freebusy fails closed when calendar omitted or errors', async () => {
+  const conv = rid();
+  const omitted = fixtureServer({ freeBusy: {} });
+  const bad = await service.submit(omitted.server, { message: 'Am I free Friday afternoon?', request_id: rid(), conversation_id: conv });
+  assert.equal(bad.kind, 'clarify');
+  assert.match(bad.message, /incomplete|unverified|not claimed available/i);
+  assert.doesNotMatch(bad.message, /you are free|operator is free|Host-verified: no busy/i);
+
+  const errored = fixtureServer({
+    freeBusy: { primary: { errors: [{ reason: 'notFound' }], busy: [] } },
+  });
+  const errReceipt = await service.submit(errored.server, { message: 'Am I free Friday afternoon?', request_id: rid(), conversation_id: conv });
+  assert.equal(errReceipt.kind, 'clarify');
+  assert.match(errReceipt.message, /incomplete|errors/i);
+});
+
+test('freebusy returns host-verified busy blocks when complete', async () => {
   const { server } = fixtureServer({
     freeBusy: {
       primary: { busy: [{ start: '2026-10-31T19:00:00Z', end: '2026-10-31T20:00:00Z' }] },
     },
   });
-  const receipt = await service.submit(server, { message: 'Am I free Friday afternoon?', request_id: rid() });
+  const receipt = await service.submit(server, { message: 'Am I free Friday afternoon?', request_id: rid(), conversation_id: rid() });
   assert.equal(receipt.action, 'freebusy');
   assert.equal(receipt.host_verified, true);
   assert.match(receipt.message, /busy periods|19:00/i);
@@ -232,7 +340,7 @@ test('OpenCode unavailable does not block deterministic calendar read', async ()
     eventsPages: [{ items: [{ id: 'z1', summary: 'Solo', start: { dateTime: '2026-10-26T10:00:00Z' }, end: { dateTime: '2026-10-26T11:00:00Z' } }] }],
   });
   server.conversationEngine.start = async () => { throw Error('provider_unavailable'); };
-  const receipt = await service.submit(server, { message: 'show my schedule today', request_id: rid() });
+  const receipt = await service.submit(server, { message: 'show my schedule today', request_id: rid(), conversation_id: rid() });
   assert.equal(receipt.kind, 'calendar');
   assert.equal(receipt.model_invoked, false);
   assert.equal(receipt.items[0].id, 'z1');
@@ -241,9 +349,9 @@ test('OpenCode unavailable does not block deterministic calendar read', async ()
 test('oauth disconnected stays calendar-classified not OpenCode', async () => {
   const server = {
     calendarOAuth: null,
-    conversationEngine: { start: async () => { throw Error('no'); } },
+    conversationEngine: { start: async () => { throw Error('no'); }, requireSession: (id) => ({ id }) },
   };
-  const receipt = await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid() });
+  const receipt = await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid(), conversation_id: rid() });
   assert.equal(receipt.kind, 'connect_required');
   assert.equal(receipt.connector, 'calendar');
   assert.equal(receipt.model_invoked, false);
@@ -251,6 +359,7 @@ test('oauth disconnected stays calendar-classified not OpenCode', async () => {
 
 test('write requires manage scope and preview confirmation', async () => {
   const writes = [];
+  const conv = rid();
   const { server } = fixtureServer({
     scope: WRITE_SCOPE,
     eventsPages: [{
@@ -258,15 +367,68 @@ test('write requires manage scope and preview confirmation', async () => {
     }],
     writes,
   });
-  // Force canWrite true by reconstructing oauth with write scope already seeded in fixtureServer.
   assert.equal(server.calendarOAuth.canWrite(), true);
-  await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid() });
-  const preview = await service.submit(server, { message: 'Create event Team sync tomorrow 14:00 to 14:30', request_id: rid() });
+  await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid(), conversation_id: conv });
+  const preview = await service.submit(server, { message: 'Create event Team sync tomorrow 14:00 to 14:30', request_id: rid(), conversation_id: conv });
   assert.equal(preview.action, 'preview');
   assert.ok(preview.preview_id);
   assert.equal(writes.length, 0);
-  const confirmed = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid() });
+  const confirmed = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid(), conversation_id: conv });
   assert.equal(confirmed.action, 'created');
+  assert.equal(confirmed.google_idempotent, false);
+  assert.equal(writes.length, 1);
+});
+
+test('create idempotency is host-local; uncertain create keeps preview', async () => {
+  const conv = rid();
+  let attempts = 0;
+  const writes = [];
+  const { server } = fixtureServer({
+    scope: WRITE_SCOPE,
+    eventsPages: [{ items: [] }],
+    writes,
+    createHandler: async (_url, options) => {
+      attempts += 1;
+      if (attempts === 1) {
+        const err = Error('fetch failed');
+        err.code = 'network';
+        throw err;
+      }
+      const body = JSON.parse(options.body || '{}');
+      writes.push({ op: 'create', body });
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ id: 'evt-retry', summary: body.summary, start: body.start, end: body.end }),
+      };
+    },
+  });
+  // createHandler throws before return — connector wraps; use connector that surfaces uncertain
+  server.calendarConnector.createEvent = async (args) => {
+    attempts += 1;
+    if (attempts === 1) {
+      const err = Error('fetch failed');
+      err.code = 'ENOTFOUND';
+      throw err;
+    }
+    writes.push({ op: 'create', args });
+    return {
+      item: { id: 'evt-retry', summary: args.summary, start: args.start, end: args.end, calendar_id: args.calendarId },
+      created: true,
+      google_idempotent: false,
+      host_verified: true,
+      live_qualified: true,
+    };
+  };
+  const preview = await service.submit(server, { message: 'Create event Team sync tomorrow 14:00 to 14:30', request_id: rid(), conversation_id: conv });
+  const uncertain = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid(), conversation_id: conv });
+  assert.equal(uncertain.action, 'uncertain');
+  assert.match(uncertain.message, /does not claim Google-side deduplication|preview remains/i);
+  const retry = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid(), conversation_id: conv });
+  assert.equal(retry.action, 'created');
+  const replay = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid(), conversation_id: conv });
+  assert.equal(replay.action, 'created');
+  assert.equal(replay.host_dedupe, true);
+  assert.equal(replay.google_idempotent, false);
   assert.equal(writes.length, 1);
 });
 
@@ -281,7 +443,7 @@ test('prompt injection in event titles is cleaned in render', async () => {
       }],
     }],
   });
-  const receipt = await service.submit(server, { message: 'show my schedule today', request_id: rid() });
+  const receipt = await service.submit(server, { message: 'show my schedule today', request_id: rid(), conversation_id: rid() });
   const text = render.receipt(receipt);
   assert.match(text, /HOST-VERIFIED/);
   assert.equal(receipt.model_invoked, false);
@@ -297,7 +459,7 @@ test('calendar phrases do not false-positive secret screening', () => {
     'show more',
     'actually cancel that',
   ]) {
-    const parsed = intent.parse(p);
+    const parsed = intent.parse(p, { activeCalendarSession: true });
     assert.notEqual(parsed.kind, 'secret', p);
   }
 });
@@ -314,8 +476,9 @@ test('personal-ops multi-service still plans; pure calendar uses calendar route'
   assert.equal(pure.kind, 'calendar');
 });
 
-test('destructive cancel requires --destructive flag', async () => {
+test('destructive cancel requires independent approval then --destructive', async () => {
   const writes = [];
+  const conv = rid();
   const { server } = fixtureServer({
     scope: WRITE_SCOPE,
     eventsPages: [{
@@ -323,20 +486,63 @@ test('destructive cancel requires --destructive flag', async () => {
     }],
     writes,
   });
-  await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid() });
-  const preview = await service.submit(server, { message: 'actually cancel that', request_id: rid() });
+  await service.submit(server, { message: "what's on my calendar tomorrow?", request_id: rid(), conversation_id: conv });
+  const preview = await service.submit(server, { message: 'actually cancel that', request_id: rid(), conversation_id: conv });
   assert.equal(preview.action, 'preview');
   assert.equal(preview.destructive, true);
-  const blocked = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid() });
-  assert.equal(blocked.kind, 'clarify');
-  assert.match(blocked.message, /--destructive/);
+  assert.ok(preview.approval_id);
+
+  // --destructive alone without independent approval fails closed.
+  const flagged = await service.submit(server, { message: `/calendar confirm ${preview.preview_id} --destructive`, request_id: rid(), conversation_id: conv });
+  assert.equal(flagged.kind, 'clarify');
+  assert.match(flagged.message, /independent approval/i);
   assert.equal(writes.filter((w) => w.op === 'delete').length, 0);
-  const done = await service.submit(server, { message: `/calendar confirm ${preview.preview_id} --destructive`, request_id: rid() });
+
+  // Confirm without --destructive after approve still needs the flag.
+  const approved = await service.submit(server, { message: `/calendar approve ${preview.approval_id}`, request_id: rid(), conversation_id: conv });
+  assert.equal(approved.action, 'approval_recorded');
+  const needFlag = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid(), conversation_id: conv });
+  assert.equal(needFlag.kind, 'clarify');
+  assert.match(needFlag.message, /--destructive/);
+
+  const done = await service.submit(server, { message: `/calendar confirm ${preview.preview_id} --destructive`, request_id: rid(), conversation_id: conv });
   assert.equal(done.action, 'deleted');
+  assert.match(done.message, /calendar primary/);
   assert.equal(writes.filter((w) => w.op === 'delete').length, 1);
+  assert.match(writes.find((w) => w.op === 'delete').href, /\/calendars\/primary\/events\/evt-1/);
+});
+
+test('cross-conversation cannot confirm another conversation preview', async () => {
+  const convA = rid();
+  const convB = rid();
+  const writes = [];
+  const { server } = fixtureServer({
+    scope: WRITE_SCOPE,
+    eventsPages: [{ items: [] }],
+    writes,
+  });
+  const preview = await service.submit(server, { message: 'Create event Team sync tomorrow 14:00 to 14:30', request_id: rid(), conversation_id: convA });
+  const stolen = await service.submit(server, { message: `/calendar confirm ${preview.preview_id}`, request_id: rid(), conversation_id: convB });
+  assert.equal(stolen.kind, 'clarify');
+  assert.match(stolen.message, /different conversation|expired/i);
+  assert.equal(writes.length, 0);
+});
+
+test('invalid start/end ranges and assertRange fail closed', () => {
+  assert.throws(() => assertRange('2026-10-26T15:00:00Z', '2026-10-26T14:00:00Z'), /strictly after/);
+  assert.throws(() => assertRange('2026-10-26', '2026-10-26'), /strictly after/);
 });
 
 test('pasted control commands still clarify after ZWSP strip', () => {
   const parsed = intent.parse('please help\n/quit');
   assert.equal(parsed.kind, 'clarify');
+});
+
+test('gmail show more is not hijacked by calendar when only gmail is active', () => {
+  const gmail = intent.parse('show more', { activeGmailSearch: true, activeCalendarSession: false });
+  assert.equal(gmail.kind, 'connector');
+  assert.equal(gmail.connector, 'gmail');
+  const cal = intent.parse('show more', { activeGmailSearch: false, activeCalendarSession: true });
+  assert.equal(cal.kind, 'calendar');
+  assert.equal(cal.action, 'continue');
 });

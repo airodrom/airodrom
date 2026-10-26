@@ -106,9 +106,12 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  const gmailSearch=require('./gmail-search-intent').parse(request,{activeGmailSearch:activeGmailSearch===true});
  if(gmailSearch)return gmailSearch;
  if(/^(?:show|check|read)\s+(?:my\s+)?whatsapp(?: messages(?: needing attention)?)?$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'whatsapp',action:'attention'});
+ const calendarApprove=/^\/calendar\s+approve\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.exec(request);
+ if(calendarApprove)return route('CALENDAR',{kind:'calendar',action:'approve',approval_id:calendarApprove[1],host_verified:true});
  const calendarConfirm=/^\/calendar\s+confirm\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})(\s+--destructive)?$/i.exec(request);
  if(calendarConfirm)return route('CALENDAR',{kind:'calendar',action:'confirm',preview_id:calendarConfirm[1],confirmed:true,destructive:!!calendarConfirm[2],host_verified:true});
  // Deterministic Google Calendar — host connector only; never OpenCode for clear calendar ops.
+ // Generic "show more"/"cancel that" only when this conversation has an active Calendar session.
  const calendarIntent=require('./calendar-intent').parse(request,{activeCalendarSession:activeCalendarSession===true});
  if(calendarIntent)return route('CALENDAR',calendarIntent);
  // Personal ops / job search — host capability plan before model denial.

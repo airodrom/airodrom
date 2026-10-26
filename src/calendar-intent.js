@@ -40,27 +40,48 @@ function helpControl(request) {
   return null;
 }
 
-function followUp(request) {
+/**
+ * Follow-ups that would otherwise hijack Gmail pagination or unrelated chat.
+ * - Generic "show more" / "cancel that": only with an active verified Calendar session.
+ * - Calendar-explicit ("show more events", "cancel that meeting"): calendar-shaped;
+ *   execution still requires a bound active session.
+ */
+function followUp(request, { activeCalendarSession = false } = {}) {
   const text = normalize(request);
   if (/^(?:make|set|change)\s+(?:it\s+)?(?:to\s+)?(\d{1,3})\s*(?:min(?:ute)?s?)(?:\s+instead)?\.?$/i.test(text)) {
+    if (!activeCalendarSession) return null;
     const m = text.match(/(\d{1,3})\s*(?:min(?:ute)?s?)/i);
     return { kind: 'calendar', action: 'followup_duration', minutes: Number(m[1]), route: 'CALENDAR', host_verified: true };
   }
-  if (/^(?:actually[,.]?\s+)?cancel(?:\s+(?:that|it|the\s+(?:meeting|event|appointment)))?\.?$/i.test(text)) {
+
+  const cancelExplicit = /^(?:actually[,.]?\s+)?cancel(?:\s+(?:that|it))?\s+(?:the\s+)?(?:meeting|event|appointment)\.?$/i.test(text)
+    || /^(?:actually[,.]?\s+)?cancel\s+(?:that|it)\s+(?:meeting|event|appointment)\.?$/i.test(text);
+  const cancelGeneric = /^(?:actually[,.]?\s+)?cancel(?:\s+(?:that|it))?\.?$/i.test(text);
+  if (cancelExplicit) {
+    return { kind: 'calendar', action: 'followup_cancel', route: 'CALENDAR', host_verified: true, calendar_explicit: true };
+  }
+  if (cancelGeneric && activeCalendarSession) {
     return { kind: 'calendar', action: 'followup_cancel', route: 'CALENDAR', host_verified: true };
   }
-  if (/^(?:show|get|list)?\s*(?:the\s+)?(?:next\s+page|more(?:\s+(?:results|events)?)?)\.?$/i.test(text)) {
+
+  const moreExplicit = /^(?:show|get|list)?\s*(?:the\s+)?(?:next\s+page|more)\s+(?:of\s+)?(?:those\s+|the\s+)?(?:events?|meetings?|results)\.?$/i.test(text)
+    || /^(?:show|get|list)\s+more\s+(?:calendar\s+)?(?:events?|meetings?)\.?$/i.test(text);
+  const moreGeneric = /^(?:show|get|list)?\s*(?:the\s+)?(?:next\s+page|more(?:\s+results)?)\.?$/i.test(text);
+  if (moreExplicit) {
+    return { kind: 'calendar', action: 'continue', route: 'CALENDAR', host_verified: true, calendar_explicit: true };
+  }
+  if (moreGeneric && activeCalendarSession) {
     return { kind: 'calendar', action: 'continue', route: 'CALENDAR', host_verified: true };
   }
   return null;
 }
 
-function parse(request) {
+function parse(request, { activeCalendarSession = false } = {}) {
   if (typeof request !== 'string' || !request.trim()) return null;
   const text = normalize(request);
   const help = helpControl(text);
   if (help) return help;
-  const cont = followUp(text);
+  const cont = followUp(text, { activeCalendarSession });
   if (cont) return cont;
 
   // Mutation verbs with incomplete details → clarify (never invent events).
@@ -178,4 +199,4 @@ function parse(request) {
   return null;
 }
 
-module.exports = { parse, normalize, helpControl, dayToken };
+module.exports = { parse, normalize, helpControl, dayToken, followUp };

@@ -606,7 +606,12 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if(command==='calendar'){
           const parts=String(arg||'').trim().split(/\s+/).filter(Boolean);
           const action=(parts[0]||'help').toLowerCase();
-          if(action==='confirm'){
+          if(action==='approve'){
+            const id=parts[1];
+            if(!id)throw Error('Use /calendar approve <approval-id>');
+            const result=await local.request(home,'/api/assistant/input',{message:`/calendar approve ${id}`,request_id:randomUUID()});
+            await handleReceipt(result,json);
+          }else if(action==='confirm'){
             const id=parts[1];
             const destructive=parts.includes('--destructive');
             if(!id)throw Error('Use /calendar confirm <preview-id> [--destructive]');
@@ -616,7 +621,7 @@ async function interactive(home, { input = process.stdin, output = process.stdou
             const result=await local.request(home,'/api/assistant/input',{message:'help me control my calendar',request_id:randomUUID()});
             await handleReceipt(result,json);
           }else{
-            throw Error('Use /calendar help|status|confirm <preview-id> [--destructive], or ask in natural language.');
+            throw Error('Use /calendar help|status|approve <approval-id>|confirm <preview-id> [--destructive], or ask in natural language.');
           }
         }
         else if(command==='gmail'||command==='whatsapp') {

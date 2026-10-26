@@ -20,6 +20,21 @@ function connector(server) {
   return server.calendarConnector;
 }
 
+function requireConversation(conversation_id) {
+  if (typeof conversation_id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(conversation_id)) {
+    return {
+      kind: 'clarify',
+      route: 'CALENDAR',
+      message: 'Calendar follow-ups and writes require an authenticated Terminal conversation session. Re-open the interactive chat and try again.',
+      authority: false,
+      host_verified: true,
+      model_invoked: false,
+      code: 'calendar_session_required',
+    };
+  }
+  return null;
+}
+
 function authorizationOffer(server, { write = false } = {}) {
   const oauth = !!server.calendarOAuth;
   return {
@@ -58,20 +73,37 @@ function dayWindow(day = 'today', { afternoon = false, morning = false } = {}) {
     start.setHours(6, 0, 0, 0);
     end.setHours(12, 0, 0, 0);
   } else if (day === 'today') {
-    // Remaining today
     end.setHours(23, 59, 59, 999);
   } else {
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
   }
+  if (start.getTime() >= end.getTime()) {
+    const err = Error('Calendar window end must be after start.');
+    err.code = 'calendar_invalid_range';
+    throw err;
+  }
   return { timeMin: start.toISOString(), timeMax: end.toISOString(), label: day };
+}
+
+function parseClockOnDay(baseIso, hm) {
+  const [h, m] = String(hm).split(':').map(Number);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    const err = Error('Valid HH:MM start and end times are required.');
+    err.code = 'calendar_invalid_time';
+    throw err;
+  }
+  const start = new Date(baseIso);
+  start.setHours(h, m, 0, 0);
+  return start;
 }
 
 function formatEvents(items, { day, partial = false, has_more = false } = {}) {
   if (!items.length) return `No events found${day ? ' for ' + day : ''} on the authorized calendar (host-verified).`;
   const lines = items.map((e, i) => {
     const when = [e.start, e.end].filter(Boolean).join(' → ');
-    return `${i + 1}. ${e.summary || '(no title)'} · ${when || 'time unavailable'} · ref ${e.id}`;
+    const allDay = e.all_day ? ' · all-day' : '';
+    return `${i + 1}. ${e.summary || '(no title)'} · ${when || 'time unavailable'}${allDay} · ref ${e.id}`;
   });
   let message = `Host-verified calendar results${day ? ' (' + day + ')' : ''}. Showing ${items.length} event${items.length === 1 ? '' : 's'}${partial || has_more ? ' (partial page)' : ''}.\n` + lines.join('\n');
   if (has_more) message += '\nSay “show more” for the next bounded page.';
@@ -85,11 +117,20 @@ function helpMessage(server) {
     `State: ${item.state} · connected=${!!item.connected} · live_qualified=${!!item.live_qualified} · writes=${item.can_write ? 'manage scope present' : 'read-only or unauthorized'}.`,
     'Gmail gmail.readonly does not grant Calendar. Use /connect calendar for calendar.readonly reads; /connect calendar manage for calendar.events writes.',
     'Reads: “What’s on my calendar tomorrow?”, “Am I free Friday afternoon?”, “Search calendar for interview”, “List calendars”.',
-    'Writes (after manage consent + preview confirm): “Create event Team sync tomorrow 14:00 to 14:30”, then confirm the preview. Cancel/delete needs destructive approval.',
-    'Follow-ups resolve only from previously verified results (“Move the 2 PM meeting to 3 PM”, “Make it 30 minutes”, “Cancel that”).',
+    'Writes (after manage consent + preview confirm): “Create event Team sync tomorrow 14:00 to 14:30”, then confirm the preview.',
+    'Destructive cancel: stage a preview, independently `/calendar approve <approval_id>`, then `/calendar confirm <preview_id> --destructive`. A textual --destructive flag alone is not sufficient.',
+    'Follow-ups (“show more”, “cancel that”) resolve only from a verified Calendar session in this Terminal conversation — they do not continue Gmail search.',
     item.setup ? `Next: ${item.setup}` : 'Next: configure the Google desktop OAuth client (airodrom gmail setup shares the Desktop client), then /connect calendar.',
   ];
   return lines.join('\n');
+}
+
+function isUncertainWriteError(error) {
+  const code = error?.code || error?.safe_error_class || '';
+  const msg = String(error?.message || '');
+  return /timeout|AbortError|ECONNRESET|ENOTFOUND|fetch failed|network|temporar|unavailable|429|500|502|503|504/i.test(code + ' ' + msg)
+    || error?.name === 'TimeoutError'
+    || error?.name === 'AbortError';
 }
 
 async function run(server, parsed, { conversation_id = null, confirm_id = null, confirmed = false, destructive = false } = {}) {
@@ -108,8 +149,36 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     };
   }
 
+  if (parsed.action === 'approve') {
+    const missing = requireConversation(conversation_id);
+    if (missing) return missing;
+    try {
+      const approved = sessions(server).approveWrite(parsed.approval_id || confirm_id, { conversation_id, operator: 'operator' });
+      return {
+        kind: 'calendar',
+        action: 'approval_recorded',
+        route: 'CALENDAR',
+        ...approved,
+        message: `Independent destructive approval recorded for preview ${approved.preview_id}. Confirm with /calendar confirm ${approved.preview_id} --destructive.`,
+        host_verified,
+        model_invoked,
+        authority: false,
+      };
+    } catch (error) {
+      return {
+        kind: 'clarify',
+        route: 'CALENDAR',
+        message: error.message,
+        code: error.code,
+        host_verified,
+        model_invoked,
+        authority: false,
+      };
+    }
+  }
+
   const adapter = connector(server);
-  if (!adapter) return authorizationOffer(server, { write: ['create', 'reschedule', 'followup_duration', 'followup_cancel', 'cancel'].includes(parsed.action) });
+  if (!adapter) return authorizationOffer(server, { write: ['create', 'reschedule', 'followup_duration', 'followup_cancel', 'cancel', 'confirm'].includes(parsed.action) });
 
   const st = adapter.status();
   if (!st.connected && !['help'].includes(parsed.action)) {
@@ -137,9 +206,16 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     }
 
     if (parsed.action === 'continue') {
-      const active = sessions(server).active({ conversation_id });
+      const missing = requireConversation(conversation_id);
+      if (missing) return missing;
+      let active;
+      try {
+        active = sessions(server).getActive({ conversation_id, operator: 'operator' });
+      } catch (error) {
+        return { kind: 'clarify', route: 'CALENDAR', message: error.message, code: error.code, host_verified, model_invoked, authority: false };
+      }
       if (!active?.next_page_token) {
-        return { kind: 'clarify', route: 'CALENDAR', message: 'No active calendar page to continue. Ask what’s on your calendar first.', host_verified, model_invoked, authority: false };
+        return { kind: 'clarify', route: 'CALENDAR', message: 'No active calendar page to continue in this conversation. Ask what’s on your calendar first.', host_verified, model_invoked, authority: false };
       }
       const data = await adapter.listEvents({
         calendarId: active.calendar_id || 'primary',
@@ -152,9 +228,10 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
         action: active.action,
         query: active.query,
         day: active.day,
-        calendar_id: active.calendar_id,
+        calendar_id: active.calendar_id || data.calendar_id || 'primary',
         next_page_token: data._provider_next_page_token,
         conversation_id,
+        operator: 'operator',
       });
       const { _provider_next_page_token, ...safe } = data;
       void _provider_next_page_token;
@@ -175,20 +252,27 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     }
 
     if (parsed.action === 'events' || parsed.action === 'search') {
+      const missing = requireConversation(conversation_id);
+      if (missing) return missing;
       const window = dayWindow(parsed.day || (parsed.action === 'search' ? null : 'today'));
+      const calendarId = 'primary';
       const data = await adapter.listEvents({
+        calendarId,
         timeMin: parsed.action === 'search' ? new Date(Date.now() - 7 * 86400000).toISOString() : window.timeMin,
         timeMax: parsed.action === 'search' ? new Date(Date.now() + 30 * 86400000).toISOString() : window.timeMax,
         query: parsed.query || null,
         limit: 10,
+        singleEvents: true,
       });
       sessions(server).rememberList({
         items: data.items,
         action: parsed.action,
         query: parsed.query || null,
         day: parsed.day || window.label,
+        calendar_id: data.calendar_id || calendarId,
         next_page_token: data._provider_next_page_token,
         conversation_id,
+        operator: 'operator',
       });
       return {
         kind: 'calendar',
@@ -209,10 +293,25 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     if (parsed.action === 'freebusy') {
       const window = dayWindow(parsed.day || 'today', { afternoon: parsed.afternoon, morning: parsed.morning });
       const data = await adapter.freeBusy({ timeMin: window.timeMin, timeMax: window.timeMax, calendars: ['primary'] });
+      if (!data.complete) {
+        return {
+          kind: 'clarify',
+          route: 'CALENDAR',
+          action: 'freebusy',
+          message: 'Free/busy is incomplete: Google omitted the expected calendar or reported errors. Availability is unverified — not claimed available.',
+          missing_calendars: data.missing_calendars,
+          errored_calendars: data.errored_calendars,
+          host_verified: true,
+          model_invoked: false,
+          live_qualified: false,
+          authority: false,
+          code: 'calendar_freebusy_incomplete',
+        };
+      }
       const busy = data.calendars.primary?.busy || [];
       const message = busy.length
         ? `Host-verified busy periods (${window.label}${parsed.afternoon ? ' afternoon' : parsed.morning ? ' morning' : ''}):\n` + busy.map((b) => `• ${b.start} → ${b.end}`).join('\n')
-        : `Host-verified: no busy blocks on primary calendar for ${window.label}${parsed.afternoon ? ' afternoon' : parsed.morning ? ' morning' : ''} (free/busy).`;
+        : `Host-verified: no busy blocks on primary calendar for ${window.label}${parsed.afternoon ? ' afternoon' : parsed.morning ? ' morning' : ''} (free/busy evidence complete).`;
       return {
         kind: 'calendar',
         action: 'freebusy',
@@ -232,15 +331,15 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     }
 
     if (parsed.action === 'create' && parsed.summary && parsed.start_hm && parsed.end_hm) {
+      const missing = requireConversation(conversation_id);
+      if (missing) return missing;
       if (!server.calendarOAuth.canWrite()) return authorizationOffer(server, { write: true });
       const window = dayWindow(parsed.day || 'tomorrow');
-      const base = new Date(window.timeMin);
-      const [sh, sm] = parsed.start_hm.split(':').map(Number);
-      const [eh, em] = parsed.end_hm.split(':').map(Number);
-      const start = new Date(base);
-      start.setHours(sh, sm, 0, 0);
-      const end = new Date(base);
-      end.setHours(eh, em, 0, 0);
+      const start = parseClockOnDay(window.timeMin, parsed.start_hm);
+      const end = parseClockOnDay(window.timeMin, parsed.end_hm);
+      if (end.getTime() <= start.getTime()) {
+        return { kind: 'clarify', route: 'CALENDAR', message: 'Event end must be strictly after start. Check the times (including AM/PM and DST boundaries).', host_verified, model_invoked, authority: false };
+      }
       const proposal = {
         op: 'create',
         summary: parsed.summary,
@@ -248,14 +347,14 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
         end: end.toISOString(),
         calendar_id: 'primary',
       };
-      const preview_id = sessions(server).stageWrite(proposal);
+      const staged = sessions(server).stageWrite(proposal, { conversation_id, operator: 'operator' });
       return {
         kind: 'calendar',
         action: 'preview',
         route: 'CALENDAR',
-        preview_id,
+        preview_id: staged.preview_id,
         proposal,
-        message: `Preview (not created yet):\n• ${proposal.summary}\n• ${proposal.start} → ${proposal.end}\nConfirm with /calendar confirm ${preview_id} or reject by ignoring. No attendees invited in this V1 create path.`,
+        message: `Preview (not created yet):\n• ${proposal.summary}\n• ${proposal.start} → ${proposal.end}\nConfirm with /calendar confirm ${staged.preview_id} or reject by ignoring. No attendees invited in this V1 create path.`,
         host_verified,
         model_invoked,
         authority: false,
@@ -264,40 +363,55 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     }
 
     if (parsed.action === 'followup_cancel' || parsed.action === 'cancel') {
-      const resolved = sessions(server).selectByHint(parsed.raw || '');
+      const missing = requireConversation(conversation_id);
+      if (missing) return missing;
+      const resolved = sessions(server).selectByHint(parsed.raw || '', { conversation_id, operator: 'operator' });
       if (resolved.error) {
-        return { kind: 'clarify', route: 'CALENDAR', message: resolved.error, choices: resolved.choices, host_verified, model_invoked, authority: false };
+        return { kind: 'clarify', route: 'CALENDAR', message: resolved.error, choices: resolved.choices, code: resolved.code, host_verified, model_invoked, authority: false };
       }
       if (!server.calendarOAuth.canWrite()) return authorizationOffer(server, { write: true });
-      const proposal = { op: 'delete', event_id: resolved.event.id, calendar_id: resolved.event.calendar_id || 'primary', summary: resolved.event.summary, destructive: true };
-      const preview_id = sessions(server).stageWrite(proposal);
+      const proposal = {
+        op: 'delete',
+        event_id: resolved.event.id,
+        calendar_id: resolved.event.calendar_id || 'primary',
+        summary: resolved.event.summary,
+        destructive: true,
+      };
+      const staged = sessions(server).stageWrite(proposal, { conversation_id, operator: 'operator' });
       return {
         kind: 'calendar',
         action: 'preview',
         route: 'CALENDAR',
-        preview_id,
+        preview_id: staged.preview_id,
+        approval_id: staged.approval_id,
         proposal,
-        message: `Destructive preview — cancel “${proposal.summary}” (${proposal.event_id}). Confirm with /calendar confirm ${preview_id} --destructive. This requires explicit approval.`,
+        message: `Destructive preview — cancel “${proposal.summary}” (${proposal.event_id}) on calendar ${proposal.calendar_id}.\n1) Independently approve: /calendar approve ${staged.approval_id}\n2) Confirm: /calendar confirm ${staged.preview_id} --destructive\nA textual --destructive flag alone is not sufficient.`,
         host_verified,
         model_invoked,
         authority: false,
         requires_confirmation: true,
+        requires_independent_approval: true,
         destructive: true,
       };
     }
 
     if (parsed.action === 'reschedule' || parsed.action === 'followup_duration') {
-      const resolved = sessions(server).selectByHint(parsed.time_hint || parsed.raw || '');
+      const missing = requireConversation(conversation_id);
+      if (missing) return missing;
+      const resolved = sessions(server).selectByHint(parsed.time_hint || parsed.raw || '', { conversation_id, operator: 'operator' });
       if (resolved.error && parsed.action !== 'followup_duration') {
         return { kind: 'clarify', route: 'CALENDAR', message: resolved.message || resolved.error, choices: resolved.choices, host_verified, model_invoked, authority: false };
       }
-      const event = resolved.event || sessions(server).selected();
+      const event = resolved.event || sessions(server).selected({ conversation_id, operator: 'operator' });
       if (!event) {
-        return { kind: 'clarify', route: 'CALENDAR', message: 'No verified event selected. Show the schedule first, then refer to a specific meeting.', host_verified, model_invoked, authority: false };
+        return { kind: 'clarify', route: 'CALENDAR', message: 'No verified event selected in this conversation. Show the schedule first, then refer to a specific meeting.', host_verified, model_invoked, authority: false };
       }
       if (!server.calendarOAuth.canWrite()) return authorizationOffer(server, { write: true });
       let start = event.start;
       let end = event.end;
+      if (event.all_day && parsed.action === 'reschedule') {
+        return { kind: 'clarify', route: 'CALENDAR', message: 'This is an all-day event. Timed reschedule is not supported in V1; cancel and recreate, or adjust in Google Calendar.', host_verified, model_invoked, authority: false };
+      }
       if (parsed.action === 'followup_duration' && start) {
         const s = new Date(start);
         const e = new Date(s.getTime() + parsed.minutes * 60000);
@@ -318,15 +432,25 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
         start = s.toISOString();
         end = new Date(s.getTime() + Math.max(duration, 600000)).toISOString();
       }
-      const proposal = { op: 'update', event_id: event.id, calendar_id: event.calendar_id || 'primary', summary: event.summary, start, end };
-      const preview_id = sessions(server).stageWrite(proposal);
+      if (start && end && new Date(end).getTime() <= new Date(start).getTime()) {
+        return { kind: 'clarify', route: 'CALENDAR', message: 'Updated end must be strictly after start (check DST / time zone).', host_verified, model_invoked, authority: false };
+      }
+      const proposal = {
+        op: 'update',
+        event_id: event.id,
+        calendar_id: event.calendar_id || 'primary',
+        summary: event.summary,
+        start,
+        end,
+      };
+      const staged = sessions(server).stageWrite(proposal, { conversation_id, operator: 'operator' });
       return {
         kind: 'calendar',
         action: 'preview',
         route: 'CALENDAR',
-        preview_id,
+        preview_id: staged.preview_id,
         proposal,
-        message: `Preview update for “${proposal.summary}”:\n• ${proposal.start} → ${proposal.end}\nConfirm with /calendar confirm ${preview_id}.`,
+        message: `Preview update for “${proposal.summary}” on calendar ${proposal.calendar_id}:\n• ${proposal.start} → ${proposal.end}\nConfirm with /calendar confirm ${staged.preview_id}.`,
         host_verified,
         model_invoked,
         authority: false,
@@ -335,38 +459,179 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
     }
 
     if (parsed.action === 'confirm' || confirm_id) {
+      const missing = requireConversation(conversation_id);
+      if (missing) return missing;
       const id = confirm_id || parsed.preview_id;
-      const row = sessions(server).takeWrite(id, { confirm: false });
-      const destructiveOk = destructive === true || parsed.destructive === true;
-      if (row.destructive && !destructiveOk) {
-        return { kind: 'clarify', route: 'CALENDAR', message: 'Destructive calendar cancel requires /calendar confirm <id> --destructive.', host_verified, model_invoked, authority: false };
+      // Host-local create replay: completed preview IDs must not re-POST or claim Google idempotency.
+      const priorCreate = sessions(server).getCompletedCreate(id, { conversation_id, operator: 'operator' });
+      if (priorCreate) {
+        return { ...priorCreate, host_verified, model_invoked, live_qualified: true, authority: false };
       }
-      if (!row.destructive && confirmed !== true && parsed.confirmed !== true) {
+      let row;
+      try {
+        row = sessions(server).peekWrite(id, { conversation_id, operator: 'operator' });
+      } catch (error) {
+        return { kind: 'clarify', route: 'CALENDAR', message: error.message, code: error.code, host_verified, model_invoked, authority: false };
+      }
+
+      const ownerConfirmed = confirmed === true || parsed.confirmed === true;
+      const destructiveOk = destructive === true || parsed.destructive === true;
+
+      if (row.destructive) {
+        // Independent approval + owner confirmation + --destructive — flag alone fails closed.
+        if (row.approval_status !== 'approved') {
+          return {
+            kind: 'clarify',
+            route: 'CALENDAR',
+            message: `Destructive calendar cancel requires independent approval first: /calendar approve ${row.approval_id}. The --destructive flag alone is not sufficient.`,
+            approval_id: row.approval_id,
+            host_verified,
+            model_invoked,
+            authority: false,
+            code: 'calendar_destructive_approval_required',
+          };
+        }
+        if (!ownerConfirmed) {
+          return {
+            kind: 'clarify',
+            route: 'CALENDAR',
+            message: 'Destructive calendar cancel requires explicit owner confirmation via /calendar confirm <id> --destructive.',
+            host_verified,
+            model_invoked,
+            authority: false,
+            code: 'calendar_owner_confirmation_required',
+          };
+        }
+        if (!destructiveOk) {
+          return {
+            kind: 'clarify',
+            route: 'CALENDAR',
+            message: 'Destructive calendar cancel requires /calendar confirm <id> --destructive after independent approval.',
+            host_verified,
+            model_invoked,
+            authority: false,
+          };
+        }
+      } else if (!ownerConfirmed) {
         return { kind: 'clarify', route: 'CALENDAR', message: 'Confirm the preview with /calendar confirm <id>.', host_verified, model_invoked, authority: false };
       }
-      const proposal = sessions(server).takeWrite(id, { confirm: true });
+
       if (!server.calendarOAuth.canWrite()) return authorizationOffer(server, { write: true });
-      if (proposal.op === 'create') {
-        const created = await adapter.createEvent({
-          summary: proposal.summary,
-          start: proposal.start,
-          end: proposal.end,
-          calendarId: proposal.calendar_id,
-          idempotencyKey: confirm_id,
-        });
-        return { kind: 'calendar', action: 'created', route: 'CALENDAR', item: created.item, message: `Created host-verified event “${created.item.summary}” (${created.item.id}).`, host_verified, model_invoked, live_qualified: true, authority: false };
+
+      if (row.op === 'create') {
+        try {
+          const created = await adapter.createEvent({
+            summary: row.summary,
+            start: row.start,
+            end: row.end,
+            calendarId: row.calendar_id,
+            hostDedupeKey: id,
+          });
+          sessions(server).commitWrite(id, { conversation_id, operator: 'operator' });
+          const receipt = {
+            kind: 'calendar',
+            action: 'created',
+            route: 'CALENDAR',
+            item: created.item,
+            message: `Created host-verified event “${created.item.summary}” (${created.item.id}).`,
+            google_idempotent: false,
+            host_verified,
+            model_invoked,
+            live_qualified: true,
+            authority: false,
+          };
+          sessions(server).markCreateCompleted(id, receipt, { conversation_id, operator: 'operator' });
+          return receipt;
+        } catch (error) {
+          if (isUncertainWriteError(error)) {
+            return {
+              kind: 'clarify',
+              route: 'CALENDAR',
+              action: 'uncertain',
+              message: 'Calendar create did not return a verified success. The preview remains available — re-confirm after checking Google Calendar. Host does not claim Google-side deduplication.',
+              preview_id: id,
+              code: 'calendar_write_uncertain',
+              host_verified: true,
+              model_invoked: false,
+              authority: false,
+            };
+          }
+          throw error;
+        }
       }
+
+      // Consume only after we are about to mutate for update/delete.
+      const proposal = sessions(server).commitWrite(id, { conversation_id, operator: 'operator' });
+
       if (proposal.op === 'update') {
-        const updated = await adapter.updateEvent({
-          calendarId: proposal.calendar_id,
-          eventId: proposal.event_id,
-          patch: { start: proposal.start, end: proposal.end },
-        });
-        return { kind: 'calendar', action: 'updated', route: 'CALENDAR', item: updated.item, message: `Updated host-verified event “${updated.item.summary}”.`, host_verified, model_invoked, live_qualified: true, authority: false };
+        // Verify exact event/calendar identity before mutating.
+        const verified = await adapter.getEvent({ calendarId: proposal.calendar_id, eventId: proposal.event_id });
+        if (verified.item.id !== proposal.event_id || verified.item.calendar_id !== proposal.calendar_id) {
+          return {
+            kind: 'clarify',
+            route: 'CALENDAR',
+            message: 'Event identity mismatch against the verified calendar. Refresh the schedule and try again.',
+            host_verified,
+            model_invoked,
+            authority: false,
+            code: 'calendar_event_identity_mismatch',
+          };
+        }
+        try {
+          const updated = await adapter.updateEvent({
+            calendarId: proposal.calendar_id,
+            eventId: proposal.event_id,
+            patch: { start: proposal.start, end: proposal.end },
+          });
+          return { kind: 'calendar', action: 'updated', route: 'CALENDAR', item: updated.item, message: `Updated host-verified event “${updated.item.summary}”.`, host_verified, model_invoked, live_qualified: true, authority: false };
+        } catch (error) {
+          if (isUncertainWriteError(error)) {
+            return {
+              kind: 'clarify',
+              route: 'CALENDAR',
+              action: 'uncertain',
+              message: 'Calendar update did not return a verified success. Re-list the schedule before retrying; the prior preview was consumed and must be re-staged.',
+              code: 'calendar_write_uncertain',
+              host_verified: true,
+              model_invoked: false,
+              authority: false,
+            };
+          }
+          throw error;
+        }
       }
+
       if (proposal.op === 'delete') {
-        await adapter.deleteEvent({ calendarId: proposal.calendar_id, eventId: proposal.event_id });
-        return { kind: 'calendar', action: 'deleted', route: 'CALENDAR', message: `Cancelled host-verified event ${proposal.event_id}.`, host_verified, model_invoked, live_qualified: true, authority: false };
+        const verified = await adapter.getEvent({ calendarId: proposal.calendar_id, eventId: proposal.event_id });
+        if (verified.item.id !== proposal.event_id || verified.item.calendar_id !== proposal.calendar_id) {
+          return {
+            kind: 'clarify',
+            route: 'CALENDAR',
+            message: 'Event identity mismatch against the verified calendar. Refresh the schedule and try again.',
+            host_verified,
+            model_invoked,
+            authority: false,
+            code: 'calendar_event_identity_mismatch',
+          };
+        }
+        try {
+          await adapter.deleteEvent({ calendarId: proposal.calendar_id, eventId: proposal.event_id });
+          return { kind: 'calendar', action: 'deleted', route: 'CALENDAR', message: `Cancelled host-verified event ${proposal.event_id} on calendar ${proposal.calendar_id}.`, host_verified, model_invoked, live_qualified: true, authority: false };
+        } catch (error) {
+          if (isUncertainWriteError(error)) {
+            return {
+              kind: 'clarify',
+              route: 'CALENDAR',
+              action: 'uncertain',
+              message: 'Calendar cancel did not return a verified success. Check Google Calendar before retrying; do not assume the event was deleted.',
+              code: 'calendar_write_uncertain',
+              host_verified: true,
+              model_invoked: false,
+              authority: false,
+            };
+          }
+          throw error;
+        }
       }
     }
 
@@ -377,6 +642,9 @@ async function run(server, parsed, { conversation_id = null, confirm_id = null, 
       offer.safe_error_class = error.safe_error_class || error.code;
       if (error?.message && !/token|Bearer|refresh_token|access_token/i.test(error.message)) offer.failure_message = error.message;
       return offer;
+    }
+    if (error?.code === 'calendar_invalid_range' || error?.code === 'calendar_invalid_time' || error?.code === 'calendar_freebusy_invalid_range') {
+      return { kind: 'clarify', route: 'CALENDAR', message: error.message, code: error.code, host_verified, model_invoked, authority: false };
     }
     throw error;
   }

@@ -18,6 +18,17 @@ function isoOrThrow(value, name) {
   return value;
 }
 
+function assertRange(start, end) {
+  const a = start.includes('T') ? Date.parse(start) : Date.parse(start + 'T00:00:00Z');
+  const b = end.includes('T') ? Date.parse(end) : Date.parse(end + 'T00:00:00Z');
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a >= b) {
+    const err = Error('Event end must be strictly after start.');
+    err.code = 'calendar_invalid_range';
+    err.safe_error_class = 'calendar_invalid_range';
+    throw err;
+  }
+}
+
 class CalendarConnector {
   #oauth; #request; #live = false; #connectedProbe = null;
   constructor({ oauth = null, request = fetch, connected = null } = {}) {
@@ -110,18 +121,26 @@ class CalendarConnector {
     }
   }
 
-  #event(row) {
+  #event(row, queriedCalendarId = 'primary') {
     if (!row || !ID.test(row.id || '')) throw Error('Invalid Calendar event reference');
     const start = row.start?.dateTime || row.start?.date || null;
     const end = row.end?.dateTime || row.end?.date || null;
+    const all_day = !!(row.start?.date && !row.start?.dateTime);
+    // Authoritative target calendar is the one we queried — never the organizer email.
+    const calendar_id = (queriedCalendarId && (ID.test(queriedCalendarId) || queriedCalendarId === 'primary'))
+      ? queriedCalendarId
+      : (row.calendarId && ID.test(row.calendarId) ? row.calendarId : 'primary');
     return {
       id: row.id,
-      calendar_id: row.organizer?.email || row.calendarId || 'primary',
+      calendar_id,
+      organizer_email: row.organizer?.email && ID.test(row.organizer.email) ? clean(row.organizer.email) : null,
       summary: clean(row.summary),
       description: clean(String(row.description || '').slice(0, 500)),
       location: clean(row.location),
       start,
       end,
+      all_day,
+      time_zone: clean(row.start?.timeZone || row.end?.timeZone || null),
       status: clean(row.status),
       html_link: typeof row.htmlLink === 'string' && /^https:\/\//i.test(row.htmlLink) ? row.htmlLink : null,
       attendees: Array.isArray(row.attendees)
@@ -184,7 +203,7 @@ class CalendarConnector {
       },
     });
     this.#live = true;
-    const items = (data?.items || []).slice(0, max).map((e) => this.#event(e));
+    const items = (data?.items || []).slice(0, max).map((e) => this.#event(e, calendarId));
     return {
       items,
       calendar_id: calendarId,
@@ -205,12 +224,18 @@ class CalendarConnector {
     if (!ID.test(calendarId) && calendarId !== 'primary') throw Error('Bounded calendar id required');
     const data = await this.#api('GET', `calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`);
     this.#live = true;
-    return { item: this.#event(data), host_verified: true, live_qualified: true, untrusted: true, authority: false };
+    return { item: this.#event(data, calendarId), host_verified: true, live_qualified: true, untrusted: true, authority: false };
   }
 
   async freeBusy({ timeMin, timeMax, calendars = ['primary'] } = {}) {
     isoOrThrow(timeMin, 'timeMin');
     isoOrThrow(timeMax, 'timeMax');
+    if (new Date(timeMin).getTime() >= new Date(timeMax).getTime()) {
+      const err = Error('freeBusy requires timeMin strictly before timeMax.');
+      err.code = 'calendar_freebusy_invalid_range';
+      err.safe_error_class = 'calendar_freebusy_invalid_range';
+      throw err;
+    }
     if (!Array.isArray(calendars) || !calendars.length || calendars.length > 10) throw Error('Bounded calendar list required');
     for (const id of calendars) {
       if (!ID.test(id) && id !== 'primary') throw Error('Bounded calendar id required');
@@ -232,40 +257,64 @@ class CalendarConnector {
         errors: Array.isArray(row.errors) ? row.errors.slice(0, 5).map((e) => clean(e.reason || e.domain)) : [],
       };
     }
+    const missing = calendars.filter((id) => !calendarsOut[id]);
+    const errored = calendars.filter((id) => (calendarsOut[id]?.errors || []).length > 0);
+    const incomplete = missing.length > 0 || errored.length > 0;
     return {
       time_min: timeMin,
       time_max: timeMax,
       calendars: calendarsOut,
+      requested_calendars: calendars.slice(),
+      missing_calendars: missing,
+      errored_calendars: errored,
+      complete: !incomplete,
       host_verified: true,
-      live_qualified: true,
+      live_qualified: !incomplete,
       untrusted: true,
       authority: false,
     };
   }
 
-  async createEvent({ calendarId = 'primary', summary, start, end, description = null, location = null, attendees = [], idempotencyKey = null }) {
+  async createEvent({ calendarId = 'primary', summary, start, end, description = null, location = null, attendees = [], hostDedupeKey = null, timeZone = null }) {
     text(summary, 'summary', 500);
     if (secret(summary)) throw Error('Secret-like event title refused.');
     isoOrThrow(start, 'start');
     isoOrThrow(end, 'end');
+    assertRange(start, end);
     if (description) { text(description, 'description', 8000); if (secret(description)) throw Error('Secret-like description refused.'); }
     if (location) { text(location, 'location', 500); }
     if (!Array.isArray(attendees) || attendees.length > 20) throw Error('Bounded attendees required');
+    const startBody = start.includes('T')
+      ? { dateTime: start, ...(timeZone ? { timeZone } : {}) }
+      : { date: start };
+    const endBody = end.includes('T')
+      ? { dateTime: end, ...(timeZone ? { timeZone } : {}) }
+      : { date: end };
     const body = {
       summary: clean(summary),
-      start: start.includes('T') ? { dateTime: start } : { date: start },
-      end: end.includes('T') ? { dateTime: end } : { date: end },
+      start: startBody,
+      end: endBody,
       ...(description ? { description: clean(description) } : {}),
       ...(location ? { location: clean(location) } : {}),
       ...(attendees.length ? { attendees: attendees.map((email) => ({ email: String(email).toLowerCase() })) } : {}),
     };
+    // Google Calendar has no standard create idempotency header. Host-local dedupe
+    // (hostDedupeKey) must never be reported as provider-side idempotency.
     const data = await this.#api('POST', `calendars/${encodeURIComponent(calendarId)}/events`, {
       write: true,
       body,
-      query: idempotencyKey ? { /* Google has no standard idempotency header; host dedupes */ } : {},
     });
     this.#live = true;
-    return { item: this.#event(data), created: true, host_verified: true, live_qualified: true, untrusted: true, authority: false, idempotency_key: idempotencyKey || null };
+    return {
+      item: this.#event(data, calendarId),
+      created: true,
+      host_verified: true,
+      live_qualified: true,
+      untrusted: true,
+      authority: false,
+      host_dedupe_key: hostDedupeKey || null,
+      google_idempotent: false,
+    };
   }
 
   async updateEvent({ calendarId = 'primary', eventId, patch = {}, sendUpdates = 'none' }) {
@@ -298,17 +347,20 @@ class CalendarConnector {
       body.attendees = patch.attendees.map((email) => ({ email: String(email).toLowerCase() }));
     }
     if (!Object.keys(body).length) throw Error('Event update requires at least one field');
+    if (patch.start !== undefined && patch.end !== undefined) assertRange(patch.start, patch.end);
+    if (!ID.test(calendarId) && calendarId !== 'primary') throw Error('Bounded calendar id required');
     const data = await this.#api('PATCH', `calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
       write: true,
       body,
       query: { sendUpdates: ['all', 'externalOnly', 'none'].includes(sendUpdates) ? sendUpdates : 'none' },
     });
     this.#live = true;
-    return { item: this.#event(data), updated: true, host_verified: true, live_qualified: true, untrusted: true, authority: false };
+    return { item: this.#event(data, calendarId), updated: true, host_verified: true, live_qualified: true, untrusted: true, authority: false };
   }
 
   async deleteEvent({ calendarId = 'primary', eventId, sendUpdates = 'none' }) {
     if (!ID.test(eventId || '')) throw Error('Explicit event ID required');
+    if (!ID.test(calendarId) && calendarId !== 'primary') throw Error('Bounded calendar id required');
     await this.#api('DELETE', `calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
       write: true,
       query: { sendUpdates: ['all', 'externalOnly', 'none'].includes(sendUpdates) ? sendUpdates : 'none' },
@@ -318,4 +370,4 @@ class CalendarConnector {
   }
 }
 
-module.exports = { CalendarConnector, clean, isoOrThrow };
+module.exports = { CalendarConnector, clean, isoOrThrow, assertRange };
