@@ -62,7 +62,8 @@ async function submit(server,input){
  const session=input.conversation_id&&server.conversationEngine?.requireSession?server.conversationEngine.requireSession(input.conversation_id).id:null;
  const context=session?pending.get(session):null;
  const activeGmailSearch=gmailSearchSessions(server).hasActive({conversation_id:input.conversation_id||null,operator:'operator'});
- const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:context?.mode,researchURL:context?.entry_url,activeGmailSearch});
+ const activeCalendarSession=!!require('./calendar-service').sessions(server).hasActive?.({conversation_id:input.conversation_id||null,operator:'operator'});
+ const parsed=intent.parse(input.message,{nickname:server.conversationEngine?.nickname?.(),pendingResearch:context?.mode,researchURL:context?.entry_url,activeGmailSearch,activeCalendarSession});
  if(session){
   pending.delete(session);
   if(parsed.pending_research||['research','research_session'].includes(parsed.kind)){
@@ -97,6 +98,12 @@ async function submit(server,input){
    host_verified:parsed.host_verified===true
   });
  }
+ if(parsed.kind==='calendar')return require('./calendar-service').run(server,parsed,{
+  conversation_id:input.conversation_id||null,
+  confirm_id:parsed.preview_id||null,
+  confirmed:parsed.confirmed===true,
+  destructive:parsed.destructive===true,
+ });
  if(parsed.kind==='personal_ops'){
   const plan=require('./personal-ops').plan(server,parsed.message);
   return {...plan,kind:'personal_ops',route:'PERSONAL_OPS',authority:false};
@@ -119,7 +126,10 @@ async function submit(server,input){
  if(parsed.kind!=='conversation')return parsed;
  return server.conversationEngine.start({message:parsed.message,request_id:input.request_id,conversation_id:input.conversation_id,include_memory:input.include_memory!==false,model:/^(?:codex|claude_code):/.test(input.model||'')?'auto':input.model});
 }
-function authorizationOffer(server,connector){return {kind:'connect_required',route:'CONNECTOR',connector,can_start_oauth:connector==='gmail'&&!!server.gmailOAuth,message:connector==='gmail'?'Gmail needs authorization. Start the existing Gmail OAuth flow to authorize read-only access. A “configured” indicator only means the OAuth client is present — it is not live read access.':'The official WhatsApp inbound connector is unavailable. Configure its authorized host transport; personal WhatsApp history is not supported.',authorized:false,authority:false};}
+function authorizationOffer(server,connector){
+ if(connector==='calendar')return require('./calendar-service').authorizationOffer(server);
+ return {kind:'connect_required',route:'CONNECTOR',connector,can_start_oauth:connector==='gmail'&&!!server.gmailOAuth,message:connector==='gmail'?'Gmail needs authorization. Start the existing Gmail OAuth flow to authorize read-only access. A “configured” indicator only means the OAuth client is present — it is not live read access.':'The official WhatsApp inbound connector is unavailable. Configure its authorized host transport; personal WhatsApp history is not supported.',authorized:false,authority:false};
+}
 function jobSearchManager(server){
  const bridge=server.bridge;
  if(!bridge.jobSearchManager){

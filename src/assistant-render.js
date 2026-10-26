@@ -1,7 +1,7 @@
 'use strict';
 // Presentation only. These views never grant authority or qualify a route.
 const clean = value => require('node:util').stripVTControlCharacters(String(value ?? 'Unavailable')).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const names = {opencode:'OpenCode',ollama:'Ollama',codex:'Codex / Work',claude_code:'Claude Code',cursor:'Cursor',gmail:'Gmail',whatsapp:'WhatsApp'};
+const names = {opencode:'OpenCode',ollama:'Ollama',codex:'Codex / Work',claude_code:'Claude Code',cursor:'Cursor',gmail:'Gmail',whatsapp:'WhatsApp',calendar:'Google Calendar'};
 const name = value => names[value] || clean(value).replaceAll('_',' ');
 const list = values => values?.length ? values.map(name).join(' · ') : 'None';
 const row = (label,value) => `  ${label.padEnd(14)} ${clean(value)}\n`;
@@ -63,8 +63,13 @@ function receipt(data) {
    +(data.items?.length?('\n'+gmailSearchItems(data.items)):'')
    +(data.has_more?'\nContinuation available in this Terminal session.\n':'');
  }
- if(data.message)return clean(data.message)+'\n'+(data.choices?.length?data.choices.map(m=>row(m.subject||'Memory ID',m.memoryId)).join(''):'')+(data.items?.length&&data.kind==='connector'?'\n'+gmailSearchItems(data.items):'');
- if(data.items)return data.items.length?data.items.map(m=>[m.subject,m.from,m.snippet,m.text,m.content,m.id].filter(v=>typeof v==='string').map(clean).join('\n')).join('\n\n')+'\n':'No matching items.\n';
+ if(data.kind==='calendar'&&data.host_verified){
+  return 'HOST-VERIFIED CALENDAR\n'+clean(data.message||'')+'\n'
+   +(data.items?.length?data.items.map(e=>row('Event',(e.summary||'(no title)')+' · '+(e.start||'')+' · '+(e.id||''))).join(''):'')
+   +(data.preview_id?row('Preview',data.preview_id):'');
+ }
+ if(data.message)return clean(data.message)+'\n'+(data.choices?.length?data.choices.map(m=>row(m.subject||m.summary||'Memory ID',m.memoryId||m.id)).join(''):'')+(data.items?.length&&data.kind==='connector'?'\n'+gmailSearchItems(data.items):'');
+ if(data.items)return data.items.length?data.items.map(m=>[m.subject,m.summary,m.from,m.snippet,m.text,m.content,m.id].filter(v=>typeof v==='string').map(clean).join('\n')).join('\n\n')+'\n':'No matching items.\n';
  if(data.state||data.status)return row('Status',name(data.state||data.status));
  return 'Request handled.\n';
 }

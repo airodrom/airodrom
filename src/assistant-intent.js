@@ -51,10 +51,15 @@ function isWorkRequest(request) {
  }
  return false;
 }
-function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,activeGmailSearch=false} = {}) {
- if(typeof value!=='string'||!value.trim()||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');value=value.trim();
+function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,activeGmailSearch=false,activeCalendarSession=false} = {}) {
+ if(typeof value!=='string'||Buffer.byteLength(value)>4000||value.includes('\0'))throw Error('Invalid assistant input');
+ // Strip invisible paste residue before empty/secret gates (ZWSP/BOM must not become a secret hit).
+ // Keep newlines until after the pasted-command guard so control lines stay fail-closed.
+ value=value.replace(/[\u200B-\u200D\uFEFF]/g,'');
+ if(!value.trim())throw Error('Invalid assistant input');
  // A pasted control command cannot be silently embedded in a model prompt.
  if(/[\r\n]\s*(?:\/\w+|--(?:help|version))\b/.test(value)||/\S\/(?:quit|exit)\b/i.test(value))return {kind:'clarify',message:'Submit pasted commands separately from your question.'};
+ value=value.replace(/\s+/g,' ').trim();
  const storage=require('./personal-storage-intent');
  const request=storage.normalize(value,assistantNickname);
  const forgetId=/^forget\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.exec(request);
@@ -101,6 +106,14 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  const gmailSearch=require('./gmail-search-intent').parse(request,{activeGmailSearch:activeGmailSearch===true});
  if(gmailSearch)return gmailSearch;
  if(/^(?:show|check|read)\s+(?:my\s+)?whatsapp(?: messages(?: needing attention)?)?$/i.test(request))return route('CONNECTOR',{kind:'connector',connector:'whatsapp',action:'attention'});
+ const calendarApprove=/^\/calendar\s+approve\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.exec(request);
+ if(calendarApprove)return route('CALENDAR',{kind:'calendar',action:'approve',approval_id:calendarApprove[1],host_verified:true});
+ const calendarConfirm=/^\/calendar\s+confirm\s+([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})(\s+--destructive)?$/i.exec(request);
+ if(calendarConfirm)return route('CALENDAR',{kind:'calendar',action:'confirm',preview_id:calendarConfirm[1],confirmed:true,destructive:!!calendarConfirm[2],host_verified:true});
+ // Deterministic Google Calendar — host connector only; never OpenCode for clear calendar ops.
+ // Generic "show more"/"cancel that" only when this conversation has an active Calendar session.
+ const calendarIntent=require('./calendar-intent').parse(request,{activeCalendarSession:activeCalendarSession===true});
+ if(calendarIntent)return route('CALENDAR',calendarIntent);
  // Personal ops / job search — host capability plan before model denial.
  const personalOps=require('./personal-ops');
  if(personalOps.isPersonalOpsRequest(request))return route('PERSONAL_OPS',{kind:'personal_ops',message:request});

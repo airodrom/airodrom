@@ -48,16 +48,40 @@ function gmailState(server) {
   };
 }
 
-function calendarState() {
+function calendarState(server) {
+  const oauth = server?.calendarOAuth;
+  let item = null;
+  try { item = require('./calendar-service').connector(server)?.status() || null; } catch { /* fixtures */ }
+  if (!oauth && (!item || item.state === 'unavailable')) {
+    return {
+      id: 'calendar', label: 'Google Calendar',
+      availability: 'AUTH_REQUIRED',
+      auth: 'unavailable',
+      live_qualified: false,
+      reads: ['list_calendars', 'events', 'search', 'freebusy'],
+      writes: [],
+      note: 'Calendar is separate from Gmail. Configure the Google desktop OAuth client (airodrom gmail setup), then /connect calendar for calendar.readonly. Writes need /connect calendar manage.',
+      next: '/connect calendar'
+    };
+  }
+  const st = oauth?.status?.() || {};
+  const connected = item ? !!item.connected : !!st.connected;
+  const live = item?.live_qualified === true;
   return {
     id: 'calendar', label: 'Google Calendar',
-    availability: 'NOT_SUPPORTED',
-    auth: 'unavailable',
-    live_qualified: false,
-    reads: [],
-    writes: [],
-    note: 'Calendar OAuth is not live-qualified in this revision. Interview reminders stay local tracker/tasks until a separate least-privilege calendar connector is enrolled.',
-    next: 'WAIT — separate calendar.readonly enrollment (not activated by Gmail consent)'
+    availability: live ? 'AVAILABLE' : 'AUTH_REQUIRED',
+    auth: connected ? (live ? 'connected_live' : 'connected_unverified') : 'oauth_required',
+    live_qualified: live,
+    reads: ['list_calendars', 'events', 'search', 'freebusy'],
+    writes: st.can_write ? ['create_preview', 'update_preview', 'delete_with_approval'] : [],
+    note: connected
+      ? (live
+        ? (st.can_write
+          ? 'Calendar is live-qualified. Reads are host-routed; writes require preview confirmation (delete is destructive-approval).'
+          : 'Calendar reads are live-qualified (calendar.readonly). Event create/update/delete needs /connect calendar manage.')
+        : 'Calendar OAuth token is present but live qualification has not succeeded. Run a bounded calendar read.')
+      : 'Calendar OAuth client is ready. Account consent still required via /connect calendar. Gmail consent does not grant Calendar.',
+    next: connected ? (live ? (st.can_write ? 'Ask what’s on your calendar or schedule with preview confirm' : '/connect calendar manage for writes, or ask what’s on your calendar') : 'Bounded calendar events/freebusy read') : '/connect calendar'
   };
 }
 
@@ -124,7 +148,7 @@ function matrix(server) {
     kind: 'personal_ops_plan',
     connectors: [
       gmailState(server),
-      calendarState(),
+      calendarState(server),
       driveState(),
       sheetsState(),
       localFilesState(),
@@ -176,6 +200,8 @@ function isPersonalOpsRequest(request) {
   const r = request.trim();
   if (/^(?:help me\s+)?(?:find|search for|look for)\s+a\s+job\b/i.test(r)) return true;
   if (/\bjob search\b|\bmanage (?:my )?(?:job|applications?)\b/i.test(r)) return true;
+  // Pure calendar control phrases are routed by calendar-intent, not this matrix.
+  if (require('./calendar-intent').parse(r)) return false;
   if (/\b(?:manage|handle|take care of|organize|connect)\b.+\b(?:gmail|google (?:drive|calendar|sheets?)|calendar|drive|excel|notes|inbox)\b/i.test(r)) return true;
   if (/\b(?:gmail|calendar|drive|excel|sheets?|notes)\b.+\b(?:and|,)\b.+\b(?:gmail|calendar|drive|excel|sheets?|notes|job)\b/i.test(r)) return true;
   if (/^what (?:can|could) you (?:do|access|manage) (?:with|for) (?:my )?(?:gmail|calendar|drive|email|job search)/i.test(r)) return true;
@@ -183,4 +209,4 @@ function isPersonalOpsRequest(request) {
   return false;
 }
 
-module.exports = { matrix, plan, isPersonalOpsRequest, NEVER_AUTO, gmailState };
+module.exports = { matrix, plan, isPersonalOpsRequest, NEVER_AUTO, gmailState, calendarState };
