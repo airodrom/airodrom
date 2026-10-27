@@ -103,7 +103,10 @@ class DriveOAuth {
       can_write: false,
       read_only: true,
       token_present: connected,
+      client_secret_bound: !!this.#clientSecretReference,
+      pending: !!this.#pending,
       last_failure: this.#lastFailure,
+      last_safe_error_class: this.#lastFailure,
       authority: false,
     };
   }
@@ -115,35 +118,99 @@ class DriveOAuth {
     if (this.#reference && !forceNew) {
       return { state: 'connected', message: 'Drive is already connected. Use /connect drive fresh to re-consent, then enroll exact files/folders.' };
     }
+    // Reuse an unexpired pending PKCE session unless forceNew invalidates it.
+    if (!forceNew && this.#pending && Date.now() - this.#pending.created <= 600000
+      && this.#pending.redirectUri === redirectUri) {
+      return this.#authorizationFromPending({ reused: true });
+    }
+    // Fresh flow: drop only the stale/failed pending attempt. Keep a valid connected grant until complete() replaces it.
+    this.#pending = null;
+    if (forceNew) this.#lastFailure = null;
     const verifier = crypto.randomBytes(32).toString('base64url');
-    const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     const state = crypto.randomBytes(24).toString('hex');
-    this.#pending = { state, verifier, redirectUri, created: Date.now() };
+    this.#pending = {
+      state,
+      verifier,
+      redirectUri,
+      created: Date.now(),
+      prompt: forceNew ? 'consent' : 'select_account consent',
+    };
+    return this.#authorizationFromPending({
+      reused: false,
+      message: forceNew
+        ? 'Starting a fresh Google Drive consent (drive.file only). Previous incomplete Drive attempts were discarded; Gmail/Calendar credentials are unchanged.'
+        : 'Authorize Google Drive (drive.file only). After consent, enroll exact file/folder IDs — Drive is not blanket-authorized.',
+    });
+  }
+
+  #authorizationFromPending({ reused = false, message = null } = {}) {
+    const pending = this.#pending;
+    const challenge = crypto.createHash('sha256').update(pending.verifier).digest('base64url');
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', this.#client);
-    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('redirect_uri', pending.redirectUri);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', FILE_SCOPE);
-    url.searchParams.set('state', state);
+    url.searchParams.set('state', pending.state);
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
     url.searchParams.set('access_type', 'offline');
-    url.searchParams.set('prompt', forceNew ? 'consent' : 'select_account consent');
+    url.searchParams.set('prompt', pending.prompt || 'consent');
     return {
       state: 'WAIT',
       authorization_url: url.toString(),
-      redirect_uri: redirectUri,
+      redirect_uri: pending.redirectUri,
       scope: FILE_SCOPE,
-      message: 'Authorize Google Drive (drive.file only). After consent, enroll exact file/folder IDs — Drive is not blanket-authorized.',
+      reused,
+      message: message || 'Authorize Google Drive (drive.file only). After consent, enroll exact file/folder IDs — Drive is not blanket-authorized.',
     };
   }
 
-  async complete({ state, code }) {
+  #attachClientSecret(form) {
+    if (!this.#clientSecretReference) return;
+    let secret;
+    try {
+      // Desktop client secret is shared with the Gmail OAuth client registration.
+      secret = this.#vault.resolve(this.#clientSecretReference, 'gmail');
+    } catch {
+      try { secret = this.#vault.resolve(this.#clientSecretReference, VAULT_PURPOSE); }
+      catch {
+        this.#lastFailure = FAIL.client;
+        throw exchangeError(
+          FAIL.client,
+          'Drive OAuth client secret is unavailable from the host vault (expected gmail-purpose desktop secret). Restore Keychain helper binding, then /connect drive fresh.',
+        );
+      }
+    }
+    if (typeof secret !== 'string' || !secret || secret.length > 400 || secret.includes('\0')) {
+      this.#lastFailure = FAIL.client;
+      throw exchangeError(FAIL.client, 'Drive OAuth client secret reference is invalid. Credentials withheld.');
+    }
+    form.client_secret = secret;
+  }
+
+  async complete({ state, code, providerError = null }) {
+    if (typeof providerError === 'string' && providerError) {
+      const mapped = Object.prototype.hasOwnProperty.call(PROVIDER_ERRORS, providerError)
+        ? PROVIDER_ERRORS[providerError]
+        : FAIL.consent;
+      this.#lastFailure = mapped;
+      this.#pending = null;
+      throw exchangeError(
+        mapped,
+        providerError === 'access_denied'
+          ? 'Google denied Drive consent. Approve drive.file for this Airodrom desktop client, then /connect drive fresh.'
+          : `Google Drive authorization failed (${providerError}). Run /connect drive fresh.`,
+        providerError,
+      );
+    }
     if (!this.#pending || this.#pending.state !== state || Date.now() - this.#pending.created > 600000) {
+      this.#lastFailure = FAIL.consent;
       throw exchangeError(FAIL.consent, 'Drive OAuth callback expired or pending authorization missing. Run /connect drive fresh.');
     }
     if (typeof code !== 'string' || !code || code.length > 2048) {
-      throw exchangeError(FAIL.request, 'Drive OAuth authorization code missing.');
+      this.#lastFailure = FAIL.request;
+      throw exchangeError(FAIL.request, 'Drive OAuth authorization code missing from Google callback.');
     }
     const form = {
       client_id: this.#client,
@@ -152,22 +219,29 @@ class DriveOAuth {
       grant_type: 'authorization_code',
       redirect_uri: this.#pending.redirectUri,
     };
-    if (this.#clientSecretReference) {
-      form.client_secret = this.#vault.resolve(this.#clientSecretReference, VAULT_PURPOSE);
-    }
+    this.#attachClientSecret(form);
     const token = await this.#exchange(form, { requireExactScope: true });
-    this.#pending = null;
-    this.#lastFailure = null;
-    if (this.#reference) {
-      try { this.#vault.forget(this.#reference); } catch { /* */ }
-    }
     const packed = JSON.stringify({
       access_token: token.access_token,
       refresh_token: token.refresh_token,
       expires_at: Date.now() + (Number(token.expires_in) || 3600) * 1000,
       scope: FILE_SCOPE,
     });
-    const put = this.#vault.put(packed, VAULT_PURPOSE);
+    let put;
+    try {
+      put = this.#vault.put(packed, VAULT_PURPOSE);
+    } catch {
+      this.#lastFailure = FAIL.request;
+      throw exchangeError(
+        FAIL.request,
+        'Drive token exchange succeeded but vault storage for purpose "drive" failed. Update Airodrom vault purpose allowlist / Keychain helper, then /connect drive fresh.',
+      );
+    }
+    this.#pending = null;
+    this.#lastFailure = null;
+    if (this.#reference) {
+      try { this.#vault.forget(this.#reference); } catch { /* */ }
+    }
     this.#reference = put.reference;
     this.onReference(this.#reference, { mode: 'file' });
     return { connected: true, scope: FILE_SCOPE };
@@ -194,9 +268,7 @@ class DriveOAuth {
         grant_type: 'refresh_token',
         refresh_token: value.refresh_token,
       };
-      if (this.#clientSecretReference) {
-        form.client_secret = this.#vault.resolve(this.#clientSecretReference, VAULT_PURPOSE);
-      }
+      this.#attachClientSecret(form);
       // Refresh responses often omit scope; when present it must remain drive.file only.
       const token = await this.#exchange(form, { requireExactScope: false });
       const next = {
