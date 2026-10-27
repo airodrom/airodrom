@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Drive `/drive select` no longer returns a `safeValue`-rewritten `picker_url` (`/[redacted-path]`) that false-denied same-origin when opened; loopback Picker URLs are preserved after validation like OAuth `authorization_url`.
 - Drive Picker page GET after Google OAuth redirect no longer false-denies `sec-fetch-site=cross-site` top-level navigations; picker bootstrap/enroll remain same-origin-only with classified rejections.
 
 ### Fixed

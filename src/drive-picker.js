@@ -221,6 +221,80 @@ function missingConfigHtml() {
 </body></html>`;
 }
 
+/**
+ * Operator-local Picker handoff URL only (loopback + exact path + session UUID).
+ * safeValue/redactUrls rewrite non-allowlisted paths to /[redacted-path], which
+ * would open a false same-origin deny instead of the Picker page.
+ */
+function assertLoopbackPickerUrl(url, expectedOrigin) {
+  let parsed;
+  try { parsed = new URL(String(url || '')); }
+  catch {
+    const err = Error('Picker URL is invalid.');
+    err.code = 'picker_url_invalid';
+    throw err;
+  }
+  if (parsed.protocol !== 'http:') {
+    const err = Error('Picker URL protocol is not permitted.');
+    err.code = 'picker_url_invalid';
+    throw err;
+  }
+  if (parsed.hostname !== '127.0.0.1') {
+    const err = Error('Picker URL host must be loopback 127.0.0.1.');
+    err.code = 'picker_url_invalid';
+    throw err;
+  }
+  if (parsed.pathname !== '/oauth/drive/picker') {
+    const err = Error('Picker URL path is not the registered local route.');
+    err.code = 'picker_url_invalid';
+    throw err;
+  }
+  const keys = [...parsed.searchParams.keys()];
+  if (keys.length !== 1 || keys[0] !== 's') {
+    const err = Error('Picker URL query must contain only the session parameter.');
+    err.code = 'picker_url_invalid';
+    throw err;
+  }
+  const session = parsed.searchParams.get('s');
+  if (!session || !/^[a-f0-9-]{36}$/i.test(session)) {
+    const err = Error('Picker URL session is missing or invalid.');
+    err.code = 'picker_url_invalid';
+    throw err;
+  }
+  if (expectedOrigin) {
+    let expected;
+    try { expected = new URL(String(expectedOrigin)); }
+    catch {
+      const err = Error('Expected Picker origin is invalid.');
+      err.code = 'picker_url_invalid';
+      throw err;
+    }
+    if (parsed.origin !== expected.origin) {
+      const err = Error('Picker URL origin does not match the local control server.');
+      err.code = 'picker_url_invalid';
+      throw err;
+    }
+  }
+  return parsed;
+}
+
+/**
+ * `/api/assistant/drive/picker` wire body. Preserve a validated loopback picker_url
+ * after safeValue (same pattern as authorization_url via wireConnectOffer).
+ */
+function wirePickerOffer(offer, expectedOrigin) {
+  if (!offer || typeof offer !== 'object' || Array.isArray(offer)) {
+    return require('./secret-observation').safeValue(offer);
+  }
+  const url = typeof offer.picker_url === 'string' ? offer.picker_url : null;
+  if (url) assertLoopbackPickerUrl(url, expectedOrigin);
+  const rest = { ...offer };
+  delete rest.picker_url;
+  const body = require('./secret-observation').safeValue(rest);
+  if (url) body.picker_url = url;
+  return body;
+}
+
 module.exports = {
   PICKER_CSP,
   readConfig,
@@ -235,5 +309,7 @@ module.exports = {
   pickerHtml,
   missingConfigHtml,
   bootstrapResponseBody,
+  assertLoopbackPickerUrl,
+  wirePickerOffer,
   _sessions: sessions,
 };

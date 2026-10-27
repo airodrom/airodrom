@@ -188,6 +188,72 @@ test('forged Origin on authenticated API remains denied', async (t) => {
   assert.equal(res.json?.code, 'local_same_origin_only');
 });
 
+test('safeValue rewrites picker_url path; wirePickerOffer preserves validated loopback URL', () => {
+  const { safeValue } = require('../src/secret-observation');
+  const sessionId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const pickerUrl = `http://127.0.0.1:55999/oauth/drive/picker?s=${sessionId}`;
+  const scrubbed = safeValue({ picker_url: pickerUrl, picker_configured: true });
+  assert.match(String(scrubbed.picker_url || ''), /\[redacted-path\]/);
+  const wired = picker.wirePickerOffer({
+    state: 'WAIT',
+    picker_url: pickerUrl,
+    picker_configured: true,
+    client_secret: 'must-omit-secret-material',
+  }, 'http://127.0.0.1:55999');
+  assert.equal(wired.picker_url, pickerUrl);
+  assert.equal(wired.picker_configured, true);
+  assert.equal(wired.client_secret, '[omitted]');
+  assert.throws(
+    () => picker.wirePickerOffer({ picker_url: 'https://evil.example/oauth/drive/picker?s=' + sessionId }),
+    /loopback|not permitted|invalid/i,
+  );
+  assert.throws(
+    () => picker.wirePickerOffer({ picker_url: `http://127.0.0.1:55999/oauth/drive/picker?s=${sessionId}` }, 'http://127.0.0.1:11111'),
+    /origin|invalid/i,
+  );
+  assert.throws(
+    () => picker.assertLoopbackPickerUrl(`http://localhost:55999/oauth/drive/picker?s=${sessionId}`),
+    /127\.0\.0\.1|invalid/i,
+  );
+  assert.throws(
+    () => picker.assertLoopbackPickerUrl(`http://127.0.0.1:55999/oauth/drive/picker?s=${sessionId}&extra=1`),
+    /only the session|invalid/i,
+  );
+});
+
+test('/api/assistant/drive/picker returns usable loopback picker_url (not redacted-path)', async (t) => {
+  const server = await bootServer(t);
+  const res = await request(server, {
+    method: 'POST',
+    path: '/api/assistant/drive/picker',
+    headers: {
+      Host: `127.0.0.1:${server.port}`,
+      Origin: server.origin,
+      Authorization: 'Bearer picker-same-origin-fixture',
+      'sec-fetch-site': 'same-origin',
+    },
+    body: { request_id: '00000000-0000-4000-8000-000000000001' },
+  });
+  assert.equal(res.status, 200, res.body);
+  assert.equal(res.json?.picker_configured, true);
+  assert.match(String(res.json?.picker_url || ''), /^http:\/\/127\.0\.0\.1:\d+\/oauth\/drive\/picker\?s=[a-f0-9-]{36}$/i);
+  assert.doesNotMatch(String(res.json?.picker_url || ''), /redacted/i);
+
+  const page = await request(server, {
+    method: 'GET',
+    path: new URL(res.json.picker_url).pathname + new URL(res.json.picker_url).search,
+    headers: {
+      Host: `127.0.0.1:${server.port}`,
+      'sec-fetch-site': 'cross-site',
+      'sec-fetch-mode': 'navigate',
+      Referer: 'https://accounts.google.com/',
+    },
+  });
+  assert.equal(page.status, 200);
+  assert.match(page.body, /Open Google Picker/);
+  assert.doesNotMatch(page.body, /Local same-origin requests only/);
+});
+
 test('picker enroll rejects cross-site; expired session fails closed without inventing enrollment', async (t) => {
   const server = await bootServer(t);
   const cross = await request(server, {

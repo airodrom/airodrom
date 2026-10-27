@@ -109,6 +109,11 @@ class ControlServer {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
   }
+  // Operator-local Drive Picker offer — preserves loopback picker_url that safeValue would rewrite.
+  jsonPickerOffer(res, offer) {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(require('./drive-picker').wirePickerOffer(offer, this.origin)));
+  }
   authorize(req, token = this.token) {
     const provided = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${token}`);
@@ -918,7 +923,9 @@ class ControlServer {
           });
         }
         const sessionId=picker.createSession();
-        return this.json(res,200,{
+        // Use jsonPickerOffer: plain json()/safeValue rewrites picker_url path to /[redacted-path],
+        // so Terminal/browser open a false same-origin denial instead of the Picker page.
+        return this.jsonPickerOffer(res,{
           state:'WAIT',
           picker_url:this.origin+'/oauth/drive/picker?s='+encodeURIComponent(sessionId),
           picker_configured:true,
