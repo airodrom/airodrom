@@ -12,8 +12,11 @@ function sessions(server) {
 function connector(server) {
   if (!server.calendarOAuth) return null;
   if (!server.calendarConnector) {
+    // Mirror Gmail: test processes must inject calendarConnector; never auto-wire live Google.
+    if (require('./external-write-context').isTestProcess()) return null;
     server.calendarConnector = new CalendarConnector({
       oauth: server.calendarOAuth,
+      mode: 'live',
       connected: () => !!server.calendarOAuth.status().connected,
     });
   }

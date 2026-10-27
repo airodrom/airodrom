@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Gmail/Calendar synthetic-versus-live external-write boundary: test processes require injected provider transports, refuse auto-wiring live OAuth connectors, mark synthetic receipts non-qualifying, and ship a canonical no-send acceptance probe ([docs/GMAIL-LIVE-SEND-SAFETY-CLOSEOUT-V1.md](docs/GMAIL-LIVE-SEND-SAFETY-CLOSEOUT-V1.md)).
+
 ### Fixed
 - Terminal `/gmail confirm|approve` (and Calendar approve/confirm) now pass the authenticated conversation session identity into `/api/assistant/input`, so same-session confirmation reaches the governed send path instead of falsely failing closed as “authenticated Terminal conversation session.” Cross-conversation, unauthenticated, wrong-operator, expired, and duplicate-confirm protections remain enforced.
 - Register durable `gmail_write_ops` in the Memory retention field map so staging a send preview does not leave an unclassified store.
