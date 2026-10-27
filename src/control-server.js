@@ -101,6 +101,14 @@ class ControlServer {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(require('./oauth-browser-launch').wireConnectOffer(offer)));
   }
+  // Loopback Google Picker one-shot handoff only. Must not run through safeValue (would redact tokens).
+  // Never log the payload. Allowlisted keys only.
+  jsonPickerBootstrap(res, payload) {
+    const body = require('./drive-picker').bootstrapResponseBody(payload);
+    if (!body) return this.json(res, 400, { error: 'Drive picker bootstrap incomplete.' });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(body));
+  }
   authorize(req, token = this.token) {
     const provided = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${token}`);
@@ -354,17 +362,92 @@ class ControlServer {
       }
       if(url.pathname==='/oauth/drive/callback'){
         if(req.method!=='GET'||!this.driveOAuth)throw Error('Drive OAuth callback unavailable');
-        res.setHeader('Content-Type','text/plain; charset=utf-8');
         try{
           await this.driveOAuth.complete({state:url.searchParams.get('state'),code:url.searchParams.get('code')});
-          res.end('Google Drive authorization completed (drive.file). Close this tab, return to Airodrom, and enroll exact file/folder ids.');
+          const picker=require('./drive-picker');
+          const cfg=picker.readConfig(this.bridge.dataDir);
+          const sessionId=picker.createSession();
+          this.drivePickerSessions=this.drivePickerSessions||new Map();
+          this.drivePickerSessions.set(sessionId,{created:Date.now()});
+          if(!cfg){
+            res.setHeader('Content-Type','text/html; charset=utf-8');
+            res.end(picker.missingConfigHtml());
+            return;
+          }
+          res.writeHead(302,{Location:this.origin+'/oauth/drive/picker?s='+encodeURIComponent(sessionId)});
+          res.end();
         }catch(error){
+          res.setHeader('Content-Type','text/plain; charset=utf-8');
           const message=error?.safe_error_class&&typeof error.message==='string'
             ?error.message
             :'Drive authorization could not be completed. Return to Airodrom and run /connect drive fresh.';
           res.statusCode=400;res.end(message);
         }
         return;
+      }
+      if(url.pathname==='/oauth/drive/picker'){
+        if(req.method!=='GET'||!this.driveOAuth)throw Error('Drive picker unavailable');
+        const picker=require('./drive-picker');
+        const sessionId=url.searchParams.get('s');
+        if(!picker.getLiveSession(sessionId)){
+          res.statusCode=400;res.setHeader('Content-Type','text/plain; charset=utf-8');
+          res.end('Drive picker session expired. Run /connect drive fresh or /drive select.');
+          return;
+        }
+        const cfg=picker.readConfig(this.bridge.dataDir);
+        // Override global Control Center CSP so Google Picker scripts/frames can load.
+        res.setHeader('Content-Security-Policy',picker.PICKER_CSP);
+        res.setHeader('Content-Type','text/html; charset=utf-8');
+        if(!cfg){res.end(picker.missingConfigHtml());return;}
+        const clientId=this.driveOAuth.configuration?.().clientId||'';
+        res.end(picker.pickerHtml({origin:this.origin,sessionId,clientId}));
+        return;
+      }
+      if(url.pathname==='/oauth/drive/picker/bootstrap'){
+        if(req.method!=='POST'||!this.driveOAuth)throw Error('Drive picker bootstrap unavailable');
+        const body=await readJSON(req);
+        const picker=require('./drive-picker');
+        const cfg=picker.readConfig(this.bridge.dataDir);
+        if(!cfg)return this.json(res,400,{error:'Drive picker API key / appId not configured. Run: airodrom drive picker-setup <api-key> <project-number>'});
+        if(!picker.bootstrapSession(body.session_id))return this.json(res,400,{error:'Drive picker session expired or already used.'});
+        let access_token;
+        try{access_token=await this.driveOAuth.resolve();}
+        catch{return this.json(res,400,{error:'Drive is not connected. Run /connect drive first.'});}
+        // One-shot to picker page only — not logged, not connector status, not safeValue-redacted.
+        return this.jsonPickerBootstrap(res,{access_token,api_key:cfg.apiKey,app_id:cfg.appId});
+      }
+      if(url.pathname==='/oauth/drive/picker/enroll'){
+        if(req.method!=='POST'||!this.driveOAuth)throw Error('Drive picker enroll unavailable');
+        const body=await readJSON(req);
+        const picker=require('./drive-picker');
+        // Loopback picker session: require bootstrapped; consume only after Google metadata + enroll succeed.
+        if(!picker.requireBootstrapped(body.session_id))return this.json(res,400,{error:'Drive picker session expired. Re-open /drive select.'});
+        const fileId=typeof body.file_id==='string'?body.file_id.trim():'';
+        if(!/^[A-Za-z0-9_-]{1,200}$/.test(fileId))return this.json(res,400,{error:'Exact Drive file id required.'});
+        const drive=require('./drive-service');
+        // Ensure Google still authorizes this app-opened file under drive.file.
+        const adapter=drive.connector(this);
+        if(!adapter)return this.json(res,400,{error:'Drive connector unavailable.'});
+        let meta=null;
+        try{meta=await adapter.getMetadata(fileId);}
+        catch(error){
+          return this.json(res,400,{
+            error:error.message||'Google did not authorize that file under drive.file.',
+            code:error.code||'drive_file_not_authorized_under_scope'
+          });
+        }
+        let account=null;
+        try{account=(await adapter.about()).email||null;}catch{/* */}
+        const row=drive.enrollment(this).enroll({
+          id:fileId,
+          kind:'file',
+          name:typeof body.name==='string'?body.name.slice(0,200):(meta?.name||null),
+          mime_type:typeof body.mime_type==='string'?body.mime_type.slice(0,200):(meta?.mime_type||null),
+          operator:'operator',
+          account_email:account,
+        });
+        picker.consumeSession(body.session_id);
+        return this.json(res,200,{enrolled:true,item:row,message:'Enrolled Drive file '+row.id+'. Run /drive read '+row.id+' for live qualification.'});
       }
       if(whatsappWebhook){
         const inbound=this.bridge.whatsappInbound;if(!inbound)throw Error('WhatsApp inbound unavailable');
@@ -785,6 +868,34 @@ class ControlServer {
         // Use jsonConnectOffer: plain json()/safeValue would omit or redact authorization_url.
         const gmailMode=body.mode==='send'||body.mode==='manage'?body.mode:'readonly';
         return this.jsonConnectOffer(res,this.gmailOAuth.start(this.origin+'/oauth/gmail/callback',{forceNew:body.force_new===true,mode:gmailMode}));
+      }
+      if(url.pathname==='/api/assistant/drive/picker'){
+        if(!this.driveOAuth)return this.json(res,200,{state:'WAIT',message:'Configure Google desktop OAuth, then /connect drive before selecting files.'});
+        const picker=require('./drive-picker');
+        const cfg=picker.readConfig(this.bridge.dataDir);
+        const st=this.driveOAuth.status();
+        if(!st.connected){
+          return this.jsonConnectOffer(res,{
+            ...this.driveOAuth.start(this.origin+'/oauth/drive/callback',{forceNew:false}),
+            message:'Authorize Google Drive (drive.file) first. After consent, the file picker opens when Picker API key is configured.',
+          });
+        }
+        if(!cfg){
+          return this.json(res,200,{
+            state:'WAIT',
+            picker_configured:false,
+            message:'Drive is connected, but Google Picker is not configured. Run: airodrom drive picker-setup <api-key> <gcp-project-number>. Then /drive select.',
+            authority:false,
+          });
+        }
+        const sessionId=picker.createSession();
+        return this.json(res,200,{
+          state:'WAIT',
+          picker_url:this.origin+'/oauth/drive/picker?s='+encodeURIComponent(sessionId),
+          picker_configured:true,
+          message:'Opening Google Picker for drive.file selection. Choose a nonsensitive test file.',
+          authority:false,
+        });
       }
       if(url.pathname==='/api/assistant/disconnect'){
         require('./control-plane-store').object(body,['connector','confirmed']);

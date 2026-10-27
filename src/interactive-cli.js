@@ -654,11 +654,20 @@ async function interactive(home, { input = process.stdin, output = process.stdou
             if(!resourceId)throw Error('Use /drive unenroll <resource-id>');
             const result=await local.request(home,'/api/assistant/input',{message:`/drive unenroll ${resourceId}`,request_id:randomUUID(),conversation_id:driveConversationId});
             await handleReceipt(result,json);
+          }else if(action==='select'||action==='picker'){
+            const offer=await local.request(home,'/api/assistant/drive/picker',{request_id:randomUUID()});
+            if(offer.authorization_url||offer.picker_url){
+              const openUrl=offer.picker_url||offer.authorization_url;
+              output.write((offer.message||'Opening Google Drive file picker…')+'\n');
+              try{require('node:child_process').spawnSync('open',[openUrl],{timeout:5000});}catch{/* */}
+            }else{
+              output.write((offer.message||'Drive picker unavailable.')+'\n');
+            }
           }else if(action==='help'||action==='status'){
             const result=await local.request(home,'/api/assistant/input',{message:'help me use google drive',request_id:randomUUID(),conversation_id:driveConversationId});
             await handleReceipt(result,json);
           }else{
-            throw Error('Use /drive help|status|enroll file|folder <id> [label]|unenroll <id>, or ask in natural language.');
+            throw Error('Use /drive help|status|select|enroll file|folder <id> [label]|unenroll <id>, or ask in natural language.');
           }
         }
         else if(command==='calendar'){
@@ -887,6 +896,13 @@ async function main(args = process.argv.slice(2)) {
   }
   if (command === 'requalify') { await local.requalify(home); process.stdout.write('OpenCode requalified. Run airodrom service start.\n'); return; }
   if(command==='gmail'&&rest[0]==='setup'){if(rest.length!==2||!rest[1].endsWith('.apps.googleusercontent.com'))throw Error('Use airodrom gmail setup <Google desktop client ID>');local.privateDirectory(home,true);const data=local.privateDirectory(path.join(home,'data'),true),file=path.join(data,'gmail-oauth-config.json');if(fs.existsSync(file))throw Error('Existing Gmail config preserved. Configure through an explicitly reviewed change.');local.writePrivate(file,{clientId:rest[1]});process.stdout.write('Owner OAuth client configured. Prepare the Keychain helper, restart Airodrom, then /connect gmail. No account connected.\n');return;}
+  if(command==='drive'&&rest[0]==='picker-setup'){
+    if(rest.length!==3)throw Error('Use airodrom drive picker-setup <Google Picker API key> <GCP project number>');
+    local.privateDirectory(home,true);local.privateDirectory(path.join(home,'data'),true);
+    require('./drive-picker').writeConfig(path.join(home,'data'),{apiKey:rest[1],appId:rest[2]});
+    process.stdout.write('Drive Picker configured (api key stored privately). Restart is not required. Run /connect drive fresh, complete consent, then select a nonsensitive file.\n');
+    return;
+  }
   if(command==='secret'){
     if(rest[0]==='put'&&rest[1]==='whatsapp'&&(rest[2]==='bind'||rest[2]==='onboard')){
       return require('./whatsapp-credential-onboarding').run({home,input:process.stdin,output:process.stdout});

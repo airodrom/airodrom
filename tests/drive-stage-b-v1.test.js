@@ -225,7 +225,7 @@ test('Drive OAuth requests drive.file only and rejects Gmail/Calendar scopes', a
     }),
   });
   const st = new URL(bad.start(REDIRECT).authorization_url).searchParams.get('state');
-  await assert.rejects(() => bad.complete({ state: st, code: 'x' }), /must not include Gmail|scope/i);
+  await assert.rejects(() => bad.complete({ state: st, code: 'x' }), /drive\.file only|must not include Gmail|scope/i);
 });
 
 test('Drive vault purpose is isolated from gmail', async () => {
@@ -467,8 +467,10 @@ test('release and package allowlists include Stage B Drive sources', () => {
     'src/drive-intent.js',
     'src/drive-service.js',
     'src/drive-read-qualification.js',
+    'src/drive-picker.js',
     'docs/GOOGLE-WORKSPACE-STAGE-B-V1.md',
     'tests/drive-stage-b-v1.test.js',
+    'tests/drive-picker-v1.test.js',
   ];
   for (const file of files) {
     assert.ok(release.has(file), file + ' missing from release-files.json');

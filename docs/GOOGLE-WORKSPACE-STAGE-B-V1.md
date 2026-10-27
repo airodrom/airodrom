@@ -28,13 +28,23 @@ Host-authoritative Drive connector. OpenCode never receives Drive tokens or unre
 
 `drive.file` does **not** grant access to every file inside a selected folder.
 
-Google authorizes only files this OAuth client **created** or the owner **opened with this app** (picker / Open with). Knowing a folder id, or enrolling a folder in Airodrom, does **not** expand Google’s grant to arbitrary children.
+Google authorizes only files this OAuth client **created** or the owner **opened with this app** (Google Picker / Open with). Knowing a folder id, or enrolling a folder in Airodrom, does **not** expand Google’s grant to arbitrary children.
+
+#### Google Picker (required for existing files)
+
+1. In the Google Cloud project that owns the desktop OAuth client: enable **Google Picker API** + **Drive API**.
+2. Create a browser API key restricted to Picker.
+3. `airodrom drive picker-setup <api-key> <gcp-project-number>`
+4. `/connect drive` (or `fresh`) → consent → picker opens automatically when configured.
+5. Or later: `/drive select` to open the picker for an already-connected Drive session.
+
+Picker bootstrap hands an access token to the local picker page once (loopback), via a dedicated response path that does **not** run through Control Center `safeValue` redaction (which would otherwise omit tokens). Tokens are not logged, not returned on connector status, and not given to models. Bootstrap runs only after the owner clicks **Open Google Picker**. Picker enrollment is loopback-session gated (bootstrapped UUID); conversation UUID remains required for `/drive read` and Terminal enroll paths.
 
 Airodrom policy matches Google:
 
-- **File reads/metadata** require exact `/drive enroll file <id>` after Google visibility under `drive.file`.
-- **Folder enrollment** records a folder id for optional listing probes only. Listing may return Google-visible children; each child still needs its own file enrollment before read.
-- File enroll attempts that Google rejects (403/404) fail closed with an explicit `drive_file_not_authorized_under_scope` explanation — **no silent escalation** to broader Drive scopes.
+- **File reads/metadata** require exact enrollment after Google visibility under `drive.file`.
+- **Folder enrollment** is probe-only; children need their own enroll.
+- File enroll attempts that Google rejects (403/404) fail closed with `drive_file_not_authorized_under_scope` — **no silent escalation**.
 
 If a proposed operation needs broader Google scopes than `drive.file`, the host reports the limitation instead of requesting them.
 
