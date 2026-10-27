@@ -325,11 +325,27 @@ class ControlServer {
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
     try {
       const earlyPath=new URL(req.url,'http://127.0.0.1').pathname;
-      const callbackPath=(earlyPath==='/oauth/gmail/callback'||earlyPath==='/oauth/calendar/callback'||earlyPath==='/oauth/drive/callback')&&req.method==='GET';
+      // Top-level OAuth navigations may arrive with Google Origin/Referer or sec-fetch-site=cross-site
+      // after accounts.google.com → loopback redirect. Exempt only exact registered callback GETs
+      // and the Drive Picker page GET (post-consent 302). Picker bootstrap/enroll POSTs stay same-origin.
+      const oauthCallbackGet=(earlyPath==='/oauth/gmail/callback'||earlyPath==='/oauth/calendar/callback'||earlyPath==='/oauth/drive/callback')&&req.method==='GET';
+      const drivePickerPageGet=earlyPath==='/oauth/drive/picker'&&req.method==='GET';
+      const oauthTopLevelNav=oauthCallbackGet||drivePickerPageGet;
       const whatsappWebhook=earlyPath==='/webhooks/whatsapp';
+      const drivePickerApi=earlyPath==='/oauth/drive/picker/bootstrap'||earlyPath==='/oauth/drive/picker/enroll';
       // WhatsApp webhook is signature-authenticated (POST) or verify-token authenticated (GET).
       // Still loopback-only; public ingress / tunnels require separate owner authorization.
-      if (req.headers.host !== `127.0.0.1:${this.port}` || !callbackPath&&!whatsappWebhook&&((req.headers.origin && req.headers.origin !== this.origin) || req.headers['sec-fetch-site'] === 'cross-site')) return this.json(res, 403, { error: 'Local same-origin requests only' });
+      if(req.headers.host!==`127.0.0.1:${this.port}`){
+        return this.json(res,403,{error:'Local same-origin requests only',code:'loopback_host_required'});
+      }
+      if(!oauthTopLevelNav&&!whatsappWebhook&&((req.headers.origin&&req.headers.origin!==this.origin)||req.headers['sec-fetch-site']==='cross-site')){
+        return this.json(res,403,{
+          error:drivePickerApi
+            ?'Drive Picker bootstrap/enroll requires same-origin requests from the local Airodrom picker page.'
+            :'Local same-origin requests only',
+          code:drivePickerApi?'drive_picker_cross_origin_rejected':'local_same_origin_only',
+        });
+      }
       const url = new URL(req.url, this.origin);
       if(url.pathname==='/oauth/gmail/callback'){
         if(req.method!=='GET'||!this.gmailOAuth)throw Error('OAuth callback unavailable');

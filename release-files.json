@@ -754,6 +754,7 @@
   "tests/development-session-v1.test.js",
   "tests/direct-bounded-reasoning-mcp.test.js",
   "tests/drive-oauth-recovery-v1.test.js",
+  "tests/drive-picker-same-origin-v1.test.js",
   "tests/drive-picker-v1.test.js",
   "tests/drive-stage-b-v1.test.js",
   "tests/email-compose-memory-v1.test.js",
