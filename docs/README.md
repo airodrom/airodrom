@@ -66,6 +66,8 @@ Canonical contribution contracts are in [governance](governance/README.md) and [
 - [Self-Development Reliability V1.1](SELF-DEVELOPMENT-RELIABILITY-V1.1.md)
 - [Personal Operations & Job Search V1](PERSONAL-OPS-JOB-SEARCH-V1.md) (Issue #112 — draft; not installed)
 - [Google Calendar NL Control V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md) (source candidate — separate Calendar OAuth; not installed until authorized cutover)
+- [Google Workspace Stage B V1 — Drive](GOOGLE-WORKSPACE-STAGE-B-V1.md) (source candidate — `drive.file` + enrollment-bound reads; not installed until authorized cutover)
+- [Gmail Live-Send Safety Closeout V1](GMAIL-LIVE-SEND-SAFETY-CLOSEOUT-V1.md) (SHIPPED — synthetic/live boundary + no-send probe)
 - [Everyday Personal AI UX V1](EVERYDAY-PERSONAL-AI-UX-V1.md) (SHIPPED + INSTALLED)
 - [Grounded Assistant Accuracy V1](GROUNDED-ASSISTANT-ACCURACY-V1.md) (SHIPPED + INSTALLED)
 - [Conversation UX Bugfix V1](CONVERSATION-UX-BUGFIX-V1.md) (SHIPPED + INSTALLED)

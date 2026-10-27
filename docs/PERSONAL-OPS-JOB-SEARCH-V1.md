@@ -16,7 +16,7 @@ There is no automatic external provider fallback for private conversation.
 |---|---|---|---|---|---|
 | Gmail | `AUTH_REQUIRED` until connected; `AVAILABLE` after live read | Owner Google desktop OAuth: `gmail.readonly` default; `/connect gmail send` or `manage` for writes (never `mail.google.com` by default) | Successful bounded list/search/read in-process; `write_qualified` only after provider-confirmed write receipt | list, search, read, thread, job_categorize, local draft preview | After send/manage consent: host preview + `/gmail confirm` (approve for trash/forward/bulk). See `docs/GOOGLE-WORKSPACE-STAGE-A-V1.md` |
 | Google Calendar | `AUTH_REQUIRED` → `AVAILABLE` after `/connect calendar` + live read | `calendar.readonly` (+ manage `calendar.events`) | Yes (host NL) | Preview-gated create/update; destructive cancel | Separate from Gmail; see [GOOGLE-CALENDAR-NL-CONTROL-V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md) |
-| Google Drive | `NOT_SUPPORTED` | — | No | — | — |
+| Google Drive | `AUTH_REQUIRED` until `/connect drive` + enrollment; `AVAILABLE` when connected with ≥1 enrolled resource (source Stage B) | Owner Google desktop OAuth: `drive.file` only (not blanket Drive). Exact file/folder enrollment required. | Synthetic suite only until owner live read qualification | list enrolled, list folder children, search in enrolled scope, metadata, text/Docs export | Read-only. No upload/edit/share/trash. See `docs/GOOGLE-WORKSPACE-STAGE-B-V1.md` |
 | Google Sheets | `NOT_SUPPORTED` | — | No | — | Use local tracker |
 | Local files (selected tracker) | `AVAILABLE` | Host-governed | Yes | Tracker read | Tracker create/update with evidence |
 | Job Search Tracker | `AVAILABLE` | Local CSV (Excel-openable) | Yes | list, digest | upsert / follow-up with evidence |
@@ -64,7 +64,7 @@ Owner may grant standing **read-only Gmail organization** and **selected local t
    - Ask: “Create a local job-search tracker”
    - Log applications only with evidence; ask for a “daily digest”.
    - Manual entries without Gmail, a posting URL, or standing permission: submit `operator_confirmation` claim evidence → open Control Center → Approvals → Review exact fields → Approve → re-submit the exact body with `host_approval_id`. Conversation cannot auto-approve.
-4. Calendar enrolls via `/connect calendar` (separate least-privilege OAuth). Drive / Sheets remain WAIT. Do not infer Calendar from Gmail consent.
+4. Calendar enrolls via `/connect calendar` (separate least-privilege OAuth). Drive uses `/connect drive` + exact resource enrollment (`drive.file`). Sheets remain WAIT. Do not infer Calendar or Drive from Gmail consent.
 5. Standing local tracker updates (optional): confirm via personal-ops automation API; never grants send/apply/invite.
 
 ## Privacy and adversarial boundaries
@@ -76,7 +76,7 @@ Owner may grant standing **read-only Gmail organization** and **selected local t
 
 ## Limitations
 
-- Drive and Sheets cloud connectors are not live-qualified in this revision. Calendar host NL control is documented in [GOOGLE-CALENDAR-NL-CONTROL-V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md) (requires owner consent + live read).
+- Drive Stage B is source-complete (enrollment-bound reads under `drive.file`); live Drive qualification still requires owner consent + exact enrollment + authorized read ([GOOGLE-WORKSPACE-STAGE-B-V1](GOOGLE-WORKSPACE-STAGE-B-V1.md)). Sheets remain unqualified. Calendar host NL control is documented in [GOOGLE-CALENDAR-NL-CONTROL-V1](GOOGLE-CALENDAR-NL-CONTROL-V1.md).
 - No remote Gmail draft/send/archive/label.
 - Job discovery does not scrape or invent postings; only evidence-backed tracker rows and host categorization of selected mail.
 - Tracker is CSV (Excel-openable), not a native `.xlsx` workbook.

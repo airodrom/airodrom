@@ -915,6 +915,48 @@
       "synthetic": "A"
     }
   },
+  "drive_enrolled_resources": {
+    "fields": [
+      "id",
+      "kind",
+      "name",
+      "mime_type",
+      "operator",
+      "account_email",
+      "enrolled_at",
+      "revoked_at"
+    ],
+    "source": "src/drive-enrollment.js",
+    "classification": {
+      "id": "A",
+      "kind": "A",
+      "name": "B",
+      "mime_type": "A",
+      "operator": "A",
+      "account_email": "B",
+      "enrolled_at": "A",
+      "revoked_at": "A"
+    }
+  },
+  "drive_read_qualification": {
+    "fields": [
+      "id",
+      "qualified_at",
+      "file_id",
+      "account_email",
+      "evidence_hash",
+      "synthetic"
+    ],
+    "source": "src/drive-read-qualification.js",
+    "classification": {
+      "id": "A",
+      "qualified_at": "A",
+      "file_id": "A",
+      "account_email": "B",
+      "evidence_hash": "D",
+      "synthetic": "A"
+    }
+  },
   "memory_erasure_meta": {
     "fields": [
       "id",

@@ -67,7 +67,7 @@ Synthetic/fixture receipts never set `write_qualified`. OAuth alone never sets i
 ## Stage roadmap
 
 - **A (this doc):** Calendar manage acceptance + Gmail write connector
-- **B:** Drive `drive.file` / picker-scoped
+- **B:** Drive `drive.file` / enrollment-bound reads — see `GOOGLE-WORKSPACE-STAGE-B-V1.md`
 - **C:** Docs + Sheets on authorized files
 - **D:** Contacts + Tasks
 
