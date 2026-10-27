@@ -68,13 +68,26 @@ function encodeRaw({
 }
 
 class GmailWriteConnector {
-  #oauth; #request; #profileEmail = null; #writeQualifiedProbe = null;
+  #oauth; #request; #profileEmail = null; #writeQualifiedProbe = null; #executionMode;
 
-  constructor({ oauth = null, request = fetch, writeQualified = null } = {}) {
+  constructor({ oauth = null, request = null, writeQualified = null, mode = null } = {}) {
+    const { resolveExternalWriteMode } = require('./external-write-context');
+    // Default request only for live production; synthetic/test must inject a transport.
+    const transport = request == null && !require('./external-write-context').isTestProcess()
+      ? fetch
+      : request;
+    this.#executionMode = resolveExternalWriteMode({
+      mode,
+      request: transport,
+      surface: 'gmail_write',
+    });
     this.#oauth = oauth;
-    this.#request = request;
+    this.#request = transport;
     this.#writeQualifiedProbe = writeQualified;
   }
+
+  get executionMode() { return this.#executionMode; }
+  get synthetic() { return this.#executionMode === 'synthetic'; }
 
   status() {
     const st = this.#oauth?.status?.() || {};
@@ -88,6 +101,8 @@ class GmailWriteConnector {
       can_modify: !!st.can_modify,
       can_write: !!st.can_write,
       mode: st.mode || 'readonly',
+      execution_mode: this.#executionMode,
+      synthetic: this.#executionMode === 'synthetic',
       scope: st.scope || READ_SCOPE,
       read_only: st.read_only !== false && !st.can_write,
       write_qualified,
@@ -252,6 +267,8 @@ class GmailWriteConnector {
       label_ids: Array.isArray(data.labelIds) ? data.labelIds.slice(0, 20) : [],
       host_verified: true,
       provider_confirmed: true,
+      synthetic: this.#executionMode === 'synthetic',
+      fixture: this.#executionMode === 'synthetic',
       authority: false,
     };
   }

@@ -42,6 +42,28 @@ Calendar V1 write path is unchanged: preview → confirm; destructive cancel nee
 - Fail-closed on scope mismatch, missing conversation binding, and cross-conversation preview reuse.
 - `write_qualified` stays false until a provider-confirmed write receipt in-process.
 
+## Three distinct authorities (never infer one from another)
+
+1. **OAuth authorization** — Google granted `gmail.send` / manage scopes (`can_send`).
+2. **Operation authorization** — The owner confirmed this preview in the bound Terminal conversation (`/gmail confirm <preview-id>`).
+3. **Live qualification** — A durable provider-confirmed send receipt passed evidence checks (`write_qualified`).
+
+Synthetic/fixture receipts never set `write_qualified`. OAuth alone never sets it.
+
+## Synthetic versus live provider boundary
+
+- `NODE_ENV=test` always uses **synthetic** external-write mode (`src/external-write-context.js`).
+- Synthetic Gmail/Calendar connectors require an **injected** request transport; missing transport fails closed.
+- Test processes must inject `gmailWriteConnector` / `calendarConnector`; auto-wiring live OAuth send/manage is refused.
+- Live mode cannot be selected inside test processes (no hidden fallback to `fetch` + real Google).
+- Managed-install acceptance defaults to **no-send**: `scripts/gmail-acceptance-no-send-probe.cjs` (mode `no_send` only). It never confirms a live staged preview. Owner-approved real sends remain interactive Terminal `/gmail confirm` only.
+
+## Live acceptance pitfalls
+
+- `/api/assistant/conversation/session` is **sticky** per channel unless `{ new: true }`. A second `session()` call is not a distinct conversation.
+- Do not use “cross-conversation” negatives that reuse the sticky session — that is a same-session confirm and will dispatch when OAuth send is authorized.
+- Prefer `session({ new: true })` for distinct-conversation denies, or the packaged no-send probe.
+
 ## Stage roadmap
 
 - **A (this doc):** Calendar manage acceptance + Gmail write connector
@@ -52,4 +74,7 @@ Calendar V1 write path is unchanged: preview → confirm; destructive cancel nee
 ## Tests
 
 - `tests/gmail-write-stage-a.test.js` — OAuth modes, connector flags, preview/approve/confirm, send dedupe, readonly refusal
+- `tests/gmail-write-durability-v1.test.js` — atomic claim, uncertain/no blind retry, restart receipts, concurrency
+- `tests/gmail-confirm-terminal-session-v1.test.js` — Terminal `conversation_id` propagation
+- `tests/gmail-live-send-guardrails-v1.test.js` — synthetic/live boundary, sticky-session regression, qualification negatives
 - Existing `tests/gmail-oauth-token-exchange.test.js`, Calendar NL tests remain authoritative for prior surfaces

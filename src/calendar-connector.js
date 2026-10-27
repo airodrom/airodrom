@@ -30,12 +30,22 @@ function assertRange(start, end) {
 }
 
 class CalendarConnector {
-  #oauth; #request; #live = false; #connectedProbe = null;
-  constructor({ oauth = null, request = fetch, connected = null } = {}) {
+  #oauth; #request; #live = false; #connectedProbe = null; #executionMode;
+  constructor({ oauth = null, request = null, connected = null, mode = null } = {}) {
+    const { resolveExternalWriteMode, isTestProcess } = require('./external-write-context');
+    const transport = request == null && !isTestProcess() ? fetch : request;
+    this.#executionMode = resolveExternalWriteMode({
+      mode,
+      request: transport,
+      surface: 'calendar_write',
+    });
     this.#oauth = oauth;
-    this.#request = request;
+    this.#request = transport;
     this.#connectedProbe = connected;
   }
+
+  get executionMode() { return this.#executionMode; }
+  get synthetic() { return this.#executionMode === 'synthetic'; }
 
   status() {
     const oauthClient = !!this.#oauth;
@@ -48,6 +58,8 @@ class CalendarConnector {
     return {
       id: 'calendar',
       protocol: 'Google Calendar API / OAuth 2.0',
+      execution_mode: this.#executionMode,
+      synthetic: this.#executionMode === 'synthetic',
       state,
       configured: oauthClient,
       connected: !!connected,

@@ -26,9 +26,13 @@ function stageOpts(server, conversation_id) {
 function writeConnector(server) {
   if (!server.gmailOAuth) return null;
   if (!server.gmailWriteConnector) {
+    // Test processes must inject a synthetic connector; never auto-wire live OAuth send.
+    // Returning null fails closed into authorizationOffer / connect_required (no provider dispatch).
+    if (require('./external-write-context').isTestProcess()) return null;
     const writeQual = require('./gmail-write-qualification');
     server.gmailWriteConnector = new GmailWriteConnector({
       oauth: server.gmailOAuth,
+      mode: 'live',
       writeQualified: () => writeQual.isWriteQualified(server.bridge?.controlStore?.db || server.gmailWriteDb || null),
     });
   }
@@ -570,6 +574,7 @@ async function run(server, parsed, {
       if (row.op === 'send') {
         try {
           const sent = await adapter.sendMessage(row);
+          const synthetic = sent.synthetic === true || sent.fixture === true || adapter.synthetic === true;
           const receipt = {
             kind: 'gmail_write',
             action: 'sent',
@@ -579,9 +584,13 @@ async function run(server, parsed, {
             message: `Sent host-verified message ${sent.message_id} from ${sent.account} to ${sent.to.join(', ')}.`,
             google_idempotent: false,
             provider_confirmed: true,
+            synthetic,
+            fixture: synthetic,
             host_verified,
             model_invoked,
-            live_qualified: true,
+            // live_qualified on the receipt means provider-confirmed evidence — never OAuth alone.
+            // Synthetic receipts remain non-qualifying via recordSendQualification(synthetic:true).
+            live_qualified: !synthetic,
             authority: false,
           };
           return await finishSuccess(receipt);
