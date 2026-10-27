@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Drive OAuth recovery: allow vault purpose `drive`, resolve shared desktop client secret from `gmail` purpose (same as Calendar), actionable callback errors, and fresh-connect pending invalidation without touching Gmail/Calendar grants.
+
 ### Added
 - Google Drive Picker for `drive.file` existing-file authorization: owner `airodrom drive picker-setup`, post-consent picker page, `/drive select`. Hardens bootstrap against `safeValue` token redaction, picker-only CSP, exact `drive.file` scope grants, click-gated token handoff, and post-metadata session consume ([docs/GOOGLE-WORKSPACE-STAGE-B-V1.md](docs/GOOGLE-WORKSPACE-STAGE-B-V1.md)).
 - Google Workspace Stage B V1: host-governed Google Drive with `drive.file` OAuth, separate vault purpose, owner enrollment of exact file/folder ids, enrollment-bound list/search/metadata/text read, Control Center connection states, and synthetic isolation tests. Upload/edit/share/trash are out of scope ([docs/GOOGLE-WORKSPACE-STAGE-B-V1.md](docs/GOOGLE-WORKSPACE-STAGE-B-V1.md)).

@@ -363,7 +363,11 @@ class ControlServer {
       if(url.pathname==='/oauth/drive/callback'){
         if(req.method!=='GET'||!this.driveOAuth)throw Error('Drive OAuth callback unavailable');
         try{
-          await this.driveOAuth.complete({state:url.searchParams.get('state'),code:url.searchParams.get('code')});
+          await this.driveOAuth.complete({
+            state:url.searchParams.get('state'),
+            code:url.searchParams.get('code'),
+            providerError:url.searchParams.get('error'),
+          });
           const picker=require('./drive-picker');
           const cfg=picker.readConfig(this.bridge.dataDir);
           const sessionId=picker.createSession();
@@ -378,9 +382,13 @@ class ControlServer {
           res.end();
         }catch(error){
           res.setHeader('Content-Type','text/plain; charset=utf-8');
-          const message=error?.safe_error_class&&typeof error.message==='string'
+          // Prefer categorical Drive OAuth messages; never echo codes/tokens/provider bodies.
+          const classified=typeof error?.safe_error_class==='string'&&error.safe_error_class.startsWith('drive_oauth_');
+          const message=classified&&typeof error.message==='string'&&error.message
             ?error.message
-            :'Drive authorization could not be completed. Return to Airodrom and run /connect drive fresh.';
+            :(typeof error?.message==='string'&&/Drive OAuth|drive\.file|vault|Keychain|consent|callback/i.test(error.message)
+              ?error.message
+              :'Drive authorization could not be completed ('+(error?.safe_error_class||error?.code||'unclassified')+'). Run /connect drive fresh. If this repeats, check vault purpose "drive" support and the shared desktop client secret.');
           res.statusCode=400;res.end(message);
         }
         return;
@@ -628,6 +636,7 @@ class ControlServer {
           if(this.driveOAuth){
             const driveStatus=require('./drive-service').statusPayload(this);
             status.items=status.items.filter(i=>i.id!=='drive');
+            const oauthLive=this.driveOAuth.status();
             status.items.push({
               id:'drive',
               protocol:'Google Drive API / OAuth 2.0',
@@ -639,13 +648,17 @@ class ControlServer {
               can_write:false,
               live_qualified:driveStatus.live_read_qualified===true,
               enrolled_count:driveStatus.enrolled_count,
+              last_safe_error_class:oauthLive.last_safe_error_class||driveStatus.last_failure||null,
+              client_secret_bound:!!oauthLive.client_secret_bound,
               setup:driveStatus.connected
                 ?(driveStatus.live_read_qualified
                   ?'Drive live-read-qualified for enrolled files under drive.file. Folder enrollment does not authorize child reads.'
                   :(driveStatus.enrolled_count
                     ?'Drive connected with enrolled resources. Complete a provider-confirmed /drive read <file-id> to live-qualify. drive.file is per opened/created file, not whole folders.'
                     :'Drive OAuth connected. Enroll exact file ids opened with this app (/drive enroll file …). Broad Drive scopes are not requested.'))
-                :'Drive OAuth client ready. /connect drive (drive.file). Gmail/Calendar consent does not grant Drive.',
+                :(driveStatus.last_failure
+                  ?('Drive authorization incomplete ('+driveStatus.last_failure+'). Run /connect drive fresh. Gmail/Calendar consents are separate.')
+                  :'Drive OAuth client ready. /connect drive (drive.file). Gmail/Calendar consent does not grant Drive.'),
               mutations:'none — Stage B is read-only',
               authority:false
             });
