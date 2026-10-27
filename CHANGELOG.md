@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- Drive Picker page GET after Google OAuth redirect no longer false-denies `sec-fetch-site=cross-site` top-level navigations; picker bootstrap/enroll remain same-origin-only with classified rejections.
+
+### Fixed
 - Drive OAuth recovery: allow vault purpose `drive`, resolve shared desktop client secret from `gmail` purpose (same as Calendar), actionable callback errors, and fresh-connect pending invalidation without touching Gmail/Calendar grants.
 
 ### Added
