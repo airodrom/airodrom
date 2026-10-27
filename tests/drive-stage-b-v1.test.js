@@ -467,8 +467,10 @@ test('release and package allowlists include Stage B Drive sources', () => {
     'src/drive-intent.js',
     'src/drive-service.js',
     'src/drive-read-qualification.js',
+    'src/drive-picker.js',
     'docs/GOOGLE-WORKSPACE-STAGE-B-V1.md',
     'tests/drive-stage-b-v1.test.js',
+    'tests/drive-picker-v1.test.js',
   ];
   for (const file of files) {
     assert.ok(release.has(file), file + ' missing from release-files.json');

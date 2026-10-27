@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Added
+- Google Drive Picker for `drive.file` existing-file authorization: owner `airodrom drive picker-setup`, post-consent picker page, `/drive select` ([docs/GOOGLE-WORKSPACE-STAGE-B-V1.md](docs/GOOGLE-WORKSPACE-STAGE-B-V1.md)).
 - Google Workspace Stage B V1: host-governed Google Drive with `drive.file` OAuth, separate vault purpose, owner enrollment of exact file/folder ids, enrollment-bound list/search/metadata/text read, Control Center connection states, and synthetic isolation tests. Upload/edit/share/trash are out of scope ([docs/GOOGLE-WORKSPACE-STAGE-B-V1.md](docs/GOOGLE-WORKSPACE-STAGE-B-V1.md)).
 - Gmail/Calendar synthetic-versus-live external-write boundary: test processes require injected provider transports, refuse auto-wiring live OAuth connectors, mark synthetic receipts non-qualifying, and ship a canonical no-send acceptance probe ([docs/GMAIL-LIVE-SEND-SAFETY-CLOSEOUT-V1.md](docs/GMAIL-LIVE-SEND-SAFETY-CLOSEOUT-V1.md)).
 
