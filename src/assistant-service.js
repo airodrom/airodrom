@@ -105,6 +105,9 @@ async function submit(server,input){
   confirmed:parsed.confirmed===true,
   destructive:parsed.destructive===true,
  });
+ if(parsed.kind==='drive')return require('./drive-service').run(server,parsed,{
+  conversation_id:input.conversation_id||null,
+ });
  if(parsed.kind==='contextual_assistant')return require('./contextual-assistant-service').run(server,parsed,{
   conversation_id:input.conversation_id||null,
  });

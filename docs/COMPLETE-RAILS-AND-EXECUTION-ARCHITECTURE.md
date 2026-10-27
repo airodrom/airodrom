@@ -275,7 +275,7 @@ Calendar create/update/cancel operations are governed separately from reads.
 
 ### Google Drive, Docs and Sheets
 
-These are product expansion areas. Do not classify them as live-qualified until the relevant adapters, OAuth permissions and real provider acceptance have been demonstrated.
+Stage B Drive (`drive.file` + exact file/folder enrollment, read-only) is documented in [GOOGLE-WORKSPACE-STAGE-B-V1.md](GOOGLE-WORKSPACE-STAGE-B-V1.md). Source readiness is not live qualification: owner `/connect drive`, enrollment, and an authorized live read are still required. Docs/Sheets remain later stages.
 
 ### Connector security
 
@@ -799,6 +799,7 @@ Consistent results across Terminal, Control Center, ChatGPT and the native macOS
 | Calendar integration | [GOOGLE-CALENDAR-NL-CONTROL-V1.md](GOOGLE-CALENDAR-NL-CONTROL-V1.md) |
 | Memory-grounded compose | [MEMORY-GROUNDED-EMAIL-COMPOSE-V1.md](MEMORY-GROUNDED-EMAIL-COMPOSE-V1.md) |
 | Google Workspace Stage A | [GOOGLE-WORKSPACE-STAGE-A-V1.md](GOOGLE-WORKSPACE-STAGE-A-V1.md) |
+| Google Workspace Stage B (Drive) | [GOOGLE-WORKSPACE-STAGE-B-V1.md](GOOGLE-WORKSPACE-STAGE-B-V1.md) |
 
 ---
 

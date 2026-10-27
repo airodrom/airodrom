@@ -2,6 +2,12 @@
 
 **Dated audit (2026-10-26):** see [Architecture Deduplication Audit V1](ARCHITECTURE-DEDUPLICATION-AUDIT-V1.md) for independently observed main/installed versions and ownership boundaries. Entries below are historical snapshots; their headings are not a live version query.
 
+## Gmail Live-Send Safety + Stage B Drive — 2026-10-27
+
+- **Main / installed tip:** `11f48649403edd4a15aba8bc5f089fd926444637` (merge of PR #250 Gmail Live-Send Safety Closeout). Prior tip `e345452` retained as rollback under `…/airodrom-install-e345452`.
+- **Gmail:** `can_send` and `write_qualified` unchanged from the single authenticated unintended-test dispatch (no new real sends during #250 cutover). No-send probe `PASS_NO_SEND` on installed tip.
+- **Google Drive Stage B:** source branch `feat/google-drive-stage-b-v1` — read-only `drive.file` + exact enrollment. **Not merged/installed** with the Gmail safety cutover. Real Drive qualification requires owner `/connect drive`, exact resource enrollment, and an authorized live read. See [GOOGLE-WORKSPACE-STAGE-B-V1](GOOGLE-WORKSPACE-STAGE-B-V1.md).
+
 ## Gmail NL Search + Calendar NL Control — INSTALLED (2026-10-26)
 
 - **Main merge SHA:** `b182fa46b2c7d09e475dc155af7283e37ea4fed0` (PR #234 Gmail NL Search + PR #235 Calendar NL Control).

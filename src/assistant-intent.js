@@ -126,6 +126,8 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  // Generic "show more"/"cancel that" only when this conversation has an active Calendar session.
  const calendarIntent=require('./calendar-intent').parse(request,{activeCalendarSession:activeCalendarSession===true});
  if(calendarIntent)return route('CALENDAR',calendarIntent);
+ const driveIntent=require('./drive-intent').parse(request);
+ if(driveIntent)return route('DRIVE',driveIntent);
  // Host-fact rail: date/time, ports, Airodrom services, health — never model clock/status guesses.
  const hostFact=require('./host-fact-intent').parse(request);
  if(hostFact)return route('HOST_FACT',hostFact);

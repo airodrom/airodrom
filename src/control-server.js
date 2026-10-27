@@ -60,6 +60,7 @@ class ControlServer {
       });
       if(config.reference)this.#wireAssistantConnectors();
       this.#wireCalendarOAuth(config);
+      this.#wireDriveOAuth(config);
     }
     this.#wirePersonalOps();
     this.conversationEngine=bridge.conversationEngine ||= new(require('./conversation-engine').ConversationEngine)(bridge,conversationOptions);
@@ -163,6 +164,39 @@ class ControlServer {
         if (config.clientSecretReference) next.clientSecretReference = config.clientSecretReference;
         require('./local-bootstrap').writePrivate(calendarFile, next);
         this.calendarConnector = null;
+      },
+    });
+  }
+  #wireDriveOAuth(gmailConfig) {
+    if (!this.bridge?.dataDir || !gmailConfig?.clientId) return;
+    const driveFile = path.join(this.bridge.dataDir, 'drive-oauth-config.json');
+    let config = { clientId: gmailConfig.clientId, reference: null };
+    if (gmailConfig.clientSecretReference) config.clientSecretReference = gmailConfig.clientSecretReference;
+    if (require('./private-json').privateFileExists(driveFile)) {
+      const stored = require('./private-json').readPrivateJSON(driveFile);
+      const keys = ['clientId', 'reference'].concat(Object.prototype.hasOwnProperty.call(stored, 'clientSecretReference') ? ['clientSecretReference'] : []);
+      require('./control-plane-store').object(stored, keys);
+      config = {
+        clientId: stored.clientId || gmailConfig.clientId,
+        reference: stored.reference || null,
+        ...(stored.clientSecretReference ? { clientSecretReference: stored.clientSecretReference } : (gmailConfig.clientSecretReference ? { clientSecretReference: gmailConfig.clientSecretReference } : {})),
+      };
+    } else {
+      require('./local-bootstrap').writePrivate(driveFile, config);
+    }
+    this.driveOAuth = new (require('./drive-oauth').DriveOAuth)({
+      clientId: config.clientId,
+      reference: config.reference || null,
+      clientSecretReference: config.clientSecretReference || null,
+      vault: new (require('./secret-vault').SecretVault)(this.bridge.dataDir),
+      onReference: (reference) => {
+        const next = { clientId: config.clientId, reference };
+        if (config.clientSecretReference) next.clientSecretReference = config.clientSecretReference;
+        require('./local-bootstrap').writePrivate(driveFile, next);
+        this.driveConnector = null;
+        if (!reference) {
+          try { require('./drive-service').enrollment(this).revokeAll({ operator: 'operator' }); } catch { /* */ }
+        }
       },
     });
   }
@@ -283,7 +317,7 @@ class ControlServer {
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
     try {
       const earlyPath=new URL(req.url,'http://127.0.0.1').pathname;
-      const callbackPath=(earlyPath==='/oauth/gmail/callback'||earlyPath==='/oauth/calendar/callback')&&req.method==='GET';
+      const callbackPath=(earlyPath==='/oauth/gmail/callback'||earlyPath==='/oauth/calendar/callback'||earlyPath==='/oauth/drive/callback')&&req.method==='GET';
       const whatsappWebhook=earlyPath==='/webhooks/whatsapp';
       // WhatsApp webhook is signature-authenticated (POST) or verify-token authenticated (GET).
       // Still loopback-only; public ingress / tunnels require separate owner authorization.
@@ -314,6 +348,20 @@ class ControlServer {
           const message=error?.safe_error_class&&typeof error.message==='string'
             ?error.message
             :'Calendar authorization could not be completed. Return to Airodrom and run /connect calendar fresh.';
+          res.statusCode=400;res.end(message);
+        }
+        return;
+      }
+      if(url.pathname==='/oauth/drive/callback'){
+        if(req.method!=='GET'||!this.driveOAuth)throw Error('Drive OAuth callback unavailable');
+        res.setHeader('Content-Type','text/plain; charset=utf-8');
+        try{
+          await this.driveOAuth.complete({state:url.searchParams.get('state'),code:url.searchParams.get('code')});
+          res.end('Google Drive authorization completed (drive.file). Close this tab, return to Airodrom, and enroll exact file/folder ids.');
+        }catch(error){
+          const message=error?.safe_error_class&&typeof error.message==='string'
+            ?error.message
+            :'Drive authorization could not be completed. Return to Airodrom and run /connect drive fresh.';
           res.statusCode=400;res.end(message);
         }
         return;
@@ -493,6 +541,33 @@ class ControlServer {
             });
           }
         }catch{/* calendar optional */}
+        try{
+          if(this.driveOAuth){
+            const driveStatus=require('./drive-service').statusPayload(this);
+            status.items=status.items.filter(i=>i.id!=='drive');
+            status.items.push({
+              id:'drive',
+              protocol:'Google Drive API / OAuth 2.0',
+              state:driveStatus.state,
+              configured:true,
+              connected:!!driveStatus.connected,
+              token_present:!!driveStatus.connected,
+              read_only:true,
+              can_write:false,
+              live_qualified:driveStatus.live_read_qualified===true,
+              enrolled_count:driveStatus.enrolled_count,
+              setup:driveStatus.connected
+                ?(driveStatus.live_read_qualified
+                  ?'Drive live-read-qualified for enrolled files under drive.file. Folder enrollment does not authorize child reads.'
+                  :(driveStatus.enrolled_count
+                    ?'Drive connected with enrolled resources. Complete a provider-confirmed /drive read <file-id> to live-qualify. drive.file is per opened/created file, not whole folders.'
+                    :'Drive OAuth connected. Enroll exact file ids opened with this app (/drive enroll file …). Broad Drive scopes are not requested.'))
+                :'Drive OAuth client ready. /connect drive (drive.file). Gmail/Calendar consent does not grant Drive.',
+              mutations:'none — Stage B is read-only',
+              authority:false
+            });
+          }
+        }catch{/* drive optional */}
         return this.json(res,200,status);
       }
       if(req.method==='GET'&&url.pathname==='/api/assistant/risk-acceptance')return this.json(res,200,this.bridge.missions.riskAcceptance.status());
@@ -699,7 +774,11 @@ class ControlServer {
           if(!this.calendarOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, restart, then /connect calendar. Gmail consent does not grant Calendar.'});
           return this.jsonConnectOffer(res,this.calendarOAuth.start(this.origin+'/oauth/calendar/callback',{forceNew:body.force_new===true,mode:body.mode||'readonly'}));
         }
-        if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport. Use /connect calendar for Google Calendar.'});
+        if(body.connector==='drive'){
+          if(!this.driveOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, restart, then /connect drive. Gmail/Calendar consent does not grant Drive.'});
+          return this.jsonConnectOffer(res,this.driveOAuth.start(this.origin+'/oauth/drive/callback',{forceNew:body.force_new===true}));
+        }
+        if(body.connector!=='gmail'||!this.gmailOAuth)return this.json(res,200,{state:'WAIT',message:'Configure an owner Google desktop OAuth client with airodrom gmail setup <client-id>, prepare the Keychain helper, then restart the service. WhatsApp requires an official host webhook transport. Use /connect calendar for Google Calendar or /connect drive for Drive.'});
         // Default reuses an unexpired pending PKCE session so browser-launch retries
         // do not invalidate consent still in flight. force_new starts a fresh session.
         // mode: readonly (default) | send | manage — incremental consent; never mail.google.com.

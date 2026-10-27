@@ -547,8 +547,8 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if(command==='connect') {
           const [connector,...connectParts]=String(arg||'').trim().split(/\s+/).filter(Boolean);
           const connectAction=(connectParts[0]||'').toLowerCase();
-          if(!['gmail','google','whatsapp','calendar'].includes(connector))throw Error('Use /connect gmail, /connect gmail send, /connect gmail manage, /connect calendar, /connect calendar manage, or /connect whatsapp');
-          if(connector==='google')throw Error('Use /connect gmail for mail or /connect calendar for Google Calendar. They are separate consents.');
+          if(!['gmail','google','whatsapp','calendar','drive'].includes(connector))throw Error('Use /connect gmail, /connect gmail send, /connect gmail manage, /connect calendar, /connect calendar manage, /connect drive, or /connect whatsapp');
+          if(connector==='google')throw Error('Use /connect gmail for mail, /connect calendar for Google Calendar, or /connect drive for Drive. They are separate consents.');
           if(connector==='whatsapp'){
             active=new AbortController();
             try{
@@ -589,6 +589,24 @@ async function interactive(home, { input = process.stdin, output = process.stdou
             }
             continue;
           }
+          if(connector==='drive'){
+            if(connectAction&&!['fresh',''].includes(connectAction)){
+              throw Error('Use /connect drive or /connect drive fresh. Stage B is drive.file read/enrollment only.');
+            }
+            const connectBody={connector:'drive'};
+            if(connectAction==='fresh')connectBody.force_new=true;
+            const result=await local.request(home,'/api/assistant/connect',connectBody);
+            if(result.authorization_url){
+              rememberGmailAuthorization(result);
+              if(result.reused)output.write('Reusing the still-active Drive authorization session.\n');
+              else output.write('Starting Google Drive consent (drive.file only). Then enroll exact file/folder ids with /drive enroll …\n');
+              await openGmailAuthorization(output, result.authorization_url);
+            }else{
+              clearPendingGmailAuthorization();
+              output.write(terminalText(result.message)+'\n');
+            }
+            continue;
+          }
           if(connectAction&&!['fresh','send','manage','modify','write','retry-open','show-local',''].includes(connectAction)){
             throw Error('Use /connect gmail, /connect gmail send, /connect gmail manage, /connect gmail retry-open, /connect gmail show-local, or /connect gmail fresh.');
           }
@@ -616,6 +634,31 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           }else{
             clearPendingGmailAuthorization();
             output.write(terminalText(result.message)+'\n');
+          }
+        }
+        else if(command==='drive'){
+          const parts=String(arg||'').trim().split(/\s+/).filter(Boolean);
+          const action=(parts[0]||'status').toLowerCase();
+          const driveConversationId=await session();
+          if(action==='enroll'){
+            const kind=(parts[1]||'').toLowerCase();
+            const resourceId=parts[2];
+            if(kind!=='file'&&kind!=='folder')throw Error('Use /drive enroll file|folder <id> [label…]');
+            if(!resourceId)throw Error('Use /drive enroll file|folder <id> [label…]');
+            const label=parts.slice(3).join(' ').trim()||null;
+            const msg=`/drive enroll ${kind} ${resourceId}${label?` ${label}`:''}`;
+            const result=await local.request(home,'/api/assistant/input',{message:msg,request_id:randomUUID(),conversation_id:driveConversationId});
+            await handleReceipt(result,json);
+          }else if(action==='unenroll'){
+            const resourceId=parts[1];
+            if(!resourceId)throw Error('Use /drive unenroll <resource-id>');
+            const result=await local.request(home,'/api/assistant/input',{message:`/drive unenroll ${resourceId}`,request_id:randomUUID(),conversation_id:driveConversationId});
+            await handleReceipt(result,json);
+          }else if(action==='help'||action==='status'){
+            const result=await local.request(home,'/api/assistant/input',{message:'help me use google drive',request_id:randomUUID(),conversation_id:driveConversationId});
+            await handleReceipt(result,json);
+          }else{
+            throw Error('Use /drive help|status|enroll file|folder <id> [label]|unenroll <id>, or ask in natural language.');
           }
         }
         else if(command==='calendar'){

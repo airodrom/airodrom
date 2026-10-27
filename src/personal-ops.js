@@ -104,17 +104,45 @@ function calendarState(server) {
   };
 }
 
-function driveState() {
-  return {
-    id: 'drive', label: 'Google Drive',
-    availability: 'NOT_SUPPORTED',
-    auth: 'unavailable',
-    live_qualified: false,
-    reads: [],
-    writes: [],
-    note: 'Drive is opt-in and not blanket-authorized. No Drive connector is live-qualified here.',
-    next: 'WAIT — separate Drive enrollment with exact folder selection'
-  };
+function driveState(server) {
+  try {
+    const status = require('./drive-service').statusPayload(server || {});
+    const connected = !!status.connected;
+    const enrolled = status.enrolled_count > 0;
+    const live = status.live_read_qualified === true;
+    return {
+      id: 'drive', label: 'Google Drive',
+      availability: connected ? (enrolled ? 'AVAILABLE' : 'AUTH_REQUIRED') : (server?.driveOAuth ? 'AUTH_REQUIRED' : 'NOT_SUPPORTED'),
+      auth: connected ? 'connected' : (server?.driveOAuth ? 'oauth_configured' : 'unavailable'),
+      live_qualified: live,
+      reads: connected && enrolled ? ['enrolled_metadata', 'enrolled_list', 'enrolled_search', 'enrolled_text_export'] : [],
+      writes: [],
+      note: connected
+        ? (live
+          ? 'Drive live-read-qualified for enrolled files under drive.file. Mutations are not Stage B.'
+          : (enrolled
+            ? 'Drive connected with enrolled resources. Live read qualification still requires a provider-confirmed enrolled-file read.'
+            : 'Drive OAuth connected. Enroll exact file ids opened with this app before reads. Folder enrollment does not grant child access.'))
+        : (server?.driveOAuth
+          ? 'Drive OAuth client ready. /connect drive then enroll exact file ids under drive.file.'
+          : 'Drive Stage B requires owner Google desktop OAuth client, /connect drive, and exact file enrollment.'),
+      next: connected
+        ? (enrolled ? (live ? 'Ask to list/search/read enrolled Drive files' : '/drive read <enrolled-file-id>') : '/drive enroll file <id>')
+        : '/connect drive',
+      state: status.state,
+    };
+  } catch {
+    return {
+      id: 'drive', label: 'Google Drive',
+      availability: 'NOT_SUPPORTED',
+      auth: 'unavailable',
+      live_qualified: false,
+      reads: [],
+      writes: [],
+      note: 'Drive status unavailable.',
+      next: '/connect drive',
+    };
+  }
 }
 
 function sheetsState() {
@@ -168,7 +196,7 @@ function matrix(server) {
     connectors: [
       gmailState(server),
       calendarState(server),
-      driveState(),
+      driveState(server),
       sheetsState(),
       localFilesState(),
       jobTrackerState(server.bridge)
