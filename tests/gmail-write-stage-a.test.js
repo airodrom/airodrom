@@ -290,6 +290,8 @@ test('Stage A gmail-write modules are on package and release allowlists; MCP tra
     'src/gmail-write-session.js',
     'docs/GOOGLE-WORKSPACE-STAGE-A-V1.md',
     'tests/gmail-write-stage-a.test.js',
+    'tests/gmail-send-preview-routing-v1.test.js',
+    'tests/gmail-confirm-terminal-session-v1.test.js',
   ]) {
     assert.ok(release.has(file), file + ' missing from release-files.json');
     assert.ok(pkg.files.includes(file), file + ' missing from package.json files');

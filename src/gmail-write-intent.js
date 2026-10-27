@@ -18,6 +18,88 @@ function helpControl(request) {
   return null;
 }
 
+function recipientFromText(text) {
+  const email = /\bto\s+(\S+@\S+)\b/i.exec(text);
+  if (email) return email[1].replace(/[.,;:!?)]+$/, '');
+  if (/\b(?:to\s+)?(?:myself|me)\b/i.test(text) || /\bsend\s+myself\b/i.test(text)) return 'myself';
+  return null;
+}
+
+function testDefaults(text) {
+  const isTest = /\btest\b/i.test(text);
+  if (!isTest) return { subject: null, body: null };
+  return {
+    subject: 'Test',
+    body: 'This is a test email from Airodrom. Nothing is sent until /gmail confirm <preview-id>.',
+  };
+}
+
+/**
+ * Catch natural-language send / send-preview requests that older patterns missed
+ * (e.g. "Send a test email…", "show me the preview"). Must run before Gmail
+ * search mutation refusal, which otherwise returns a read-only clarify.
+ * @returns {object|null}
+ */
+function isSendPreviewRequest(text) {
+  // Slash verbs are handled separately (approve/confirm/help). Never treat
+  // "/gmail send …" as a natural-language send-preview staging request.
+  if (/^\/gmail\b/i.test(text)) return null;
+  const wantsPreview = /\bpreview\b/i.test(text) || /\bpreview[-\s]?id\b/i.test(text);
+  const sendVerb = /\b(?:send|compose(?:\s+and\s+send)?)\b/i.test(text)
+    || /\b(?:create|stage|prepare|generate|show)\b.+\b(?:send\s+)?preview\b/i.test(text)
+    || /\bgmail\s+send\s+preview\b/i.test(text);
+  const mailObject = /\b(?:email|mail|message|gmail)\b/i.test(text);
+  if (!sendVerb || !mailObject) return null;
+  // Leave non-send mailbox mutations to their dedicated parsers / search refuse.
+  if (/\b(?:archive|trash|delete|label|forward|mark\s+(?:as\s+)?(?:read|unread))\b/i.test(text)
+    && !/\bsend\b/i.test(text) && !wantsPreview) {
+    return null;
+  }
+
+  const to = recipientFromText(text);
+  const defaults = testDefaults(text);
+  const subjectFrom = /(?:subject\s+)["“]?([^"”\n:]+)["”]?/i.exec(text);
+  const bodyFrom = /:\s*(.+)$/s.exec(text);
+  const subject = (subjectFrom && subjectFrom[1].trim()) || defaults.subject;
+  const body = (bodyFrom && !subjectFrom && bodyFrom[1].trim()) || defaults.body;
+
+  // Full enough to stage a durable preview (recipient + subject + body).
+  if (to && subject && body) {
+    return {
+      kind: 'gmail_write',
+      action: 'send',
+      to,
+      subject,
+      body,
+      wants_preview: true,
+      route: 'GMAIL_WRITE',
+      host_verified: true,
+    };
+  }
+
+  // Send-shaped but incomplete — clarify on the write rail (never search refuse).
+  let message = 'To stage a Gmail send preview, provide exact recipient, subject, and body. '
+    + 'Example: Send email to person@example.com subject “Hello”: Your message here. '
+    + 'Or: Send a test email to myself and show me the preview. '
+    + 'Airodrom returns a preview ID; only /gmail confirm <preview-id> sends. '
+    + '“Connected” for reading is not send authorization — need /connect gmail send (gmail.send) or /connect gmail manage.';
+  if (to && !subject) {
+    message = `Recipient noted (${to === 'myself' ? 'myself → authorized mailbox' : to}). Provide subject and body, or say “Send a test email to ${to === 'myself' ? 'myself' : to} and show me the preview”. Only /gmail confirm <preview-id> sends.`;
+  }
+  return {
+    kind: 'gmail_write',
+    action: 'send',
+    to,
+    subject,
+    body,
+    clarify: true,
+    wants_preview: wantsPreview || true,
+    message,
+    route: 'GMAIL_WRITE',
+    host_verified: true,
+  };
+}
+
 /**
  * @returns {object|null} write intent or null when not a write-shaped request
  */
@@ -47,8 +129,8 @@ function parse(request) {
     };
   }
 
-  // Local draft (no send) stays on CONNECTOR path via assistant-intent draft_reply.
-  // Explicit send new mail.
+  // Local draft (no send) stays on EMAIL_COMPOSE / CONNECTOR draft_reply paths.
+  // Explicit send new mail — governed preview + /gmail confirm only.
   const sendExact = /^(?:send|compose and send)\s+(?:an?\s+)?(?:email|mail|message)\s+to\s+(\S+@\S+)\s+(?:with\s+)?(?:subject\s+)?["“]?(.+?)["”]?\s*:\s*(.+)$/i.exec(text);
   if (sendExact) {
     return {
@@ -61,13 +143,22 @@ function parse(request) {
       host_verified: true,
     };
   }
+
+  // Natural send / send-preview requests (must beat Gmail search mutation refusal).
+  // Examples: "Send a test email to myself and show me the preview",
+  // "Create a Gmail send preview for a test email to a@b.test".
+  const sendShaped = isSendPreviewRequest(text);
+  if (sendShaped) {
+    return sendShaped;
+  }
+
   if (/^(?:send|compose)\s+(?:an?\s+)?(?:email|mail|message)\b/i.test(text)
     || /^email\s+\S+@\S+\b/i.test(text)) {
     return {
       kind: 'gmail_write',
       action: 'send',
       clarify: true,
-      message: 'To send mail, provide exact recipient, subject, and body. Example: Send email to person@example.com subject “Hello”: Your message here. Preview confirmation is required; /connect gmail send (or manage) must be authorized.',
+      message: 'To send mail, provide exact recipient, subject, and body. Example: Send email to person@example.com subject “Hello”: Your message here. Airodrom stages a preview ID first; only /gmail confirm <preview-id> sends. /connect gmail send (or manage) must be authorized — “connected” for reading is not enough.',
       route: 'GMAIL_WRITE',
       host_verified: true,
     };
@@ -186,4 +277,4 @@ function parse(request) {
   return null;
 }
 
-module.exports = { parse, normalize, helpControl };
+module.exports = { parse, normalize, helpControl, isSendPreviewRequest, recipientFromText };
