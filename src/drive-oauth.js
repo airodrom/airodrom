@@ -155,7 +155,7 @@ class DriveOAuth {
     if (this.#clientSecretReference) {
       form.client_secret = this.#vault.resolve(this.#clientSecretReference, VAULT_PURPOSE);
     }
-    const token = await this.#exchange(form);
+    const token = await this.#exchange(form, { requireExactScope: true });
     this.#pending = null;
     this.#lastFailure = null;
     if (this.#reference) {
@@ -165,7 +165,7 @@ class DriveOAuth {
       access_token: token.access_token,
       refresh_token: token.refresh_token,
       expires_at: Date.now() + (Number(token.expires_in) || 3600) * 1000,
-      scope: token.scope || FILE_SCOPE,
+      scope: FILE_SCOPE,
     });
     const put = this.#vault.put(packed, VAULT_PURPOSE);
     this.#reference = put.reference;
@@ -184,7 +184,7 @@ class DriveOAuth {
     try { value = JSON.parse(raw); } catch {
       throw exchangeError(FAIL.schema, 'Drive credential record invalid.');
     }
-    if (!hasFileScope(value.scope)) {
+    if (!scopesEqual(value.scope, FILE_SCOPE)) {
       throw exchangeError(FAIL.scope, 'Drive scope mismatch; reconnect with drive.file only.');
     }
     if (value.expires_at && value.expires_at < Date.now() + 60000) {
@@ -197,14 +197,14 @@ class DriveOAuth {
       if (this.#clientSecretReference) {
         form.client_secret = this.#vault.resolve(this.#clientSecretReference, VAULT_PURPOSE);
       }
-      const token = await this.#exchange(form);
+      // Refresh responses often omit scope; when present it must remain drive.file only.
+      const token = await this.#exchange(form, { requireExactScope: false });
       const next = {
         access_token: token.access_token,
         refresh_token: token.refresh_token || value.refresh_token,
         expires_at: Date.now() + (Number(token.expires_in) || 3600) * 1000,
-        scope: token.scope || value.scope,
+        scope: FILE_SCOPE,
       };
-      if (!hasFileScope(next.scope)) throw exchangeError(FAIL.scope, 'Drive refresh returned unexpected scope.');
       const replaced = this.#vault.replace(this.#reference, JSON.stringify(next), VAULT_PURPOSE);
       this.#reference = replaced.reference;
       this.onReference(this.#reference, { mode: 'file' });
@@ -225,7 +225,7 @@ class DriveOAuth {
     return { revoked: had, connected: false };
   }
 
-  async #exchange(form) {
+  async #exchange(form, { requireExactScope = true } = {}) {
     const body = new URLSearchParams(form);
     let response;
     try {
@@ -257,9 +257,14 @@ class DriveOAuth {
       this.#lastFailure = FAIL.schema;
       throw exchangeError(FAIL.schema, 'Drive OAuth token response missing access_token.');
     }
-    if (value.scope && !scopesEqual(value.scope, FILE_SCOPE) && !hasFileScope(value.scope)) {
+    if (requireExactScope) {
+      if (typeof value.scope !== 'string' || !scopesEqual(value.scope, FILE_SCOPE)) {
+        this.#lastFailure = FAIL.scope;
+        throw exchangeError(FAIL.scope, 'Drive OAuth must grant drive.file only.');
+      }
+    } else if (typeof value.scope === 'string' && value.scope.trim() && !scopesEqual(value.scope, FILE_SCOPE)) {
       this.#lastFailure = FAIL.scope;
-      throw exchangeError(FAIL.scope, 'Drive OAuth scope mismatch.');
+      throw exchangeError(FAIL.scope, 'Drive OAuth must grant drive.file only.');
     }
     if (/gmail|calendar/i.test(String(value.scope || ''))) {
       this.#lastFailure = FAIL.scope;

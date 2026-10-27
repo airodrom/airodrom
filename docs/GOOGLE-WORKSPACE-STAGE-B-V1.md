@@ -38,7 +38,7 @@ Google authorizes only files this OAuth client **created** or the owner **opened
 4. `/connect drive` (or `fresh`) → consent → picker opens automatically when configured.
 5. Or later: `/drive select` to open the picker for an already-connected Drive session.
 
-Picker bootstrap hands an access token to the local picker page once (loopback). Tokens are not logged, not returned on connector status, and not given to models.
+Picker bootstrap hands an access token to the local picker page once (loopback), via a dedicated response path that does **not** run through Control Center `safeValue` redaction (which would otherwise omit tokens). Tokens are not logged, not returned on connector status, and not given to models. Bootstrap runs only after the owner clicks **Open Google Picker**. Picker enrollment is loopback-session gated (bootstrapped UUID); conversation UUID remains required for `/drive read` and Terminal enroll paths.
 
 Airodrom policy matches Google:
 

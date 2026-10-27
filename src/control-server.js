@@ -101,6 +101,14 @@ class ControlServer {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(require('./oauth-browser-launch').wireConnectOffer(offer)));
   }
+  // Loopback Google Picker one-shot handoff only. Must not run through safeValue (would redact tokens).
+  // Never log the payload. Allowlisted keys only.
+  jsonPickerBootstrap(res, payload) {
+    const body = require('./drive-picker').bootstrapResponseBody(payload);
+    if (!body) return this.json(res, 400, { error: 'Drive picker bootstrap incomplete.' });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(body));
+  }
   authorize(req, token = this.token) {
     const provided = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${token}`);
@@ -387,6 +395,8 @@ class ControlServer {
           return;
         }
         const cfg=picker.readConfig(this.bridge.dataDir);
+        // Override global Control Center CSP so Google Picker scripts/frames can load.
+        res.setHeader('Content-Security-Policy',picker.PICKER_CSP);
         res.setHeader('Content-Type','text/html; charset=utf-8');
         if(!cfg){res.end(picker.missingConfigHtml());return;}
         const clientId=this.driveOAuth.configuration?.().clientId||'';
@@ -403,14 +413,15 @@ class ControlServer {
         let access_token;
         try{access_token=await this.driveOAuth.resolve();}
         catch{return this.json(res,400,{error:'Drive is not connected. Run /connect drive first.'});}
-        // One-shot to picker page only — not logged, not connector status.
-        return this.json(res,200,{access_token,api_key:cfg.apiKey,app_id:cfg.appId});
+        // One-shot to picker page only — not logged, not connector status, not safeValue-redacted.
+        return this.jsonPickerBootstrap(res,{access_token,api_key:cfg.apiKey,app_id:cfg.appId});
       }
       if(url.pathname==='/oauth/drive/picker/enroll'){
         if(req.method!=='POST'||!this.driveOAuth)throw Error('Drive picker enroll unavailable');
         const body=await readJSON(req);
         const picker=require('./drive-picker');
-        if(!picker.completeSession(body.session_id))return this.json(res,400,{error:'Drive picker session expired. Re-open /drive select.'});
+        // Loopback picker session: require bootstrapped; consume only after Google metadata + enroll succeed.
+        if(!picker.requireBootstrapped(body.session_id))return this.json(res,400,{error:'Drive picker session expired. Re-open /drive select.'});
         const fileId=typeof body.file_id==='string'?body.file_id.trim():'';
         if(!/^[A-Za-z0-9_-]{1,200}$/.test(fileId))return this.json(res,400,{error:'Exact Drive file id required.'});
         const drive=require('./drive-service');
@@ -435,6 +446,7 @@ class ControlServer {
           operator:'operator',
           account_email:account,
         });
+        picker.consumeSession(body.session_id);
         return this.json(res,200,{enrolled:true,item:row,message:'Enrolled Drive file '+row.id+'. Run /drive read '+row.id+' for live qualification.'});
       }
       if(whatsappWebhook){

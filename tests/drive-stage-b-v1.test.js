@@ -225,7 +225,7 @@ test('Drive OAuth requests drive.file only and rejects Gmail/Calendar scopes', a
     }),
   });
   const st = new URL(bad.start(REDIRECT).authorization_url).searchParams.get('state');
-  await assert.rejects(() => bad.complete({ state: st, code: 'x' }), /must not include Gmail|scope/i);
+  await assert.rejects(() => bad.complete({ state: st, code: 'x' }), /drive\.file only|must not include Gmail|scope/i);
 });
 
 test('Drive vault purpose is isolated from gmail', async () => {
