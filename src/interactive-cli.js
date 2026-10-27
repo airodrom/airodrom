@@ -621,19 +621,22 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         else if(command==='calendar'){
           const parts=String(arg||'').trim().split(/\s+/).filter(Boolean);
           const action=(parts[0]||'help').toLowerCase();
+          // Preview/approve/confirm must bind to the same Terminal conversation session
+          // that staged the durable Calendar write (never omit conversation_id).
+          const calendarConversationId=await session();
           if(action==='approve'){
             const id=parts[1];
             if(!id)throw Error('Use /calendar approve <approval-id>');
-            const result=await local.request(home,'/api/assistant/input',{message:`/calendar approve ${id}`,request_id:randomUUID()});
+            const result=await local.request(home,'/api/assistant/input',{message:`/calendar approve ${id}`,request_id:randomUUID(),conversation_id:calendarConversationId});
             await handleReceipt(result,json);
           }else if(action==='confirm'){
             const id=parts[1];
             const destructive=parts.includes('--destructive');
             if(!id)throw Error('Use /calendar confirm <preview-id> [--destructive]');
-            const result=await local.request(home,'/api/assistant/input',{message:`/calendar confirm ${id}${destructive?' --destructive':''}`,request_id:randomUUID()});
+            const result=await local.request(home,'/api/assistant/input',{message:`/calendar confirm ${id}${destructive?' --destructive':''}`,request_id:randomUUID(),conversation_id:calendarConversationId});
             await handleReceipt(result,json);
           }else if(action==='help'||action==='status'){
-            const result=await local.request(home,'/api/assistant/input',{message:'help me control my calendar',request_id:randomUUID()});
+            const result=await local.request(home,'/api/assistant/input',{message:'help me control my calendar',request_id:randomUUID(),conversation_id:calendarConversationId});
             await handleReceipt(result,json);
           }else{
             throw Error('Use /calendar help|status|approve <approval-id>|confirm <preview-id> [--destructive], or ask in natural language.');
@@ -643,23 +646,28 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           if(command==='gmail'){
             const gmailParts=String(arg||'').trim().split(/\s+/).filter(Boolean);
             const gmailAction=(gmailParts[0]||'status').toLowerCase();
+            // Approve/confirm/help must reuse the authenticated Terminal conversation
+            // identity that created the durable Gmail preview. Omitting conversation_id
+            // falsely fails closed as "authenticated Terminal conversation session".
             if(gmailAction==='approve'){
               const id=gmailParts[1];
               if(!id)throw Error('Use /gmail approve <approval-id>');
-              const result=await local.request(home,'/api/assistant/input',{message:`/gmail approve ${id}`,request_id:randomUUID()});
+              const result=await local.request(home,'/api/assistant/input',{message:`/gmail approve ${id}`,request_id:randomUUID(),conversation_id:await session()});
               await handleReceipt(result,json);
               readerLocked=false;showPrompt();continue;
             }
             if(gmailAction==='confirm'){
               const id=gmailParts[1];
               const destructive=gmailParts.includes('--destructive');
-              if(!id)throw Error('Use /gmail confirm <preview-id> [--destructive]');
-              const result=await local.request(home,'/api/assistant/input',{message:`/gmail confirm ${id}${destructive?' --destructive':''}`,request_id:randomUUID()});
+              const ackUncertain=gmailParts.includes('--ack-uncertain');
+              if(!id)throw Error('Use /gmail confirm <preview-id> [--destructive] [--ack-uncertain]');
+              const flags=(destructive?' --destructive':'')+(ackUncertain?' --ack-uncertain':'');
+              const result=await local.request(home,'/api/assistant/input',{message:`/gmail confirm ${id}${flags}`,request_id:randomUUID(),conversation_id:await session()});
               await handleReceipt(result,json);
               readerLocked=false;showPrompt();continue;
             }
             if(gmailAction==='help'&&gmailParts.length<=1){
-              const result=await local.request(home,'/api/assistant/input',{message:'help me control gmail writes',request_id:randomUUID()});
+              const result=await local.request(home,'/api/assistant/input',{message:'help me control gmail writes',request_id:randomUUID(),conversation_id:await session()});
               await handleReceipt(result,json);
               readerLocked=false;showPrompt();continue;
             }

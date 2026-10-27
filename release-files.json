@@ -774,6 +774,7 @@
   "tests/gmail-write-durability-v1.test.js",
   "tests/gmail-write-qualification.test.js",
   "tests/gmail-write-stage-a.test.js",
+  "tests/gmail-confirm-terminal-session-v1.test.js",
   "tests/gmail-send-preview-routing-v1.test.js",
   "tests/harness-agent-truthfulness.test.js",
   "tests/harness-chaos-boundaries.test.js",
