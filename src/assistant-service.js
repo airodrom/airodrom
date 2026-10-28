@@ -113,6 +113,10 @@ async function submit(server,input){
  if(parsed.kind==='drive')return require('./drive-service').run(server,parsed,{
   conversation_id:input.conversation_id||null,
  });
+ if(parsed.kind==='gcp_gcs_tf_state')return require('./gcp-gcs-tf-state-service').run(server,parsed,{
+  conversation_id:input.conversation_id||null,
+ });
+
  if(parsed.kind==='contextual_assistant')return require('./contextual-assistant-service').run(server,parsed,{
   conversation_id:input.conversation_id||null,
  });

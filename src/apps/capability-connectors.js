@@ -82,6 +82,28 @@ function connectorCapabilities() {
     contact_import_bulk: connector('contact_import_bulk', input => { keys(input, ['contacts']); list(input.contacts, 'contacts', { max: 5_000, item: entry => entry }); return input; }),
     contact_delete: connector('contact_delete', input => { keys(input, ['contactIds']); ids(input.contactIds, 'contactIds', 5_000); return input; }),
     ...Object.fromEntries(['cloud_inventory', 'cloud_health', 'cloud_logs', 'cloud_deploy_status', 'cloud_cost', 'cloud_deploy_production', 'cloud_iam_mutate', 'cloud_dns_mutate', 'cloud_secret_mutate', 'cloud_infra_destroy'].map(name => [name, connector(name, input => { keys(input, ['provider'], ['resource', 'target']); oneOf(input.provider, ['aws', 'gcp', 'azure', 'cloudflare', 'vercel', 'fly'], 'provider'); text(input.resource, 'resource', { max: 400, optional: true }); text(input.target, 'target', { max: 400, optional: true }); return input; })])),
+    gcp_gcs_tf_state_backend_create: {
+      validate: input => {
+        keys(input, ['project_id', 'project_number', 'bucket', 'location', 'idempotency_key', 'approval_reference'], [
+          'storage_class', 'public_access_prevention', 'uniform_bucket_level_access', 'versioning', 'encryption', 'founder_email', 'writer_role', 'prefix',
+        ]);
+        pattern(input.project_id, /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, 'project_id');
+        pattern(input.project_number, /^[0-9]{6,20}$/, 'project_number');
+        pattern(input.bucket, /^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$/, 'bucket');
+        text(input.location, 'location', { max: 64, multiline: false });
+        text(input.idempotency_key, 'idempotency_key', { max: 200, multiline: false });
+        text(input.approval_reference, 'approval_reference', { max: 200, multiline: false });
+        if (Object.hasOwn(input, 'command') || Object.hasOwn(input, 'argv') || Object.hasOwn(input, 'shell')) {
+          fail('Arbitrary command/shell execution is refused for gcp_gcs_tf_state_backend_create');
+        }
+        return input;
+      },
+      pureAssess: true,
+      assess: () => ({ scope: 'cloud', dynamic: { decision: 'approval_required', riskClass: 'PRIVILEGED', reason: 'Exact-scope GCS tf-state CREATE requires host enrollment + preview confirm' } }),
+      // MCP remains inactive (active:false). Host rail is gcp-gcs-tf-state-service.
+      perform: () => fail('gcp_gcs_tf_state_backend_create MCP adapter is inactive; use host /gcp tf-state preview then /gcp confirm'),
+    },
+
     financial_transaction: connector('financial_transaction', input => { keys(input, ['description']); text(input.description, 'description', { max: 500 }); return input; }),
     ...Object.fromEntries(['screen_inspect', 'ui_find', 'ui_click', 'ui_type', 'ui_select'].map(name => [name, { validate: input => { keys(input, [], ['app', 'target', 'text']); return input; }, perform: () => fail('UI control is a foundation boundary only; no adapter is active') }])),
     ...Object.fromEntries(['disk_repair', 'disk_erase', 'disk_partition', 'disk_format', 'credential_update', 'github_repo_settings_update', 'browser_download_safe', 'sudo', 'system_settings_change', 'firewall_change', 'secret_read_value', 'db_migrate_dev', 'db_restore_overwrite', 'db_production_mutation'].map(name => [name, { validate: input => { keys(input, [], ['target', 'device', 'name', 'url', 'path', 'sql']); return input; }, perform: () => fail(`${name} has no active adapter`) }]))

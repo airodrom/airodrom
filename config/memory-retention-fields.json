@@ -938,6 +938,67 @@
       "revoked_at": "A"
     }
   },
+  "gcp_enrolled_projects": {
+    "fields": [
+      "project_id",
+      "project_number",
+      "operator",
+      "account_email",
+      "note",
+      "enrolled_at",
+      "revoked_at"
+    ],
+    "source": "src/gcp-project-enrollment.js",
+    "classification": {
+      "project_id": "A",
+      "project_number": "A",
+      "operator": "A",
+      "account_email": "B",
+      "note": "B",
+      "enrolled_at": "A",
+      "revoked_at": "A"
+    }
+  },
+  "gcp_gcs_tf_state_ops": {
+    "fields": [
+      "preview_id",
+      "operation_id",
+      "conversation_id",
+      "operator",
+      "account_email",
+      "approval_id",
+      "approval_status",
+      "status",
+      "idempotency_key",
+      "scope_sha256",
+      "proposal_json",
+      "receipt_json",
+      "claim_token",
+      "created_at",
+      "updated_at",
+      "expires_at"
+    ],
+    "source": "src/gcp-gcs-tf-state-ops.js",
+    "classification": {
+      "preview_id": "A",
+      "operation_id": "A",
+      "conversation_id": "A",
+      "operator": "A",
+      "account_email": "B",
+      "approval_id": "A",
+      "approval_status": "A",
+      "status": "A",
+      "idempotency_key": "A",
+      "scope_sha256": "A",
+      "proposal_json": "C",
+      "receipt_json": "C",
+      "claim_token": "D",
+      "created_at": "A",
+      "updated_at": "A",
+      "expires_at": "A"
+    }
+  },
+
   "drive_read_qualification": {
     "fields": [
       "id",

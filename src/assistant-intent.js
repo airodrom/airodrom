@@ -138,6 +138,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  if(calendarIntent)return route('CALENDAR',calendarIntent);
  const driveIntent=require('./drive-intent').parse(request);
  if(driveIntent)return route('DRIVE',driveIntent);
+ const gcpIntent=require('./gcp-intent').parse(request);
+ if(gcpIntent)return route('GCP_GCS_TF_STATE',gcpIntent);
+
  // Host-fact rail: date/time, ports, Airodrom services, health — never model clock/status guesses.
  const hostFact=require('./host-fact-intent').parse(request);
  if(hostFact)return route('HOST_FACT',hostFact);

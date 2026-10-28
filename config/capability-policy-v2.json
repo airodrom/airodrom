@@ -243,6 +243,8 @@
     "cloud_dns_mutate": { "group": "cloud", "riskClass": "PRIVILEGED", "decision": "approval_required", "taskScopes": ["developer_environment"], "connector": "cloud", "v1Category": "production_deploy", "active": false, "reason": "DNS mutation requires approval" },
     "cloud_secret_mutate": { "group": "cloud", "riskClass": "SECURITY", "decision": "approval_required", "taskScopes": ["developer_environment"], "connector": "cloud", "v1Category": "credential_mutation", "active": false, "reason": "Secret mutation requires approval" },
     "cloud_infra_destroy": { "group": "cloud", "riskClass": "DESTRUCTIVE", "decision": "approval_required", "taskScopes": ["developer_environment"], "connector": "cloud", "v1Category": "destructive_operation", "active": false, "reason": "Destructive infrastructure apply/destroy requires approval" },
+    "gcp_gcs_tf_state_backend_create": { "group": "cloud", "riskClass": "PRIVILEGED", "decision": "approval_required", "taskScopes": ["developer_environment"], "connector": "cloud", "v1Category": "production_deploy", "active": false, "reason": "MCP inactive; host exact-scope GCS tf-state backend CREATE after project enrollment + preview confirm. Enrollment alone is not write authority." },
+
     "financial_transaction": { "group": "finance", "riskClass": "FINANCIAL", "decision": "approval_required", "taskScopes": ["personal"], "v1Category": "financial_transaction", "active": false, "reason": "Financial transactions require approval" },
 
     "screen_inspect": { "group": "ui", "riskClass": "READ_ONLY", "decision": "auto_allow", "taskScopes": ["mac_local"], "humanGate": "macos_screen_recording", "active": false, "reason": "Screen inspection foundation; requires Screen Recording permission" },
