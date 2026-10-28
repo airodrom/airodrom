@@ -59,9 +59,18 @@ function isSendPreviewRequest(text) {
   const to = recipientFromText(text);
   const defaults = testDefaults(text);
   const subjectFrom = /(?:subject\s+)["“]?([^"”\n:]+)["”]?/i.exec(text);
-  const bodyFrom = /:\s*(.+)$/s.exec(text);
+  // Body after the subject separator colon (not blocked when subject is present).
+  const bodyFrom = /(?:subject\s+["“]?[^"”\n:]+["”]?\s*:\s*)([\s\S]+)$/i.exec(text)
+    || (!subjectFrom ? /:\s*(.+)$/s.exec(text) : null);
   const subject = (subjectFrom && subjectFrom[1].trim()) || defaults.subject;
-  const body = (bodyFrom && !subjectFrom && bodyFrom[1].trim()) || defaults.body;
+  let body = (bodyFrom && bodyFrom[1].trim()) || defaults.body;
+
+  const attachDrive = /\battach(?:\s+(?:enrolled\s+)?)?(?:google\s+)?drive(?:\s+file)?\s+([A-Za-z0-9_-]{1,200})\b/i.exec(text)
+    || /\bwith\s+(?:enrolled\s+)?drive(?:\s+file)?\s+([A-Za-z0-9_-]{1,200})\s+attached\b/i.exec(text);
+  const drive_file_id = attachDrive ? attachDrive[1] : null;
+  if (body && attachDrive) {
+    body = body.replace(attachDrive[0], '').replace(/\s{2,}/g, ' ').replace(/[.\s]+$/g, '').trim() || body;
+  }
 
   // Full enough to stage a durable preview (recipient + subject + body).
   if (to && subject && body) {
@@ -71,6 +80,7 @@ function isSendPreviewRequest(text) {
       to,
       subject,
       body,
+      drive_file_id,
       wants_preview: true,
       route: 'GMAIL_WRITE',
       host_verified: true,
@@ -133,12 +143,48 @@ function parse(request) {
   // Explicit send new mail — governed preview + /gmail confirm only.
   const sendExact = /^(?:send|compose and send)\s+(?:an?\s+)?(?:email|mail|message)\s+to\s+(\S+@\S+)\s+(?:with\s+)?(?:subject\s+)?["“]?(.+?)["”]?\s*:\s*(.+)$/i.exec(text);
   if (sendExact) {
+    const bodyRaw = sendExact[3].trim();
+    const attachDrive = /\battach(?:\s+(?:enrolled\s+)?)?(?:google\s+)?drive(?:\s+file)?\s+([A-Za-z0-9_-]{1,200})\b/i.exec(bodyRaw)
+      || /\battach(?:\s+(?:enrolled\s+)?)?(?:google\s+)?drive(?:\s+file)?\s+([A-Za-z0-9_-]{1,200})\b/i.exec(text);
+    let body = bodyRaw;
+    if (attachDrive) {
+      body = bodyRaw.replace(attachDrive[0], '').replace(/\s{2,}/g, ' ').trim();
+    }
     return {
       kind: 'gmail_write',
       action: 'send',
       to: sendExact[1],
       subject: sendExact[2].trim(),
-      body: sendExact[3].trim(),
+      body,
+      drive_file_id: attachDrive ? attachDrive[1] : null,
+      route: 'GMAIL_WRITE',
+      host_verified: true,
+    };
+  }
+
+  // Slash staging with optional Drive attachment (still preview-only; confirm required).
+  const sendSlashAttach = /^\/gmail\s+send\s+to\s+(\S+)\s+subject\s+["“](.+?)["”]\s*:\s*(.+?)\s+--attach-drive\s+([A-Za-z0-9_-]{1,200})\s*$/i.exec(text);
+  if (sendSlashAttach) {
+    return {
+      kind: 'gmail_write',
+      action: 'send',
+      to: sendSlashAttach[1],
+      subject: sendSlashAttach[2].trim(),
+      body: sendSlashAttach[3].trim(),
+      drive_file_id: sendSlashAttach[4],
+      route: 'GMAIL_WRITE',
+      host_verified: true,
+    };
+  }
+  const sendSlash = /^\/gmail\s+send\s+to\s+(\S+)\s+subject\s+["“](.+?)["”]\s*:\s*(.+)\s*$/i.exec(text);
+  if (sendSlash) {
+    return {
+      kind: 'gmail_write',
+      action: 'send',
+      to: sendSlash[1],
+      subject: sendSlash[2].trim(),
+      body: sendSlash[3].trim(),
+      drive_file_id: null,
       route: 'GMAIL_WRITE',
       host_verified: true,
     };
@@ -263,14 +309,24 @@ function parse(request) {
     };
   }
 
-  // Avoid claiming write commands that are not implemented as slash verbs beyond approve/confirm.
-  if (/^\/gmail\s+(?:send|compose|reply|forward|archive|trash|label)\b/i.test(text)) {
+  // Unrecognized /gmail write verbs (send with attach is handled above).
+  if (/^\/gmail\s+(?:compose|reply|forward|archive|trash|label)\b/i.test(text)) {
     return {
       kind: 'gmail_write',
       action: 'help',
       route: 'GMAIL_WRITE',
       host_verified: true,
-      message: 'Gmail writes use natural language plus /gmail confirm <preview-id> (and /gmail approve for destructive/sensitive actions). Example: Send email to a@b.test subject “Hi”: Hello. Do not claim unimplemented slash verbs.',
+      message: 'Gmail writes use natural language or `/gmail send to … subject “…”: … [--attach-drive <id>]`, then /gmail confirm <preview-id> (and /gmail approve for destructive/sensitive actions). Chat “yes” never sends.',
+    };
+  }
+  if (/^\/gmail\s+send\b/i.test(text)) {
+    return {
+      kind: 'gmail_write',
+      action: 'send',
+      clarify: true,
+      message: 'Use: /gmail send to <email|myself> subject “Subject”: Body text [--attach-drive <enrolled-file-id>]. Only /gmail confirm <preview-id> sends.',
+      route: 'GMAIL_WRITE',
+      host_verified: true,
     };
   }
 

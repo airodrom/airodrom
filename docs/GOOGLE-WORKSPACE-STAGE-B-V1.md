@@ -70,7 +70,9 @@ Revoke one resource: `/drive unenroll <id>`. Disconnect/revoke OAuth clears the 
 | Search enrolled files | `/drive search <query>` / NL | none |
 | Metadata / text read | `/drive meta\|read <id>` | none — exact file enrollment |
 
-**Not in Stage B:** upload, edit, move, trash, delete, sharing, permission mutation.
+**Not in Stage B (historical):** edit, move, trash, delete, sharing, permission mutation.
+
+**Stage B+ (Drive→Gmail attach E2E):** app-created UTF-8 `.txt` via `/drive create text …` under the same `drive.file` scope (no scope broadening). See `docs/GOOGLE-WORKSPACE-DRIVE-GMAIL-ATTACH-E2E-V1.md`.
 
 Supported content export: `text/*`, markdown, CSV, JSON, Google Docs → `text/plain`. Other mime types return unsupported-format. Size capped (`MAX_CONTENT`).
 

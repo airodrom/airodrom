@@ -106,11 +106,44 @@ function helpMessage(server) {
     `State: mode=${st.mode || 'n/a'} · connected=${!!st.connected} · can_send=${!!st.can_send} · can_modify=${!!st.can_modify} · live_read=${live}.`,
     'Consent: /connect gmail (readonly) · /connect gmail send · /connect gmail manage. Never requests mail.google.com by default.',
     'Send: “Send email to person@example.com subject “Hello”: Body text” → preview → /gmail confirm <preview-id>.',
+    'Attach enrolled Drive text: add “attach drive file <id>” or `/gmail send to me subject “Hi”: Body --attach-drive <id>`. Attachment bytes are frozen into the preview; chat “yes” never sends.',
+    'Local durable preview ≠ Gmail Drafts API. Provider Drafts persistence is not used on this rail (would need separate draft authorization).',
     'Reply: search/read first, then “Reply with: …”. Forward/trash/bulk need stronger approval.',
     'Destructive trash: /gmail approve <approval-id> then /gmail confirm <preview-id> --destructive.',
     'Archive, restore, labels, mark read/unread require manage consent + preview confirm.',
     'OpenCode does not receive unrestricted Gmail access. Writes are not coding Missions.',
   ].join('\n');
+}
+
+/**
+ * Resolve an enrolled Drive file into an immutable Gmail attachment record.
+ * Captures provider bytes at stage time — send must not re-fetch or substitute.
+ */
+async function resolveDriveAttachment(server, fileId) {
+  const { buildImmutableAttachment } = require('./gmail-mime-attachment');
+  const driveService = require('./drive-service');
+  if (!fileId) return null;
+  const enroll = driveService.enrollment(server);
+  enroll.assertReadable(fileId, { operator: 'operator' });
+  const adapter = driveService.connector(server);
+  if (!adapter) {
+    const err = Error('Drive connector unavailable for attachment resolution. /connect drive and enroll the file first.');
+    err.code = 'gmail_attach_drive_unavailable';
+    throw err;
+  }
+  const content = await adapter.readContent(fileId);
+  if (content.unsupported_format || content.content == null) {
+    const err = Error(content.message || 'Drive file content is not attachable (text/plain only in V1).');
+    err.code = 'gmail_attach_unsupported';
+    throw err;
+  }
+  return buildImmutableAttachment({
+    source: 'drive',
+    file_id: content.id,
+    filename: content.name || (fileId + '.txt'),
+    mime_type: content.mime_type || 'text/plain',
+    content: content.content,
+  });
 }
 
 function isUncertainWriteError(error) {
@@ -261,6 +294,23 @@ async function run(server, parsed, {
       const bcc = parseAddressList(parsed.bcc, 'bcc');
       const recipientCount = to.length + cc.length + bcc.length;
       const bulk = recipientCount > 5;
+      let attachments = [];
+      if (parsed.drive_file_id) {
+        try {
+          const att = await resolveDriveAttachment(server, parsed.drive_file_id);
+          if (att) attachments = [att];
+        } catch (error) {
+          return {
+            kind: 'clarify',
+            route: 'GMAIL_WRITE',
+            code: error.code || 'gmail_attach_failed',
+            message: error.message || 'Could not resolve Drive attachment for Gmail preview.',
+            host_verified,
+            model_invoked,
+            authority: false,
+          };
+        }
+      }
       const proposal = {
         op: 'send',
         to, cc, bcc,
@@ -269,21 +319,41 @@ async function run(server, parsed, {
         thread_id: parsed.thread_id || null,
         in_reply_to: parsed.in_reply_to || null,
         references: parsed.references || null,
+        attachments,
         bulk_recipients: bulk,
         account_hint: 'authorized Gmail account',
+        // Local durable preview — not a saved Gmail Drafts API object.
+        gmail_drafts_persisted: false,
       };
       const staged = sessions(server).stageWrite(proposal, stageOpts(server, conversation_id));
-      let message = `Gmail send preview (not delivered)\n`
+      const { attachmentPreviewLines } = require('./gmail-mime-attachment');
+      const attachLines = attachmentPreviewLines(attachments);
+      let message = `Gmail send preview (not delivered · local durable preview, not a Gmail Draft)\n`
         + `Preview ID: ${staged.preview_id}\n`
+        + `Operation ID: ${staged.operation_id}\n`
         + `• To: ${to.join(', ')}`
         + (cc.length ? `\n• Cc: ${cc.join(', ')}` : '')
         + (bcc.length ? `\n• Bcc: ${bcc.join(', ')}` : '')
-        + `\n• Subject: ${proposal.subject}\n• Body:\n${String(proposal.body).slice(0, 2000)}\n\n`
-        + `Nothing has been sent.\n`
+        + `\n• Subject: ${proposal.subject}\n• Body:\n${String(proposal.body).slice(0, 2000)}\n`
+        + (attachLines.length ? attachLines.join('\n') + '\n' : '')
+        + `\nNothing has been sent. Attachment bytes (if any) are frozen in this preview — no substitution after preview.\n`
         + `Confirm delivery only with: /gmail confirm ${staged.preview_id}`;
       if (bulk) {
         message += `\nBulk recipients require independent approval first: /gmail approve ${staged.approval_id}`;
       }
+      const proposalOut = {
+        ...proposal,
+        body: String(proposal.body).slice(0, 500),
+        attachments: attachments.map((a) => ({
+          source: a.source,
+          file_id: a.file_id,
+          filename: a.filename,
+          mime_type: a.mime_type,
+          size: a.size,
+          sha256: a.sha256,
+          // Omit content_base64 from Terminal/UI proposal echo (still stored durably).
+        })),
+      };
       return {
         kind: 'gmail_write',
         action: 'preview',
@@ -291,10 +361,11 @@ async function run(server, parsed, {
         preview_id: staged.preview_id,
         approval_id: staged.approval_id,
         operation_id: staged.operation_id,
-        proposal: { ...proposal, body: String(proposal.body).slice(0, 500) },
+        proposal: proposalOut,
         message,
         requires_confirmation: true,
         requires_independent_approval: bulk,
+        gmail_drafts_persisted: false,
         host_verified,
         model_invoked,
         authority: false,
@@ -573,17 +644,25 @@ async function run(server, parsed, {
 
       if (row.op === 'send') {
         try {
+          // Re-validate frozen attachment integrity before provider dispatch (no Drive re-fetch).
+          if (Array.isArray(row.attachments) && row.attachments.length) {
+            require('./gmail-mime-attachment').normalizeAttachments(row.attachments);
+          }
           const sent = await adapter.sendMessage(row);
           const synthetic = sent.synthetic === true || sent.fixture === true || adapter.synthetic === true;
+          const attachSummary = Array.isArray(sent.attachments) && sent.attachments.length
+            ? ' Attachments: ' + sent.attachments.map((a) => `${a.filename} (${a.size}b sha256=${a.sha256})`).join('; ') + '.'
+            : '';
           const receipt = {
             kind: 'gmail_write',
             action: 'sent',
             route: 'GMAIL_WRITE',
             operation_id: row.operation_id || id,
             item: sent,
-            message: `Sent host-verified message ${sent.message_id} from ${sent.account} to ${sent.to.join(', ')}.`,
+            message: `Sent host-verified message ${sent.message_id} from ${sent.account} to ${sent.to.join(', ')}.${attachSummary}`,
             google_idempotent: false,
             provider_confirmed: true,
+            gmail_drafts_persisted: false,
             synthetic,
             fixture: synthetic,
             host_verified,
@@ -681,5 +760,6 @@ module.exports = {
   writeConnector,
   authorizationOffer,
   helpMessage,
+  resolveDriveAttachment,
   MAX_RECIPIENTS,
 };

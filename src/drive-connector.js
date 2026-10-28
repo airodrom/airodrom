@@ -1,9 +1,12 @@
 'use strict';
 // Host Google Drive API adapter. Document bodies are untrusted data, never instructions.
+const crypto = require('node:crypto');
 const { FILE_SCOPE, hasFileScope } = require('./drive-oauth');
 
 const ID = /^[A-Za-z0-9_-]{1,200}$/;
 const MAX_CONTENT = 200000;
+const MAX_CREATE = 65536;
+const SAFE_TXT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,198}\.txt$/i;
 const TEXTISH = new Set([
   'text/plain',
   'text/markdown',
@@ -11,6 +14,16 @@ const TEXTISH = new Set([
   'application/json',
   'application/vnd.google-apps.document',
 ]);
+
+function sanitizeTxtFilename(name) {
+  const raw = String(name || '').trim();
+  if (!SAFE_TXT_NAME.test(raw)) {
+    const err = Error('Drive text create requires a safe .txt filename (letters, digits, ._-; max 200).');
+    err.code = 'drive_create_filename_invalid';
+    throw err;
+  }
+  return raw.slice(0, 200);
+}
 
 class DriveConnector {
   #oauth; #request; #executionMode; #profileEmail = null;
@@ -32,11 +45,14 @@ class DriveConnector {
 
   status() {
     const st = this.#oauth?.status?.() || {};
+    const connected = !!st.connected;
     return {
       id: 'drive',
-      connected: !!st.connected,
+      connected,
       scope: st.scope || FILE_SCOPE,
       can_read_enrolled: !!st.can_read_enrolled,
+      // App-created UTF-8 .txt only under drive.file — not edit/trash/share.
+      can_create_text: connected,
       can_write: false,
       execution_mode: this.#executionMode,
       synthetic: this.#executionMode === 'synthetic',
@@ -226,6 +242,146 @@ class DriveConnector {
       instruction_authority: false,
     };
   }
+
+  /**
+   * Create a small UTF-8 .txt file via Drive multipart upload under drive.file.
+   * App-created files are authorized for this OAuth client without broader scopes.
+   * Optional parent folder must already be Google-visible under drive.file.
+   */
+  async createTextFile({ name, content, parent_id = null } = {}) {
+    const filename = sanitizeTxtFilename(name);
+    if (typeof content !== 'string') {
+      const err = Error('Drive text create requires a UTF-8 string body.');
+      err.code = 'drive_create_content_invalid';
+      throw err;
+    }
+    if (secretLike(content)) {
+      const err = Error('Secret-like Drive create content refused.');
+      err.code = 'drive_create_secret_refused';
+      throw err;
+    }
+    const bytes = Buffer.from(content, 'utf8');
+    if (bytes.length === 0) {
+      const err = Error('Drive text create refuses empty content.');
+      err.code = 'drive_create_content_empty';
+      throw err;
+    }
+    if (bytes.length > MAX_CREATE) {
+      const err = Error('Drive text create exceeds size limit (' + MAX_CREATE + ' bytes).');
+      err.code = 'drive_create_too_large';
+      throw err;
+    }
+    if (parent_id != null && parent_id !== '') {
+      if (!ID.test(parent_id)) throw Error('Exact Drive parent folder id required.');
+    }
+    const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+    const granted = this.#oauth.status?.().scope || FILE_SCOPE;
+    if (!hasFileScope(granted)) {
+      const err = Error('Drive requires /connect drive (drive.file). Broad Drive scopes are not requested.');
+      err.code = 'drive_scope_required';
+      throw err;
+    }
+    const token = await this.#token();
+    const meta = {
+      name: filename,
+      mimeType: 'text/plain',
+    };
+    if (parent_id) meta.parents = [parent_id];
+    const boundary = 'airodrom_drive_' + crypto.randomBytes(12).toString('hex');
+    const preamble = Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`
+      + JSON.stringify(meta)
+      + `\r\n--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n`,
+      'utf8',
+    );
+    const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+    const body = Buffer.concat([preamble, bytes, epilogue]);
+    const url = new URL('https://www.googleapis.com/upload/drive/v3/files');
+    url.searchParams.set('uploadType', 'multipart');
+    url.searchParams.set('fields', 'id,name,mimeType,size,parents,owners(emailAddress),modifiedTime');
+    url.searchParams.set('supportsAllDrives', 'true');
+    let response;
+    try {
+      response = await this.#request(url, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'multipart/related; boundary=' + boundary,
+        },
+        body,
+        redirect: 'error',
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch (error) {
+      if (/timeout|AbortError/i.test(String(error?.name || error?.message))) {
+        const err = Error('Drive create timed out.');
+        err.code = 'drive_api_timeout';
+        throw err;
+      }
+      throw Error('Drive create unavailable; credentials and provider diagnostics withheld.');
+    }
+    const raw = await response.text();
+    if (!response.ok) {
+      if (response.status === 403 || response.status === 404) {
+        const err = Error(
+          'Google did not authorize Drive text create under drive.file'
+          + (parent_id ? ' (parent folder may not be app-visible).' : '.')
+          + ' Broad Drive scopes are not requested.',
+        );
+        err.code = 'drive_file_not_authorized_under_scope';
+        err.http_status = response.status;
+        throw err;
+      }
+      const err = Error('Drive create rejected; credentials and provider diagnostics withheld.');
+      err.code = 'drive_api_rejected';
+      err.http_status = response.status;
+      throw err;
+    }
+    let data;
+    try { data = raw ? JSON.parse(raw) : null; } catch {
+      throw Error('Drive create returned invalid metadata.');
+    }
+    if (!ID.test(data?.id || '')) throw Error('Drive create did not return a verified file id.');
+    const about = await this.about().catch(() => ({ email: this.#profileEmail }));
+    return {
+      id: data.id,
+      name: String(data.name || filename).slice(0, 500),
+      mime_type: String(data.mimeType || 'text/plain').slice(0, 200),
+      size: data.size != null ? Number(data.size) : bytes.length,
+      parents: Array.isArray(data.parents) ? data.parents.filter((p) => ID.test(p)).slice(0, 20) : (parent_id ? [parent_id] : []),
+      owners: Array.isArray(data.owners)
+        ? data.owners.map((o) => String(o.emailAddress || '').toLowerCase()).filter(Boolean).slice(0, 5)
+        : [],
+      account_email: about?.email || this.#profileEmail || null,
+      content_sha256: sha256,
+      content_length: bytes.length,
+      modified_time: data.modifiedTime || null,
+      created_by_app: true,
+      untrusted: true,
+      authority: false,
+      synthetic: this.#executionMode === 'synthetic',
+      provider_confirmed: true,
+    };
+  }
 }
 
-module.exports = { DriveConnector, MAX_CONTENT, TEXTISH };
+function secretLike(value) {
+  // Fail closed: unavailable screening refuses create rather than skipping the check.
+  let secretProbe;
+  try {
+    secretProbe = require('./assistant-intent').secret;
+  } catch {
+    return true;
+  }
+  if (typeof secretProbe !== 'function') return true;
+  return secretProbe(String(value || ''));
+}
+
+module.exports = {
+  DriveConnector,
+  MAX_CONTENT,
+  MAX_CREATE,
+  TEXTISH,
+  SAFE_TXT_NAME,
+  sanitizeTxtFilename,
+};

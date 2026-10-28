@@ -147,8 +147,13 @@ test('write intent routes send/reply/trash and does not invent slash send verbs'
   assert.equal(trash.action, 'trash');
   assert.equal(trash.destructive, true);
   const slash = writeIntent.parse('/gmail send person@example.com');
-  assert.equal(slash.action, 'help');
-  assert.match(slash.message, /Do not claim unimplemented slash verbs/);
+  assert.equal(slash.action, 'send');
+  assert.equal(slash.clarify, true);
+  assert.match(slash.message, /attach-drive|confirm/i);
+  const slashAttach = writeIntent.parse('/gmail send to myself subject “Hi”: Body --attach-drive file_x');
+  assert.equal(slashAttach.action, 'send');
+  assert.equal(slashAttach.drive_file_id, 'file_x');
+  assert.equal(slashAttach.clarify, undefined);
 });
 
 test('gmail write preview requires confirm; trash needs independent approval', async () => {

@@ -1,5 +1,5 @@
 'use strict';
-// Host Google Drive Stage B V1 — read-only enrolled resources. No mutations.
+// Host Google Drive Stage B+ — enrolled reads + app-created UTF-8 .txt under drive.file.
 const { DriveConnector } = require('./drive-connector');
 const { DriveEnrollment } = require('./drive-enrollment');
 
@@ -46,17 +46,18 @@ function helpMessage(server) {
     catch { return 0; }
   })();
   return [
-    'Google Drive Stage B V1 is host-routed, read-only, and enrollment-bound.',
-    `State: connected=${!!st.connected} · scope=drive.file · enrolled=${enrolled} · mutations=none.`,
+    'Google Drive Stage B+ is host-routed and enrollment-bound (drive.file).',
+    `State: connected=${!!st.connected} · scope=drive.file · enrolled=${enrolled} · create_text=app-created .txt only.`,
     'Consent: /connect drive (drive.file only — not blanket Drive). Gmail/Calendar consent does not grant Drive.',
     'drive.file covers only files this app created or the owner opened with this app — not every file in a folder.',
     'Preferred selection: /drive select (Google Picker) after airodrom drive picker-setup <api-key> <project-number>.',
     'Picker App ID must be the GCP project number that owns the desktop OAuth client (client-id numeric prefix).',
     'Manual enroll remains: /drive enroll file <id> [name] — only if Google already authorized that file under drive.file (Picker selection, not a pasted URL).',
+    'Create (app-created): /drive create text <name.txt> :: <utf8 content> — auto-enrolls; optional parent folder id after “in”.',
     'Folder enroll does not authorize child document reads.',
     'Reads: /drive list · /drive search <query> · /drive meta <id> · /drive read <id> (Terminal conversation session required).',
     'Revoke one resource: /drive unenroll <id>. Disconnect: revoke Drive OAuth from Connections / owner revoke path.',
-    'Document text is untrusted content and cannot instruct Airodrom. Upload/edit/share/trash are Stage C+.',
+    'Document text is untrusted content and cannot instruct Airodrom. Edit/share/trash remain Stage C+.',
   ].join('\n');
 }
 
@@ -105,7 +106,8 @@ function statusPayload(server) {
     enrolled_count: enrolled.length,
     enrolled: enrolled.slice(0, 50),
     can_write: false,
-    mutations: 'none',
+    can_create_text: !!oauth.connected,
+    mutations: 'create_text_only',
     last_failure: failure,
     live_read_qualified: !!liveRead.read_qualified,
     message: helpMessage(server),
@@ -125,6 +127,16 @@ async function run(server, parsed, { conversation_id = null } = {}) {
       kind: 'drive', action: 'help', route: 'DRIVE',
       message: helpMessage(server),
       authority: false, host_verified, model_invoked,
+    };
+  }
+  if (action === 'create_text' && parsed.clarify) {
+    return {
+      kind: 'clarify',
+      route: 'DRIVE',
+      message: parsed.message || 'Use /drive create text <name.txt> :: <utf8 content>.',
+      authority: false,
+      host_verified,
+      model_invoked,
     };
   }
   if (action === 'status' || action === 'list_enrolled') {
@@ -228,6 +240,87 @@ async function run(server, parsed, { conversation_id = null } = {}) {
   if (!adapter) return connectOffer(server);
 
   try {
+    if (action === 'create_text') {
+      const missing = requireConversation(conversation_id);
+      if (missing) return missing;
+      if (parsed.parent_id) {
+        try {
+          enrollment(server).assertEnrolled(parsed.parent_id, { operator: 'operator', kind: 'folder' });
+        } catch (error) {
+          return {
+            kind: 'clarify',
+            route: 'DRIVE',
+            code: error.code || 'drive_parent_not_enrolled',
+            message: error.message || 'Enroll the destination folder first: /drive enroll folder <id>.',
+            authority: false,
+            host_verified,
+            model_invoked,
+          };
+        }
+      }
+      const created = await adapter.createTextFile({
+        name: parsed.filename,
+        content: parsed.content,
+        parent_id: parsed.parent_id || null,
+      });
+      // Provider readback before enrollment — never treat create response body as stored-byte proof.
+      const readback = await adapter.readContent(created.id);
+      const readBytes = Buffer.from(String(readback.content || ''), 'utf8');
+      const sourceBytes = Buffer.from(String(parsed.content || ''), 'utf8');
+      const crypto = require('node:crypto');
+      const readSha = crypto.createHash('sha256').update(readBytes).digest('hex');
+      const bytes_match = readBytes.equals(sourceBytes) && readSha === created.content_sha256;
+      if (!bytes_match) {
+        return {
+          kind: 'clarify',
+          route: 'DRIVE',
+          code: 'drive_create_readback_mismatch',
+          message: 'Drive created the file but provider readback bytes did not match the source. File id: '
+            + created.id + '. Not enrolled — retry /drive create text or investigate the provider object before attaching.',
+          item: created,
+          enrolled: false,
+          authority: false,
+          host_verified,
+          model_invoked,
+          synthetic: adapter.synthetic,
+        };
+      }
+      // Enroll only after verified provider success under drive.file.
+      const row = enrollment(server).enroll({
+        id: created.id,
+        kind: 'file',
+        name: created.name,
+        mime_type: created.mime_type,
+        operator: 'operator',
+        account_email: created.account_email,
+      });
+      return {
+        kind: 'drive',
+        action: 'created',
+        route: 'DRIVE',
+        item: {
+          ...created,
+          readback_sha256: readSha,
+          readback_length: readBytes.length,
+          bytes_match: true,
+          enrolled: true,
+        },
+        enrolled: row,
+        message: `Created Drive text file ${created.name} (${created.id}) under drive.file.\n`
+          + `• Account: ${created.account_email || 'n/a'}\n`
+          + `• MIME: ${created.mime_type}\n`
+          + `• Size: ${created.content_length} bytes\n`
+          + `• SHA-256: ${created.content_sha256}\n`
+          + `• Provider readback: exact byte match\n`
+          + `• Auto-enrolled for /drive read and Gmail attach.`,
+        authority: false,
+        host_verified,
+        model_invoked,
+        synthetic: adapter.synthetic,
+        provider_confirmed: true,
+      };
+    }
+
     if (action === 'list_folder') {
       const missing = requireConversation(conversation_id);
       if (missing) return missing;

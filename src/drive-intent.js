@@ -72,6 +72,65 @@ function parse(text) {
       host_verified: true,
     };
   }
+  // Host-verified text create under drive.file (app-created). Slash only for content.
+  // Parent form must precede the bare form so “in <folder-id>” is not treated as body text.
+  const createParent = /^\/drive\s+create(?:\s+text)?\s+(\S+\.txt)\s+in\s+([A-Za-z0-9_-]{1,200})\s*(?:(?:::)\s*([\s\S]+))?$/i.exec(raw);
+  if (createParent) {
+    const content = createParent[3] != null ? String(createParent[3]).trim() : '';
+    if (!content) {
+      return {
+        kind: 'drive',
+        action: 'create_text',
+        clarify: true,
+        filename: createParent[1],
+        parent_id: createParent[2],
+        message: 'Provide UTF-8 text after :: . Example: /drive create text note.txt in <folder-id> :: Hello.',
+        host_verified: true,
+      };
+    }
+    return {
+      kind: 'drive',
+      action: 'create_text',
+      filename: createParent[1],
+      parent_id: createParent[2],
+      content,
+      host_verified: true,
+    };
+  }
+  const createSlash = /^\/drive\s+create(?:\s+text)?\s+(\S+\.txt)\s*(?:(?:::)\s*([\s\S]+))?$/i.exec(raw);
+  if (createSlash) {
+    const content = createSlash[2] != null ? String(createSlash[2]).trim() : '';
+    if (!content) {
+      return {
+        kind: 'drive',
+        action: 'create_text',
+        clarify: true,
+        filename: createSlash[1],
+        message: 'Provide UTF-8 text after the filename. Example: /drive create text airodrom-test.txt :: Airodrom integration test.',
+        host_verified: true,
+      };
+    }
+    return {
+      kind: 'drive',
+      action: 'create_text',
+      filename: createSlash[1],
+      content,
+      parent_id: null,
+      host_verified: true,
+    };
+  }
+  if (
+    /\b(?:create|save|upload)\b.+\b(?:text )?(?:file|document)\b.+\b(?:google )?drive\b/i.test(lower)
+    || /\b(?:create|save)\b.+\bin (?:my )?(?:authorized )?google drive\b/i.test(lower)
+  ) {
+    return {
+      kind: 'drive',
+      action: 'create_text',
+      clarify: true,
+      message: 'Drive text create is host-routed under drive.file only. Use: /drive create text <name.txt> :: <utf8 content>. Optional parent: /drive create text <name.txt> in <enrolled-folder-id> :: <content>. Chat text alone does not create files. Broad Drive scopes are not requested.',
+      host_verified: true,
+    };
+  }
   // Slash /drive … only. Bare “google drive” inside multi-connector personal-ops
   // phrases must not steal the host capability-plan rail.
   if (/^\/drive\b/i.test(raw)) {
