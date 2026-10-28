@@ -2,6 +2,14 @@
 
 **Dated audit (2026-10-26):** see [Architecture Deduplication Audit V1](ARCHITECTURE-DEDUPLICATION-AUDIT-V1.md) for independently observed main/installed versions and ownership boundaries. Entries below are historical snapshots; their headings are not a live version query.
 
+## Drive → Gmail Attach E2E — MERGED + INSTALLED + LIVE (2026-10-28)
+
+- **Main:** `8dcb7de3b1c955d29f9c332d24488a43338d42a4` (PR #257 attach E2E → `12f7d06`, then PR #258 create-body preserve → `8dcb7de`).
+- **Installed tip:** `…/airodrom-install-8dcb7de` (`INSTALLED_SHA` / CLI → `8dcb7de…`). Prior tips retained: `…/airodrom-install-12f7d06`, `…/airodrom-install-5f217d9`.
+- **OAuth:** Drive `drive.file` unchanged; Gmail send/manage unchanged; Gmail Drafts API not used.
+- **Live:** Drive file `1x8gfpgjIJ_RDQPPwaX8FS2eimgUzp-oZ` (98 B, sha256 `1ba0b1aa…`, exact readback + enroll); Gmail message `1a183cfb21d0c264` after `/gmail confirm` only; chat “yes” did not send; duplicate confirm replayed same id. See [GOOGLE-WORKSPACE-DRIVE-GMAIL-ATTACH-E2E-V1](GOOGLE-WORKSPACE-DRIVE-GMAIL-ATTACH-E2E-V1.md).
+- **Receipts:** `~/.airodrom/activation/cutover-8dcb7de-receipt.json`, `DRIVE-GMAIL-ATTACH-LIVE-ACCEPT-8dcb7de.json`.
+
 ## Gmail Live-Send Safety + Stage B Drive — 2026-10-27
 
 - **Main / installed tip:** `11f48649403edd4a15aba8bc5f089fd926444637` (merge of PR #250 Gmail Live-Send Safety Closeout). Prior tip `e345452` retained as rollback under `…/airodrom-install-e345452`.
