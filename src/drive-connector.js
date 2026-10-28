@@ -366,11 +366,15 @@ class DriveConnector {
 }
 
 function secretLike(value) {
+  // Fail closed: unavailable screening refuses create rather than skipping the check.
+  let secretProbe;
   try {
-    return require('./assistant-intent').secret(String(value || ''));
+    secretProbe = require('./assistant-intent').secret;
   } catch {
-    return false;
+    return true;
   }
+  if (typeof secretProbe !== 'function') return true;
+  return secretProbe(String(value || ''));
 }
 
 module.exports = {

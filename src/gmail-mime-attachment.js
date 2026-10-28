@@ -66,14 +66,24 @@ function buildImmutableAttachment({
     err.code = 'gmail_attach_too_large';
     throw err;
   }
+  // Fail closed: secret screening errors refuse the attachment (never skip the check).
+  let secretProbe;
   try {
-    if (require('./assistant-intent').secret(buf.toString('utf8'))) {
-      const err = Error('Secret-like attachment content refused.');
-      err.code = 'gmail_attach_secret_refused';
-      throw err;
-    }
-  } catch (error) {
-    if (error?.code?.startsWith?.('gmail_attach_')) throw error;
+    secretProbe = require('./assistant-intent').secret;
+  } catch {
+    const err = Error('Attachment secret screening unavailable; refuse closed.');
+    err.code = 'gmail_attach_secret_screening_unavailable';
+    throw err;
+  }
+  if (typeof secretProbe !== 'function') {
+    const err = Error('Attachment secret screening unavailable; refuse closed.');
+    err.code = 'gmail_attach_secret_screening_unavailable';
+    throw err;
+  }
+  if (secretProbe(buf.toString('utf8'))) {
+    const err = Error('Secret-like attachment content refused.');
+    err.code = 'gmail_attach_secret_refused';
+    throw err;
   }
   const sha256 = checksum(buf);
   return {

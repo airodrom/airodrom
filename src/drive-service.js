@@ -263,16 +263,7 @@ async function run(server, parsed, { conversation_id = null } = {}) {
         content: parsed.content,
         parent_id: parsed.parent_id || null,
       });
-      // App-created files are authorized under drive.file; enroll immediately for governed reads.
-      const row = enrollment(server).enroll({
-        id: created.id,
-        kind: 'file',
-        name: created.name,
-        mime_type: created.mime_type,
-        operator: 'operator',
-        account_email: created.account_email,
-      });
-      // Provider readback — never treat create response body as proof of stored bytes.
+      // Provider readback before enrollment — never treat create response body as stored-byte proof.
       const readback = await adapter.readContent(created.id);
       const readBytes = Buffer.from(String(readback.content || ''), 'utf8');
       const sourceBytes = Buffer.from(String(parsed.content || ''), 'utf8');
@@ -285,15 +276,24 @@ async function run(server, parsed, { conversation_id = null } = {}) {
           route: 'DRIVE',
           code: 'drive_create_readback_mismatch',
           message: 'Drive created the file but provider readback bytes did not match the source. File id: '
-            + created.id + '. Re-read with /drive read ' + created.id + ' before attaching.',
+            + created.id + '. Not enrolled — retry /drive create text or investigate the provider object before attaching.',
           item: created,
-          enrolled: row,
+          enrolled: false,
           authority: false,
           host_verified,
           model_invoked,
           synthetic: adapter.synthetic,
         };
       }
+      // Enroll only after verified provider success under drive.file.
+      const row = enrollment(server).enroll({
+        id: created.id,
+        kind: 'file',
+        name: created.name,
+        mime_type: created.mime_type,
+        operator: 'operator',
+        account_email: created.account_email,
+      });
       return {
         kind: 'drive',
         action: 'created',

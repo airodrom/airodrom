@@ -170,6 +170,58 @@ test('drive service create auto-enrolls and verifies provider readback bytes', a
   assert.ok(server.driveEnrollment.list({ operator: 'operator' }).some((e) => e.id === 'file_x'));
 });
 
+test('drive create readback mismatch does not enroll', async () => {
+  const source = 'intended-source';
+  const request = async (url, opts = {}) => {
+    const href = String(url);
+    if (opts.method === 'POST' && /upload\/drive\/v3\/files/.test(href)) {
+      return jsonResponse(200, {
+        id: 'file_bad', name: 'airodrom-test.txt', mimeType: 'text/plain',
+        size: String(Buffer.byteLength(source)),
+        owners: [{ emailAddress: 'owner@example.test' }],
+      });
+    }
+    if (/drive\/v3\/about/.test(href)) {
+      return jsonResponse(200, { user: { emailAddress: 'owner@example.test' } });
+    }
+    if (href.includes('file_bad')) {
+      if (/alt=media/.test(href)) return jsonResponse(200, null, { binary: Buffer.from('DIFFERENT', 'utf8') });
+      return jsonResponse(200, {
+        id: 'file_bad', name: 'airodrom-test.txt', mimeType: 'text/plain', size: '9', trashed: false,
+        owners: [{ emailAddress: 'owner@example.test' }], capabilities: {},
+      });
+    }
+    throw Error('unexpected ' + href);
+  };
+  const db = memoryDb();
+  const enroll = new DriveEnrollment({ db });
+  const server = {
+    driveOAuth: driveOauthStub(),
+    driveDb: db,
+    driveConnector: new DriveConnector({ oauth: driveOauthStub(), request, mode: 'synthetic' }),
+    driveEnrollment: enroll,
+  };
+  const result = await driveService.run(server, {
+    kind: 'drive', action: 'create_text', filename: 'airodrom-test.txt', content: source, host_verified: true,
+  }, { conversation_id: uuid() });
+  assert.equal(result.kind, 'clarify');
+  assert.equal(result.code, 'drive_create_readback_mismatch');
+  assert.equal(result.enrolled, false);
+  assert.equal(enroll.list({ operator: 'operator' }).some((e) => e.id === 'file_bad'), false);
+});
+
+test('secret-like attachment content is refused closed', () => {
+  assert.throws(
+    () => buildImmutableAttachment({
+      source: 'drive',
+      file_id: 'file_secret',
+      filename: 'secret.txt',
+      content: 'api_key=sk-abcdefghijklmnopqrstuvwxyz012345',
+    }),
+    (err) => err.code === 'gmail_attach_secret_refused',
+  );
+});
+
 test('MIME encodeRaw preserves attachment bytes and checksum', () => {
   const body = 'Cover letter';
   const content = 'Airodrom integration test.\nGoogle Drive file creation and readback.\nGmail attachment verification.';
