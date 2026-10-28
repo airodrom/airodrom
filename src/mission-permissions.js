@@ -124,7 +124,7 @@ function callRequirements(call, workspace) {
     if (name === 'db_migrate_dev') return { runtime: ['migration'], data: ['local_database'] };
     if (name === 'db_production_mutation') return { data: ['production'] };
     if (name === 'financial_transaction') return { data: ['payment'] };
-    if (['cloud_inventory','cloud_health','cloud_logs','cloud_deploy_status','cloud_cost','cloud_iam_mutate','cloud_dns_mutate'].includes(name)) return { network: ['cloud'] };
+    if (['cloud_inventory','cloud_health','cloud_logs','cloud_deploy_status','cloud_cost','cloud_iam_mutate','cloud_dns_mutate','gcp_gcs_tf_state_backend_create'].includes(name)) return { network: ['cloud'] };
     if (name === 'cloud_secret_mutate') return { network: ['cloud'], secrets: ['use'] };
     if (name === 'cloud_deploy_production') return { network: ['cloud'], data: ['production'], secrets: ['production'] };
     if (['capability_list','capability_status','command_classify','agent_list','agent_route_suggest'].includes(name)) return { repository: ['read'] };

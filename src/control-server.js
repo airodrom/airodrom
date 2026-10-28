@@ -63,6 +63,11 @@ class ControlServer {
       this.#wireDriveOAuth(config);
     }
     this.#wirePersonalOps();
+    // Narrow ADC helper for governed GCP host rail (auth list + print-access-token only).
+    // Never logs tokens. MCP cloud mutation remains inactive.
+    if (!this.gcpTokenProvider) {
+      this.gcpTokenProvider = require('./gcp-adc-token-provider').createGcpAdcTokenProvider();
+    }
     this.conversationEngine=bridge.conversationEngine ||= new(require('./conversation-engine').ConversationEngine)(bridge,conversationOptions);
     this.conversationEngine.developmentFacts=()=>{
       try{
