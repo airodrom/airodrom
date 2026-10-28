@@ -30,7 +30,7 @@ Chat text such as “yes, send it” does **not** confirm.
 
 ## Security invariants
 
-- Drive create: safe `.txt` names only; size cap; secret-like content refused (fail closed); optional parent must be enrolled folder.
+- Drive create: safe `.txt` names only; size cap; secret-like content refused (fail closed); optional parent must be enrolled folder. Create bodies after `::` preserve UTF-8 newlines and trailing punctuation (parsed before chat whitespace / trailing-`[!?.]` strip).
 - Provider readback must exactly match source bytes **before** auto-enrollment. Readback mismatch leaves the file unenrolled.
 - Gmail attach: enrolled Drive files only; no local filesystem paths; MIME `text/plain` only; size/checksum; secret-like attachment content refused (fail closed); bytes frozen in proposal at stage time; confirm re-validates checksum and refuses substitution.
 - Durable Gmail ops: atomic claim, at-most-once dispatch, uncertain without blind retry, conversation/account binding, synthetic ≠ live qualification.
