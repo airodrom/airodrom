@@ -429,6 +429,7 @@
     "src/fixture-acceptance.js",
     "src/fs-scopes.js",
     "src/gcp-adc-token-provider.js",
+    "src/gcp-bucket-iam.js",
     "src/gcp-exact-scope.js",
     "src/gcp-gcs-tf-state-ops.js",
     "src/gcp-gcs-tf-state-service.js",
@@ -663,6 +664,7 @@
     "tests/reliability-browser.cjs",
     "tests/reliability-opencode-live.cjs",
     "tests/writer-death-recovery.test.js",
-    "tests/zero-manual-autopilot.test.js"
+    "tests/zero-manual-autopilot.test.js",
+    "tests/gcp-partial-create-recovery-v1.test.js"
   ]
 }

@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Governed GCP CREATE no longer misclassifies provider project-default legacy bucket IAM as unauthorized; partial-create recovery previews can complete the founder writer grant or verify an already-compliant bucket without replaying insert.
 - Terminal registers `/gcp` (help/status/list/enroll/unenroll/tf-state preview/confirm) on the interactive CLI allowlist and forwards session-bound `/api/assistant/input`, so governed GCP preview/confirm no longer fail as Unknown command before the host rail.
 - Gmail read-by-id verify now resolves `attachmentId` parts via provider GET (inline `body.data` alone missed real Sent attachments) so text/plain attachment sha256 can be compared to Drive source bytes.
 

@@ -27,7 +27,22 @@ Host-routed, exact-scope Google Cloud Storage Terraform state-backend CREATE for
 | Prefix (documented) | `terraform/prod` |
 | Arecibo reuse | forbidden |
 
-Any parameter drift fails closed (`gcp_exact_scope_mismatch`). Existing buckets that mismatch posture fail closed. Matching existing buckets are refused (no silent reuse or repair).
+Any parameter drift fails closed (`gcp_exact_scope_mismatch`). Existing buckets that mismatch posture fail closed. Matching existing buckets are not silently recreated; preview classifies them for verification or IAM-only completion.
+
+## Provider-default IAM (expected)
+
+A newly created UBLA bucket commonly materializes **direct** project convenience bindings:
+
+| Role | Members |
+| --- | --- |
+| `roles/storage.legacyBucketOwner` | `projectOwner:<project_id>`, `projectEditor:<project_id>` |
+| `roles/storage.legacyBucketReader` | `projectViewer:<project_id>` |
+| `roles/storage.legacyObjectOwner` | `projectOwner:<project_id>`, `projectEditor:<project_id>` |
+| `roles/storage.legacyObjectReader` | `projectViewer:<project_id>` |
+
+These are **expected defaults**, not unauthorized user grants. Inherited project IAM that is not present as a bucket binding is not treated as a bucket binding. Additional direct `user:` / `group:` / non-default roles remain **unauthorized** and hold recovery.
+
+Airodrom preserves expected defaults and adds the exact founder `roles/storage.objectAdmin` binding. It does not strip project-default legacy bindings as part of V1 CREATE.
 
 ## Owner procedure
 
@@ -39,11 +54,17 @@ Any parameter drift fails closed (`gcp_exact_scope_mismatch`). Existing buckets 
    /gcp enroll project somin-ca-prod 172228664875
    ```
 
-4. Stage CREATE:
+4. Stage CREATE (or recovery preview):
 
    ```text
    /gcp tf-state preview somin
    ```
+
+   Preview probes the live bucket (read-only) and selects one mode:
+
+   - `create` — bucket absent
+   - `complete_iam` — bucket exists with approved posture + expected defaults only; founder writer missing (partial CREATE)
+   - `verify_existing` — bucket exists with approved posture and founder writer already present (no cloud mutation on confirm)
 
 5. Review the exact resource and security settings in the preview.
 6. Confirm once:
@@ -52,7 +73,8 @@ Any parameter drift fails closed (`gcp_exact_scope_mismatch`). Existing buckets 
    /gcp confirm <preview-id>
    ```
 
-7. On uncertain/partial outcomes: inspect provider metadata/IAM; **no** automatic retry or delete.
+7. On uncertain/partial outcomes: inspect provider metadata/IAM; stage a **fresh** preview if needed; **no** automatic retry, delete, or IAM rewrite without confirm. Uncertain confirms require `--ack-uncertain` after inspection.
+8. Denied previews (including historical misclassification of expected defaults) are **not** reusable. Use a new preview.
 
 Revoke enrollment:
 
@@ -60,13 +82,25 @@ Revoke enrollment:
 /gcp unenroll project somin-ca-prod
 ```
 
+## Partial-create recovery
+
+If CREATE inserted the bucket but stopped before the founder IAM grant (for example after refusing expected default bindings), the durable op may be `denied` or `uncertain` while `gs://somin-ca-prod-tf-state` already exists empty.
+
+1. Read-only verify posture + IAM (direct bindings vs inherited).
+2. If posture matches and bindings are expected defaults only: `/gcp tf-state preview somin` → `complete_iam` → owner `/gcp confirm <new-id>`.
+3. If founder writer is already present: preview → `verify_existing` → confirm records recovered success **without** mutation.
+4. If unauthorized direct bindings exist: **HOLD** — do not alter IAM without separate approval.
+5. Never delete the bucket or re-run insert as a recovery shortcut.
+
 ## Security properties
 
 - No unrestricted `gcloud` / shell / argv execution.
 - Structured Storage JSON API only (`storage.googleapis.com`).
 - Independent checks of project enrollment, identity, exact scope, approval expiry, exclusive lease, idempotency, and post-create posture/IAM.
+- Expected provider-default IAM classified separately from unauthorized bindings.
 - Secrets redacted from transport error surfaces.
 - Durable ops table provides anti-replay after completion.
+- Post-insert IAM/transport failures mark **uncertain** (partial), not a silent success.
 
 ## Rollback
 

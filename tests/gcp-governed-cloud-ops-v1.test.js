@@ -347,21 +347,26 @@ test('existing conflicting bucket fails closed', async () => {
     transport: mockTransport({ getStatus: 200, getBody: bad }),
   });
   const preview = await service.run(server, { kind: 'gcp_gcs_tf_state', action: 'preview', spec: SPEC }, { conversation_id });
-  const out = await service.run(server, {
-    kind: 'gcp_gcs_tf_state', action: 'confirm', preview_id: preview.preview_id,
-  }, { conversation_id });
-  assert.equal(out.code, 'gcp_bucket_posture_mismatch');
+  assert.equal(preview.action, 'denied');
+  assert.equal(preview.code, 'gcp_bucket_posture_mismatch');
+  assert.equal(preview.existing, true);
 });
 
-test('existing matching bucket refused (no silent reuse)', async () => {
+test('existing matching bucket with empty IAM stages complete_iam (no CREATE retry)', async () => {
+  const log = [];
   const { server, conversation_id } = serverFixture({
-    transport: mockTransport({ getStatus: 200, getBody: matchingBucket() }),
+    transport: mockTransport({ getStatus: 200, getBody: matchingBucket(), log }),
   });
   const preview = await service.run(server, { kind: 'gcp_gcs_tf_state', action: 'preview', spec: SPEC }, { conversation_id });
+  assert.equal(preview.recovery_mode, 'complete_iam');
   const out = await service.run(server, {
     kind: 'gcp_gcs_tf_state', action: 'confirm', preview_id: preview.preview_id,
   }, { conversation_id });
-  assert.equal(out.code, 'gcp_bucket_already_exists');
+  assert.equal(out.action, 'completed');
+  assert.equal(out.receipt.recovery, 'partial_create_iam_completed');
+  assert.equal(out.receipt.mutated, true);
+  assert.equal(log.filter((e) => e[0] === 'insertBucket').length, 0);
+  assert.equal(log.filter((e) => e[0] === 'setBucketIam').length, 1);
 });
 
 test('GCP permission denial surfaced', async () => {
@@ -456,6 +461,7 @@ test('release + retention inventory includes GCP V1 sources', () => {
   const release = new Set(JSON.parse(fs.readFileSync(path.join(root, 'release-files.json'), 'utf8')));
   const retention = JSON.parse(fs.readFileSync(path.join(root, 'config/memory-retention-fields.json'), 'utf8'));
   for (const file of [
+    'src/gcp-bucket-iam.js',
     'src/gcp-exact-scope.js',
     'src/gcp-project-enrollment.js',
     'src/gcp-gcs-tf-state-ops.js',
@@ -464,6 +470,7 @@ test('release + retention inventory includes GCP V1 sources', () => {
     'src/gcp-intent.js',
     'docs/operations/gcp-governed-cloud-ops-v1.md',
     'tests/gcp-governed-cloud-ops-v1.test.js',
+    'tests/gcp-partial-create-recovery-v1.test.js',
   ]) {
     assert.ok(release.has(file), file);
   }
