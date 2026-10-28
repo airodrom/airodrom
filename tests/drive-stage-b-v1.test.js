@@ -433,13 +433,14 @@ test('status states cover enrollment versus live read qualification', async () =
   assert.equal(syn.recorded, false);
 });
 
-test('live connector auto-wire refused in tests; mutations absent', async () => {
+test('live connector auto-wire refused in tests; broad write still closed', async () => {
   const { oauth } = await connectedOAuth();
   const server = { driveOAuth: oauth };
   assert.equal(driveService.connector(server), null);
   const status = driveService.statusPayload({ driveOAuth: oauth });
   assert.equal(status.can_write, false);
-  assert.equal(status.mutations, 'none');
+  assert.equal(status.can_create_text, true);
+  assert.equal(status.mutations, 'create_text_only');
 });
 
 test('personal-ops Drive card distinguishes enrollment', async () => {
@@ -489,8 +490,9 @@ test('assistant intent routes Drive before personal-ops catch-all', () => {
   assert.equal(parsed.action, 'list_folder');
 });
 
-test('no mutation methods on DriveConnector', () => {
+test('DriveConnector exposes createTextFile only — no broad edit/trash/share', () => {
   const proto = DriveConnector.prototype;
+  assert.equal(typeof proto.createTextFile, 'function');
   for (const name of ['upload', 'create', 'update', 'trash', 'delete', 'share', 'permissions']) {
     assert.equal(typeof proto[name], 'undefined');
   }

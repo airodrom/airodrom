@@ -44,6 +44,7 @@ function parseAddressList(value, name) {
 function encodeRaw({
   to = [], cc = [], bcc = [], subject = '', body = '',
   inReplyTo = null, references = null, from = null,
+  attachments = [],
 }) {
   text(subject, 'subject', 998);
   text(body, 'body', MAX_BODY);
@@ -52,6 +53,11 @@ function encodeRaw({
     err.code = 'gmail_write_secret_refused';
     throw err;
   }
+  const {
+    normalizeAttachments, decodeAttachmentBytes,
+  } = require('./gmail-mime-attachment');
+  const crypto = require('node:crypto');
+  const frozen = normalizeAttachments(attachments);
   const headers = [];
   if (from) headers.push('From: ' + from);
   headers.push('To: ' + to.join(', '));
@@ -61,10 +67,34 @@ function encodeRaw({
   if (inReplyTo) headers.push('In-Reply-To: ' + String(inReplyTo).slice(0, 998));
   if (references) headers.push('References: ' + String(references).slice(0, 1998));
   headers.push('MIME-Version: 1.0');
-  headers.push('Content-Type: text/plain; charset="UTF-8"');
+  if (!frozen.length) {
+    headers.push('Content-Type: text/plain; charset="UTF-8"');
+    headers.push('');
+    headers.push(body);
+    return Buffer.from(headers.join('\r\n'), 'utf8').toString('base64url');
+  }
+  const boundary = 'airodrom_mime_' + crypto.randomBytes(12).toString('hex');
+  headers.push('Content-Type: multipart/mixed; boundary="' + boundary + '"');
   headers.push('');
-  headers.push(body);
-  return Buffer.from(headers.join('\r\n'), 'utf8').toString('base64url');
+  const parts = [];
+  parts.push('--' + boundary);
+  parts.push('Content-Type: text/plain; charset="UTF-8"');
+  parts.push('Content-Transfer-Encoding: 8bit');
+  parts.push('');
+  parts.push(body);
+  for (const att of frozen) {
+    const bytes = decodeAttachmentBytes(att);
+    const b64 = bytes.toString('base64').replace(/(.{76})/g, '$1\r\n').replace(/\r\n$/, '');
+    parts.push('--' + boundary);
+    parts.push('Content-Type: ' + att.mime_type + '; name="' + att.filename + '"');
+    parts.push('Content-Transfer-Encoding: base64');
+    parts.push('Content-Disposition: attachment; filename="' + att.filename + '"');
+    parts.push('');
+    parts.push(b64);
+  }
+  parts.push('--' + boundary + '--');
+  parts.push('');
+  return Buffer.from(headers.concat(parts).join('\r\n'), 'utf8').toString('base64url');
 }
 
 class GmailWriteConnector {
@@ -216,6 +246,7 @@ class GmailWriteConnector {
     const cc = parseAddressList(proposal.cc, 'cc');
     const bcc = parseAddressList(proposal.bcc, 'bcc');
     const profile = await this.profile();
+    const attachments = Array.isArray(proposal.attachments) ? proposal.attachments : [];
     const raw = encodeRaw({
       from: profile.email,
       to, cc, bcc,
@@ -223,6 +254,7 @@ class GmailWriteConnector {
       body: proposal.body || '',
       inReplyTo: proposal.in_reply_to || null,
       references: proposal.references || null,
+      attachments,
     });
     const data = await this.#api('POST', 'drafts', {
       body: { message: { raw, threadId: proposal.thread_id || undefined } },
@@ -234,8 +266,13 @@ class GmailWriteConnector {
       account: profile.email,
       to, cc, bcc,
       subject: clean(proposal.subject),
+      attachments: attachments.map((a) => ({
+        filename: a.filename, size: a.size, sha256: a.sha256, file_id: a.file_id, mime_type: a.mime_type,
+      })),
       host_verified: true,
       authority: false,
+      // Provider Gmail Drafts API — requires separately authorized draft/modify path; not the local preview rail.
+      gmail_drafts_api: true,
     };
   }
 
@@ -245,6 +282,7 @@ class GmailWriteConnector {
     const cc = parseAddressList(proposal.cc, 'cc');
     const bcc = parseAddressList(proposal.bcc, 'bcc');
     const profile = await this.profile();
+    const attachments = Array.isArray(proposal.attachments) ? proposal.attachments : [];
     const raw = encodeRaw({
       from: profile.email,
       to, cc, bcc,
@@ -252,6 +290,7 @@ class GmailWriteConnector {
       body: proposal.body || '',
       inReplyTo: proposal.in_reply_to || null,
       references: proposal.references || null,
+      attachments,
     });
     const data = await this.#api('POST', 'messages/send', {
       body: { raw, threadId: proposal.thread_id || undefined },
@@ -264,6 +303,9 @@ class GmailWriteConnector {
       account: profile.email,
       to, cc, bcc,
       subject: clean(proposal.subject),
+      attachments: attachments.map((a) => ({
+        filename: a.filename, size: a.size, sha256: a.sha256, file_id: a.file_id, mime_type: a.mime_type,
+      })),
       label_ids: Array.isArray(data.labelIds) ? data.labelIds.slice(0, 20) : [],
       host_verified: true,
       provider_confirmed: true,

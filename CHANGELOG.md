@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- Drive → Gmail attachment E2E V1: app-created UTF-8 `.txt` under existing `drive.file` (`/drive create text …` with provider readback), immutable enrolled-Drive MIME attachments on governed Gmail send previews, and `/gmail confirm` only (local durable preview ≠ Gmail Drafts API). Synthetic suites cover create/readback/MIME integrity/substitution refusal/durability ([docs/GOOGLE-WORKSPACE-DRIVE-GMAIL-ATTACH-E2E-V1.md](docs/GOOGLE-WORKSPACE-DRIVE-GMAIL-ATTACH-E2E-V1.md)).
+
 ### Fixed
 - Drive end-to-end recovery: detect Google Picker App ID vs OAuth client project mismatch (root cause of post-Picker `drive_file_not_authorized_under_scope`), route Terminal `/drive read|list|search|meta` through the host Drive rail, expand NL “read my enrolled Drive document” routing, and recover from null cancellation-context `signal` TypeErrors without crashing the conversation CLI.
 - Drive `/drive select` no longer returns a `safeValue`-rewritten `picker_url` (`/[redacted-path]`) that false-denied same-origin when opened; loopback Picker URLs are preserved after validation like OAuth `authorization_url`.
