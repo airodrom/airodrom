@@ -117,6 +117,9 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
  // Local email composition (Memory-grounded) — never Gmail send/Drafts.
  const emailCompose=require('./email-compose-intent').parse(request,{activeCompose:activeEmailCompose===true});
  if(emailCompose)return route('EMAIL_COMPOSE',emailCompose);
+ // Existing-message verify/read-by-id before write — never treat as compose.
+ const gmailReadById=require('./gmail-search-intent').parseReadById(request);
+ if(gmailReadById)return gmailReadById;
  // Deterministic Gmail writes — host preview/confirm only; never OpenCode and never body-as-authority.
  const gmailWrite=require('./gmail-write-intent').parse(request);
  if(gmailWrite)return route('GMAIL_WRITE',gmailWrite);

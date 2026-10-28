@@ -19,6 +19,8 @@ function helpControl(request) {
 }
 
 function recipientFromText(text) {
+  // Correspondence labels ("from/to addr", "from or to addr") are not outbound recipients.
+  if (/\bfrom\s*\/\s*to\b/i.test(text) || /\bfrom\s+or\s+to\b/i.test(text)) return null;
   const email = /\bto\s+(\S+@\S+)\b/i.exec(text);
   if (email) return email[1].replace(/[.,;:!?)]+$/, '');
   if (/\b(?:to\s+)?(?:myself|me)\b/i.test(text) || /\bsend\s+myself\b/i.test(text)) return 'myself';
@@ -44,7 +46,19 @@ function isSendPreviewRequest(text) {
   // Slash verbs are handled separately (approve/confirm/help). Never treat
   // "/gmail send …" as a natural-language send-preview staging request.
   if (/^\/gmail\b/i.test(text)) return null;
+  // Existing-message investigation must not become compose (incl. "Do not send").
+  if (/\b(?:verify|inspect)\b/i.test(text) && /\b(?:gmail\s+)?(?:message|msg|mail)\b/i.test(text)
+    && /\b[0-9a-f]{10,32}\b/i.test(text)) {
+    return null;
+  }
+  if (/\bread-?only\b/i.test(text) && /\b(?:gmail|message|mail|provider)\b/i.test(text)) {
+    return null;
+  }
+  if (/\b(?:do\s+not|don't|dont|without|never)\s+send\b/i.test(text)) {
+    return null;
+  }
   const wantsPreview = /\bpreview\b/i.test(text) || /\bpreview[-\s]?id\b/i.test(text);
+  // Affirmative send/compose only — negated "send" already returned above.
   const sendVerb = /\b(?:send|compose(?:\s+and\s+send)?)\b/i.test(text)
     || /\b(?:create|stage|prepare|generate|show)\b.+\b(?:send\s+)?preview\b/i.test(text)
     || /\bgmail\s+send\s+preview\b/i.test(text);
