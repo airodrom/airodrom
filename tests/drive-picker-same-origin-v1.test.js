@@ -16,7 +16,12 @@ const { FILE_SCOPE } = require('../src/drive-oauth');
 async function bootServer(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drive-same-origin-'));
   fs.chmodSync(dataDir, 0o700);
-  picker.writeConfig(dataDir, { apiKey: 'AIzaSyTestKeyForPickerOnlyXX', appId: '172228664875' });
+  // App ID must match the OAuth client project-number prefix or bootstrap/select refuse.
+  picker.writeConfig(dataDir, {
+    apiKey: 'AIzaSyTestKeyForPickerOnlyXX',
+    appId: '172228664875',
+    clientId: '172228664875-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
+  });
   const db = new DatabaseSync(':memory:');
   const ledger = new EventLedger(db);
   db.exec('CREATE TABLE project_missions(mission_id TEXT,status TEXT,updated_at INTEGER)');
@@ -34,7 +39,7 @@ async function bootServer(t) {
   const server = new ControlServer(bridge, { port: 0, token: 'picker-same-origin-fixture', mcpToken: 'mcp-fixture' });
   server.driveOAuth = {
     resolve: async () => 'ya29.picker-fixture-token-not-for-production',
-    configuration: () => ({ clientId: '123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com' }),
+    configuration: () => ({ clientId: '172228664875-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com' }),
     status: () => ({ connected: true, scope: FILE_SCOPE }),
     complete: async () => ({ connected: true }),
   };

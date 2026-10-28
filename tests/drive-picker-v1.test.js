@@ -24,6 +24,26 @@ test('picker config requires api key and numeric app id; never returns api key i
   assert.equal(JSON.stringify(st).includes('kkkk'), false);
 });
 
+test('picker App ID must match OAuth client project number prefix', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drive-picker-align-'));
+  const clientId = '172228664875-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com';
+  assert.equal(picker.oauthClientProjectNumber(clientId), '172228664875');
+  assert.throws(
+    () => picker.writeConfig(dir, { apiKey: 'k'.repeat(24), appId: '999999999999', clientId }),
+    /does not match|picker_appid/i,
+  );
+  try {
+    picker.writeConfig(dir, { apiKey: 'k'.repeat(24), appId: '999999999999', clientId });
+  } catch (error) {
+    assert.equal(error.code, 'picker_appid_oauth_client_project_mismatch');
+  }
+  const ok = picker.writeConfig(dir, { apiKey: 'k'.repeat(24), appId: '172228664875', clientId });
+  assert.equal(ok.appId, '172228664875');
+  const st = picker.status(dir, { clientId });
+  assert.equal(st.app_id_matches_oauth_client, true);
+  assert.equal(picker.status(dir, { clientId: '111111111111-x.apps.googleusercontent.com' }).app_id_matches_oauth_client, false);
+});
+
 test('picker session bootstrap is one-shot; consume only after bootstrapped', () => {
   const id = picker.createSession({ ttlMs: 60000 });
   assert.ok(picker.getLiveSession(id));

@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Fixed
+- Drive end-to-end recovery: detect Google Picker App ID vs OAuth client project mismatch (root cause of post-Picker `drive_file_not_authorized_under_scope`), route Terminal `/drive read|list|search|meta` through the host Drive rail, expand NL “read my enrolled Drive document” routing, and recover from null cancellation-context `signal` TypeErrors without crashing the conversation CLI.
 - Drive `/drive select` no longer returns a `safeValue`-rewritten `picker_url` (`/[redacted-path]`) that false-denied same-origin when opened; loopback Picker URLs are preserved after validation like OAuth `authorization_url`.
 - Drive Picker page GET after Google OAuth redirect no longer false-denies `sec-fetch-site=cross-site` top-level navigations; picker bootstrap/enroll remain same-origin-only with classified rejections.
 

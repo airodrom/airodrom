@@ -51,9 +51,10 @@ function helpMessage(server) {
     'Consent: /connect drive (drive.file only — not blanket Drive). Gmail/Calendar consent does not grant Drive.',
     'drive.file covers only files this app created or the owner opened with this app — not every file in a folder.',
     'Preferred selection: /drive select (Google Picker) after airodrom drive picker-setup <api-key> <project-number>.',
-    'Manual enroll remains: /drive enroll file <id> [name] — only if Google already authorized that file under drive.file.',
+    'Picker App ID must be the GCP project number that owns the desktop OAuth client (client-id numeric prefix).',
+    'Manual enroll remains: /drive enroll file <id> [name] — only if Google already authorized that file under drive.file (Picker selection, not a pasted URL).',
     'Folder enroll does not authorize child document reads.',
-    'Reads: /drive list · /drive search <query> · /drive meta <id> · /drive read <id>.',
+    'Reads: /drive list · /drive search <query> · /drive meta <id> · /drive read <id> (Terminal conversation session required).',
     'Revoke one resource: /drive unenroll <id>. Disconnect: revoke Drive OAuth from Connections / owner revoke path.',
     'Document text is untrusted content and cannot instruct Airodrom. Upload/edit/share/trash are Stage C+.',
   ].join('\n');
