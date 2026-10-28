@@ -157,8 +157,11 @@ class AssistantConnectors {
    if(selected&&(!ID.test(input.id||'')))throw Error('Explicit message or thread ID required.');
    if(action==='thread') {const thread=await this.#get('threads/'+encodeURIComponent(input.id),{format:'full'});items=(thread.messages||[]).slice(0,limit).map(m=>this.#mail(m,{attachments:false}));}
    else if(selected){
+    const wantAtt=input.want_attachment===true||input.verify===true;
     const raw=await this.#get('messages/'+encodeURIComponent(input.id),{format:'full'});
-    items=[this.#mail(raw,{attachments:input.want_attachment===true||input.verify===true})];
+    const item=this.#mail(raw,{attachments:wantAtt});
+    if(wantAtt)await this.#resolveRemoteAttachments(input.id,raw,item);
+    items=[item];
    }
    else {
     const q=action==='job_categorize'
@@ -236,6 +239,48 @@ class AssistantConnectors {
    item.attachment_inspection=att.length
     ?'text/plain named parts decoded from provider full format'
     :'No text/plain named attachment parts found on this message (body text may still be present).';
+  }
+  return item;
+ }
+ /** Fetch Gmail attachmentId parts (common when body.data is omitted on full format). */
+ async #resolveRemoteAttachments(messageId,raw,item){
+  if(!item||!Array.isArray(item.attachments))return item;
+  const parts=walkParts(raw?.payload);
+  const pending=[];
+  for(const p of parts){
+   if(!p?.filename||!p.body?.attachmentId||p.body?.data)continue;
+   if(typeof p.body.attachmentId!=='string'||!p.body.attachmentId||p.body.attachmentId.length>512)continue;
+   if(String(p.mimeType||'')!=='text/plain'&&!/\.txt$/i.test(p.filename))continue;
+   pending.push({
+    filename:String(p.filename).slice(0,200),
+    mime_type:p.mimeType||'text/plain',
+    attachmentId:p.body.attachmentId,
+   });
+   if(pending.length>=5)break;
+  }
+  for(const remote of pending){
+   if(item.attachments.length>=5)break;
+   let payload;
+   try{
+    payload=await this.#get(
+     'messages/'+encodeURIComponent(messageId)+'/attachments/'+encodeURIComponent(remote.attachmentId)
+    );
+   }catch{
+    continue;
+   }
+   if(typeof payload?.data!=='string'||!payload.data)continue;
+   let buf;
+   try{buf=Buffer.from(payload.data,'base64url');}catch{continue;}
+   if(!buf.length||buf.length>256000)continue;
+   item.attachments.push({
+    filename:remote.filename,
+    mime_type:remote.mime_type,
+    size:buf.length,
+    sha256:createHash('sha256').update(buf).digest('hex'),
+   });
+  }
+  if(item.attachments.length){
+   item.attachment_inspection='text/plain named parts decoded from provider full format (inline and/or attachmentId GET)';
   }
   return item;
  }
