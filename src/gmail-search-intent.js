@@ -85,6 +85,75 @@ function continuation(request, { activeGmailSearch = false } = {}) {
   return null;
 }
 
+/** Opaque Gmail API message ids (hex-like), not RFC822 Message-ID headers. */
+const GMAIL_MESSAGE_ID = /\b([0-9a-f]{10,32})\b/i;
+
+/**
+ * Read/verify an existing message by provider id — never compose or sender-search.
+ * Optional from/to emails are header assertions for the verify receipt.
+ */
+function parseReadById(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const request = normalize(value);
+  if (Buffer.byteLength(request) > 4000) return null;
+  // Affirmative outbound send/compose is not a read. Negated "do not send" stays readable.
+  if (/\b(?:send|compose)\b/i.test(request)
+    && !/\b(?:do\s+not|don't|dont|without|never)\s+send\b/i.test(request)
+    && !/\bread-?only\b/i.test(request)
+    && !/\b(?:verify|inspect)\b/i.test(request)) {
+    return null;
+  }
+  let id = null;
+  const idPatterns = [
+    /\b(?:verify|inspect|confirm\s+receipt\s+of|check|read|get|show|open)\b[\s\S]{0,80}?\b(?:gmail\s+)?(?:message|msg|mail)\s+(?:id\s+)?([0-9a-f]{10,32})\b/i,
+    /\b(?:gmail\s+)?(?:message|msg)\s+(?:id\s+)?([0-9a-f]{10,32})\b[\s\S]{0,120}?\b(?:verify|inspect|read-?only|provider)\b/i,
+  ];
+  for (const re of idPatterns) {
+    const m = re.exec(request);
+    if (m) { id = m[1]; break; }
+  }
+  if (!id && /\b(?:verify|inspect)\b/i.test(request)) {
+    const m = GMAIL_MESSAGE_ID.exec(request);
+    if (m) id = m[1];
+  }
+  if (!id || !/^[0-9a-f]{10,32}$/i.test(id)) return null;
+
+  let expected_from = null;
+  let expected_to = null;
+  const fromTo = /\bfrom\s*\/\s*to\s+(\S+@\S+)/i.exec(request)
+    || /\bfrom\s+or\s+to\s+(\S+@\S+)/i.exec(request);
+  if (fromTo) {
+    const addr = fromTo[1].replace(/[.,;:!?)]+$/, '').toLowerCase();
+    expected_from = addr;
+    expected_to = addr;
+  } else {
+    const from = /\bfrom\s+(\S+@\S+)/i.exec(request);
+    const to = /\bto\s+(\S+@\S+)/i.exec(request);
+    // Ignore from/to pairs used only as correspondence labels when "from/to" already handled.
+    if (from && !/\bfrom\s*\/\s*to\b/i.test(request)) {
+      expected_from = from[1].replace(/[.,;:!?)]+$/, '').toLowerCase();
+    }
+    if (to && !/\bfrom\s*\/\s*to\b/i.test(request) && !/\bfrom\s+or\s+to\b/i.test(request)) {
+      expected_to = to[1].replace(/[.,;:!?)]+$/, '').toLowerCase();
+    }
+  }
+
+  const want_attachment = /\battach/i.test(request) || /\bsha-?256\b/i.test(request) || /\bmime\b/i.test(request);
+
+  return {
+    kind: 'connector',
+    connector: 'gmail',
+    action: 'read',
+    id,
+    expected_from,
+    expected_to,
+    verify: /\b(?:verify|inspect|confirm\s+receipt)\b/i.test(request) || want_attachment,
+    want_attachment,
+    route: 'CONNECTOR',
+    host_verified: true,
+  };
+}
+
 function refuseMutations(request) {
   // Caller must already have established mail-related intent.
   // Local "draft/compose an email" is handled by email-compose-intent (no Gmail write).
@@ -141,6 +210,9 @@ function parse(value, { activeGmailSearch = false } = {}) {
   if (typeof value !== 'string' || !value.trim()) return null;
   const request = normalize(value);
   if (Buffer.byteLength(request) > 4000) return null;
+
+  const byId = parseReadById(request);
+  if (byId) return byId;
 
   const cont = continuation(request, { activeGmailSearch });
   if (cont) return cont;
@@ -250,6 +322,7 @@ function isHostSearchQuery(query) {
 
 module.exports = {
   parse,
+  parseReadById,
   normalize,
   buildSenderQuery,
   applyFlags,

@@ -90,6 +90,11 @@ async function submit(server,input){
   if(parsed.label)connectorBody.label=parsed.label;
   if(parsed.match)connectorBody.match=parsed.match;
   if(parsed.continuation_id)connectorBody.continuation_id=parsed.continuation_id;
+  if(parsed.id)connectorBody.id=parsed.id;
+  if(parsed.expected_from)connectorBody.expected_from=parsed.expected_from;
+  if(parsed.expected_to)connectorBody.expected_to=parsed.expected_to;
+  if(parsed.verify===true)connectorBody.verify=true;
+  if(parsed.want_attachment===true)connectorBody.want_attachment=true;
   return connectorInput(server,{
    connector:parsed.connector,
    action:parsed.action,
@@ -327,6 +332,51 @@ async function connectorInput(server,{connector,action,input={},conversation_id,
   void _provider_next_page_token;
   if(connector==='gmail'&&conversation_id&&Array.isArray(data?.items)&&data.items.length){
    try{gmailSearchSessions(server).rememberResults({items:data.items,conversation_id,operator:'operator'});}catch{/* */}
+  }
+  if(connector==='gmail'&&action==='read'&&Array.isArray(safe.items)&&safe.items[0]){
+   const item=safe.items[0];
+   const assertions=[];
+   if(typeof input.expected_from==='string'&&input.expected_from){
+    const ok=item.from_email===input.expected_from.toLowerCase()
+     || String(item.from||'').toLowerCase().includes(input.expected_from.toLowerCase());
+    assertions.push({field:'from',expected:input.expected_from,matched:ok});
+   }
+   if(typeof input.expected_to==='string'&&input.expected_to){
+    const ok=item.to_email===input.expected_to.toLowerCase()
+     || String(item.to||'').toLowerCase().includes(input.expected_to.toLowerCase());
+    assertions.push({field:'to',expected:input.expected_to,matched:ok});
+   }
+   const lines=[
+    `Gmail message ${item.id} (read-only provider GET; not a send).`,
+    item.subject?`• Subject: ${item.subject}`:null,
+    item.from?`• From: ${item.from}`:null,
+    item.to?`• To: ${item.to}`:null,
+    `• Labels: SENT=${item.label_sent===true} INBOX=${item.label_inbox===true}`,
+   ].filter(Boolean);
+   for(const a of assertions){
+    lines.push(`• Assert ${a.field}=${a.expected}: ${a.matched?'match':'MISMATCH'}`);
+   }
+   if(Array.isArray(item.attachments)&&item.attachments.length){
+    for(const att of item.attachments){
+     lines.push(`• Attachment: ${att.filename} (${att.size}b sha256=${att.sha256})`);
+    }
+   }else if(input.want_attachment||input.verify){
+    lines.push(`• ${item.attachment_inspection||'Attachment parts not available on this read.'}`);
+   }
+   lines.push('Nothing was sent. Chat “yes” does not send. Only /gmail confirm <preview-id> sends staged mail.');
+   return {
+    kind:'connector',
+    route:'CONNECTOR',
+    connector:'gmail',
+    action:'read',
+    ...safe,
+    assertions,
+    message:lines.join('\n'),
+    model_invoked:false,
+    host_verified:true,
+    authority:false,
+    untrusted:true,
+   };
   }
   return {kind:'connector',route:'CONNECTOR',...safe,model_invoked:false,host_verified:host_verified||data.host_verified===true};
  }

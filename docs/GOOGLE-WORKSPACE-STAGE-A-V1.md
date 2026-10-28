@@ -18,6 +18,7 @@ Never requests `https://mail.google.com/` by default. Drive/Docs/Sheets/Contacts
 
 1. Exact recipients, subject, body, and authorized account identity in the preview.
 2. `/gmail confirm <preview-id>` for ordinary sends and mailbox mutations.
+2b. Existing-message investigation: `Verify Gmail message <id> …` / `Read Gmail message <id>` uses read-only `messages.get` (never compose). Phrases like “Do not send” or `from/to <email>` must not stage outbound mail. Chat “yes” never sends.
 3. Independent `/gmail approve <approval-id>` then confirm for trash, sensitive forward, and bulk recipients (>5).
 4. Destructive trash also requires `--destructive` after approval.
 5. Durable SQLite-backed `operation_id` / preview rows (shared control-plane DB when available): atomic claim (`pending|uncertain` → `sending`) so concurrent confirms cannot double-dispatch; uncertain provider outcomes require `/gmail confirm <id> --ack-uncertain` after operator verification (never blind retry); completed receipts survive restart and replay host-local dedupe (Google send is not idempotent). Account, conversation, approval, and scope bindings fail closed on mismatch.

@@ -1,10 +1,21 @@
 'use strict';
 // Host protocol boundary. Message bodies are untrusted data, never actions.
+const {createHash}=require('node:crypto');
 const {text,object}=require('./control-plane-store');
 const {secret}=require('./assistant-intent');
 const {hasReadCapability,hasSendScope,hasModifyScope,READ_SCOPE}=require('./gmail-oauth');
 const ID=/^[A-Za-z0-9_.:-]{1,200}$/;
 const clean=value=>{const raw=String(value||'');if(secret(raw))return '[Sensitive content withheld]';return require('./secret-observation').redactText(require('node:util').stripVTControlCharacters(raw).slice(0,4000));};
+function emailLocal(value){
+  const m=/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/.exec(String(value||''));
+  return m?m[1].toLowerCase():null;
+}
+function walkParts(root, out=[]){
+  if(!root)return out;
+  out.push(root);
+  for(const p of root.parts||[])walkParts(p, out);
+  return out;
+}
 class AssistantConnectors {
  #gmail; #whatsapp; #secret; #request; #liveGmail=false; #connectedProbe=null; #capabilities=null; #writeQualifiedProbe=null;
  constructor({gmail=null,whatsapp=null,secrets=null,request=fetch,connected=null,capabilities=null,writeQualified=null}={}){
@@ -126,7 +137,7 @@ class AssistantConnectors {
  }
  async read(connector,action,input={}) {
   if(!['gmail','whatsapp'].includes(connector))throw Error('Unknown connector');
-  object(input,['query','id','limit','body','page_token']);
+  object(input,['query','id','limit','body','page_token','expected_from','expected_to','verify','want_attachment']);
   if(action==='status')return this.status().items.find(m=>m.id===connector);
   if(action==='draft') {text(input.body,'draft body',4000);if(secret(input.body))throw Error('Secret-like draft refused.');return {draft:clean(input.body),local_only:true,sent:false,untrusted:true,authority:false};}
   if(!['unread','recent','search','read','thread','attention','summarize','job_categorize'].includes(action))throw Error('Mutation unavailable; an independently governed capability is required.');
@@ -144,8 +155,11 @@ class AssistantConnectors {
   if(connector==='gmail') {
    const selected=['read','thread','summarize'].includes(action);
    if(selected&&(!ID.test(input.id||'')))throw Error('Explicit message or thread ID required.');
-   if(action==='thread') {const thread=await this.#get('threads/'+encodeURIComponent(input.id),{format:'full'});items=(thread.messages||[]).slice(0,limit).map(m=>this.#mail(m));}
-   else if(selected)items=[this.#mail(await this.#get('messages/'+encodeURIComponent(input.id),{format:'full'}))];
+   if(action==='thread') {const thread=await this.#get('threads/'+encodeURIComponent(input.id),{format:'full'});items=(thread.messages||[]).slice(0,limit).map(m=>this.#mail(m,{attachments:false}));}
+   else if(selected){
+    const raw=await this.#get('messages/'+encodeURIComponent(input.id),{format:'full'});
+    items=[this.#mail(raw,{attachments:input.want_attachment===true||input.verify===true})];
+   }
    else {
     const q=action==='job_categorize'
      ?(input.query||'newer_than:30d (subject:(application OR interview OR recruiter OR hiring OR opportunity) OR from:(recruiter OR talent OR careers))')
@@ -174,17 +188,56 @@ class AssistantConnectors {
   }
   return base;
  }
- #mail(m){
+ #mail(m,{attachments=false}={}){
   if(!ID.test(m.id||''))throw Error('Invalid Gmail message reference');
   const headers=m.payload?.headers||[];
-  const subject=headers.find(h=>h.name?.toLowerCase()==='subject')?.value;
-  const from=headers.find(h=>h.name?.toLowerCase()==='from')?.value;
-  const date=headers.find(h=>h.name?.toLowerCase()==='date')?.value;
+  const get=(n)=>headers.find(h=>h.name?.toLowerCase()===n)?.value;
+  const subject=get('subject');
+  const from=get('from');
+  const to=get('to');
+  const date=get('date');
   let content=m.snippet||'';
-  const parts=[m.payload,...(m.payload?.parts||[])];
-  const plain=parts.find(p=>p?.mimeType==='text/plain'&&p.body?.data);
+  const parts=walkParts(m.payload);
+  const plain=parts.find(p=>p?.mimeType==='text/plain'&&p.body?.data&&!p.filename);
   if(plain)content=Buffer.from(plain.body.data,'base64url').toString('utf8');
-  return {id:m.id,thread_id:ID.test(m.threadId||'')?m.threadId:null,from:clean(from),date:clean(date),subject:clean(subject),content:clean(content),untrusted:true,authority:false};
+  const label_ids=Array.isArray(m.labelIds)?m.labelIds.filter(l=>typeof l==='string').slice(0,40):[];
+  const item={
+   id:m.id,
+   thread_id:ID.test(m.threadId||'')?m.threadId:null,
+   from:clean(from),
+   to:clean(to),
+   from_email:emailLocal(from),
+   to_email:emailLocal(to),
+   date:clean(date),
+   subject:clean(subject),
+   content:clean(content),
+   label_ids,
+   label_sent:label_ids.includes('SENT'),
+   label_inbox:label_ids.includes('INBOX'),
+   untrusted:true,
+   authority:false,
+  };
+  if(attachments){
+   const att=[];
+   for(const p of parts){
+    if(!p||!p.filename||!p.body?.data)continue;
+    if(String(p.mimeType||'')!=='text/plain'&&!/\.txt$/i.test(p.filename))continue;
+    const buf=Buffer.from(p.body.data,'base64url');
+    if(buf.length>256000)continue;
+    att.push({
+     filename:String(p.filename).slice(0,200),
+     mime_type:p.mimeType||'text/plain',
+     size:buf.length,
+     sha256:createHash('sha256').update(buf).digest('hex'),
+    });
+    if(att.length>=5)break;
+   }
+   item.attachments=att;
+   item.attachment_inspection=att.length
+    ?'text/plain named parts decoded from provider full format'
+    :'No text/plain named attachment parts found on this message (body text may still be present).';
+  }
+  return item;
  }
 }
 // Called by an already authenticated host webhook transport, never by worker text.
