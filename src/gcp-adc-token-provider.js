@@ -1,8 +1,39 @@
 'use strict';
 // Narrow ADC/helper token provider. Fixed argv only — not a general gcloud runner.
+const fs = require('node:fs');
+const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-function runGcloud(args, { timeout_ms = 20_000, spawnImpl = spawnSync } = {}) {
+const GCLOUD_CANDIDATES = Object.freeze([
+  '/opt/homebrew/share/google-cloud-sdk/bin/gcloud',
+  '/opt/homebrew/bin/gcloud',
+  '/usr/local/bin/gcloud',
+  'gcloud',
+]);
+
+function resolveGcloudBin() {
+  for (const candidate of GCLOUD_CANDIDATES) {
+    if (candidate === 'gcloud') return candidate;
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    } catch { /* continue */ }
+  }
+  return 'gcloud';
+}
+
+function helperEnv() {
+  const home = process.env.HOME || '';
+  const extras = [
+    '/opt/homebrew/share/google-cloud-sdk/bin',
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    path.join(home, 'google-cloud-sdk', 'bin'),
+  ].filter(Boolean);
+  const pathValue = [...extras, process.env.PATH || ''].join(path.delimiter);
+  return { ...process.env, PATH: pathValue };
+}
+
+function runGcloud(args, { timeout_ms = 20_000, spawnImpl = spawnSync, bin = null } = {}) {
   if (!Array.isArray(args) || args.length === 0 || args.some((a) => typeof a !== 'string')) {
     const err = Error('Invalid gcloud helper argv.');
     err.code = 'gcp_adc_argv_invalid';
@@ -15,10 +46,10 @@ function runGcloud(args, { timeout_ms = 20_000, spawnImpl = spawnSync } = {}) {
     err.code = 'gcp_adc_verb_forbidden';
     throw err;
   }
-  const result = spawnImpl('gcloud', args, {
+  const result = spawnImpl(bin || resolveGcloudBin(), args, {
     encoding: 'utf8',
     timeout: timeout_ms,
-    env: process.env,
+    env: helperEnv(),
   });
   if (result.error) {
     const err = Error('gcloud helper failed to start.');
