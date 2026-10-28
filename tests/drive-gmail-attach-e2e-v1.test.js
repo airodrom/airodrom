@@ -128,6 +128,22 @@ test('drive intent parses create slash and clarifies NL create', () => {
   assert.equal(nl.action, 'create_text');
 });
 
+test('assistant-intent preserves Drive create newlines and trailing period', () => {
+  const intent = require('../src/assistant-intent');
+  const body = [
+    'Airodrom integration test.',
+    'Google Drive file creation and readback.',
+    'Gmail attachment verification.',
+  ].join('\n');
+  const parsed = intent.parse(`/drive create text airodrom-test.txt :: ${body}`);
+  assert.equal(parsed.kind, 'drive');
+  assert.equal(parsed.action, 'create_text');
+  assert.equal(parsed.content, body);
+  assert.equal(Buffer.byteLength(parsed.content), 98);
+  assert.ok(parsed.content.endsWith('.'));
+  assert.match(parsed.content, /\n/);
+});
+
 test('drive service create auto-enrolls and verifies provider readback bytes', async () => {
   const source = 'exact-bytes-v1';
   const store = new Map();

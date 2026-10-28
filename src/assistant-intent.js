@@ -62,6 +62,13 @@ function parse(value, {nickname:assistantNickname,pendingResearch,researchURL,ac
   // Strict projectless packets keep exact newlines for ZeroSetupWork JSON bodies.
   const workPacket=value.trim();
   if(/^AIRODROM_WORK_V1\b/.test(workPacket))return route('WORK',{kind:'work',objective:workPacket,capability_classes:['repo','developer_environment']});
+  // Drive text create carries a verbatim UTF-8 body after :: — parse before
+  // whitespace collapse and trailing-punctuation strip so newlines and final
+  // periods survive into provider create + readback.
+  {
+    const driveCreate = require('./drive-intent').parse(value.trim());
+    if (driveCreate?.action === 'create_text') return route('DRIVE', driveCreate);
+  }
   value=value.replace(/\s+/g,' ').trim();
   const storage=require('./personal-storage-intent');
   const request=storage.normalize(value,assistantNickname);
