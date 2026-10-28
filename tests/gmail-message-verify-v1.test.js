@@ -134,6 +134,77 @@ test('connector read returns labels and attachment sha; no send POST', async () 
   assert.equal(item.attachments[0].size, body.length);
 });
 
+test('connector read fetches attachmentId parts and hashes bytes (GET only)', async () => {
+  const body = Buffer.from('Airodrom live retry 20261028185242.\nGoogle Drive multiline UTF-8 readback.\nGmail attachment preview verification.', 'utf8');
+  const sha = createHash('sha256').update(body).digest('hex');
+  const posts = [];
+  const gets = [];
+  const adapter = new AssistantConnectors({
+    gmail: { reference: 'opaque', scope: 'https://www.googleapis.com/auth/gmail.readonly' },
+    secrets: { resolve: async () => 'synthetic-mail-token' },
+    connected: () => true,
+    request: async (url, opts = {}) => {
+      const method = (opts.method || 'GET').toUpperCase();
+      const href = String(url);
+      if (method !== 'GET') posts.push({ url: href, method });
+      else gets.push(href);
+      assert.equal(method, 'GET');
+      if (/\/attachments\//.test(href)) {
+        assert.match(href, new RegExp(`/messages/${MSG_ID}/attachments/att_remote_1`));
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ size: body.length, data: body.toString('base64url') }),
+          body: { cancel: async () => {} },
+        };
+      }
+      assert.match(href, new RegExp(`/messages/${MSG_ID}`));
+      const payload = {
+        id: MSG_ID,
+        threadId: 'thread1',
+        labelIds: ['SENT', 'INBOX'],
+        snippet: 'snippet',
+        payload: {
+          headers: [
+            { name: 'From', value: `Operator <${ADDR}>` },
+            { name: 'To', value: ADDR },
+            { name: 'Subject', value: 'Airodrom Drive attach live retry' },
+          ],
+          mimeType: 'multipart/mixed',
+          parts: [
+            { mimeType: 'text/plain', body: { data: Buffer.from('Live retry body', 'utf8').toString('base64url') } },
+            {
+              filename: 'airodrom-retry-20261028185242.txt',
+              mimeType: 'text/plain',
+              body: { attachmentId: 'att_remote_1', size: body.length },
+            },
+          ],
+        },
+      };
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(payload),
+        body: { cancel: async () => {} },
+      };
+    },
+  });
+  const data = await adapter.read('gmail', 'read', {
+    id: MSG_ID,
+    verify: true,
+    want_attachment: true,
+    limit: 1,
+  });
+  assert.equal(posts.length, 0);
+  assert.equal(gets.filter((u) => /\/attachments\//.test(u)).length, 1);
+  const item = data.items[0];
+  assert.equal(item.attachments.length, 1);
+  assert.equal(item.attachments[0].filename, 'airodrom-retry-20261028185242.txt');
+  assert.equal(item.attachments[0].size, body.length);
+  assert.equal(item.attachments[0].sha256, sha);
+  assert.equal(sha, '0c5de90d237e3abcd652d7d8100fb1d16a84dcd3e6f54e91a5a20789771de6f5');
+});
+
 test('unauthorized gmail read offers connect without inventing message', async () => {
   const bridge = {
     options: { assistantConnectors: {} },

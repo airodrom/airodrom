@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Gmail read-by-id verify now resolves `attachmentId` parts via provider GET (inline `body.data` alone missed real Sent attachments) so text/plain attachment sha256 can be compared to Drive source bytes.
+
 ### Added
 - Drive → Gmail attachment E2E V1: app-created UTF-8 `.txt` under existing `drive.file` (`/drive create text …` with provider readback), immutable enrolled-Drive MIME attachments on governed Gmail send previews, and `/gmail confirm` only (local durable preview ≠ Gmail Drafts API). Synthetic suites cover create/readback/MIME integrity/substitution refusal/durability ([docs/GOOGLE-WORKSPACE-DRIVE-GMAIL-ATTACH-E2E-V1.md](docs/GOOGLE-WORKSPACE-DRIVE-GMAIL-ATTACH-E2E-V1.md)).
 
