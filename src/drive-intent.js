@@ -61,7 +61,9 @@ function parse(text) {
     return { kind: 'drive', action: 'metadata', file_id: meta[1], host_verified: true };
   }
   const read = /^(?:summarize|read|show) (?:this )?(?:document|file|doc) (?:from )?(?:my )?(?:authorized |enrolled )?drive(?:\s+folder)?(?:\s+([A-Za-z0-9_-]{1,200}))?$/i.exec(raw)
-    || /^\/drive\s+read\s+([A-Za-z0-9_-]{1,200})$/i.exec(raw);
+    || /^(?:summarize|read|show) (?:my |the )?(?:authorized |enrolled )?(?:google )?drive (?:document|file|doc)(?:\s+([A-Za-z0-9_-]{1,200}))?$/i.exec(raw)
+    || /^read (?:my |the )?enrolled (?:google )?drive (?:document|file|doc)(?:\s+([A-Za-z0-9_-]{1,200}))?$/i.exec(raw)
+    || /^\/drive\s+read(?:\s+([A-Za-z0-9_-]{1,200}))?$/i.exec(raw);
   if (read) {
     return {
       kind: 'drive',

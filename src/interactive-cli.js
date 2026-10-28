@@ -415,14 +415,20 @@ async function interactive(home, { input = process.stdin, output = process.stdou
     if (!conversationId) throw Error('Conversation session is unavailable.');
     return conversationId;
   };
+  const ensureActive=()=>{
+    if(!active) active=new AbortController();
+    return active;
+  };
   const startAnswer=()=>{
+    const controller=ensureActive();
     output.write('\nAiro\n');
-    indicator=render.waiting(output,{env,signal:active.signal});
+    indicator=render.waiting(output,{env,signal:controller.signal});
   };
   const stopAnswer=()=>{indicator?.stop();indicator=null;};
   const answer=async (id,options={})=>{
     if(!indicator)startAnswer();
-    try { return await waitResult(home,id,{signal:active.signal,...options}); }
+    const controller=ensureActive();
+    try { return await waitResult(home,id,{signal:controller.signal,...options}); }
     finally { stopAnswer(); }
   };
   const handleReceipt = async (receipt, json = false, message = null) => {
@@ -640,20 +646,23 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           const parts=String(arg||'').trim().split(/\s+/).filter(Boolean);
           const action=(parts[0]||'status').toLowerCase();
           const driveConversationId=await session();
+          const driveInput=async (message)=>{
+            ensureActive();
+            const result=await local.request(home,'/api/assistant/input',{message,request_id:randomUUID(),conversation_id:driveConversationId});
+            await handleReceipt(result,json);
+            active=null;
+          };
           if(action==='enroll'){
             const kind=(parts[1]||'').toLowerCase();
             const resourceId=parts[2];
             if(kind!=='file'&&kind!=='folder')throw Error('Use /drive enroll file|folder <id> [label…]');
             if(!resourceId)throw Error('Use /drive enroll file|folder <id> [label…]');
             const label=parts.slice(3).join(' ').trim()||null;
-            const msg=`/drive enroll ${kind} ${resourceId}${label?` ${label}`:''}`;
-            const result=await local.request(home,'/api/assistant/input',{message:msg,request_id:randomUUID(),conversation_id:driveConversationId});
-            await handleReceipt(result,json);
+            await driveInput(`/drive enroll ${kind} ${resourceId}${label?` ${label}`:''}`);
           }else if(action==='unenroll'){
             const resourceId=parts[1];
             if(!resourceId)throw Error('Use /drive unenroll <resource-id>');
-            const result=await local.request(home,'/api/assistant/input',{message:`/drive unenroll ${resourceId}`,request_id:randomUUID(),conversation_id:driveConversationId});
-            await handleReceipt(result,json);
+            await driveInput(`/drive unenroll ${resourceId}`);
           }else if(action==='select'||action==='picker'){
             const offer=await local.request(home,'/api/assistant/drive/picker',{request_id:randomUUID()});
             if(offer.authorization_url||offer.picker_url){
@@ -664,10 +673,23 @@ async function interactive(home, { input = process.stdin, output = process.stdou
               output.write((offer.message||'Drive picker unavailable.')+'\n');
             }
           }else if(action==='help'||action==='status'){
-            const result=await local.request(home,'/api/assistant/input',{message:'help me use google drive',request_id:randomUUID(),conversation_id:driveConversationId});
-            await handleReceipt(result,json);
+            await driveInput(action==='status'?'/drive status':'help me use google drive');
+          }else if(action==='read'){
+            const resourceId=parts[1]||'';
+            await driveInput(resourceId?`/drive read ${resourceId}`:'/drive read');
+          }else if(action==='meta'||action==='metadata'){
+            const resourceId=parts[1];
+            if(!resourceId)throw Error('Use /drive meta <file-id>');
+            await driveInput(`/drive meta ${resourceId}`);
+          }else if(action==='search'){
+            const query=parts.slice(1).join(' ').trim();
+            if(!query)throw Error('Use /drive search <query>');
+            await driveInput(`/drive search ${query}`);
+          }else if(action==='list'||action==='ls'){
+            if(action==='ls'&&parts[1]) await driveInput(`/drive ls ${parts[1]}`);
+            else await driveInput('/drive list');
           }else{
-            throw Error('Use /drive help|status|select|enroll file|folder <id> [label]|unenroll <id>, or ask in natural language.');
+            throw Error('Use /drive help|status|select|read [id]|meta <id>|list|search <query>|enroll file|folder <id> [label]|unenroll <id>, or ask in natural language.');
           }
         }
         else if(command==='calendar'){
@@ -848,13 +870,16 @@ async function interactive(home, { input = process.stdin, output = process.stdou
         const timeout = isTransportTimeout(error);
         const cancelled = error.name === 'AbortError' || /cancelled/i.test(error.message || '');
         const inferenceTimeout = /timed out while waiting for the local model/i.test(error.message || '');
-        const message = inferenceTimeout
-          ? error.message
-          : timeout
-            ? 'Local admission timed out. If a reply is still generating, wait or retry; the CLI is still open.'
-            : cancelled
-              ? (error.message || 'Request cancelled. The CLI is still open.')
-              : require('./secret-observation').safeValue(error.message);
+        const nullSignal = error?.name === 'TypeError' && /reading ['"]signal['"]/i.test(String(error.message || ''));
+        const message = nullSignal
+          ? 'Conversation cancellation context was unavailable. The CLI recovered; send the message again.'
+          : inferenceTimeout
+            ? error.message
+            : timeout
+              ? 'Local admission timed out. If a reply is still generating, wait or retry; the CLI is still open.'
+              : cancelled
+                ? (error.message || 'Request cancelled. The CLI is still open.')
+                : require('./secret-observation').safeValue(error.message);
         output.write('Airo: ' + terminalText(message) + '\n');
       }
       readerLocked=false;
@@ -899,7 +924,15 @@ async function main(args = process.argv.slice(2)) {
   if(command==='drive'&&rest[0]==='picker-setup'){
     if(rest.length!==3)throw Error('Use airodrom drive picker-setup <Google Picker API key> <GCP project number>');
     local.privateDirectory(home,true);local.privateDirectory(path.join(home,'data'),true);
-    require('./drive-picker').writeConfig(path.join(home,'data'),{apiKey:rest[1],appId:rest[2]});
+    const dataDir=path.join(home,'data');
+    let clientId=null;
+    for(const name of ['drive-oauth-config.json','gmail-oauth-config.json']){
+      try{
+        const cfg=JSON.parse(fs.readFileSync(path.join(dataDir,name),'utf8'));
+        if(typeof cfg?.clientId==='string'&&cfg.clientId.endsWith('.apps.googleusercontent.com')){clientId=cfg.clientId;break;}
+      }catch{/* */}
+    }
+    require('./drive-picker').writeConfig(dataDir,{apiKey:rest[1],appId:rest[2],clientId});
     process.stdout.write('Drive Picker configured (api key stored privately). Restart is not required. Run /connect drive fresh, complete consent, then select a nonsensitive file.\n');
     return;
   }

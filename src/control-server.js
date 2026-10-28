@@ -438,6 +438,14 @@ class ControlServer {
         const picker=require('./drive-picker');
         const cfg=picker.readConfig(this.bridge.dataDir);
         if(!cfg)return this.json(res,400,{error:'Drive picker API key / appId not configured. Run: airodrom drive picker-setup <api-key> <project-number>'});
+        try{
+          picker.assertAppIdAlignedWithOAuthClient(cfg.appId,this.driveOAuth.configuration?.().clientId);
+        }catch(error){
+          return this.json(res,400,{
+            error:error.message||'Picker App ID does not match the Drive OAuth client project.',
+            code:error.code||'picker_appid_oauth_client_project_mismatch',
+          });
+        }
         if(!picker.bootstrapSession(body.session_id))return this.json(res,400,{error:'Drive picker session expired or already used.'});
         let access_token;
         try{access_token=await this.driveOAuth.resolve();}
@@ -460,8 +468,19 @@ class ControlServer {
         let meta=null;
         try{meta=await adapter.getMetadata(fileId);}
         catch(error){
+          let mismatch=null;
+          try{
+            const cfg=picker.readConfig(this.bridge.dataDir);
+            picker.assertAppIdAlignedWithOAuthClient(cfg?.appId,this.driveOAuth.configuration?.().clientId);
+          }catch(align){mismatch=align;}
+          if(mismatch){
+            return this.json(res,400,{
+              error:mismatch.message,
+              code:mismatch.code||'picker_appid_oauth_client_project_mismatch',
+            });
+          }
           return this.json(res,400,{
-            error:error.message||'Google did not authorize that file under drive.file.',
+            error:error.message||'Google did not authorize that file under drive.file. Select it with Google Picker after App ID matches the OAuth client project — pasting a Drive URL/id does not grant drive.file.',
             code:error.code||'drive_file_not_authorized_under_scope'
           });
         }
@@ -919,6 +938,18 @@ class ControlServer {
             state:'WAIT',
             picker_configured:false,
             message:'Drive is connected, but Google Picker is not configured. Run: airodrom drive picker-setup <api-key> <gcp-project-number>. Then /drive select.',
+            authority:false,
+          });
+        }
+        try{
+          picker.assertAppIdAlignedWithOAuthClient(cfg.appId,this.driveOAuth.configuration?.().clientId);
+        }catch(error){
+          return this.json(res,200,{
+            state:'WAIT',
+            picker_configured:true,
+            picker_app_id_mismatch:true,
+            message:error.message,
+            code:error.code||'picker_appid_oauth_client_project_mismatch',
             authority:false,
           });
         }

@@ -254,6 +254,11 @@ test('intent routing for help, enroll, list, search, read', () => {
   assert.equal(driveIntent.parse('Show the files in my authorized Drive folder').action, 'list_folder');
   assert.equal(driveIntent.parse('Find the quarterly report in my selected Drive files').query.toLowerCase().includes('quarterly'), true);
   assert.equal(driveIntent.parse('Summarize this document from my authorized Drive folder').action, 'read');
+  assert.equal(driveIntent.parse('Read my enrolled Drive document').action, 'read');
+  assert.equal(driveIntent.parse('Read my enrolled Drive document').file_id, null);
+  assert.equal(driveIntent.parse('/drive read fileEnrolled1').action, 'read');
+  assert.equal(driveIntent.parse('/drive read fileEnrolled1').file_id, 'fileEnrolled1');
+  assert.equal(driveIntent.parse('/drive read').action, 'read');
   assert.equal(driveIntent.parse('send email to x@y.com'), null);
 });
 

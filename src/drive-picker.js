@@ -39,21 +39,50 @@ function readConfig(dataDir) {
   return { apiKey, appId };
 }
 
-function writeConfig(dataDir, { apiKey, appId }) {
+/** Numeric prefix of a Google OAuth client id is the owning GCP project number. */
+function oauthClientProjectNumber(clientId) {
+  const m = /^(\d{6,20})-/.exec(String(clientId || '').trim());
+  return m ? m[1] : null;
+}
+
+/**
+ * Google Picker setAppId must be the project number that owns the OAuth client.
+ * Mismatch lets the Picker UI open but drive.file never grants the selected file.
+ */
+function assertAppIdAlignedWithOAuthClient(appId, clientId) {
+  const expected = oauthClientProjectNumber(clientId);
+  const actual = String(appId || '').trim();
+  if (!expected || !actual) return { aligned: true, expected: expected || null, appId: actual || null };
+  if (actual === expected) return { aligned: true, expected, appId: actual };
+  const err = Error(
+    'Google Picker project number does not match the Drive OAuth client project. '
+    + 'Re-run: airodrom drive picker-setup <api-key> <gcp-project-number> using the project number from the same Google Cloud project that owns the desktop OAuth client '
+    + '(the numeric prefix of the client id). Selecting a file with a mismatched App ID does not authorize drive.file.',
+  );
+  err.code = 'picker_appid_oauth_client_project_mismatch';
+  err.expected_app_id = expected;
+  throw err;
+}
+
+function writeConfig(dataDir, { apiKey, appId, clientId = null }) {
   const next = { apiKey: String(apiKey || '').trim(), appId: String(appId || '').trim() };
   if (!next.apiKey || next.apiKey.length < 20 || next.apiKey.length > 200) throw Error('Owner Google Picker API key required');
   if (!/^[0-9]{6,20}$/.test(next.appId)) throw Error('Owner Google Cloud project number (appId) required');
+  if (clientId) assertAppIdAlignedWithOAuthClient(next.appId, clientId);
   const file = configPath(dataDir);
   fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
   return { configured: true, appId: next.appId };
 }
 
-function status(dataDir) {
+function status(dataDir, { clientId = null } = {}) {
   const cfg = readConfig(dataDir);
+  const expected = oauthClientProjectNumber(clientId);
+  const aligned = !cfg || !expected || cfg.appId === expected;
   return {
     picker_configured: !!cfg,
     app_id_present: !!cfg?.appId,
-    // Never echo apiKey
+    app_id_matches_oauth_client: aligned,
+    // Never echo apiKey or raw ids
   };
 }
 
@@ -300,6 +329,8 @@ module.exports = {
   readConfig,
   writeConfig,
   status,
+  oauthClientProjectNumber,
+  assertAppIdAlignedWithOAuthClient,
   createSession,
   getLiveSession,
   bootstrapSession,
