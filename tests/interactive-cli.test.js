@@ -30,7 +30,7 @@ test('compact brand, no-color and command help are available without bootstrap',
   assert.match(intro(), /AIRODROM/);
   assert.doesNotMatch(intro({ color: false, unicode: false }), /\x1b|◈/);
   assert.match(intro({ color: true }), /\x1b/);
-  for (const command of ['status', 'chat', 'service start', 'service stop', 'start', 'stop', 'restart', 'open', 'memory', '/remember', '/forget', '/runtime', '/quit']) assert.ok(help().includes(command));
+  for (const command of ['status', 'chat', 'service start', 'service stop', 'start', 'stop', 'restart', 'open', 'memory', '/remember', '/forget', '/runtime', '/quit', '/gcp']) assert.ok(help().includes(command));
   const r = spawnSync(process.execPath, ['scripts/airodrom.cjs', '--help'], { cwd: local.ROOT, encoding: 'utf8', env: { PATH: process.env.PATH, NO_COLOR: '1' } });
   assert.equal(r.status, 0); assert.match(r.stdout, /Attach to the managed service|Interactive/); assert.doesNotMatch(r.stdout, /#token=|Bearer /);
 });

@@ -7,7 +7,7 @@ const { PassThrough } = require('node:stream');
 const local = require('./local-bootstrap');
 const branding = require('./branding');
 const render = require('./assistant-render');
-const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','compat','compatibility','memory','runtime','sensitive','vault','secret','gmail','whatsapp','research','autopilot']);
+const READ_COMMANDS = new Set(['models','workers','connectors','status','details','doctor','compat','compatibility','memory','runtime','sensitive','vault','secret','gmail','whatsapp','research','autopilot','gcp']);
 function formatAutopilot(s) {
   const on = s.enabled === true;
   const lines = [
@@ -37,7 +37,7 @@ function parseLine(line) {
 }
 function show(output,data,formatter,json=false){output.write(terminalText(json?JSON.stringify(data,null,2):formatter(data))+'\n');}
 const terminalText = value => require('node:util').stripVTControlCharacters(String(value)).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
-const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail [send|manage|retry-open|show-local|fresh] · /connect calendar [manage|fresh] · /connect whatsapp · /gmail status|unread|recent|search|read|thread|approve|confirm · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
+const COMMANDS = '/name <name> · /about · /version · /models · /model auto|local|<id> · /workers [status|qualify <id> <model> --confirm-public-fixture|revoke <id>] · /worker auto|<id>\n/connectors · /connect gmail [send|manage|retry-open|show-local|fresh] · /connect calendar [manage|fresh] · /connect whatsapp · /gmail status|unread|recent|search|read|thread|approve|confirm · /whatsapp bind|status|discover|rotate-verify-token|commit-verify-token|rollback-verify-token|prepare-callback|search · /gcp help|status|list|enroll project <id> <number>|unenroll project <id>|tf-state preview somin|confirm <preview-id> [--ack-uncertain] · /remember-sensitive · /sensitive · /vault · /secret\n/remember <text> · /memory [query] · /forget <id or subject>\n/mission new [objective] · /mission list · /mission status [id] · /mission cancel [id] · /mission run [id] · /mission web on|off|all|status|revoke [id] [URLs] · /browser options|sessions|status|permissions|diagnostics|revoke|close [id] · /browser open <HTTPS URL> · /research search <query> · /research explore <URLs> · /research login <HTTPS URL> · /research account <HTTPS login URL> · /research report [mission-id] [--json]\n/autopilot on|off|status|stop · /logs [follow] [mission-id] · /status · /details · /doctor · /compat · /runtime [opencode] · /open · /task <mission.json> · /accept · /help · /quit';
 const terminalBrand = require('./terminal-brand'), intro = terminalBrand.intro;
 // Operator-local only: last Gmail authorization URL for LaunchServices retry / local show.
 // Never written to Mission evidence, telemetry, or ChatGPT surfaces.
@@ -715,6 +715,32 @@ async function interactive(home, { input = process.stdin, output = process.stdou
           }else{
             throw Error('Use /calendar help|status|approve <approval-id>|confirm <preview-id> [--destructive], or ask in natural language.');
           }
+        }
+        else if(command==='gcp'){
+          // Host-governed GCP rail: Terminal must register /gcp or it fails as Unknown command
+          // before assistant-intent. Preview/confirm require the same conversation session.
+          const gcpConversationId=await session();
+          const parts=String(arg||'').trim().split(/\s+/).filter(Boolean);
+          const action=(parts[0]||'help').toLowerCase();
+          const usage='Use /gcp help|status|list|enroll project <id> <number>|unenroll project <id>|tf-state preview somin|confirm <preview-id> [--ack-uncertain]. Chat cannot authorize cloud writes.';
+          if(!['help','status','list','enroll','unenroll','tf-state','preview','confirm'].includes(action))throw Error(usage);
+          if(action==='confirm'){
+            const id=parts[1];
+            if(!id||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)){
+              throw Error('Use /gcp confirm <preview-id> [--ack-uncertain]');
+            }
+          }else if(action==='tf-state'){
+            if((parts[1]||'').toLowerCase()!=='preview')throw Error('Use /gcp tf-state preview somin');
+          }else if(action==='preview'){
+            if((parts[1]||'').toLowerCase()!=='tf-state'&&(parts[1]||'').toLowerCase()!=='somin'&&parts.length>1)throw Error(usage);
+          }else if(action==='enroll'){
+            if((parts[1]||'').toLowerCase()!=='project'||!parts[2]||!parts[3])throw Error('Use /gcp enroll project <project-id> <project-number>');
+          }else if(action==='unenroll'){
+            if((parts[1]||'').toLowerCase()!=='project'||!parts[2])throw Error('Use /gcp unenroll project <project-id>');
+          }
+          const message=`/gcp${arg?` ${arg}`:''}`;
+          const result=await local.request(home,'/api/assistant/input',{message,request_id:randomUUID(),conversation_id:gcpConversationId});
+          await handleReceipt(result,json);
         }
         else if(command==='gmail'||command==='whatsapp') {
           if(command==='gmail'){
