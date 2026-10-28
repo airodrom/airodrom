@@ -56,8 +56,9 @@ function helpMessage(server) {
     'Enroll: /gcp enroll project somin-ca-prod 172228664875',
     'Revoke: /gcp unenroll project somin-ca-prod',
     'Preview CREATE: /gcp tf-state preview somin',
-    'Confirm: /gcp confirm <preview-id>',
+    'Confirm: /gcp confirm <preview-id> (uncertain outcomes need --ack-uncertain after inspection)',
     'Status: /gcp status · Help: /gcp help',
+    'V1 enrollment limited to somin-ca-prod / 172228664875. Enrollment ≠ write authority.',
     'MCP cloud_* capabilities remain inactive. Host rail retains exclusive CREATE authority after authenticated confirm.',
   ].join('\n');
 }
@@ -83,6 +84,21 @@ function statusPayload(server) {
   };
 }
 
+function assertFounderIdentity(identity, spec) {
+  const email = identity?.account_email;
+  if (!email || typeof email !== 'string') {
+    const err = Error('GCP credential provider must return account_email for governed cloud writes.');
+    err.code = 'gcp_identity_required';
+    throw err;
+  }
+  if (String(email).toLowerCase() !== String(spec.founder_email).toLowerCase()) {
+    const err = Error(`Authenticated GCP identity ${email} does not match approved founder ${spec.founder_email}.`);
+    err.code = 'gcp_identity_mismatch';
+    throw err;
+  }
+  return email;
+}
+
 async function resolveIdentity(server) {
   if (typeof server.gcpTokenProvider !== 'function') {
     const err = Error('GCP credential provider is not configured on this host.');
@@ -90,7 +106,9 @@ async function resolveIdentity(server) {
     throw err;
   }
   if (require('./external-write-context').isTestProcess() && !server.gcpAllowTestCredentials) {
-    // Tests must set gcpAllowTestCredentials when intentionally exercising the transport.
+    const err = Error('Test processes must inject synthetic GCP transport; live credentials refused.');
+    err.code = 'gcp_credential_refused_in_test';
+    throw err;
   }
   const identity = await server.gcpTokenProvider();
   if (!identity || typeof identity.accessToken !== 'string' || identity.accessToken.length < 8) {
@@ -106,7 +124,25 @@ async function resolveIdentity(server) {
 }
 
 function transportFor(server, identity) {
-  if (server.gcpStorageTransport) return server.gcpStorageTransport;
+  if (server.gcpStorageTransport) {
+    if (require('./external-write-context').isTestProcess() && !server.gcpAllowTestCredentials) {
+      const err = Error('Synthetic GCP transport refused without gcpAllowTestCredentials.');
+      err.code = 'gcp_transport_injection_refused';
+      throw err;
+    }
+    return server.gcpStorageTransport;
+  }
+  if (server.gcpStorageRequestImpl && !server.gcpAllowTransportInjection
+      && !require('./external-write-context').isTestProcess()) {
+    const err = Error('gcpStorageRequestImpl requires explicit gcpAllowTransportInjection.');
+    err.code = 'gcp_transport_injection_refused';
+    throw err;
+  }
+  if (require('./external-write-context').isTestProcess() && !server.gcpAllowTestCredentials) {
+    const err = Error('Test processes must inject synthetic GCP transport; live Storage client refused.');
+    err.code = 'gcp_credential_refused_in_test';
+    throw err;
+  }
   return new GcpStorageTransport({
     accessToken: identity.accessToken,
     requestImpl: server.gcpStorageRequestImpl || null,
@@ -155,11 +191,12 @@ async function previewCreate(server, parsed, conversation_id) {
     });
   }
 
-  if (spec.founder_email && identity.account_email
-      && String(identity.account_email).toLowerCase() !== String(spec.founder_email).toLowerCase()) {
-    return denyResult('gcp_identity_mismatch',
-      `Authenticated GCP identity ${identity.account_email} does not match approved founder ${spec.founder_email}.`,
-      { blockers: ['wrong_authenticated_identity'] });
+  try {
+    assertFounderIdentity(identity, spec);
+  } catch (error) {
+    return denyResult(error.code || 'gcp_identity_mismatch', error.message, {
+      blockers: ['wrong_authenticated_identity'],
+    });
   }
 
   const idempotency_key = parsed.idempotency_key
@@ -339,23 +376,30 @@ async function confirmCreate(server, parsed, conversation_id) {
   const preview_id = parsed.preview_id;
   if (!preview_id) return denyResult('gcp_confirm_id_required', 'Confirm requires preview_id.');
 
+  let identity;
+  try {
+    identity = await resolveIdentity(server);
+    assertFounderIdentity(identity, SOMIN_TF_STATE_BACKEND_V1);
+  } catch (error) {
+    return denyResult(error.code || 'gcp_credential_missing', error.message, {
+      blockers: error.code === 'gcp_identity_mismatch' || error.code === 'gcp_identity_required'
+        ? ['wrong_authenticated_identity']
+        : ['missing_gcp_credentials'],
+    });
+  }
+
   let claimed;
   try {
-    claimed = ops(server).claim(preview_id, { conversation_id, operator: 'operator' });
+    claimed = ops(server).claim(preview_id, {
+      conversation_id,
+      operator: 'operator',
+      account_email: identity.account_email,
+      ack_uncertain: parsed.ack_uncertain === true,
+    });
   } catch (error) {
     return denyResult(error.code || 'gcp_tf_state_claim_failed', error.message, {
       receipt: error.receipt || null,
     });
-  }
-
-  let identity;
-  try {
-    identity = await resolveIdentity(server);
-  } catch (error) {
-    try {
-      ops(server).markUncertain(preview_id, { error: error.code }, { claim_token: claimed.claim_token });
-    } catch { /* leave creating if mark fails */ }
-    return denyResult(error.code || 'gcp_credential_missing', error.message);
   }
 
   try {
@@ -403,9 +447,17 @@ async function confirmCreate(server, parsed, conversation_id) {
   }
 }
 
-function enrollProject(server, parsed) {
+function enrollProject(server, parsed, conversation_id) {
+  const sessionErr = requireConversation(conversation_id);
+  if (sessionErr) return sessionErr;
   const project_id = parsed.project_id;
   const project_number = parsed.project_number;
+  // V1: only the locked Somin project may be enrolled for governed cloud writes.
+  if (project_id !== SOMIN_TF_STATE_BACKEND_V1.project_id
+      || String(project_number) !== String(SOMIN_TF_STATE_BACKEND_V1.project_number)) {
+    return denyResult('gcp_enrollment_scope_denied',
+      'V1 enrollment is limited to somin-ca-prod / 172228664875.');
+  }
   try {
     const row = enrollment(server).enroll({
       project_id,
@@ -432,7 +484,9 @@ function enrollProject(server, parsed) {
   }
 }
 
-function unenrollProject(server, parsed) {
+function unenrollProject(server, parsed, conversation_id) {
+  const sessionErr = requireConversation(conversation_id);
+  if (sessionErr) return sessionErr;
   const result = enrollment(server).revoke(parsed.project_id, 'operator');
   return {
     kind: 'gcp_gcs_tf_state',
@@ -462,8 +516,8 @@ async function run(server, parsed, { conversation_id = null } = {}) {
     };
   }
   if (action === 'status') return statusPayload(server);
-  if (action === 'enroll') return enrollProject(server, parsed);
-  if (action === 'unenroll') return unenrollProject(server, parsed);
+  if (action === 'enroll') return enrollProject(server, parsed, conversation_id);
+  if (action === 'unenroll') return unenrollProject(server, parsed, conversation_id);
   if (action === 'list_enrolled') {
     return {
       kind: 'gcp_gcs_tf_state',

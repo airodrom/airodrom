@@ -170,6 +170,26 @@ test('wrong authenticated identity blocks preview', async () => {
   assert.equal(out.code, 'gcp_identity_mismatch');
 });
 
+test('missing account_email fails closed at preview', async () => {
+  const { server, conversation_id } = serverFixture({ identity: null });
+  server.gcpTokenProvider = async () => ({ accessToken: 'ya29.test-token-value', account_email: null });
+  const out = await service.run(server, { kind: 'gcp_gcs_tf_state', action: 'preview', spec: SPEC }, { conversation_id });
+  assert.equal(out.code, 'gcp_identity_required');
+});
+
+test('identity change between preview and confirm is refused', async () => {
+  const { server, conversation_id } = serverFixture();
+  const preview = await service.run(server, { kind: 'gcp_gcs_tf_state', action: 'preview', spec: SPEC }, { conversation_id });
+  server.gcpTokenProvider = async () => ({
+    accessToken: 'ya29.test-token-value',
+    account_email: 'intruder@example.com',
+  });
+  const out = await service.run(server, {
+    kind: 'gcp_gcs_tf_state', action: 'confirm', preview_id: preview.preview_id,
+  }, { conversation_id });
+  assert.ok(['gcp_identity_mismatch', 'gcp_tf_state_account_mismatch'].includes(out.code));
+});
+
 test('wrong project in enrollment vs SPEC is enrollment mismatch', async () => {
   const { server, conversation_id, enrollment } = serverFixture({ enroll: false });
   enrollment.enroll({ project_id: 'other-proj-xyz', project_number: '123456789012' });
@@ -296,13 +316,29 @@ test('network timeout marks uncertain; no automatic retry insert', async () => {
   assert.equal(out.uncertain, true);
   assert.equal(out.code, 'gcp_transport_timeout');
   assert.equal(log.filter((e) => e[0] === 'insertBucket').length, 1);
-  // No automatic second insert after uncertain outcome.
-  const again = await service.run(server, {
+  const blind = await service.run(server, {
     kind: 'gcp_gcs_tf_state', action: 'confirm', preview_id: preview.preview_id,
   }, { conversation_id });
-  // Uncertain ops may be re-claimed only with explicit confirm; still no silent auto-retry loop.
+  assert.equal(blind.code, 'gcp_tf_state_ack_uncertain_required');
+  const again = await service.run(server, {
+    kind: 'gcp_gcs_tf_state', action: 'confirm', preview_id: preview.preview_id, ack_uncertain: true,
+  }, { conversation_id });
   assert.ok(again.action === 'denied' || again.action === 'completed' || again.uncertain === true);
   assert.ok(log.filter((e) => e[0] === 'insertBucket').length <= 2);
+});
+
+test('V1 enrollment refuses non-Somin projects and requires conversation', async () => {
+  const { server, conversation_id } = serverFixture({ enroll: false });
+  const noSession = await service.run(server, {
+    kind: 'gcp_gcs_tf_state', action: 'enroll',
+    project_id: SPEC.project_id, project_number: SPEC.project_number,
+  }, { conversation_id: null });
+  assert.equal(noSession.code, 'gcp_tf_state_session_required');
+  const other = await service.run(server, {
+    kind: 'gcp_gcs_tf_state', action: 'enroll',
+    project_id: 'other-proj-xyz', project_number: '123456789012',
+  }, { conversation_id });
+  assert.equal(other.code, 'gcp_enrollment_scope_denied');
 });
 
 test('existing conflicting bucket fails closed', async () => {
@@ -362,6 +398,27 @@ test('connector rejects shell/command injection fields', () => {
     approval_reference: 'a',
     command: 'gsutil mb gs://x',
   }), /shell|command/i);
+});
+
+test('connector validate enforces exact Somin scope', () => {
+  const caps = connectorCapabilities();
+  const cap = caps.gcp_gcs_tf_state_backend_create;
+  assert.throws(() => cap.validate({
+    project_id: 'other-prod-xyz',
+    project_number: SPEC.project_number,
+    bucket: SPEC.bucket,
+    location: SPEC.location,
+    idempotency_key: 'k',
+    approval_reference: 'a',
+  }), /scope|mismatch|exact/i);
+  assert.doesNotThrow(() => cap.validate({
+    project_id: SPEC.project_id,
+    project_number: SPEC.project_number,
+    bucket: SPEC.bucket,
+    location: SPEC.location,
+    idempotency_key: 'k',
+    approval_reference: 'a',
+  }));
 });
 
 test('secret leakage prevention: tokens redacted', () => {

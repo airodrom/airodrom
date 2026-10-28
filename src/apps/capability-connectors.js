@@ -85,7 +85,7 @@ function connectorCapabilities() {
     gcp_gcs_tf_state_backend_create: {
       validate: input => {
         keys(input, ['project_id', 'project_number', 'bucket', 'location', 'idempotency_key', 'approval_reference'], [
-          'storage_class', 'public_access_prevention', 'uniform_bucket_level_access', 'versioning', 'encryption', 'founder_email', 'writer_role', 'prefix',
+          'storage_class', 'public_access_prevention', 'uniform_bucket_level_access', 'versioning', 'encryption', 'founder_email', 'writer_role', 'prefix', 'arecibo_reuse',
         ]);
         pattern(input.project_id, /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, 'project_id');
         pattern(input.project_number, /^[0-9]{6,20}$/, 'project_number');
@@ -95,6 +95,26 @@ function connectorCapabilities() {
         text(input.approval_reference, 'approval_reference', { max: 200, multiline: false });
         if (Object.hasOwn(input, 'command') || Object.hasOwn(input, 'argv') || Object.hasOwn(input, 'shell')) {
           fail('Arbitrary command/shell execution is refused for gcp_gcs_tf_state_backend_create');
+        }
+        // Defense in depth: even if MCP active is flipped, only exact Somin SPEC validates.
+        try {
+          require('../gcp-exact-scope').assertExactSominTfStateBackend({
+            project_id: input.project_id,
+            project_number: input.project_number,
+            bucket: input.bucket,
+            location: input.location,
+            storage_class: input.storage_class ?? 'STANDARD',
+            uniform_bucket_level_access: input.uniform_bucket_level_access !== false,
+            public_access_prevention: input.public_access_prevention ?? 'enforced',
+            versioning: input.versioning !== false,
+            encryption: input.encryption ?? 'google-managed',
+            founder_email: input.founder_email ?? 'andcantech@gmail.com',
+            writer_role: input.writer_role ?? 'roles/storage.objectAdmin',
+            prefix: input.prefix ?? 'terraform/prod',
+            arecibo_reuse: input.arecibo_reuse === true,
+          });
+        } catch (error) {
+          fail(error.message || 'Exact Somin tf-state scope mismatch');
         }
         return input;
       },

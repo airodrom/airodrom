@@ -183,7 +183,12 @@ class GcpGcsTfStateOps {
     return row ? this.#rowToProposal(row) : null;
   }
 
-  claim(preview_id, { conversation_id, operator = 'operator' } = {}) {
+  claim(preview_id, {
+    conversation_id,
+    operator = 'operator',
+    account_email = null,
+    ack_uncertain = false,
+  } = {}) {
     bindingKey(operator, conversation_id);
     this.#sweep();
     const row = this.db.prepare(`SELECT * FROM gcp_gcs_tf_state_ops WHERE preview_id=?`).get(preview_id);
@@ -208,9 +213,20 @@ class GcpGcsTfStateOps {
       err.code = 'gcp_tf_state_concurrent_claim';
       throw err;
     }
+    if (row.status === 'uncertain' && !ack_uncertain) {
+      const err = Error('Prior GCP outcome is uncertain. Inspect provider metadata first, then /gcp confirm <id> --ack-uncertain only if CREATE did not commit. Blind retry is refused.');
+      err.code = 'gcp_tf_state_ack_uncertain_required';
+      throw err;
+    }
     if (row.status !== 'pending' && row.status !== 'uncertain') {
       const err = Error(`Operation status ${row.status} cannot be confirmed.`);
       err.code = 'gcp_tf_state_status_invalid';
+      throw err;
+    }
+    if (row.account_email && account_email
+        && String(row.account_email).toLowerCase() !== String(account_email).toLowerCase()) {
+      const err = Error('Confirm identity does not match the preview-bound GCP account.');
+      err.code = 'gcp_tf_state_account_mismatch';
       throw err;
     }
     if (row.expires_at <= this.now()) {
