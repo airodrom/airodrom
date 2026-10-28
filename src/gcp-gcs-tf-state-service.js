@@ -12,6 +12,12 @@ const {
   digest,
 } = require('./gcp-exact-scope');
 const { GcpStorageTransport, redact } = require('./gcp-storage-transport');
+const {
+  classifyBucketIamBindings,
+  desiredIamPolicy,
+  iamMatchesDesired,
+  assertIamAcceptable,
+} = require('./gcp-bucket-iam');
 
 function enrollment(server) {
   if (!server.gcpProjectEnrollment) {
@@ -55,9 +61,11 @@ function helpMessage(server) {
     `Enrollment ≠ write authority. Enrolled projects: ${enrolled.length}. Credential provider: ${hasToken ? 'injected' : 'missing'}.`,
     'Enroll: /gcp enroll project somin-ca-prod 172228664875',
     'Revoke: /gcp unenroll project somin-ca-prod',
-    'Preview CREATE: /gcp tf-state preview somin',
+    'Preview CREATE or partial-IAM recovery: /gcp tf-state preview somin',
     'Confirm: /gcp confirm <preview-id> (uncertain outcomes need --ack-uncertain after inspection)',
     'Status: /gcp status · Help: /gcp help',
+    'Provider project-default legacy IAM on a new bucket is expected; unauthorized direct bindings stay refused.',
+    'Partial CREATE (bucket exists, founder writer missing) requires a fresh preview then confirm — no automatic retry.',
     'V1 enrollment limited to somin-ca-prod / 172228664875. Enrollment ≠ write authority.',
     'MCP cloud_* capabilities remain inactive. Host rail retains exclusive CREATE authority after authenticated confirm.',
   ].join('\n');
@@ -199,22 +207,92 @@ async function previewCreate(server, parsed, conversation_id) {
     });
   }
 
+  // Read-only probe: classify existing bucket before staging mutation intent.
+  let recovery_mode = 'create';
+  let existing_probe = null;
+  try {
+    const transport = transportFor(server, identity);
+    const existing = await transport.getBucket(spec.bucket);
+    if (existing.status === 200 && existing.body) {
+      try {
+        verifyBucketMetadata(existing.body, spec);
+      } catch (error) {
+        return denyResult(error.code || 'gcp_bucket_posture_mismatch', error.message, {
+          blockers: ['existing_bucket_posture_mismatch'],
+          existing: true,
+        });
+      }
+      const iamGet = await transport.getBucketIam(spec.bucket);
+      if (iamGet.status !== 200 || !iamGet.body) {
+        return denyResult('gcp_iam_read_failed',
+          'Existing bucket found but IAM could not be read; recovery requires separate approval.', {
+            blockers: ['existing_bucket_iam_unreadable'],
+            existing: true,
+          });
+      }
+      const classified = classifyBucketIamBindings(iamGet.body, spec);
+      if (classified.unauthorized.length) {
+        return denyResult('gcp_unexpected_bucket_bindings',
+          'Existing bucket has unexpected IAM bindings; recovery requires separate approval.', {
+            blockers: ['unauthorized_bucket_iam'],
+            existing: true,
+            iam_classification: classified.classification,
+            unauthorized_roles: classified.unauthorized.map((u) => u.role),
+          });
+      }
+      if (classified.founder_present) {
+        recovery_mode = 'verify_existing';
+      } else {
+        recovery_mode = 'complete_iam';
+      }
+      existing_probe = {
+        exists: true,
+        timeCreated: existing.body.timeCreated || null,
+        iam_classification: classified.classification,
+        founder_present: classified.founder_present,
+      };
+    } else if (existing.status && existing.status !== 404) {
+      return denyResult('gcp_bucket_lookup_ambiguous',
+        `Ambiguous bucket lookup status ${existing.status}.`, { existing: true });
+    }
+  } catch (error) {
+    return denyResult(error.code || 'gcp_preview_probe_failed', error.message);
+  }
+
   const idempotency_key = parsed.idempotency_key
-    || `somin-tf-state-v1:${spec.bucket}:${conversation_id}`;
+    || `somin-tf-state-v1:${spec.bucket}:${conversation_id}:${recovery_mode}`;
   const proposal = {
-    operation: 'gcp_gcs_tf_state_backend_create',
+    operation: recovery_mode === 'create'
+      ? 'gcp_gcs_tf_state_backend_create'
+      : recovery_mode === 'complete_iam'
+        ? 'gcp_gcs_tf_state_backend_complete_iam'
+        : 'gcp_gcs_tf_state_backend_verify_existing',
+    recovery_mode,
     spec,
-    insert: { project: spec.project_id, body: insertBody(spec) },
+    insert: recovery_mode === 'create'
+      ? { project: spec.project_id, body: insertBody(spec) }
+      : null,
     writer: {
       bucket: spec.bucket,
       role: spec.writer_role,
       member: `user:${spec.founder_email}`,
     },
-    review: [
+    existing: existing_probe,
+    review: recovery_mode === 'create' ? [
       `Create gs://${spec.bucket} in ${spec.project_id} (${spec.project_number})`,
       `Region ${spec.location} · STANDARD · UBLA · PAP enforced · versioning · google-managed encryption`,
       `Writer: user:${spec.founder_email} → ${spec.writer_role} (bucket-scoped only)`,
+      'Provider project-default legacy IAM bindings are expected and preserved.',
       'No public ACLs · No Arecibo reuse · No Terraform apply/import',
+    ] : recovery_mode === 'complete_iam' ? [
+      `PARTIAL CREATE recovery: gs://${spec.bucket} already exists with approved posture.`,
+      'Bucket IAM currently has provider project-default legacy bindings only.',
+      `Confirm will grant bucket-scoped ${spec.writer_role} to user:${spec.founder_email} only (no CREATE retry, no delete).`,
+      'Unauthorized direct bindings remain refused. Chat cannot authorize this grant.',
+    ] : [
+      `VERIFY existing gs://${spec.bucket}: posture matches and founder writer is already present.`,
+      'Confirm records recovered success from provider evidence without cloud mutation.',
+      'No CREATE, IAM rewrite, delete, or Terraform operation will run.',
     ],
   };
 
@@ -234,6 +312,12 @@ async function previewCreate(server, parsed, conversation_id) {
     });
   }
 
+  const headline = recovery_mode === 'create'
+    ? 'Exact-scope GCS tf-state backend CREATE staged for owner confirm.'
+    : recovery_mode === 'complete_iam'
+      ? 'Partial-create IAM completion staged for owner confirm (bucket already exists).'
+      : 'Existing compliant bucket verification staged for owner confirm (no cloud mutation).';
+
   return {
     kind: 'gcp_gcs_tf_state',
     action: 'preview',
@@ -244,9 +328,10 @@ async function previewCreate(server, parsed, conversation_id) {
     scope_sha256: preview.scope_sha256,
     expires_at: preview.expires_at,
     status: preview.status,
+    recovery_mode,
     proposal,
     message: [
-      'Exact-scope GCS tf-state backend CREATE staged for owner confirm.',
+      headline,
       ...proposal.review,
       `Confirm with: /gcp confirm ${preview.preview_id}`,
       'Chat “yes” / NL approval does not execute. Preview expires; replay after completion is refused.',
@@ -259,99 +344,10 @@ async function previewCreate(server, parsed, conversation_id) {
 }
 
 function desiredIam(policy, spec) {
-  const expected = {
-    role: spec.writer_role,
-    members: [`user:${spec.founder_email}`],
-  };
-  if (!policy || !policy.etag) {
-    const err = Error('IAM etag required before bucket policy write.');
-    err.code = 'gcp_iam_etag_required';
-    throw err;
-  }
-  const bindings = policy.bindings || [];
-  if (bindings.length && JSON.stringify(bindings) !== JSON.stringify([expected])) {
-    const err = Error('Unexpected existing bucket IAM bindings; recovery requires separate approval.');
-    err.code = 'gcp_unexpected_bucket_bindings';
-    throw err;
-  }
-  return { version: 3, etag: policy.etag, bindings: [expected] };
+  return desiredIamPolicy(policy, spec);
 }
 
-async function executeClaimed(server, claimed, identity) {
-  const spec = assertExactSominTfStateBackend(claimed.spec || claimed.proposal?.spec || SOMIN_TF_STATE_BACKEND_V1);
-  enrollment(server).assertEnrolled(spec.project_id, spec.project_number, 'operator');
-  if (claimed.scope_sha256 !== spec.scope_sha256) {
-    const err = Error('Scope digest drifted between preview and confirm.');
-    err.code = 'gcp_scope_digest_drift';
-    throw err;
-  }
-
-  const transport = transportFor(server, identity);
-  const existing = await transport.getBucket(spec.bucket);
-  if (existing.status === 200 && existing.body) {
-    try {
-      verifyBucketMetadata(existing.body, spec);
-    } catch (error) {
-      const err = Error(error.message || 'Existing conflicting bucket.');
-      err.code = error.code || 'gcp_bucket_posture_mismatch';
-      err.existing = true;
-      throw err;
-    }
-    const err = Error('Bucket already exists with matching posture; CREATE refused (no silent reuse).');
-    err.code = 'gcp_bucket_already_exists';
-    err.existing = true;
-    throw err;
-  }
-  if (existing.status && existing.status !== 404) {
-    const err = Error(`Ambiguous bucket lookup status ${existing.status}.`);
-    err.code = 'gcp_bucket_lookup_ambiguous';
-    throw err;
-  }
-
-  const inserted = await transport.insertBucket(spec.project_id, insertBody(spec));
-  if (inserted.status === 409) {
-    const err = Error('Provider reported bucket conflict during insert; inspect before retry.');
-    err.code = 'gcp_insert_conflict';
-    throw err;
-  }
-  if (!inserted.status || inserted.status < 200 || inserted.status >= 300) {
-    const message = inserted.body?.error?.message || `insert failed status=${inserted.status}`;
-    const err = Error(redact(message));
-    err.code = inserted.status === 403 ? 'gcp_permission_denied' : 'gcp_insert_failed';
-    throw err;
-  }
-
-  const afterInsert = await transport.getBucket(spec.bucket);
-  if (afterInsert.status !== 200 || !afterInsert.body) {
-    const err = Error('Ambiguous provider response after insert; no automatic retry.');
-    err.code = 'gcp_post_insert_ambiguous';
-    throw err;
-  }
-  verifyBucketMetadata(afterInsert.body, spec);
-
-  const iamGet = await transport.getBucketIam(spec.bucket);
-  if (iamGet.status !== 200 || !iamGet.body) {
-    const err = Error('Unable to read bucket IAM after create; partial creation — no automatic delete.');
-    err.code = 'gcp_iam_read_failed';
-    throw err;
-  }
-  const policy = desiredIam(iamGet.body, spec);
-  const iamPut = await transport.setBucketIam(spec.bucket, policy);
-  if (!iamPut.status || iamPut.status < 200 || iamPut.status >= 300) {
-    const err = Error('Bucket IAM write failed after create; partial creation — no automatic delete.');
-    err.code = 'gcp_iam_write_failed';
-    throw err;
-  }
-
-  const finalMeta = await transport.getBucket(spec.bucket);
-  verifyBucketMetadata(finalMeta.body, spec);
-  const finalIam = await transport.getBucketIam(spec.bucket);
-  if (JSON.stringify(finalIam.body?.bindings || []) !== JSON.stringify(policy.bindings)) {
-    const err = Error('IAM verification failed after write.');
-    err.code = 'gcp_iam_verification_failed';
-    throw err;
-  }
-
+function verifiedReceipt(claimed, identity, spec, policy, extra = {}) {
   return {
     status: 'VERIFIED',
     bucket: spec.bucket,
@@ -367,7 +363,175 @@ async function executeClaimed(server, claimed, identity) {
       location: spec.location,
       bindings: policy.bindings,
     }),
+    ...extra,
   };
+}
+
+async function applyFounderIam(transport, spec, { partial = false } = {}) {
+  const iamGet = await transport.getBucketIam(spec.bucket);
+  if (iamGet.status !== 200 || !iamGet.body) {
+    const err = Error(partial
+      ? 'Unable to read bucket IAM after create; partial creation — no automatic delete.'
+      : 'Unable to read bucket IAM; recovery requires separate approval.');
+    err.code = 'gcp_iam_read_failed';
+    err.partial = partial;
+    throw err;
+  }
+  let policy;
+  try {
+    policy = desiredIam(iamGet.body, spec);
+  } catch (error) {
+    error.partial = partial;
+    throw error;
+  }
+  const iamPut = await transport.setBucketIam(spec.bucket, {
+    version: policy.version,
+    etag: policy.etag,
+    bindings: policy.bindings,
+  });
+  if (!iamPut.status || iamPut.status < 200 || iamPut.status >= 300) {
+    const err = Error(partial
+      ? 'Bucket IAM write failed after create; partial creation — no automatic delete.'
+      : 'Bucket IAM write failed; no automatic retry or delete.');
+    err.code = 'gcp_iam_write_failed';
+    err.partial = true;
+    throw err;
+  }
+  const finalMeta = await transport.getBucket(spec.bucket);
+  verifyBucketMetadata(finalMeta.body, spec);
+  const finalIam = await transport.getBucketIam(spec.bucket);
+  if (!iamMatchesDesired(finalIam.body, policy)) {
+    // Provider may echo defaults with different member order; require founder + no unauthorized.
+    try {
+      assertIamAcceptable(finalIam.body, spec);
+    } catch (error) {
+      error.partial = true;
+      throw error;
+    }
+    if (!iamMatchesDesired(finalIam.body, policy)) {
+      // Still acceptable if classification is founder_complete with expected defaults.
+      const classified = classifyBucketIamBindings(finalIam.body, spec);
+      if (classified.classification !== 'founder_complete' || classified.unauthorized.length) {
+        const err = Error('IAM verification failed after write.');
+        err.code = 'gcp_iam_verification_failed';
+        err.partial = true;
+        throw err;
+      }
+    }
+  }
+  return policy;
+}
+
+async function executeClaimed(server, claimed, identity) {
+  const spec = assertExactSominTfStateBackend(claimed.spec || claimed.proposal?.spec || SOMIN_TF_STATE_BACKEND_V1);
+  enrollment(server).assertEnrolled(spec.project_id, spec.project_number, 'operator');
+  if (claimed.scope_sha256 !== spec.scope_sha256) {
+    const err = Error('Scope digest drifted between preview and confirm.');
+    err.code = 'gcp_scope_digest_drift';
+    throw err;
+  }
+
+  const recovery_mode = claimed.proposal?.recovery_mode
+    || claimed.recovery_mode
+    || 'create';
+  const transport = transportFor(server, identity);
+  const existing = await transport.getBucket(spec.bucket);
+
+  if (existing.status === 200 && existing.body) {
+    try {
+      verifyBucketMetadata(existing.body, spec);
+    } catch (error) {
+      const err = Error(error.message || 'Existing conflicting bucket.');
+      err.code = error.code || 'gcp_bucket_posture_mismatch';
+      err.existing = true;
+      throw err;
+    }
+    const iamGet = await transport.getBucketIam(spec.bucket);
+    if (iamGet.status !== 200 || !iamGet.body) {
+      const err = Error('Existing bucket IAM unreadable; recovery requires separate approval.');
+      err.code = 'gcp_iam_read_failed';
+      err.existing = true;
+      throw err;
+    }
+    const classified = classifyBucketIamBindings(iamGet.body, spec);
+    if (classified.unauthorized.length) {
+      const err = Error('Unexpected existing bucket IAM bindings; recovery requires separate approval.');
+      err.code = 'gcp_unexpected_bucket_bindings';
+      err.existing = true;
+      err.classification = classified;
+      throw err;
+    }
+    if (classified.founder_present) {
+      // Recovered success from immutable provider evidence — no cloud mutation.
+      return verifiedReceipt(claimed, identity, spec, iamGet.body, {
+        recovery: 'existing_bucket_verified',
+        mutated: false,
+        recovery_mode: 'verify_existing',
+      });
+    }
+    if (recovery_mode === 'verify_existing') {
+      const err = Error('Verify-only preview cannot grant IAM; stage /gcp tf-state preview somin for complete_iam.');
+      err.code = 'gcp_recovery_mode_mismatch';
+      err.existing = true;
+      throw err;
+    }
+    // Partial create: posture OK, expected defaults only, founder writer missing.
+    // Allowed for complete_iam previews and legacy CREATE previews after a mid-flight deny.
+    if (recovery_mode === 'complete_iam' || recovery_mode === 'create') {
+      const policy = await applyFounderIam(transport, spec, { partial: true });
+      return verifiedReceipt(claimed, identity, spec, policy, {
+        recovery: 'partial_create_iam_completed',
+        mutated: true,
+        mutation: 'bucket_iam_set',
+        recovery_mode: 'complete_iam',
+      });
+    }
+    const err = Error('Bucket already exists with matching posture; CREATE refused (no silent reuse).');
+    err.code = 'gcp_bucket_already_exists';
+    err.existing = true;
+    throw err;
+  }
+  if (existing.status && existing.status !== 404) {
+    const err = Error(`Ambiguous bucket lookup status ${existing.status}.`);
+    err.code = 'gcp_bucket_lookup_ambiguous';
+    throw err;
+  }
+  if (recovery_mode === 'complete_iam' || recovery_mode === 'verify_existing') {
+    const err = Error('Preview expected an existing bucket, but provider returned not found.');
+    err.code = 'gcp_recovery_bucket_missing';
+    throw err;
+  }
+
+  const inserted = await transport.insertBucket(spec.project_id, insertBody(spec));
+  if (inserted.status === 409) {
+    const err = Error('Provider reported bucket conflict during insert; inspect before retry.');
+    err.code = 'gcp_insert_conflict';
+    err.partial = true;
+    throw err;
+  }
+  if (!inserted.status || inserted.status < 200 || inserted.status >= 300) {
+    const message = inserted.body?.error?.message || `insert failed status=${inserted.status}`;
+    const err = Error(redact(message));
+    err.code = inserted.status === 403 ? 'gcp_permission_denied' : 'gcp_insert_failed';
+    throw err;
+  }
+
+  const afterInsert = await transport.getBucket(spec.bucket);
+  if (afterInsert.status !== 200 || !afterInsert.body) {
+    const err = Error('Ambiguous provider response after insert; no automatic retry.');
+    err.code = 'gcp_post_insert_ambiguous';
+    err.partial = true;
+    throw err;
+  }
+  verifyBucketMetadata(afterInsert.body, spec);
+
+  const policy = await applyFounderIam(transport, spec, { partial: true });
+  return verifiedReceipt(claimed, identity, spec, policy, {
+    recovery: null,
+    mutated: true,
+    mutation: 'bucket_create_and_iam',
+    recovery_mode: 'create',
+  });
 }
 
 async function confirmCreate(server, parsed, conversation_id) {
@@ -421,18 +585,23 @@ async function confirmCreate(server, parsed, conversation_id) {
       model_invoked: false,
     };
   } catch (error) {
-    const uncertain = [
+    const uncertainCodes = [
       'gcp_transport_timeout',
       'gcp_post_insert_ambiguous',
       'gcp_insert_conflict',
       'gcp_iam_read_failed',
       'gcp_iam_write_failed',
+      'gcp_iam_verification_failed',
       'gcp_bucket_lookup_ambiguous',
-    ].includes(error.code);
+    ];
+    // Unauthorized IAM stays hard-denied (HOLD). Post-insert / partial failures are uncertain.
+    const uncertain = error.partial === true
+      || (uncertainCodes.includes(error.code) && error.code !== 'gcp_unexpected_bucket_bindings');
     const payload = {
       error_code: error.code || 'gcp_execute_failed',
       message: redact(error.message || 'execution failed'),
       existing: !!error.existing,
+      partial: !!error.partial,
     };
     try {
       if (uncertain) ops(server).markUncertain(preview_id, payload, { claim_token: claimed.claim_token });
@@ -441,8 +610,10 @@ async function confirmCreate(server, parsed, conversation_id) {
     return denyResult(error.code || 'gcp_execute_failed', error.message, {
       uncertain,
       recovery: uncertain
-        ? 'Inspect provider journal/metadata; no automatic retry or deletion.'
-        : null,
+        ? 'Inspect provider journal/metadata; stage a fresh preview for IAM completion if the bucket exists. No automatic retry or deletion.'
+        : (error.code === 'gcp_unexpected_bucket_bindings'
+          ? 'Unauthorized or unexpected direct bucket IAM — hold; do not alter IAM without separate approval.'
+          : null),
     });
   }
 }
@@ -547,6 +718,7 @@ module.exports = {
   _test: {
     executeClaimed,
     desiredIam,
+    classifyBucketIamBindings,
     digest,
     randomUUID,
     createHash,
